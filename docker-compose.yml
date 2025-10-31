@@ -29,6 +29,8 @@ services:
       - LOG_LEVEL=2 # 日志级别
       # 重要: 请修改为您自己的安全密钥，用于加密数据
       - ENCRYPTION_SECRET=xxxxxxx
+      # 管理员Token过期天数，默认7天
+      - ADMIN_TOKEN_EXPIRY_DAYS=7
     volumes:
       - ./sql_data:/data # 将当前目录下的sql_data映射到容器的/data目录
     ports:

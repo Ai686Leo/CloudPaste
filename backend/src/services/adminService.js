@@ -38,9 +38,10 @@ export async function validateAdminToken(db, token) {
  * @param {D1Database} db - D1数据库实例
  * @param {string} username - 用户名
  * @param {string} password - 密码
+ * @param {Object} env - 环境变量对象
  * @returns {Promise<Object>} 登录结果，包含token和过期时间
  */
-export async function login(db, username, password) {
+export async function login(db, username, password, env = {}) {
   // 参数验证
   if (!username || !password) {
     throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "用户名和密码不能为空" });
@@ -88,7 +89,10 @@ export async function login(db, username, password) {
   // 生成并存储令牌
   const token = generateRandomString(32);
   const expiresAt = new Date();
-  expiresAt.setDate(expiresAt.getDate() + 1); // 1天过期
+
+  // 从环境变量读取token过期天数，默认7天
+  const expiryDays = parseInt(env.ADMIN_TOKEN_EXPIRY_DAYS || "7", 10);
+  expiresAt.setDate(expiresAt.getDate() + expiryDays);
 
   // 使用 AdminRepository 创建令牌
   await adminRepository.createToken(admin.id, token, expiresAt);

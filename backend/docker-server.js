@@ -523,6 +523,7 @@ server.use(async (req, res, next) => {
     req.env = {
       DB: sqliteAdapter,
       ENCRYPTION_SECRET: process.env.ENCRYPTION_SECRET || "default-encryption-key",
+      ADMIN_TOKEN_EXPIRY_DAYS: process.env.ADMIN_TOKEN_EXPIRY_DAYS || "7",
     };
 
     next();
@@ -779,7 +780,6 @@ function startMemoryMonitoring(interval = 1200000) {
   // 简单读取容器内存使用情况
   const getContainerMemory = () => {
     try {
-      const fs = require("fs");
       // 尝试读取cgroup内存使用（优先v2，回退v1）
       let usage = null,
         limit = null;

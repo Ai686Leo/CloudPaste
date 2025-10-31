@@ -8,7 +8,7 @@ import { CAPABILITIES } from "../../interfaces/capabilities/index.js";
 import { HTTPException } from "hono/http-exception";
 import { ApiStatus } from "../../../constants/index.js";
 import { createS3Client } from "../../../utils/s3Utils.js";
-import { normalizeS3SubPath } from "./utils/S3PathUtils.js";
+import { normalizeS3SubPath, isCompleteFilePath } from "./utils/S3PathUtils.js";
 import { updateMountLastUsed, findMountPointByPath } from "../../fs/utils/MountResolver.js";
 import { buildFullProxyUrl, buildSignedProxyUrl } from "../../../constants/proxy.js";
 import { ProxySignatureService } from "../../../services/ProxySignatureService.js";
@@ -673,7 +673,6 @@ export class S3StorageDriver extends BaseDriver {
     const fileName = customFilename || path.split("/").filter(Boolean).pop() || "unnamed_file";
 
     // 智能检查s3SubPath是否已经包含完整的文件路径
-    const { isCompleteFilePath } = require("./utils/S3PathUtils.js");
     if (s3SubPath && isCompleteFilePath(s3SubPath, fileName)) {
       // 添加root_prefix（如果有）
       const rootPrefix = this.config.root_prefix ? (this.config.root_prefix.endsWith("/") ? this.config.root_prefix : this.config.root_prefix + "/") : "";

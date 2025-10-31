@@ -13,7 +13,7 @@ adminRoutes.post("/api/admin/login", async (c) => {
   const { username, password } = await c.req.json();
 
   try {
-    const loginResult = await login(db, username, password);
+    const loginResult = await login(db, username, password, c.env);
 
     return c.json({
       code: ApiStatus.SUCCESS,
