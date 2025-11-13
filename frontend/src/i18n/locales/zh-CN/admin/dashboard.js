@@ -11,13 +11,13 @@ export default {
     totalPastes: "文本分享",
     totalFiles: "文件上传",
     totalApiKeys: "API密钥",
-    totalS3Configs: "S3配置",
+    totalStorageConfigs: "存储配置",
     totalStorageUsed: "存储使用",
 
     // 缓存监控
     cacheMonitoring: "缓存监控",
     directoryCache: "目录缓存",
-    s3UrlCache: "S3URL缓存",
+    urlCache: "URL缓存",
     searchCache: "搜索缓存",
     hitRate: "命中率",
     cacheItems: "缓存项",
@@ -26,8 +26,8 @@ export default {
 
     // 存储相关
     storageUsage: "存储使用情况",
-    allBuckets: "所有存储桶",
-    selectBucket: "选择存储桶",
+    allStorages: "所有存储",
+    selectStorage: "选择存储",
     usagePercent: "使用率",
     availableStorage: "可用存储",
     usedStorage: "已用存储",
@@ -94,13 +94,13 @@ export default {
     dataStorage: "数据存储",
 
     // 存储桶分布
-    storageBucketDistribution: "存储桶分布",
+    storageDistribution: "存储分布",
     otherStorage: "其他存储",
 
     // 提示信息
     tips: {
       noApiKeys: "还没有创建API密钥",
-      noS3Configs: "还没有配置S3存储",
+      noStorageConfigs: "还没有配置存储",
       noActivity: "最近没有活动",
       lowStorage: "存储空间不足",
     },

@@ -47,7 +47,7 @@ export function useFileManagement(userType = "admin") {
 
   const apiGetFile = (id) => api.file.getFile(id);
   const apiUpdateFile = (id, metadata) => api.file.updateFile(id, metadata);
-  const apiBatchDeleteFiles = (ids) => api.file.batchDeleteFiles(ids);
+  const apiBatchDeleteFiles = (ids, mode) => api.file.batchDeleteFiles(ids, mode);
 
   /**
    * 加载文件列表
@@ -103,7 +103,7 @@ export function useFileManagement(userType = "admin") {
     }
 
     return await base.withLoading(async () => {
-      const result = await apiBatchDeleteFiles([file.id]);
+      const result = await apiBatchDeleteFiles([file.id], deleteSettingsStore.getDeleteMode());
 
       if (result.success) {
         base.showSuccess("删除成功");
@@ -455,7 +455,7 @@ export function useFileManagement(userType = "admin") {
       if (file.slug) {
         window.open(getPermanentDownloadUrl(file), "_blank");
       } else {
-        window.open(file.s3_url, "_blank");
+        window.open(file.publicUrl || "", "_blank");
       }
     }
   };

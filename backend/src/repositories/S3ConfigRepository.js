@@ -1,51 +1,68 @@
 /**
- * S3配置Repository类
- * 负责S3配置相关的数据访问操作
- * 职责：纯粹的S3配置数据访问，不包含业务逻辑
+ * S3 配置 Repository（基于 storage_configs + config_json）
+ * - 统一从 storage_configs 读取，驱动私有配置存于 config_json（JSON）
+ * - 返回对象时展开常用字段到顶层（provider_type/bucket_name/...）
+ * - WithSecrets 版本才返回 access_key_id/secret_access_key
  */
-
 import { BaseRepository } from "./BaseRepository.js";
 import { DbTables } from "../constants/index.js";
 
 export class S3ConfigRepository extends BaseRepository {
-  /**
-   * 根据ID获取S3配置
-   * @param {string} configId - 配置ID
-   * @returns {Promise<Object|null>} S3配置对象或null
-   */
+  _inflate(row, { withSecrets = false } = {}) {
+    if (!row) return null;
+    try {
+      if (row.config_json) {
+        const cfg = JSON.parse(row.config_json);
+        const merged = {
+          ...row,
+          provider_type: cfg?.provider_type,
+          endpoint_url: cfg?.endpoint_url,
+          bucket_name: cfg?.bucket_name,
+          region: cfg?.region,
+          path_style: cfg?.path_style,
+          default_folder: cfg?.default_folder,
+          custom_host: cfg?.custom_host,
+          signature_expires_in: cfg?.signature_expires_in,
+          total_storage_bytes: cfg?.total_storage_bytes,
+        };
+        if (withSecrets) {
+          merged.access_key_id = cfg?.access_key_id;
+          merged.secret_access_key = cfg?.secret_access_key;
+        }
+        delete merged.config_json;
+        return merged;
+      }
+    } catch {}
+    const { config_json, ...rest } = row;
+    return rest;
+  }
+
+  _inflateList(rows, { withSecrets = false } = {}) {
+    return Array.isArray(rows) ? rows.map((r) => this._inflate(r, { withSecrets })) : [];
+  }
+
   async findById(configId) {
-    return await super.findById(DbTables.S3_CONFIGS, configId);
+    const row = await super.findById(DbTables.STORAGE_CONFIGS, configId);
+    return this._inflate(row, { withSecrets: false });
   }
 
-  /**
-   * 根据管理员ID获取S3配置列表
-   * @param {string} adminId - 管理员ID
-   * @returns {Promise<Array>} S3配置列表
-   */
+  async findByIdWithSecrets(configId) {
+    const row = await this.queryFirst(`SELECT * FROM ${DbTables.STORAGE_CONFIGS} WHERE id = ?`, [configId]);
+    return this._inflate(row, { withSecrets: true });
+  }
+
   async findByAdmin(adminId) {
-    return await this.findMany(DbTables.S3_CONFIGS, { admin_id: adminId }, { orderBy: "name ASC" });
+    const rows = await this.findMany(DbTables.STORAGE_CONFIGS, { admin_id: adminId }, { orderBy: "name ASC" });
+    return this._inflateList(rows);
   }
 
-  /**
-   * 根据管理员ID获取S3配置列表（分页）
-   * @param {string} adminId - 管理员ID
-   * @param {Object} options - 查询选项
-   * @param {number} [options.page=1] - 页码
-   * @param {number} [options.limit=10] - 每页数量
-   * @returns {Promise<Object>} 包含配置列表和分页信息的对象
-   */
   async findByAdminWithPagination(adminId, options = {}) {
     const { page = 1, limit = 10 } = options;
     const offset = (page - 1) * limit;
-
-    // 获取总数
-    const total = await this.count(DbTables.S3_CONFIGS, { admin_id: adminId });
-
-    // 获取分页数据
-    const configs = await this.findMany(DbTables.S3_CONFIGS, { admin_id: adminId }, { orderBy: "name ASC", limit, offset });
-
+    const total = await this.count(DbTables.STORAGE_CONFIGS, { admin_id: adminId });
+    const rows = await this.findMany(DbTables.STORAGE_CONFIGS, { admin_id: adminId }, { orderBy: "name ASC", limit, offset });
     return {
-      configs,
+      configs: this._inflateList(rows),
       total,
       page,
       limit,
@@ -53,298 +70,199 @@ export class S3ConfigRepository extends BaseRepository {
     };
   }
 
-  /**
-   * 根据提供商类型获取S3配置
-   * @param {string} providerType - 提供商类型
-   * @param {string} adminId - 管理员ID（可选）
-   * @returns {Promise<Array>} S3配置列表
-   */
-  async findByProviderType(providerType, adminId = null) {
-    const conditions = { provider_type: providerType };
+  async findDefault(options = {}) {
+    const { requirePublic = false, adminId = null, withSecrets = false } = options;
+    let sql = `SELECT * FROM ${DbTables.STORAGE_CONFIGS} WHERE is_default = 1`;
+    const params = [];
     if (adminId) {
-      conditions.admin_id = adminId;
+      sql += ` AND admin_id = ?`;
+      params.push(adminId);
     }
-
-    return await this.findMany(DbTables.S3_CONFIGS, conditions, { orderBy: "name ASC" });
+    if (requirePublic) {
+      sql += ` AND is_public = 1`;
+    }
+    sql += ` ORDER BY updated_at DESC LIMIT 1`;
+    const row = await this.queryFirst(sql, params);
+    return this._inflate(row, { withSecrets });
   }
 
-  /**
-   * 创建S3配置
-   * @param {Object} configData - S3配置数据
-   * @returns {Promise<Object>} 创建结果
-   */
-  async createConfig(configData) {
-    // 确保包含必要的时间戳
+  async findFirstPublic(options = {}) {
+    const { withSecrets = false } = options;
+    const row = await this.queryFirst(
+      `SELECT * FROM ${DbTables.STORAGE_CONFIGS} WHERE is_public = 1 ORDER BY is_default DESC, updated_at DESC LIMIT 1`
+    );
+    return this._inflate(row, { withSecrets });
+  }
+
+  async findByProviderType(providerType, adminId = null) {
+    let sql = `SELECT * FROM ${DbTables.STORAGE_CONFIGS} WHERE storage_type='S3' AND json_extract(config_json,'$.provider_type') = ?`;
+    const params = [providerType];
+    if (adminId) {
+      sql += ` AND admin_id = ?`;
+      params.push(adminId);
+    }
+    sql += ` ORDER BY name ASC`;
+    const res = await this.query(sql, params);
+    return this._inflateList(res.results || []);
+  }
+
+  async createConfig(data) {
     const dataWithTimestamp = {
-      ...configData,
-      created_at: configData.created_at || new Date().toISOString(),
-      updated_at: configData.updated_at || new Date().toISOString(),
+      ...data,
+      created_at: data.created_at || new Date().toISOString(),
+      updated_at: data.updated_at || new Date().toISOString(),
     };
-
-    return await this.create(DbTables.S3_CONFIGS, dataWithTimestamp);
+    return await this.create(DbTables.STORAGE_CONFIGS, dataWithTimestamp);
   }
 
-  /**
-   * 更新S3配置
-   * @param {string} configId - 配置ID
-   * @param {Object} updateData - 更新数据
-   * @returns {Promise<Object>} 更新结果
-   */
   async updateConfig(configId, updateData) {
-    // 自动更新修改时间
     const dataWithTimestamp = {
       ...updateData,
       updated_at: new Date().toISOString(),
     };
-
-    return await this.update(DbTables.S3_CONFIGS, configId, dataWithTimestamp);
+    return await this.update(DbTables.STORAGE_CONFIGS, configId, dataWithTimestamp);
   }
 
-  /**
-   * 更新S3配置最后使用时间
-   * @param {string} configId - 配置ID
-   * @returns {Promise<Object>} 更新结果
-   */
   async updateLastUsed(configId) {
-    return await this.execute(`UPDATE ${DbTables.S3_CONFIGS} SET last_used = CURRENT_TIMESTAMP WHERE id = ?`, [configId]);
+    return await this.execute(`UPDATE ${DbTables.STORAGE_CONFIGS} SET last_used = CURRENT_TIMESTAMP WHERE id = ?`, [configId]);
   }
 
-  /**
-   * 删除S3配置
-   * @param {string} configId - 配置ID
-   * @returns {Promise<Object>} 删除结果
-   */
   async deleteConfig(configId) {
-    return await this.delete(DbTables.S3_CONFIGS, configId);
+    return await this.delete(DbTables.STORAGE_CONFIGS, configId);
   }
 
-  /**
-   * 检查配置名称是否已存在
-   * @param {string} name - 配置名称
-   * @param {string} adminId - 管理员ID
-   * @param {string} excludeId - 排除的配置ID（用于更新时检查）
-   * @returns {Promise<boolean>} 是否存在
-   */
   async existsByName(name, adminId, excludeId = null) {
     if (excludeId) {
-      const result = await this.queryFirst(`SELECT id FROM ${DbTables.S3_CONFIGS} WHERE name = ? AND admin_id = ? AND id != ?`, [name, adminId, excludeId]);
+      const result = await this.queryFirst(`SELECT id FROM ${DbTables.STORAGE_CONFIGS} WHERE name = ? AND admin_id = ? AND id != ?`, [name, adminId, excludeId]);
       return !!result;
-    } else {
-      return await this.exists(DbTables.S3_CONFIGS, {
-        name: name,
-        admin_id: adminId,
-      });
     }
+    return await this.exists(DbTables.STORAGE_CONFIGS, { name, admin_id: adminId });
   }
 
-  /**
-   * 获取用户的S3配置数量
-   * @param {string} adminId - 管理员ID
-   * @returns {Promise<number>} 配置数量
-   */
   async countByAdmin(adminId) {
-    return await this.count(DbTables.S3_CONFIGS, { admin_id: adminId });
+    return await this.count(DbTables.STORAGE_CONFIGS, { admin_id: adminId });
   }
 
-  /**
-   * 获取所有S3配置（管理员专用）
-   * @returns {Promise<Array>} 所有S3配置列表
-   */
   async findAll() {
-    return await this.findMany(DbTables.S3_CONFIGS, {}, { orderBy: "admin_id ASC, name ASC" });
+    const rows = await this.findMany(DbTables.STORAGE_CONFIGS, {}, { orderBy: "admin_id ASC, name ASC" });
+    return this._inflateList(rows);
   }
 
-  /**
-   * 根据端点URL查找配置
-   * @param {string} endpointUrl - 端点URL
-   * @param {string} adminId - 管理员ID
-   * @returns {Promise<Array>} S3配置列表
-   */
   async findByEndpoint(endpointUrl, adminId) {
-    return await this.findMany(DbTables.S3_CONFIGS, {
-      endpoint_url: endpointUrl,
-      admin_id: adminId,
-    });
+    const res = await this.query(
+      `SELECT * FROM ${DbTables.STORAGE_CONFIGS} WHERE storage_type='S3' AND json_extract(config_json,'$.endpoint_url') = ? AND admin_id = ? ORDER BY name ASC`,
+      [endpointUrl, adminId]
+    );
+    return this._inflateList(res.results || []);
   }
 
-  /**
-   * 根据存储桶名称查找配置
-   * @param {string} bucketName - 存储桶名称
-   * @param {string} adminId - 管理员ID
-   * @returns {Promise<Array>} S3配置列表
-   */
   async findByBucket(bucketName, adminId) {
-    return await this.findMany(DbTables.S3_CONFIGS, {
-      bucket_name: bucketName,
-      admin_id: adminId,
-    });
+    const res = await this.query(
+      `SELECT * FROM ${DbTables.STORAGE_CONFIGS} WHERE storage_type='S3' AND json_extract(config_json,'$.bucket_name') = ? AND admin_id = ? ORDER BY name ASC`,
+      [bucketName, adminId]
+    );
+    return this._inflateList(res.results || []);
   }
 
-  /**
-   * 获取S3配置统计信息
-   * @param {string} adminId - 管理员ID（可选）
-   * @returns {Promise<Object>} 统计信息
-   */
   async getStatistics(adminId = null) {
     const conditions = adminId ? { admin_id: adminId } : {};
-
-    const total = await this.count(DbTables.S3_CONFIGS, conditions);
-
-    // 按提供商类型统计
+    const total = await this.count(DbTables.STORAGE_CONFIGS, conditions);
     let sql = `
-      SELECT provider_type, COUNT(*) as count 
-      FROM ${DbTables.S3_CONFIGS}
+      SELECT json_extract(config_json,'$.provider_type') AS provider_type, COUNT(*) as count
+      FROM ${DbTables.STORAGE_CONFIGS}
+      WHERE storage_type='S3'
     `;
-
     const params = [];
     if (adminId) {
-      sql += ` WHERE admin_id = ?`;
+      sql += ` AND admin_id = ?`;
       params.push(adminId);
     }
-
     sql += ` GROUP BY provider_type`;
-
     const providerStats = await this.query(sql, params);
-
-    return {
-      total,
-      byProvider: providerStats.results || [],
-    };
+    return { total, byProvider: providerStats.results || [] };
   }
 
-  /**
-   * 查找最近使用的S3配置
-   * @param {string} adminId - 管理员ID
-   * @param {number} limit - 限制数量
-   * @returns {Promise<Array>} S3配置列表
-   */
   async findRecentlyUsed(adminId, limit = 10) {
     const result = await this.query(
       `
-      SELECT * FROM ${DbTables.S3_CONFIGS}
+      SELECT * FROM ${DbTables.STORAGE_CONFIGS}
       WHERE admin_id = ? AND last_used IS NOT NULL
       ORDER BY last_used DESC
       LIMIT ?
       `,
       [adminId, limit]
     );
-
-    return result.results || [];
+    return this._inflateList(result.results || []);
   }
 
-  /**
-   * 批量删除S3配置
-   * @param {Array<string>} configIds - 配置ID数组
-   * @returns {Promise<Object>} 删除结果
-   */
   async batchDelete(configIds) {
     if (!configIds || configIds.length === 0) {
       return { deletedCount: 0, message: "没有要删除的配置" };
     }
-
     const placeholders = configIds.map(() => "?").join(",");
-    const result = await this.execute(`DELETE FROM ${DbTables.S3_CONFIGS} WHERE id IN (${placeholders})`, configIds);
-
-    return {
-      deletedCount: result.meta?.changes || 0,
-      message: `已删除${result.meta?.changes || 0}个S3配置`,
-    };
+    const result = await this.execute(`DELETE FROM ${DbTables.STORAGE_CONFIGS} WHERE id IN (${placeholders})`, configIds);
+    return { deletedCount: result.meta?.changes || 0, message: `已删除${result.meta?.changes || 0}个S3配置` };
   }
 
-  /**
-   * 根据区域查找S3配置
-   * @param {string} region - 区域
-   * @param {string} adminId - 管理员ID
-   * @returns {Promise<Array>} S3配置列表
-   */
   async findByRegion(region, adminId) {
-    return await this.findMany(DbTables.S3_CONFIGS, {
-      region: region,
-      admin_id: adminId,
-    });
+    const res = await this.query(
+      `SELECT * FROM ${DbTables.STORAGE_CONFIGS} WHERE storage_type='S3' AND json_extract(config_json,'$.region') = ? AND admin_id = ? ORDER BY name ASC`,
+      [region, adminId]
+    );
+    return this._inflateList(res.results || []);
   }
 
-  /**
-   * 根据ID和管理员ID获取S3配置
-   * @param {string} configId - 配置ID
-   * @param {string} adminId - 管理员ID
-   * @returns {Promise<Object|null>} S3配置对象或null
-   */
   async findByIdAndAdmin(configId, adminId) {
-    return await this.findOne(DbTables.S3_CONFIGS, {
-      id: configId,
-      admin_id: adminId,
-    });
+    const row = await this.findOne(DbTables.STORAGE_CONFIGS, { id: configId, admin_id: adminId });
+    return this._inflate(row, { withSecrets: false });
   }
 
-  /**
-   * 根据ID和管理员ID获取S3配置（包含敏感字段）
-   * @param {string} configId - 配置ID
-   * @param {string} adminId - 管理员ID
-   * @returns {Promise<Object|null>} S3配置对象或null
-   */
   async findByIdAndAdminWithSecrets(configId, adminId) {
-    // 这个方法需要返回包含access_key_id和secret_access_key的完整配置
-    return await this.queryFirst(`SELECT * FROM ${DbTables.S3_CONFIGS} WHERE id = ? AND admin_id = ?`, [configId, adminId]);
+    const row = await this.queryFirst(`SELECT * FROM ${DbTables.STORAGE_CONFIGS} WHERE id = ? AND admin_id = ?`, [configId, adminId]);
+    return this._inflate(row, { withSecrets: true });
   }
 
-  /**
-   * 获取公开的S3配置列表
-   * @returns {Promise<Array>} 公开的S3配置列表
-   */
   async findPublic() {
-    return await this.findMany(DbTables.S3_CONFIGS, { is_public: 1 }, { orderBy: "name ASC" });
+    const rows = await this.findMany(DbTables.STORAGE_CONFIGS, { is_public: 1 }, { orderBy: "name ASC" });
+    return this._inflateList(rows);
   }
 
-  /**
-   * 根据ID获取公开的S3配置
-   * @param {string} configId - 配置ID
-   * @returns {Promise<Object|null>} S3配置对象或null
-   */
   async findPublicById(configId) {
-    return await this.findOne(DbTables.S3_CONFIGS, {
-      id: configId,
-      is_public: 1,
-    });
+    const row = await this.findOne(DbTables.STORAGE_CONFIGS, { id: configId, is_public: 1 });
+    return this._inflate(row, { withSecrets: false });
   }
 
-  /**
-   * 设置默认S3配置
-   * @param {string} configId - 配置ID
-   * @param {string} adminId - 管理员ID
-   * @returns {Promise<void>}
-   */
   async setAsDefault(configId, adminId) {
-    // 使用事务操作：先将所有配置设为非默认，再设置指定配置为默认
     await this.db.batch([
-      this.db.prepare(`UPDATE ${DbTables.S3_CONFIGS} SET is_default = 0, updated_at = CURRENT_TIMESTAMP WHERE admin_id = ?`).bind(adminId),
-      this.db.prepare(`UPDATE ${DbTables.S3_CONFIGS} SET is_default = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).bind(configId),
+      this.db.prepare(`UPDATE ${DbTables.STORAGE_CONFIGS} SET is_default = 0, updated_at = CURRENT_TIMESTAMP WHERE admin_id = ?`).bind(adminId),
+      this.db.prepare(`UPDATE ${DbTables.STORAGE_CONFIGS} SET is_default = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).bind(configId),
     ]);
   }
 
-  /**
-   * 获取带使用情况的S3配置列表
-   * @returns {Promise<Array>} S3配置列表
-   */
   async findAllWithUsage() {
-    // 获取所有S3配置
     const queryResult = await this.query(
-      `SELECT id, name, provider_type, endpoint_url, bucket_name, region, path_style, default_folder,
-              is_public, is_default, created_at, updated_at, last_used, total_storage_bytes, admin_id,
-              custom_host, signature_expires_in
-       FROM ${DbTables.S3_CONFIGS}
+      `SELECT id, name, storage_type, admin_id, is_public, is_default, created_at, updated_at, last_used,
+              json_extract(config_json,'$.provider_type') AS provider_type,
+              json_extract(config_json,'$.endpoint_url') AS endpoint_url,
+              json_extract(config_json,'$.bucket_name') AS bucket_name,
+              json_extract(config_json,'$.region') AS region,
+              json_extract(config_json,'$.path_style') AS path_style,
+              json_extract(config_json,'$.default_folder') AS default_folder,
+              json_extract(config_json,'$.custom_host') AS custom_host,
+              json_extract(config_json,'$.signature_expires_in') AS signature_expires_in,
+              json_extract(config_json,'$.total_storage_bytes') AS total_storage_bytes
+       FROM ${DbTables.STORAGE_CONFIGS}
        ORDER BY name ASC`
     );
     const configs = queryResult.results || [];
-
-    // 为每个配置查询使用情况
     const result = [];
     for (const config of configs) {
-      const usage = await this.queryFirst(`SELECT COUNT(*) as file_count, SUM(size) as total_size FROM ${DbTables.FILES} WHERE storage_type = ? AND storage_config_id = ?`, [
-        "S3",
-        config.id,
-      ]);
-
+      const usage = await this.queryFirst(
+        `SELECT COUNT(*) as file_count, SUM(size) as total_size 
+         FROM ${DbTables.FILES} 
+         WHERE storage_config_id = ?`,
+        [config.id]
+      );
       result.push({
         ...config,
         usage: {
@@ -353,7 +271,6 @@ export class S3ConfigRepository extends BaseRepository {
         },
       });
     }
-
     return result;
   }
 }

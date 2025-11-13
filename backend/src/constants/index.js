@@ -8,7 +8,7 @@ export const DbTables = {
   ADMIN_TOKENS: "admin_tokens", // 管理员令牌表
   PASTES: "pastes", // 文本表
   API_KEYS: "api_keys", // API密钥表
-  S3_CONFIGS: "s3_configs", // S3配置表
+  STORAGE_CONFIGS: "storage_configs", // 通用“存储配置表”
   FILES: "files", // 文件表
   FILE_PASSWORDS: "file_passwords", // 文件明文密码表
   SYSTEM_SETTINGS: "system_settings", // 系统设置表
@@ -64,4 +64,11 @@ export const S3ProviderTypes = {
   AWS: "AWS S3",
   ALIYUN_OSS: "Aliyun OSS",
   OTHER: "Other S3 Compatible",
+};
+
+// 统一的用户类型常量（供服务层/能力层使用）
+export const UserType = {
+  ADMIN: "admin",
+  API_KEY: "apiKey",
+  GUEST: "guest",
 };

@@ -1,12 +1,11 @@
 /**
  * S3搜索操作模块
  * 负责S3存储的搜索相关操作
- * 从searchService.js迁移而来，符合存储驱动架构
  */
 
 import { HTTPException } from "hono/http-exception";
 import { ApiStatus } from "../../../../constants/index.js";
-import { listS3Directory } from "../../../../utils/s3Utils.js";
+import { listS3Directory } from "../utils/s3Utils.js";
 import { normalizeS3SubPath } from "../utils/S3PathUtils.js";
 import { getEffectiveMimeType } from "../../../../utils/fileUtils.js";
 import { GetFileType, getFileTypeName } from "../../../../utils/fileTypeDetector.js";

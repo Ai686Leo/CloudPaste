@@ -93,18 +93,32 @@ export function buildSignedProxyUrl(request, path, options = {}) {
     return buildFullProxyUrl(request, path, download);
   }
 
-  const baseUrl = buildFullProxyUrl(request, path, download);
-  const url = new URL(baseUrl);
+  // 构建基础路径（可能是相对路径）
+  const proxyPath = buildProxyPath(path, download);
 
-  // 添加签名参数
-  url.searchParams.set(PROXY_CONFIG.SIGN_PARAM, signature);
+  // 尝试在 request 的上下文中构建绝对URL；失败时回退到相对路径并直接拼接查询串
+  try {
+    const base = request ? new URL(request.url) : null;
+    const url = base ? new URL(proxyPath, base) : new URL(proxyPath, "http://localhost");
 
-  // 预览时添加时间戳参数
-  if (!download && requestTimestamp) {
-    url.searchParams.set(PROXY_CONFIG.TIMESTAMP_PARAM, requestTimestamp);
+    // 添加签名参数
+    url.searchParams.set(PROXY_CONFIG.SIGN_PARAM, signature);
+
+    // 预览时添加时间戳参数
+    if (!download && requestTimestamp) {
+      url.searchParams.set(PROXY_CONFIG.TIMESTAMP_PARAM, requestTimestamp);
+    }
+
+    return url.toString();
+  } catch (error) {
+    // 保底：构建相对URL并拼接查询参数，避免抛出异常影响上游流程
+    const hasQuery = proxyPath.includes("?");
+    let result = proxyPath + (hasQuery ? "&" : "?") + `${PROXY_CONFIG.SIGN_PARAM}=${encodeURIComponent(signature)}`;
+    if (!download && requestTimestamp) {
+      result += `&${PROXY_CONFIG.TIMESTAMP_PARAM}=${encodeURIComponent(requestTimestamp)}`;
+    }
+    return result;
   }
-
-  return url.toString();
 }
 
 /**

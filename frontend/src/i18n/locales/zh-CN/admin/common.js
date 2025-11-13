@@ -36,7 +36,7 @@ export default {
     dashboard: "仪表板",
     textManagement: "文本管理",
     fileManagement: "文件管理",
-    storageConfig: "S3存储配置",
+    storageConfig: "存储管理",
     mountManagement: "挂载管理",
     keyManagement: "密钥管理",
     backup: "数据备份",

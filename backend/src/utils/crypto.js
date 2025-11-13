@@ -65,6 +65,14 @@ export async function encryptValue(value, secret) {
  */
 export async function decryptValue(encryptedValue, secret) {
   // 检查是否为加密值
+  if (encryptedValue === undefined || encryptedValue === null) {
+    // 容错：未提供值时按原样返回，避免空值触发运行时错误
+    return encryptedValue;
+  }
+  if (typeof encryptedValue !== "string") {
+    // 非字符串直接返回（保持向后兼容，不在此抛错）
+    return encryptedValue;
+  }
   if (!encryptedValue.startsWith("encrypted:")) {
     return encryptedValue; // 未加密的值直接返回
   }
@@ -82,4 +90,56 @@ export async function decryptValue(encryptedValue, secret) {
   } catch (error) {
     throw new Error("解密失败: " + error.message);
   }
+}
+
+/**
+ * 对密钥进行掩码展示
+ * @param {string|null|undefined} secret
+ * @param {number} visibleTail 显示尾部多少位
+ * @returns {string|null|undefined}
+ */
+export function maskSecret(secret, visibleTail = 4) {
+  if (!secret || typeof secret !== "string") return secret;
+  if (secret.length <= visibleTail) return "*".repeat(Math.max(0, secret.length));
+  return "*".repeat(secret.length - visibleTail) + secret.slice(-visibleTail);
+}
+
+/**
+ * 如是加密格式则解密，否则直返原值（兼容历史明文）
+ * @param {string|null|undefined} value
+ * @param {string} encryptionSecret
+ * @returns {Promise<string|null|undefined>}
+ */
+export async function decryptIfNeeded(value, encryptionSecret) {
+  if (value === null || value === undefined) return value;
+  if (typeof value !== "string") return value;
+  return await decryptValue(value, encryptionSecret);
+}
+
+/**
+ * 生成前端可控的密钥展示对象
+ * @param {object} cfg 原始配置对象（包含密钥字段）
+ * @param {string} encryptionSecret
+ * @param {{mode:'none'|'masked'|'plain'}} options
+ * @returns {Promise<object>} 带 access_key_id/secret_access_key 处理后的对象
+ */
+export async function buildSecretView(cfg, encryptionSecret, options = { mode: "none" }) {
+  const mode = options.mode || "none";
+  const result = { ...cfg };
+  if (mode === "none") {
+    delete result.access_key_id;
+    delete result.secret_access_key;
+    return result;
+  }
+  if (mode === "masked") {
+    result.access_key_id = maskSecret(await decryptIfNeeded(cfg.access_key_id, encryptionSecret));
+    result.secret_access_key = maskSecret(await decryptIfNeeded(cfg.secret_access_key, encryptionSecret));
+    return result;
+  }
+  if (mode === "plain") {
+    result.access_key_id = await decryptIfNeeded(cfg.access_key_id, encryptionSecret);
+    result.secret_access_key = await decryptIfNeeded(cfg.secret_access_key, encryptionSecret);
+    return result;
+  }
+  return result;
 }

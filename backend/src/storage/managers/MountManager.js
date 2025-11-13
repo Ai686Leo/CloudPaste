@@ -10,6 +10,14 @@ import { HTTPException } from "hono/http-exception";
 import { ApiStatus } from "../../constants/index.js";
 import { findMountPointByPath } from "../fs/utils/MountResolver.js";
 import { StorageConfigUtils } from "../utils/StorageConfigUtils.js";
+import { getAccessibleMountsForUser } from "../../security/helpers/access.js";
+import { ensureRepositoryFactory } from "../../utils/repositories.js";
+import { UserType } from "../../constants/index.js";
+import asHTTPException from "../utils/fsError.js";
+
+// MountManager 的权限触点只剩 `_validateMountPermissionForApiKey`，
+// 它依赖 security/access 的工具保证 basicPath + S3 公共性一致，
+// 因而这里不再直接引用任何 authGateway 逻辑。
 
 // 全局驱动缓存 - 永不过期策略，配置更新时主动清理
 const globalDriverCache = new Map();
@@ -75,9 +83,10 @@ export class MountManager {
    * @param {D1Database} db - 数据库实例
    * @param {string} encryptionSecret - 加密密钥
    */
-  constructor(db, encryptionSecret) {
+  constructor(db, encryptionSecret, repositoryFactory = null) {
     this.db = db;
     this.encryptionSecret = encryptionSecret;
+    this.repositoryFactory = ensureRepositoryFactory(db, repositoryFactory);
 
     // 记录管理器创建时间，用于统计
     this.createdAt = Date.now();
@@ -92,7 +101,7 @@ export class MountManager {
    */
   async getDriverByPath(path, userIdOrInfo, userType) {
     // 查找挂载点
-    const mountResult = await findMountPointByPath(this.db, path, userIdOrInfo, userType);
+    const mountResult = await findMountPointByPath(this.db, path, userIdOrInfo, userType, this.repositoryFactory);
 
     if (mountResult.error) {
       throw new HTTPException(mountResult.error.status, { message: mountResult.error.message });
@@ -101,7 +110,7 @@ export class MountManager {
     const { mount, subPath } = mountResult;
 
     // 对API密钥用户验证挂载点S3配置权限
-    if (userType === "apiKey") {
+    if (userType === UserType.API_KEY) {
       await this._validateMountPermissionForApiKey(mount, userIdOrInfo);
     }
 
@@ -180,9 +189,7 @@ export class MountManager {
         const isLastAttempt = i === maxRetries - 1;
         if (isLastAttempt) {
           cacheStats.errors++;
-          throw new HTTPException(ApiStatus.INTERNAL_ERROR, {
-            message: `存储驱动创建失败: ${error.message}`,
-          });
+          throw asHTTPException(error, "存储驱动创建失败");
         }
 
         // 指数退避：1秒、2秒、3秒
@@ -229,8 +236,7 @@ export class MountManager {
   async _validateMountPermissionForApiKey(mount, userIdOrInfo) {
     try {
       // 获取可访问的挂载点列表（已包含S3配置权限过滤）
-      const { authGateway } = await import("../../middlewares/authGatewayMiddleware.js");
-      const accessibleMounts = await authGateway.utils.getAccessibleMounts(this.db, userIdOrInfo, "apiKey");
+      const accessibleMounts = await getAccessibleMountsForUser(this.db, userIdOrInfo, UserType.API_KEY, this.repositoryFactory);
 
       // 验证目标挂载点是否在可访问列表中
       const isAccessible = accessibleMounts.some((accessibleMount) => accessibleMount.id === mount.id);

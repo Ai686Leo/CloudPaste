@@ -4,7 +4,7 @@
 
 -- 删除已有表（如果需要重新创建）
 DROP TABLE IF EXISTS files;
-DROP TABLE IF EXISTS s3_configs;
+DROP TABLE IF EXISTS storage_configs;
 DROP TABLE IF EXISTS api_keys;
 DROP TABLE IF EXISTS admin_tokens;
 DROP TABLE IF EXISTS admins;
@@ -66,29 +66,26 @@ CREATE TABLE api_keys (
   expires_at DATETIME NOT NULL
 );
 
--- 创建s3_configs表 - 存储S3配置信息
-CREATE TABLE s3_configs (
+-- 创建 storage_configs 表 - 聚合（驱动私有配置存入 config_json）
+CREATE TABLE storage_configs (
   id TEXT PRIMARY KEY,                 -- 配置唯一标识
-  name TEXT NOT NULL,                  -- 配置名称（用户友好的名称，如"我的项目备份B2"）
-  provider_type TEXT NOT NULL,         -- 提供商类型（Cloudflare R2, Backblaze B2, AWS S3, 其他）
-  endpoint_url TEXT NOT NULL,          -- S3 API端点URL
-  bucket_name TEXT NOT NULL,           -- 存储桶名称
-  region TEXT,                         -- 存储桶区域（对AWS S3必须，对其他可选）
-  access_key_id TEXT NOT NULL,         -- 访问密钥ID（加密存储）
-  secret_access_key TEXT NOT NULL,     -- 秘密访问密钥（加密存储）
-  path_style BOOLEAN DEFAULT 0,        -- 是否使用路径样式访问（1=是，0=否）
-  default_folder TEXT DEFAULT '',      -- 默认上传文件夹路径
-  is_public BOOLEAN DEFAULT 0,         -- 是否为公开允许API密钥用户使用
-  is_default BOOLEAN DEFAULT 0,       -- 是否为默认配置
-  total_storage_bytes BIGINT,          -- 存储桶总容量（字节数），用于计算使用百分比，NULL表示使用默认值
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  last_used DATETIME,                  -- 最后使用时间
-  admin_id TEXT,                       -- 关联的管理员ID
-  custom_host TEXT,                    -- 自定义域名/CDN域名
-  signature_expires_in INTEGER DEFAULT 3600, -- 签名有效期（秒）
-  FOREIGN KEY (admin_id) REFERENCES admins(id) ON DELETE CASCADE
+  name TEXT NOT NULL,                  -- 配置名称
+  storage_type TEXT NOT NULL,          -- 存储类型（S3/WebDAV/…）
+  admin_id TEXT,                       -- 归属管理员（允许NULL以兼容/预留）
+  is_public INTEGER NOT NULL DEFAULT 0,
+  is_default INTEGER NOT NULL DEFAULT 0,
+  remark TEXT,
+  status TEXT NOT NULL DEFAULT 'ENABLED',
+  config_json TEXT NOT NULL,           -- 驱动私有配置（JSON，敏感字段加密后存入）
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  last_used DATETIME
 );
+-- 索引与唯一约束
+CREATE INDEX idx_storage_admin ON storage_configs(admin_id);
+CREATE INDEX idx_storage_type ON storage_configs(storage_type);
+CREATE INDEX idx_storage_public ON storage_configs(is_public);
+CREATE UNIQUE INDEX idx_default_per_admin ON storage_configs(admin_id) WHERE is_default = 1;
 
 -- 创建files表 - 存储已上传文件的元数据（支持多存储类型）
 CREATE TABLE files (
@@ -166,7 +163,7 @@ CREATE TABLE storage_mounts (
   id TEXT PRIMARY KEY,                  -- 唯一标识
   name TEXT NOT NULL,                   -- 挂载点名称
   storage_type TEXT NOT NULL,           -- 存储类型(S3, WebDAV等)
-  storage_config_id TEXT,               -- 关联的存储配置ID (对S3类型，关联s3_configs表)
+  storage_config_id TEXT,               -- 关联的通用存储配置ID（storage_configs.id）
   mount_path TEXT NOT NULL,             -- 挂载路径，如 /photos
   remark TEXT,                          -- 备注说明
   is_active BOOLEAN DEFAULT 1,          -- 是否启用
@@ -211,32 +208,14 @@ VALUES (
 );
 
 -- 插入示例S3配置（加密密钥仅作示例，实际应用中应当由系统加密存储）
-INSERT INTO s3_configs (
-  id,
-  name,
-  provider_type,
-  endpoint_url,
-  bucket_name,
-  region,
-  access_key_id,
-  secret_access_key,
-  path_style,
-  default_folder,
-  admin_id,
-  custom_host,
-  signature_expires_in
+INSERT INTO storage_configs (
+  id, name, storage_type, admin_id, is_public, is_default, remark, status, config_json, created_at, updated_at, last_used
 ) VALUES (
   '22222222-2222-2222-2222-222222222222',
   'Cloudflare R2存储',
-  'Cloudflare R2',
-  'https://account-id.r2.cloudflarestorage.com',
-  'my-cloudpaste-bucket',
-  'auto',
-  'encrypted:access-key-id-placeholder',
-  'encrypted:secret-access-key-placeholder',
-  0,
-  'uploads/',
+  'S3',
   '00000000-0000-0000-0000-000000000000',
-  NULL,
-  3600
+  0, 0, NULL, 'ENABLED',
+  '{"provider_type":"Cloudflare R2","endpoint_url":"https://account-id.r2.cloudflarestorage.com","bucket_name":"my-cloudpaste-bucket","region":"auto","path_style":0,"default_folder":"uploads/","custom_host":null,"signature_expires_in":3600,"total_storage_bytes":null,"access_key_id":"encrypted:access-key-id-placeholder","secret_access_key":"encrypted:secret-access-key-placeholder"}',
+  CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL
 );

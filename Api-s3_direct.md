@@ -26,12 +26,12 @@ https://{域名}/api/upload-direct/{filename}
 | ----------------- | ------ | ---- | -------- | ------------------------------------------------------------------------------------------- |
 | slug              | string | 否   | 自动生成 | 自定义短链接，用于访问文件。只能包含字母、数字、下划线和横杠。                              |
 | path              | string | 否   | 空       | 自定义路径，文件将存储在这个路径下。如果提供，会自动添加斜杠作为目录路径。                  |
-| s3_config_id      | string | 否   | 默认配置 | 指定 S3 配置 ID。若不提供，系统将选择默认配置。API 密钥用户只能使用公开配置。               |
+| storage_config_id | string | 否   | 默认配置 | 指定存储配置 ID。若不提供，系统选择默认配置（API 密钥用户仅可使用公开配置）。 |
 | expires_in        | number | 否   | 0        | 文件过期时间（小时）。0 表示永不过期。                                                      |
 | max_views         | number | 否   | 0        | 文件最大查看次数。0 表示无限制。                                                            |
 | remark            | string | 否   | 空       | 文件备注信息。                                                                              |
 | password          | string | 否   | 空       | 访问密码，设置后需要密码才能访问文件。                                                      |
-| use_proxy         | string | 否   | "1"      | 是否使用代理访问。"1"表示使用代理，"0"表示直接访问 S3。                                     |
+| use_proxy         | string | 否   | 0        | 是否使用代理访问。默认直链（0），传 "1" 可强制走代理。                                         |
 | override          | string | 否   | "false"  | 是否覆盖同名 slug 的已存在文件。"true"表示覆盖，"false"表示不覆盖。只能覆盖自己创建的文件。 |
 | original_filename | string | 否   | "false"  | 是否使用原始文件名存储。"true"表示使用原始文件名，"false"表示添加随机前缀。                 |
 
@@ -73,14 +73,9 @@ https://{域名}/api/upload-direct/{filename}
     // 主要访问URL（根据use_proxy参数决定使用代理还是直接URL）
     "previewUrl": "https://...", // 预览URL
     "downloadUrl": "https://...", // 下载URL
-
-    // 直接S3访问URL (预签名，不包含密码参数)
-    "s3_direct_preview_url": "https://...", // S3直接预览URL
-    "s3_direct_download_url": "https://...", // S3直接下载URL
-
-    // 代理访问URL (通过服务器，包含密码参数)
-    "proxy_preview_url": "https://...", // 代理预览URL
-    "proxy_download_url": "https://...", // 代理下载URL
+    // 当 use_proxy=0 时，previewUrl/downloadUrl 为直链；use_proxy=1 则返回代理端点
+    "proxy_preview_url": "https://...", // 代理预览URL（总是可用）
+    "proxy_download_url": "https://...", // 代理下载URL（总是可用）
 
     // 其他信息
     "use_proxy": 1, // 是否使用代理 (1=代理, 0=直接)
@@ -91,7 +86,7 @@ https://{域名}/api/upload-direct/{filename}
 }
 ```
 
-> **注意**: 当上传时设置了`password`参数，返回的**代理访问 URL**（proxy_preview_url 和 proxy_download_url）将自动包含密码参数，使用户能够直接通过这些链接访问受密码保护的文件，而无需再次输入密码。S3 直接访问 URL 不会包含密码参数，因为它们是预签名 URL，添加额外参数会使其失效。
+> **注意**: 当上传时设置了`password`参数，返回的**代理访问 URL**（proxy_preview_url 和 proxy_download_url）将自动包含密码参数，使用户能够直接通过这些链接访问受密码保护的文件，而无需再次输入密码。公共直链（publicUrl）为预签名 URL，不包含密码参数。
 
 ## 授权方式
 

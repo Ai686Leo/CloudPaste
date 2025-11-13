@@ -3,15 +3,15 @@
  * 文件业务逻辑，通过Repository访问数据
  */
 
-import { generatePresignedUrl } from "../utils/s3Utils.js";
-import { FileRepository, S3ConfigRepository } from "../repositories/index.js";
+// 统一改为通过 StorageFactory/Driver 能力获取直链或使用代理URL
+import { FileRepository } from "../repositories/index.js";
 import { StorageConfigUtils } from "../storage/utils/StorageConfigUtils.js";
 import { StorageFactory } from "../storage/factory/StorageFactory.js";
 import { GetFileType, getFileTypeName } from "../utils/fileTypeDetector.js";
 import { validateSlugFormat } from "../utils/common.js";
 import { hashPassword } from "../utils/crypto.js";
 import { HTTPException } from "hono/http-exception";
-import { ApiStatus, DbTables } from "../constants/index.js";
+import { ApiStatus, DbTables, UserType } from "../constants/index.js";
 
 export class FileService {
   /**
@@ -23,7 +23,6 @@ export class FileService {
     this.db = db;
     this.encryptionSecret = encryptionSecret;
     this.fileRepository = new FileRepository(db);
-    this.s3ConfigRepository = new S3ConfigRepository(db);
   }
 
   /**
@@ -131,55 +130,75 @@ export class FileService {
    * @returns {Promise<Object>} 包含预览链接和下载链接的对象
    */
   async generateFileDownloadUrl(file, encryptionSecret, request = null) {
-    let previewUrl = file.s3_url; // 默认使用原始URL作为回退
-    let downloadUrl = file.s3_url; // 默认使用原始URL作为回退
+    // 同时准备直链与代理链路，最终根据 use_proxy 选择默认输出
+    let previewUrl = "";
+    let downloadUrl = "";
+    let directPreviewUrl = "";
+    let directDownloadUrl = "";
 
-    // 获取当前域名作为基础URL
+    // 获取当前域名作为基础URL（用于构建绝对代理链接）
     let baseUrl = "";
     if (request) {
       try {
         const url = new URL(request.url);
-        baseUrl = url.origin; // 包含协议和域名，如 https://example.com
+        baseUrl = url.origin;
       } catch (error) {
         console.error("解析请求URL出错:", error);
-        // 如果解析失败，baseUrl保持为空字符串
       }
     }
 
-    // 构建代理URL，确保使用完整的绝对URL
     let proxyPreviewUrl = baseUrl ? `${baseUrl}/api/file-view/${file.slug}` : `/api/file-view/${file.slug}`;
     let proxyDownloadUrl = baseUrl ? `${baseUrl}/api/file-download/${file.slug}` : `/api/file-download/${file.slug}`;
 
-    // 根据存储类型生成预览和下载URL
-    if (file.storage_config_id && file.storage_path && file.storage_type) {
-      if (file.storage_type === "S3") {
-        const s3Config = await this.s3ConfigRepository.findById(file.storage_config_id);
-        if (s3Config) {
-          try {
-            // 生成预览URL，使用S3配置的默认时效
-            // 注意：文件分享页面没有用户上下文，禁用缓存避免权限泄露
-            previewUrl = await generatePresignedUrl(s3Config, file.storage_path, encryptionSecret, null, false, null, { enableCache: false });
+    // 如果存在明文密码，将其追加到代理链接中，便于一次性访问
+    const plainPassword = file.password_plain || file.plain_password || file.passwordPlain || null;
+    const appendPasswordParam = (url) => {
+      if (!plainPassword || !url) return url;
+      const separator = url.includes("?") ? "&" : "?";
+      return `${url}${separator}password=${encodeURIComponent(plainPassword)}`;
+    };
+    proxyPreviewUrl = appendPasswordParam(proxyPreviewUrl);
+    proxyDownloadUrl = appendPasswordParam(proxyDownloadUrl);
 
-            // 生成下载URL，使用S3配置的默认时效，强制下载
-            downloadUrl = await generatePresignedUrl(s3Config, file.storage_path, encryptionSecret, null, true, null, { enableCache: false });
-          } catch (error) {
-            console.error("生成预签名URL错误:", error);
-            // 如果生成预签名URL失败，回退到使用原始S3 URL
-          }
+    // 尝试生成直链（预签名 URL）
+    const tryGenerateDirectUrl = async (forceDownload) => {
+      if (!file?.storage_type || !file?.storage_path) return "";
+      try {
+        const driver = await this.getStorageDriver(file);
+        if (!driver?.generatePresignedUrl) return "";
+        const result = await driver.generatePresignedUrl(file.storage_path, {
+          subPath: file.storage_path,
+          forceDownload,
+          expiresIn: null,
+        });
+        if (!result) return "";
+        if (typeof result === "string") return result;
+        if (typeof result === "object") {
+          return result.url || result.downloadUrl || result.previewUrl || result.presignedUrl || "";
         }
+        return "";
+      } catch (error) {
+        console.warn("生成直链失败（已回退代理）:", error?.message || error);
+        return "";
       }
-      // 未来可以在这里添加其他存储类型的处理逻辑
-      // else if (file.storage_type === "WebDAV") {
-      //   // WebDAV存储类型的URL生成逻辑
-      // }
-    }
+    };
+
+    directPreviewUrl = await tryGenerateDirectUrl(false);
+    directDownloadUrl = await tryGenerateDirectUrl(true);
+
+    const useProxyFlag = file.use_proxy ?? 0;
+
+    previewUrl = useProxyFlag === 1 || !directPreviewUrl ? proxyPreviewUrl : directPreviewUrl;
+    downloadUrl = useProxyFlag === 1 || !directDownloadUrl ? proxyDownloadUrl : directDownloadUrl;
 
     return {
       previewUrl,
       downloadUrl,
       proxyPreviewUrl,
       proxyDownloadUrl,
-      use_proxy: file.use_proxy || 0,
+      directPreviewUrl,
+      directDownloadUrl,
+      use_proxy: useProxyFlag,
     };
   }
 
@@ -195,8 +214,8 @@ export class FileService {
     const useProxy = urlsObj?.use_proxy !== undefined ? urlsObj.use_proxy : file.use_proxy || 0;
 
     // 根据是否使用代理选择URL
-    const effectivePreviewUrl = useProxy === 1 ? urlsObj?.proxyPreviewUrl : urlsObj?.previewUrl || file.s3_url;
-    const effectiveDownloadUrl = useProxy === 1 ? urlsObj?.proxyDownloadUrl : urlsObj?.downloadUrl || file.s3_url;
+    const effectivePreviewUrl = useProxy === 1 ? urlsObj?.proxyPreviewUrl : urlsObj?.previewUrl;
+    const effectiveDownloadUrl = useProxy === 1 ? urlsObj?.proxyDownloadUrl : urlsObj?.downloadUrl;
 
     // 获取文件类型
     const fileType = await GetFileType(file.filename, this.db);
@@ -216,8 +235,6 @@ export class FileService {
       expires_at: file.expires_at,
       previewUrl: effectivePreviewUrl,
       downloadUrl: effectiveDownloadUrl,
-      s3_direct_preview_url: urlsObj?.previewUrl || file.s3_url,
-      s3_direct_download_url: urlsObj?.downloadUrl || file.s3_url,
       proxy_preview_url: urlsObj?.proxyPreviewUrl,
       proxy_download_url: urlsObj?.proxyDownloadUrl,
       use_proxy: useProxy,
@@ -271,7 +288,7 @@ export class FileService {
 
     // 检查文件是否存在并验证权限
     let existingFile;
-    if (userType === "admin") {
+    if (userType === UserType.ADMIN) {
       // 管理员：可以更新任何文件
       existingFile = await this.fileRepository.findById(fileId);
       if (!existingFile) {
@@ -324,7 +341,7 @@ export class FileService {
     }
 
     // 如果没有要更新的字段（API密钥用户需要检查）
-    if (userType === "apikey" && Object.keys(finalUpdateData).length === 0) {
+    if (userType === UserType.API_KEY && Object.keys(finalUpdateData).length === 0) {
       throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "没有提供有效的更新字段" });
     }
 
@@ -357,7 +374,7 @@ export class FileService {
 
     // 检查slug是否可用 (不与其他文件冲突)
     let slugExistsCheck;
-    if (userType === "admin") {
+    if (userType === UserType.ADMIN) {
       slugExistsCheck = await this.fileRepository.findBySlug(slug);
       if (slugExistsCheck && slugExistsCheck.id !== fileId) {
         throw new HTTPException(ApiStatus.CONFLICT, {
@@ -660,7 +677,7 @@ export class FileService {
   }
 }
 
-// 为了保持向后兼容，导出一些静态方法
+// 静态便捷方法（供路由直接调用）
 export async function getFileBySlug(db, slug, encryptionSecret) {
   const fileService = new FileService(db, encryptionSecret);
   return await fileService.getFileBySlug(slug);

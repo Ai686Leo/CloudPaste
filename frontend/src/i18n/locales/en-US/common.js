@@ -69,7 +69,7 @@ export default {
       dashboard: "Dashboard",
       textManagement: "Text Management",
       fileManagement: "File Management",
-      storageConfig: "S3 Storage Config",
+      storageConfig: "Storage Management",
       mountManagement: "Mount Management",
       keyManagement: "Key Management",
       settings: "System Settings",

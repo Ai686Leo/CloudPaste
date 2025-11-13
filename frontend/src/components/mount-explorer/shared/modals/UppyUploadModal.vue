@@ -245,7 +245,7 @@ import "@uppy/image-editor/dist/style.min.css";
 import "@uppy/url/dist/style.min.css";
 
 // 导入S3适配器和ServerResumePlugin插件
-import { S3Adapter } from "../../../../composables/uppy/S3Adapter.js";
+import { StorageAdapter } from "../../../../composables/uppy/StorageAdapter.js";
 import ServerResumePlugin from "../../../../composables/uppy/ServerResumePlugin.js";
 
 // 导入API配置
@@ -314,7 +314,7 @@ let pluginManager = null;
 
 // Uppy实例和适配器
 let uppyInstance = null;
-let s3Adapter = null;
+let storageAdapter = null;
 
 /**
  * 获取Dashboard插件配置
@@ -397,7 +397,7 @@ const setupUppyCore = () => {
   console.log("[Uppy] 开始初始化");
 
   // 创建S3适配器
-  s3Adapter = new S3Adapter(props.currentPath);
+  storageAdapter = new StorageAdapter(props.currentPath);
 
   // 创建Uppy实例
   uppyInstance = new Uppy({
@@ -408,8 +408,8 @@ const setupUppyCore = () => {
     locale: getUppyLocale(), // 根据当前语言动态选择locale
   });
 
-  // 设置S3Adapter的Uppy实例引用
-  s3Adapter.setUppyInstance(uppyInstance);
+  // 设置StorageAdapter的Uppy实例引用
+  storageAdapter.setUppyInstance(uppyInstance);
 
   // 创建插件管理器
   pluginManager = createUppyPluginManager(uppyInstance, locale.value);
@@ -452,14 +452,14 @@ const configureUploadMethod = () => {
       formData: true,
       fieldName: "file",
       allowedMetaFields: ["path", "use_multipart"], // 允许这些metadata字段被发送
-      headers: () => s3Adapter?.getAuthHeaders() || {}, // 委托给业务逻辑层
+      headers: () => storageAdapter?.getAuthHeaders() || {}, // 委托给业务逻辑层
       limit: 3,
       getResponseData: (xhr) => {
         // 遵循项目中原生XMLHttpRequest的一致模式
         if (xhr.status >= 200 && xhr.status < 300) {
           const data = JSON.parse(xhr.responseText);
           return {
-            uploadURL: data.data?.url || data.data?.s3Url || "",
+            uploadURL: data.data?.publicUrl || "",
           };
         } else {
           throw new Error(`上传失败: ${xhr.status} ${xhr.statusText}`);
@@ -475,13 +475,13 @@ const configureUploadMethod = () => {
         return uploadMethod.value === "multipart";
       },
       limit: 3,
-      getUploadParameters: s3Adapter.getUploadParameters.bind(s3Adapter),
-      createMultipartUpload: s3Adapter.createMultipartUpload.bind(s3Adapter),
-      signPart: s3Adapter.signPart.bind(s3Adapter),
-      completeMultipartUpload: s3Adapter.completeMultipartUpload.bind(s3Adapter),
-      abortMultipartUpload: s3Adapter.abortMultipartUpload.bind(s3Adapter),
-      listParts: s3Adapter.listParts.bind(s3Adapter),
-      uploadPartBytes: s3Adapter.uploadPartBytes.bind(s3Adapter),
+      getUploadParameters: storageAdapter.getUploadParameters.bind(storageAdapter),
+      createMultipartUpload: storageAdapter.createMultipartUpload.bind(storageAdapter),
+      signPart: storageAdapter.signPart.bind(storageAdapter),
+      completeMultipartUpload: storageAdapter.completeMultipartUpload.bind(storageAdapter),
+      abortMultipartUpload: storageAdapter.abortMultipartUpload.bind(storageAdapter),
+      listParts: storageAdapter.listParts.bind(storageAdapter),
+      uploadPartBytes: storageAdapter.uploadPartBytes.bind(storageAdapter),
     });
   }
 };
@@ -617,9 +617,9 @@ const setupUploadEvents = (customPausedFiles) => {
       if (fileID) {
         // 单个文件暂停
         customPausedFiles.add(fileID);
-        // 同步到S3Adapter
-        if (s3Adapter) {
-          s3Adapter.setFilePaused(fileID, true);
+        // 同步到StorageAdapter
+        if (storageAdapter) {
+          storageAdapter.setFilePaused(fileID, true);
         }
         console.log(`[Uppy] ⏸️ 暂停文件: ${fileID}`);
       } else {
@@ -628,9 +628,9 @@ const setupUploadEvents = (customPausedFiles) => {
         files.forEach((file) => {
           if (file.progress && file.progress.uploadStarted && !file.progress.uploadComplete) {
             customPausedFiles.add(file.id);
-            // 同步到S3Adapter
-            if (s3Adapter) {
-              s3Adapter.setFilePaused(file.id, true);
+            // 同步到StorageAdapter
+            if (storageAdapter) {
+              storageAdapter.setFilePaused(file.id, true);
             }
           }
         });
@@ -641,19 +641,19 @@ const setupUploadEvents = (customPausedFiles) => {
       if (fileID) {
         // 单个文件恢复
         customPausedFiles.delete(fileID);
-        // 同步到S3Adapter
-        if (s3Adapter) {
-          s3Adapter.setFilePaused(fileID, false);
+        // 同步到StorageAdapter
+        if (storageAdapter) {
+          storageAdapter.setFilePaused(fileID, false);
         }
         console.log(`[Uppy] ▶️ 恢复文件: ${fileID}`);
       } else {
         // 全部文件恢复
         customPausedFiles.clear();
-        // 同步到S3Adapter
-        if (s3Adapter) {
+        // 同步到StorageAdapter
+        if (storageAdapter) {
           const files = uppyInstance.getFiles();
           files.forEach((file) => {
-            s3Adapter.setFilePaused(file.id, false);
+            storageAdapter.setFilePaused(file.id, false);
           });
         }
         console.log(`[Uppy] ▶️ 恢复所有文件`);
@@ -692,8 +692,8 @@ const handleUploadComplete = async (result) => {
   if (result.successful.length > 0) {
     // 处理预签名上传的commit阶段 - 委托给业务逻辑层
     let commitResults = { failures: [] };
-    if (uploadMethod.value === "presigned" && s3Adapter) {
-      commitResults = await s3Adapter.batchCommitPresignedUploads(result.successful);
+    if (uploadMethod.value === "presigned" && storageAdapter) {
+      commitResults = await storageAdapter.batchCommitPresignedUploads(result.successful);
     }
 
     // 发送上传成功事件，触发父组件刷新目录
@@ -803,8 +803,8 @@ watch(
 watch(
   () => props.currentPath,
   (newPath) => {
-    if (s3Adapter) {
-      s3Adapter.updatePath(newPath);
+    if (storageAdapter) {
+      storageAdapter.updatePath(newPath);
     }
   }
 );
@@ -852,8 +852,8 @@ onBeforeUnmount(() => {
     }
     uppyInstance.destroy();
   }
-  if (s3Adapter) {
-    s3Adapter.cleanup();
+  if (storageAdapter) {
+    storageAdapter.cleanup();
   }
 });
 

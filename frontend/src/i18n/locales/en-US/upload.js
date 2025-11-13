@@ -34,8 +34,8 @@ export default {
     usedUp: "Used Up",
     unknownSize: "Unknown Size",
     form: {
-      s3Config: "Storage Config",
-      selectS3Config: "Select Storage Config",
+      storageConfig: "Storage Config",
+      selectStorageConfig: "Select Storage Config",
       customSlug: "Custom Link",
       customSlugPlaceholder: "Custom file access link (optional)",
       path: "Storage Path",
@@ -160,7 +160,7 @@ export default {
     copyFailed: "Copy failed, please copy manually",
     qrCodeDownloaded: "QR code downloaded",
     messages: {
-      noS3Config: "Please select a storage configuration",
+      noStorageConfig: "Please select a storage configuration",
       noFilesSelected: "Please select files to upload",
       fileTooLarge: "File size exceeds limit",
       uploadFailed: "Upload failed",

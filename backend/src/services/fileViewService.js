@@ -3,11 +3,12 @@
  * 负责文件分享查看、下载、预览相关的业务逻辑
  */
 
-import { RepositoryFactory } from "../repositories/index.js";
+import { ensureRepositoryFactory } from "../utils/repositories.js";
 import { verifyPassword } from "../utils/crypto.js";
-import { generatePresignedUrl, deleteFileFromS3 } from "../utils/s3Utils.js";
 import { getEffectiveMimeType, getContentTypeAndDisposition } from "../utils/fileUtils.js";
 import { getFileBySlug, isFileAccessible } from "./fileService.js";
+import { StorageFactory } from "../storage/factory/StorageFactory.js";
+import { StorageConfigUtils } from "../storage/utils/StorageConfigUtils.js";
 
 /**
  * 文件查看服务类
@@ -18,9 +19,10 @@ export class FileViewService {
    * @param {D1Database} db - 数据库实例
    * @param {string} encryptionSecret - 加密密钥
    */
-  constructor(db, encryptionSecret) {
+  constructor(db, encryptionSecret, repositoryFactory = null) {
     this.db = db;
     this.encryptionSecret = encryptionSecret;
+    this.repositoryFactory = ensureRepositoryFactory(db, repositoryFactory);
   }
 
   /**
@@ -30,8 +32,7 @@ export class FileViewService {
    */
   async incrementAndCheckFileViews(file) {
     // 使用 FileRepository 递增访问计数
-    const repositoryFactory = new RepositoryFactory(this.db);
-    const fileRepository = repositoryFactory.getFileRepository();
+    const fileRepository = this.repositoryFactory.getFileRepository();
 
     await fileRepository.incrementViews(file.id);
 
@@ -63,21 +64,22 @@ export class FileViewService {
     try {
       console.log(`开始删除过期文件: ${file.id}`);
 
-      // 从S3删除文件
-      if (file.storage_path && file.storage_config_id) {
-        const repositoryFactory = new RepositoryFactory(this.db);
-        const s3ConfigRepository = repositoryFactory.getS3ConfigRepository();
-        const s3Config = await s3ConfigRepository.findById(file.storage_config_id);
-
-        if (s3Config) {
-          await deleteFileFromS3(s3Config, file.storage_path, this.encryptionSecret);
-          console.log(`已从S3删除文件: ${file.storage_path}`);
+      // 通过 Driver 按存储路径删除对象
+      if (file.storage_path && file.storage_config_id && file.storage_type) {
+        try {
+          const config = await StorageConfigUtils.getStorageConfig(this.db, file.storage_type, file.storage_config_id);
+          const driver = await StorageFactory.createDriver(file.storage_type, config, this.encryptionSecret);
+          if (typeof driver.deleteObjectByStoragePath === "function") {
+            await driver.deleteObjectByStoragePath(file.storage_path, { db: this.db });
+            console.log(`已从存储删除文件: ${file.storage_path}`);
+          }
+        } catch (e) {
+          console.warn("删除存储对象失败（已忽略以完成记录删除）:", e?.message || e);
         }
       }
 
       // 从数据库删除文件记录
-      const repositoryFactory = new RepositoryFactory(this.db);
-      const fileRepository = repositoryFactory.getFileRepository();
+      const fileRepository = this.repositoryFactory.getFileRepository();
       await fileRepository.deleteFile(file.id);
 
       console.log(`已从数据库删除文件记录: ${file.id}`);
@@ -138,8 +140,7 @@ export class FileViewService {
         console.log(`文件(${file.id})已达到最大查看次数，准备删除...`);
         try {
           // 使用 FileRepository 再次检查文件是否被成功删除
-          const repositoryFactory = new RepositoryFactory(this.db);
-          const fileRepository = repositoryFactory.getFileRepository();
+          const fileRepository = this.repositoryFactory.getFileRepository();
 
           const fileStillExists = await fileRepository.findById(file.id);
           if (fileStillExists) {
@@ -157,25 +158,27 @@ export class FileViewService {
         return new Response("文件存储信息不完整", { status: 404 });
       }
 
-      // 检查存储类型
-      if (result.file.storage_type !== "S3") {
-        return new Response("暂不支持此存储类型的文件下载", { status: 501 });
-      }
-
-      // 获取S3配置
-      const repositoryFactory = new RepositoryFactory(this.db);
-      const s3ConfigRepository = repositoryFactory.getS3ConfigRepository();
-      const s3Config = await s3ConfigRepository.findById(result.file.storage_config_id);
-      if (!s3Config) {
-        return new Response("无法获取存储配置信息", { status: 500 });
-      }
-
       // 获取文件的MIME类型
       const contentType = getEffectiveMimeType(result.file.mimetype, result.file.filename);
 
-      // 生成预签名URL，使用S3配置的默认时效，传递MIME类型以确保正确的Content-Type
-      // 注意：文件分享页面没有用户上下文，禁用缓存避免权限泄露
-      const presignedUrl = await generatePresignedUrl(s3Config, result.file.storage_path, this.encryptionSecret, null, forceDownload, contentType, { enableCache: false });
+      // 通过 Driver 生成直链（按存储路径）
+      let presignedUrl = null;
+      try {
+        const config = await StorageConfigUtils.getStorageConfig(this.db, result.file.storage_type, result.file.storage_config_id);
+        const driver = await StorageFactory.createDriver(result.file.storage_type, config, this.encryptionSecret);
+        if (typeof driver.generateDownloadUrlByStoragePath === "function") {
+          presignedUrl = await driver.generateDownloadUrlByStoragePath(result.file.storage_path, {
+            forceDownload,
+            contentType,
+          });
+        }
+      } catch (e) {
+        console.error("生成存储直链失败:", e);
+      }
+
+      if (!presignedUrl) {
+        return new Response("当前存储不支持直链下载", { status: 501 });
+      }
 
       //处理Range请求
       const rangeHeader = request.headers.get("Range");
@@ -240,12 +243,12 @@ export class FileViewService {
 }
 
 // 导出便捷函数供路由使用
-export async function handleFileDownload(slug, env, request, forceDownload = false) {
-  const service = new FileViewService(env.DB, env.ENCRYPTION_SECRET || "default-encryption-key");
+export async function handleFileDownload(slug, env, request, forceDownload = false, repositoryFactory = null) {
+  const service = new FileViewService(env.DB, env.ENCRYPTION_SECRET || "default-encryption-key", repositoryFactory);
   return await service.handleFileDownload(slug, request, forceDownload);
 }
 
-export async function checkAndDeleteExpiredFile(db, file, encryptionSecret) {
-  const service = new FileViewService(db, encryptionSecret);
+export async function checkAndDeleteExpiredFile(db, file, encryptionSecret, repositoryFactory = null) {
+  const service = new FileViewService(db, encryptionSecret, repositoryFactory);
   return await service.checkAndDeleteExpiredFile(file);
 }

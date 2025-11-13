@@ -6,7 +6,7 @@
 
 import { DbTables } from "../../../constants/index.js";
 import { PROXY_CONFIG } from "../../../constants/proxy.js";
-import { RepositoryFactory } from "../../../repositories/index.js";
+import { ensureRepositoryFactory } from "../../../utils/repositories.js";
 import { normalizePath } from "./PathResolver.js";
 
 /**
@@ -40,7 +40,7 @@ function calculateSubPath(fullPath, mountPath) {
  * @param {string} userType - 用户类型 (admin 或 apiKey)
  * @returns {Promise<Object>} 包含挂载点、子路径和错误信息的对象
  */
-export async function findMountPointByPath(db, path, userIdOrInfo, userType) {
+export async function findMountPointByPath(db, path, userIdOrInfo, userType, repositoryFactory = null) {
   // 规范化路径
   path = normalizePath(path);
 
@@ -64,8 +64,8 @@ export async function findMountPointByPath(db, path, userIdOrInfo, userType) {
   // 获取挂载点列表 - 不进行权限过滤，权限检查在路由层完成
   let mounts;
   try {
-    const repositoryFactory = new RepositoryFactory(db);
-    const mountRepository = repositoryFactory.getMountRepository();
+    const factory = ensureRepositoryFactory(db, repositoryFactory);
+    const mountRepository = factory.getMountRepository();
     mounts = await mountRepository.findAll(false); // false = 只获取活跃的挂载点
   } catch (error) {
     return {
@@ -112,7 +112,7 @@ export async function findMountPointByPath(db, path, userIdOrInfo, userType) {
  * @param {Object} apiKeyInfo - API密钥信息对象
  * @returns {Promise<Object>} 包含挂载点、子路径和错误信息的对象
  */
-export async function findMountPointByPathWithApiKey(db, path, apiKeyInfo) {
+export async function findMountPointByPathWithApiKey(db, path, apiKeyInfo, repositoryFactory = null) {
   // 规范化路径
   path = normalizePath(path);
 
@@ -128,8 +128,8 @@ export async function findMountPointByPathWithApiKey(db, path, apiKeyInfo) {
   }
 
   // 获取所有活跃的挂载点 - 不进行权限过滤
-  const repositoryFactory = new RepositoryFactory(db);
-  const mountRepository = repositoryFactory.getMountRepository();
+  const factory = ensureRepositoryFactory(db, repositoryFactory);
+  const mountRepository = factory.getMountRepository();
   const mounts = await mountRepository.findAll(false); // false = 只获取活跃的挂载点
 
   // 按照路径长度降序排序，以便优先匹配最长的路径
@@ -165,11 +165,11 @@ export async function findMountPointByPathWithApiKey(db, path, apiKeyInfo) {
  * @param {D1Database} db - D1数据库实例
  * @param {string} mountId - 挂载点ID
  */
-export async function updateMountLastUsed(db, mountId) {
+export async function updateMountLastUsed(db, mountId, repositoryFactory = null) {
   try {
     // 使用 MountRepository
-    const repositoryFactory = new RepositoryFactory(db);
-    const mountRepository = repositoryFactory.getMountRepository();
+    const factory = ensureRepositoryFactory(db, repositoryFactory);
+    const mountRepository = factory.getMountRepository();
 
     await mountRepository.updateLastUsed(mountId);
   } catch (error) {
@@ -184,7 +184,7 @@ export async function updateMountLastUsed(db, mountId) {
  * @param {string} path - 请求路径
  * @returns {Promise<Object>} 包含挂载点、子路径和错误信息的对象
  */
-export async function findMountPointByPathForProxy(db, path) {
+export async function findMountPointByPathForProxy(db, path, repositoryFactory = null) {
   // 规范化路径
   path = normalizePath(path);
 
@@ -203,8 +203,8 @@ export async function findMountPointByPathForProxy(db, path) {
   let mounts;
   try {
     // 使用 MountRepository
-    const repositoryFactory = new RepositoryFactory(db);
-    const mountRepository = repositoryFactory.getMountRepository();
+    const factory = ensureRepositoryFactory(db, repositoryFactory);
+    const mountRepository = factory.getMountRepository();
 
     mounts = await mountRepository.findAll(false); // false = 只获取活跃的挂载点
   } catch (error) {

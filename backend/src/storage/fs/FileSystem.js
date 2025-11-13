@@ -7,7 +7,23 @@
 import { HTTPException } from "hono/http-exception";
 import { ApiStatus } from "../../constants/index.js";
 import { CAPABILITIES } from "../interfaces/capabilities/index.js";
-import { findMountPointByPath } from "./utils/MountResolver.js";
+import { listDirectory as featureListDirectory, getFileInfo as featureGetFileInfo, downloadFile as featureDownloadFile, exists as featureExists } from "./features/read.js";
+import { generatePresignedUrl as featureGeneratePresignedUrl, commitPresignedUpload as featureCommitPresignedUpload } from "./features/presign.js";
+import { uploadFile as featureUploadFile, uploadStream as featureUploadStream, uploadDirect as featureUploadDirect, createDirectory as featureCreateDirectory, updateFile as featureUpdateFile } from "./features/write.js";
+import { renameItem as featureRenameItem, copyItem as featureCopyItem, batchRemoveItems as featureBatchRemoveItems, batchCopyItems as featureBatchCopyItems, handleCrossStorageCopy as featureHandleCrossStorageCopy, commitCrossStorageCopy as featureCommitCrossStorageCopy } from "./features/ops.js";
+import {
+  initializeFrontendMultipartUpload as featureInitMultipart,
+  completeFrontendMultipartUpload as featureCompleteMultipart,
+  abortFrontendMultipartUpload as featureAbortMultipart,
+  listMultipartUploads as featureListMultipartUploads,
+  listMultipartParts as featureListMultipartParts,
+  refreshMultipartUrls as featureRefreshMultipartUrls,
+  abortBackendMultipartUpload as featureAbortBackendMultipart,
+} from "./features/multipart.js";
+import cacheBus, { CACHE_EVENTS } from "../../cache/cacheBus.js";
+import { ensureRepositoryFactory } from "../../utils/repositories.js";
+import { getAccessibleMountsForUser } from "../../security/helpers/access.js";
+import { UserType } from "../../constants/index.js";
 
 export class FileSystem {
   /**
@@ -16,6 +32,7 @@ export class FileSystem {
    */
   constructor(mountManager) {
     this.mountManager = mountManager;
+    this.repositoryFactory = mountManager?.repositoryFactory ?? null;
   }
 
   /**
@@ -28,22 +45,7 @@ export class FileSystem {
    * @returns {Promise<Object>} 目录内容
    */
   async listDirectory(path, userIdOrInfo, userType, options = {}) {
-    const { driver, mount, subPath } = await this.mountManager.getDriverByPath(path, userIdOrInfo, userType);
-
-    // 检查驱动是否支持读取能力
-    if (!driver.hasCapability(CAPABILITIES.READER)) {
-      throw new HTTPException(ApiStatus.NOT_IMPLEMENTED, {
-        message: `存储驱动 ${driver.getType()} 不支持读取操作`,
-      });
-    }
-
-    // 调用驱动的listDirectory方法，传递选项参数
-    return await driver.listDirectory(path, {
-      mount,
-      subPath,
-      db: this.mountManager.db,
-      ...options,
-    });
+    return await featureListDirectory(this, path, userIdOrInfo, userType, options);
   }
 
   /**
@@ -55,22 +57,7 @@ export class FileSystem {
    * @returns {Promise<Object>} 文件信息
    */
   async getFileInfo(path, userIdOrInfo, userType, request = null) {
-    const { driver, mount, subPath } = await this.mountManager.getDriverByPath(path, userIdOrInfo, userType);
-
-    if (!driver.hasCapability(CAPABILITIES.READER)) {
-      throw new HTTPException(ApiStatus.NOT_IMPLEMENTED, {
-        message: `存储驱动 ${driver.getType()} 不支持读取操作`,
-      });
-    }
-
-    return await driver.getFileInfo(path, {
-      mount,
-      subPath,
-      db: this.mountManager.db,
-      userType,
-      userId: userIdOrInfo,
-      request,
-    });
+    return await featureGetFileInfo(this, path, userIdOrInfo, userType, request);
   }
 
   /**
@@ -83,22 +70,7 @@ export class FileSystem {
    * @returns {Promise<Response>} 文件响应
    */
   async downloadFile(path, fileName, request, userIdOrInfo, userType) {
-    const { driver, mount, subPath } = await this.mountManager.getDriverByPath(path, userIdOrInfo, userType);
-
-    if (!driver.hasCapability(CAPABILITIES.READER)) {
-      throw new HTTPException(ApiStatus.NOT_IMPLEMENTED, {
-        message: `存储驱动 ${driver.getType()} 不支持读取操作`,
-      });
-    }
-
-    return await driver.downloadFile(path, {
-      mount,
-      subPath,
-      db: this.mountManager.db,
-      request,
-      userIdOrInfo,
-      userType,
-    });
+    return await featureDownloadFile(this, path, fileName, request, userIdOrInfo, userType);
   }
 
   /**
@@ -111,22 +83,7 @@ export class FileSystem {
    * @returns {Promise<Object>} 上传结果
    */
   async uploadFile(path, file, userIdOrInfo, userType, options = {}) {
-    const { driver, mount, subPath } = await this.mountManager.getDriverByPath(path, userIdOrInfo, userType);
-
-    if (!driver.hasCapability(CAPABILITIES.WRITER)) {
-      throw new HTTPException(ApiStatus.NOT_IMPLEMENTED, {
-        message: `存储驱动 ${driver.getType()} 不支持写入操作`,
-      });
-    }
-
-    return await driver.uploadFile(path, file, {
-      mount,
-      subPath,
-      db: this.mountManager.db,
-      userIdOrInfo,
-      userType,
-      ...options,
-    });
+    return await featureUploadFile(this, path, file, userIdOrInfo, userType, options);
   }
 
   /**
@@ -143,29 +100,36 @@ export class FileSystem {
    * @returns {Promise<Object>} 上传结果
    */
   async uploadStream(path, stream, userIdOrInfo, userType, options = {}) {
-    const { driver, mount, subPath } = await this.mountManager.getDriverByPath(path, userIdOrInfo, userType);
+    return await featureUploadStream(this, path, stream, userIdOrInfo, userType, options);
+  }
 
-    if (!driver.hasCapability(CAPABILITIES.WRITER)) {
-      throw new HTTPException(ApiStatus.NOT_IMPLEMENTED, {
-        message: `存储驱动 ${driver.getType()} 不支持写入操作`,
-      });
-    }
+  /**
+   * 直传二进制数据到存储（与文档的 upload-direct 对齐）
+   * @param {string} path - 目标目录或完整文件路径
+   * @param {ReadableStream|ArrayBuffer|Uint8Array} body - 原始请求体或内存数据
+   * @param {string|Object} userIdOrInfo - 用户ID或API密钥信息
+   * @param {string} userType - 用户类型
+   * @param {Object} options - 选项
+   * @param {string} options.filename - 文件名（当 path 为目录时必需）
+   * @param {string} options.contentType - 内容类型
+   * @param {number} options.contentLength - 内容长度
+   * @returns {Promise<Object>} 上传结果
+   */
+  async uploadDirect(path, body, userIdOrInfo, userType, options = {}) {
+    return await featureUploadDirect(this, path, body, userIdOrInfo, userType, options);
+  }
 
-    // 检查驱动是否支持流式上传
-    if (!driver.uploadStream) {
-      throw new HTTPException(ApiStatus.NOT_IMPLEMENTED, {
-        message: `存储驱动 ${driver.getType()} 不支持流式上传`,
-      });
-    }
-
-    return await driver.uploadStream(path, stream, {
-      mount,
-      subPath,
-      db: this.mountManager.db,
-      userIdOrInfo,
-      userType,
-      ...options,
-    });
+  /**
+   * 预签名上传完成后的处理（缓存失效/目录时间更新）
+   * @param {string} path - 目标目录或完整文件路径
+   * @param {string} filename - 文件名（当 path 为目录时必需）
+   * @param {string|Object} userIdOrInfo - 用户ID或API密钥信息
+   * @param {string} userType - 用户类型
+   * @param {Object} options - 选项 { fileSize, etag, contentType }
+   * @returns {Promise<Object>} 处理结果
+   */
+  async commitPresignedUpload(path, filename, userIdOrInfo, userType, options = {}) {
+    return await featureCommitPresignedUpload(this, path, filename, userIdOrInfo, userType, options);
   }
 
   /**
@@ -177,19 +141,7 @@ export class FileSystem {
    * @returns {Promise<Object>} 创建结果
    */
   async createDirectory(path, userIdOrInfo, userType) {
-    const { driver, mount, subPath } = await this.mountManager.getDriverByPath(path, userIdOrInfo, userType);
-
-    if (!driver.hasCapability(CAPABILITIES.WRITER)) {
-      throw new HTTPException(ApiStatus.NOT_IMPLEMENTED, {
-        message: `存储驱动 ${driver.getType()} 不支持写入操作`,
-      });
-    }
-
-    return await driver.createDirectory(path, {
-      mount,
-      subPath,
-      db: this.mountManager.db,
-    });
+    return await featureCreateDirectory(this, path, userIdOrInfo, userType);
   }
 
   /**
@@ -201,21 +153,7 @@ export class FileSystem {
    * @returns {Promise<Object>} 重命名结果
    */
   async renameItem(oldPath, newPath, userIdOrInfo, userType) {
-    const { driver, mount, subPath } = await this.mountManager.getDriverByPath(oldPath, userIdOrInfo, userType);
-
-    if (!driver.hasCapability(CAPABILITIES.ATOMIC)) {
-      throw new HTTPException(ApiStatus.NOT_IMPLEMENTED, {
-        message: `存储驱动 ${driver.getType()} 不支持原子操作`,
-      });
-    }
-
-    return await driver.renameItem(oldPath, newPath, {
-      mount,
-      subPath,
-      db: this.mountManager.db,
-      userIdOrInfo,
-      userType,
-    });
+    return await featureRenameItem(this, oldPath, newPath, userIdOrInfo, userType);
   }
 
   /**
@@ -228,24 +166,7 @@ export class FileSystem {
    * @returns {Promise<Object>} 复制结果
    */
   async copyItem(sourcePath, targetPath, userIdOrInfo, userType, options = {}) {
-    const { driver, mount, subPath } = await this.mountManager.getDriverByPath(sourcePath, userIdOrInfo, userType);
-
-    if (!driver.hasCapability(CAPABILITIES.ATOMIC)) {
-      throw new HTTPException(ApiStatus.NOT_IMPLEMENTED, {
-        message: `存储驱动 ${driver.getType()} 不支持原子操作`,
-      });
-    }
-
-    return await driver.copyItem(sourcePath, targetPath, {
-      mount,
-      subPath,
-      db: this.mountManager.db,
-      userIdOrInfo,
-      userType,
-      findMountPointByPath,
-      encryptionSecret: this.mountManager.encryptionSecret,
-      ...options,
-    });
+    return await featureCopyItem(this, sourcePath, targetPath, userIdOrInfo, userType, options);
   }
 
   /**
@@ -256,29 +177,7 @@ export class FileSystem {
    * @returns {Promise<Object>} 批量删除结果
    */
   async batchRemoveItems(paths, userIdOrInfo, userType) {
-    if (!paths || paths.length === 0) {
-      return { success: 0, failed: [] };
-    }
-
-    // 获取第一个路径的驱动来执行批量操作
-    const { driver, mount, subPath } = await this.mountManager.getDriverByPath(paths[0], userIdOrInfo, userType);
-
-    if (!driver.hasCapability(CAPABILITIES.WRITER)) {
-      throw new HTTPException(ApiStatus.NOT_IMPLEMENTED, {
-        message: `存储驱动 ${driver.getType()} 不支持写入操作`,
-      });
-    }
-
-    // 导入findMountPointByPath函数
-
-    return await driver.batchRemoveItems(paths, {
-      mount,
-      subPath,
-      db: this.mountManager.db,
-      userIdOrInfo,
-      userType,
-      findMountPointByPath,
-    });
+    return await featureBatchRemoveItems(this, paths, userIdOrInfo, userType);
   }
 
   /**
@@ -289,138 +188,7 @@ export class FileSystem {
    * @returns {Promise<Object>} 批量复制结果
    */
   async batchCopyItems(items, userIdOrInfo, userType) {
-    // 结果统计
-    const result = {
-      success: 0,
-      skipped: 0,
-      failed: [],
-      details: [],
-      crossStorageResults: [], // 用于存储跨存储复制的预签名URL和元数据
-    };
-
-    if (!items || items.length === 0) {
-      return result;
-    }
-
-    // 逐个处理每个复制项
-    for (const item of items) {
-      try {
-        // 检查路径是否为空或无效
-        if (!item.sourcePath || !item.targetPath) {
-          const errorMessage = "源路径或目标路径不能为空";
-          console.error(errorMessage, item);
-          result.failed.push({
-            sourcePath: item.sourcePath || "未指定",
-            targetPath: item.targetPath || "未指定",
-            error: errorMessage,
-          });
-          continue;
-        }
-
-        // 检查并修正路径格式：如果源路径是目录（以"/"结尾），确保目标路径也是目录格式
-        let { sourcePath, targetPath } = item;
-        const sourceIsDirectory = sourcePath.endsWith("/");
-
-        // 如果源是目录但目标不是目录格式，自动添加斜杠
-        if (sourceIsDirectory && !targetPath.endsWith("/")) {
-          targetPath = targetPath + "/";
-          console.log(`自动修正目录路径格式: ${item.sourcePath} -> ${targetPath}`);
-        }
-
-        // 使用skipExisting选项，如果item中有则使用，否则使用默认值
-        const skipExisting = item.skipExisting !== undefined ? item.skipExisting : true;
-
-        const copyResult = await this.copyItem(sourcePath, targetPath, userIdOrInfo, userType, { skipExisting });
-
-        // 检查是否为跨存储复制结果
-        if (copyResult.crossStorage) {
-          // 将跨存储复制结果添加到专门的数组中
-          result.crossStorageResults.push(copyResult);
-          continue; // 跳过后续处理，继续下一个项目
-        }
-
-        // 根据复制结果更新统计
-        // 检查复制结果的状态 - 兼容不同的返回格式
-        const isSuccess = copyResult.status === "success" || copyResult.success === true;
-        const isSkipped = copyResult.skipped === true || copyResult.status === "skipped";
-
-        if (isSuccess || isSkipped) {
-          if (isSkipped) {
-            result.skipped++;
-            console.log(`文件已存在，跳过复制: ${item.sourcePath} -> ${item.targetPath}`);
-          } else {
-            result.success++;
-            console.log(`文件复制成功: ${item.sourcePath} -> ${item.targetPath}`);
-          }
-
-          // 如果是目录复制，并且有详细统计，则合并统计数据
-          if (copyResult.stats) {
-            result.success += copyResult.stats.success || 0;
-            result.skipped += copyResult.stats.skipped || 0;
-
-            // 合并失败记录
-            if (copyResult.stats.failed > 0 && copyResult.details) {
-              copyResult.details.forEach((detail) => {
-                if (detail.status === "failed") {
-                  result.failed.push({
-                    sourcePath: detail.source,
-                    targetPath: detail.target,
-                    error: detail.error,
-                  });
-                  console.error(`复制子项失败: ${detail.source} -> ${detail.target}, 错误: ${detail.error}`);
-                }
-              });
-            }
-
-            // 添加详细记录
-            if (copyResult.details) {
-              result.details = result.details.concat(copyResult.details);
-            }
-          } else if (copyResult.details && typeof copyResult.details === "object") {
-            // 处理S3BatchOperations.js风格的返回格式
-            // copyResult.details 包含 {success: number, skipped: number, failed: number}
-            const details = copyResult.details;
-            if (details.success !== undefined) {
-              result.success += details.success;
-              console.log(`目录复制统计 - 成功: ${details.success}, 跳过: ${details.skipped}, 失败: ${details.failed}`);
-            }
-            if (details.skipped !== undefined) {
-              result.skipped += details.skipped;
-            }
-            // 注意：S3BatchOperations的failed是数字，不是数组
-            if (details.failed && details.failed > 0) {
-              console.warn(`目录复制中有 ${details.failed} 个文件失败`);
-            }
-          }
-        } else {
-          // 如果不是成功或跳过，则认为是失败
-          const errorMessage = copyResult.message || copyResult.error || "复制失败";
-          console.error(`复制失败: ${item.sourcePath} -> ${item.targetPath}, 错误: ${errorMessage}`);
-          result.failed.push({
-            sourcePath: item.sourcePath,
-            targetPath: item.targetPath,
-            error: errorMessage,
-          });
-        }
-      } catch (error) {
-        // 记录失败信息
-        const errorMessage = error instanceof HTTPException ? error.message : error.message || "未知错误";
-        console.error(`复制失败: ${item.sourcePath} -> ${item.targetPath}, 错误: ${errorMessage}`, error);
-
-        result.failed.push({
-          sourcePath: item.sourcePath,
-          targetPath: item.targetPath,
-          error: errorMessage,
-        });
-      }
-    }
-
-    // 如果有跨存储复制结果，添加标志到结果中
-    if (result.crossStorageResults.length > 0) {
-      result.hasCrossStorageOperations = true;
-    }
-
-    return result;
+    return await featureBatchCopyItems(this, items, userIdOrInfo, userType);
   }
 
   /**
@@ -432,22 +200,7 @@ export class FileSystem {
    * @returns {Promise<Object>} 预签名URL信息
    */
   async generatePresignedUrl(path, userIdOrInfo, userType, options = {}) {
-    const { driver, mount, subPath } = await this.mountManager.getDriverByPath(path, userIdOrInfo, userType);
-
-    if (!driver.hasCapability(CAPABILITIES.PRESIGNED)) {
-      throw new HTTPException(ApiStatus.NOT_IMPLEMENTED, {
-        message: `存储驱动 ${driver.getType()} 不支持预签名URL`,
-      });
-    }
-
-    return await driver.generatePresignedUrl(path, {
-      mount,
-      subPath,
-      db: this.mountManager.db,
-      userIdOrInfo,
-      userType,
-      ...options,
-    });
+    return await featureGeneratePresignedUrl(this, path, userIdOrInfo, userType, options);
   }
 
   /**
@@ -462,24 +215,7 @@ export class FileSystem {
    * @returns {Promise<Object>} 初始化结果
    */
   async initializeFrontendMultipartUpload(path, fileName, fileSize, userIdOrInfo, userType, partSize = 5 * 1024 * 1024, partCount) {
-    const { driver, mount, subPath } = await this.mountManager.getDriverByPath(path, userIdOrInfo, userType);
-
-    if (!driver.hasCapability(CAPABILITIES.MULTIPART)) {
-      throw new HTTPException(ApiStatus.NOT_IMPLEMENTED, {
-        message: `存储驱动 ${driver.getType()} 不支持分片上传`,
-      });
-    }
-
-    return await driver.initializeFrontendMultipartUpload(subPath, {
-      fileName,
-      fileSize,
-      partSize,
-      partCount,
-      mount,
-      db: this.mountManager.db,
-      userIdOrInfo,
-      userType,
-    });
+    return await featureInitMultipart(this, path, fileName, fileSize, userIdOrInfo, userType, partSize, partCount);
   }
 
   /**
@@ -494,24 +230,7 @@ export class FileSystem {
    * @returns {Promise<Object>} 完成结果
    */
   async completeFrontendMultipartUpload(path, uploadId, parts, fileName, fileSize, userIdOrInfo, userType) {
-    const { driver, mount, subPath } = await this.mountManager.getDriverByPath(path, userIdOrInfo, userType);
-
-    if (!driver.hasCapability(CAPABILITIES.MULTIPART)) {
-      throw new HTTPException(ApiStatus.NOT_IMPLEMENTED, {
-        message: `存储驱动 ${driver.getType()} 不支持分片上传`,
-      });
-    }
-
-    return await driver.completeFrontendMultipartUpload(subPath, {
-      uploadId,
-      parts,
-      fileName,
-      fileSize,
-      mount,
-      db: this.mountManager.db,
-      userIdOrInfo,
-      userType,
-    });
+    return await featureCompleteMultipart(this, path, uploadId, parts, fileName, fileSize, userIdOrInfo, userType);
   }
 
   /**
@@ -524,22 +243,7 @@ export class FileSystem {
    * @returns {Promise<Object>} 中止结果
    */
   async abortFrontendMultipartUpload(path, uploadId, fileName, userIdOrInfo, userType) {
-    const { driver, mount, subPath } = await this.mountManager.getDriverByPath(path, userIdOrInfo, userType);
-
-    if (!driver.hasCapability(CAPABILITIES.MULTIPART)) {
-      throw new HTTPException(ApiStatus.NOT_IMPLEMENTED, {
-        message: `存储驱动 ${driver.getType()} 不支持分片上传`,
-      });
-    }
-
-    return await driver.abortFrontendMultipartUpload(subPath, {
-      uploadId,
-      fileName,
-      mount,
-      db: this.mountManager.db,
-      userIdOrInfo,
-      userType,
-    });
+    return await featureAbortMultipart(this, path, uploadId, fileName, userIdOrInfo, userType);
   }
 
   /**
@@ -551,19 +255,7 @@ export class FileSystem {
    * @returns {Promise<Object>} 进行中的上传列表
    */
   async listMultipartUploads(path = "", userIdOrInfo, userType, options = {}) {
-    const { driver, mount, subPath } = await this.mountManager.getDriverByPath(path || "/", userIdOrInfo, userType);
-
-    if (!driver.hasCapability(CAPABILITIES.MULTIPART)) {
-      throw new HTTPException(ApiStatus.NOT_IMPLEMENTED, {
-        message: `存储驱动 ${driver.getType()} 不支持分片上传`,
-      });
-    }
-
-    return await driver.listMultipartUploads(subPath, {
-      mount,
-      db: this.mountManager.db,
-      ...options,
-    });
+    return await featureListMultipartUploads(this, path, userIdOrInfo, userType, options);
   }
 
   /**
@@ -577,20 +269,7 @@ export class FileSystem {
    * @returns {Promise<Object>} 已上传的分片列表
    */
   async listMultipartParts(path, uploadId, fileName, userIdOrInfo, userType, options = {}) {
-    const { driver, mount, subPath } = await this.mountManager.getDriverByPath(path, userIdOrInfo, userType);
-
-    if (!driver.hasCapability(CAPABILITIES.MULTIPART)) {
-      throw new HTTPException(ApiStatus.NOT_IMPLEMENTED, {
-        message: `存储驱动 ${driver.getType()} 不支持分片上传`,
-      });
-    }
-
-    return await driver.listMultipartParts(subPath, uploadId, {
-      mount,
-      db: this.mountManager.db,
-      fileName,
-      ...options,
-    });
+    return await featureListMultipartParts(this, path, uploadId, fileName, userIdOrInfo, userType, options);
   }
 
   /**
@@ -604,19 +283,7 @@ export class FileSystem {
    * @returns {Promise<Object>} 刷新的预签名URL列表
    */
   async refreshMultipartUrls(path, uploadId, partNumbers, userIdOrInfo, userType, options = {}) {
-    const { driver, mount, subPath } = await this.mountManager.getDriverByPath(path, userIdOrInfo, userType);
-
-    if (!driver.hasCapability(CAPABILITIES.MULTIPART)) {
-      throw new HTTPException(ApiStatus.NOT_IMPLEMENTED, {
-        message: `存储驱动 ${driver.getType()} 不支持分片上传`,
-      });
-    }
-
-    return await driver.refreshMultipartUrls(subPath, uploadId, partNumbers, {
-      mount,
-      db: this.mountManager.db,
-      ...options,
-    });
+    return await featureRefreshMultipartUrls(this, path, uploadId, partNumbers, userIdOrInfo, userType, options);
   }
 
   // /**
@@ -727,21 +394,7 @@ export class FileSystem {
    * @returns {Promise<Object>} 中止结果
    */
   async abortBackendMultipartUpload(path, userIdOrInfo, userType, uploadId, s3Key = null) {
-    const { driver, mount, subPath } = await this.mountManager.getDriverByPath(path, userIdOrInfo, userType);
-
-    if (!driver.hasCapability(CAPABILITIES.MULTIPART)) {
-      throw new HTTPException(ApiStatus.NOT_IMPLEMENTED, {
-        message: `存储驱动 ${driver.getType()} 不支持分片上传`,
-      });
-    }
-
-    return await driver.abortBackendMultipartUpload(path, {
-      mount,
-      subPath,
-      db: this.mountManager.db,
-      uploadId,
-      s3Key,
-    });
+    return await featureAbortBackendMultipart(this, path, userIdOrInfo, userType, uploadId, s3Key);
   }
 
   /**
@@ -752,15 +405,7 @@ export class FileSystem {
    * @returns {Promise<boolean>} 是否存在
    */
   async exists(path, userIdOrInfo, userType) {
-    const { driver, mount, subPath } = await this.mountManager.getDriverByPath(path, userIdOrInfo, userType);
-
-    return await driver.exists(path, {
-      mount,
-      subPath,
-      db: this.mountManager.db,
-      userIdOrInfo,
-      userType,
-    });
+    return await featureExists(this, path, userIdOrInfo, userType);
   }
 
   /**
@@ -772,21 +417,7 @@ export class FileSystem {
    * @returns {Promise<Object>} 更新结果
    */
   async updateFile(path, content, userIdOrInfo, userType) {
-    const { driver, mount, subPath } = await this.mountManager.getDriverByPath(path, userIdOrInfo, userType);
-
-    if (!driver.hasCapability(CAPABILITIES.WRITER)) {
-      throw new HTTPException(ApiStatus.NOT_IMPLEMENTED, {
-        message: `存储驱动 ${driver.getType()} 不支持写入操作`,
-      });
-    }
-
-    return await driver.updateFile(path, content, {
-      mount,
-      subPath,
-      db: this.mountManager.db,
-      userIdOrInfo,
-      userType,
-    });
+    return await featureUpdateFile(this, path, content, userIdOrInfo, userType);
   }
 
   /**
@@ -798,19 +429,7 @@ export class FileSystem {
    * @returns {Promise<Object>} 跨存储复制结果
    */
   async handleCrossStorageCopy(sourcePath, targetPath, userIdOrInfo, userType) {
-    const { driver } = await this.mountManager.getDriverBByPath(sourcePath, userIdOrInfo, userType);
-
-    if (!driver.hasCapability(CAPABILITIES.ATOMIC)) {
-      throw new HTTPException(ApiStatus.NOT_IMPLEMENTED, {
-        message: `存储驱动 ${driver.getType()} 不支持原子操作`,
-      });
-    }
-
-    return await driver.handleCrossStorageCopy(sourcePath, targetPath, {
-      db: this.mountManager.db,
-      userIdOrInfo,
-      userType,
-    });
+    return await featureHandleCrossStorageCopy(this, sourcePath, targetPath, userIdOrInfo, userType);
   }
 
   /**
@@ -824,9 +443,10 @@ export class FileSystem {
    * @param {number} searchParams.offset - 结果偏移量，默认0
    * @param {string|Object} userIdOrInfo - 用户ID或API密钥信息
    * @param {string} userType - 用户类型
+   * @param {Array<Object>} accessibleMounts - 可访问挂载点列表（可选，未提供则内部查询）
    * @returns {Promise<Object>} 搜索结果
    */
-  async searchFiles(query, searchParams, userIdOrInfo, userType) {
+  async searchFiles(query, searchParams, userIdOrInfo, userType, accessibleMounts = null) {
     const { scope = "global", mountId, path, limit = 50, offset = 0 } = searchParams;
 
     // 参数验证
@@ -856,18 +476,27 @@ export class FileSystem {
       return cachedResult;
     }
 
-    // 获取可访问的挂载点 - 权限检查在路由层完成
-    let accessibleMounts;
-    try {
-      const { RepositoryFactory } = await import("../../repositories/index.js");
-      const repositoryFactory = new RepositoryFactory(this.mountManager.db);
-      const mountRepository = repositoryFactory.getMountRepository();
-      accessibleMounts = await mountRepository.findAll(false); // false = 只获取活跃的挂载点
-    } catch (error) {
-      throw new HTTPException(ApiStatus.UNAUTHORIZED, { message: "未授权访问" });
+    // 获取可访问的挂载点 - 为安全起见，这里也做兜底
+    let resolvedMounts = accessibleMounts;
+    if (!resolvedMounts) {
+      try {
+        if (userType === UserType.ADMIN) {
+          const factory = this.repositoryFactory ?? ensureRepositoryFactory(this.mountManager.db);
+          const mountRepository = factory.getMountRepository();
+          resolvedMounts = await mountRepository.findAll(false); // 管理员：全部活跃挂载
+        } else if (userType === UserType.API_KEY) {
+          // API密钥用户：严格限制在其可访问挂载集合内
+          const factory = this.repositoryFactory ?? ensureRepositoryFactory(this.mountManager.db);
+          resolvedMounts = await getAccessibleMountsForUser(this.mountManager.db, userIdOrInfo, userType, factory);
+        } else {
+          resolvedMounts = [];
+        }
+      } catch (error) {
+        throw new HTTPException(ApiStatus.INTERNAL_ERROR, { message: "获取可访问挂载失败" });
+      }
     }
 
-    if (!accessibleMounts || accessibleMounts.length === 0) {
+    if (!resolvedMounts || resolvedMounts.length === 0) {
       return {
         results: [],
         total: 0,
@@ -877,9 +506,9 @@ export class FileSystem {
     }
 
     // 根据搜索范围过滤挂载点
-    let targetMounts = accessibleMounts;
+    let targetMounts = resolvedMounts;
     if ((scope === "mount" || scope === "directory") && mountId) {
-      targetMounts = accessibleMounts.filter((mount) => mount.id === mountId);
+      targetMounts = resolvedMounts.filter((mount) => mount.id === mountId);
       if (targetMounts.length === 0) {
         throw new HTTPException(ApiStatus.FORBIDDEN, { message: "没有权限访问指定的挂载点" });
       }
@@ -933,11 +562,41 @@ export class FileSystem {
 
     // 缓存搜索结果（仅当结果不为空时缓存）
     if (total > 0) {
-      searchCacheManager.set(query, searchParams, userType, userIdOrInfo, searchResult, 300); // 5分钟缓存
+      const mountIds = targetMounts.map((mount) => mount.id).filter(Boolean);
+      searchCacheManager.set(query, searchParams, userType, userIdOrInfo, searchResult, 300, { mountIds }); // 5分钟缓存
       console.log(`搜索结果已缓存 - 查询: ${query}, 结果数: ${total}, 用户类型: ${userType}`);
     }
 
     return searchResult;
+  }
+
+  /**
+   * 提交跨存储复制（客户端已完成复制后，通知后端进行缓存失效等收尾）
+   * @param {Object} mount - 目标挂载点对象
+   * @param {Array<Object>} files - 提交的文件列表，包含 targetPath 与 storagePath
+   * @returns {Promise<{success: Array, failed: Array}>}
+   */
+  async commitCrossStorageCopy(mount, files) {
+    return await featureCommitCrossStorageCopy(this, mount, files);
+  }
+
+  emitCacheInvalidation(payload = {}) {
+    try {
+      const { mount = null, mountId = null, storageConfigId = null, paths = [], reason = "fs_operation" } = payload;
+      const resolvedMountId = mount?.id ?? mountId ?? null;
+      const resolvedStorageConfigId = mount?.storage_config_id ?? storageConfigId ?? null;
+      const normalizedPaths = Array.isArray(paths) ? paths.filter((path) => typeof path === "string" && path.length > 0) : [];
+      cacheBus.emit(CACHE_EVENTS.INVALIDATE, {
+        target: "fs",
+        mountId: resolvedMountId,
+        storageConfigId: resolvedStorageConfigId,
+        paths: normalizedPaths,
+        reason,
+        db: this.mountManager.db,
+      });
+    } catch (error) {
+      console.warn("cache.invalidate emit failed", error);
+    }
   }
 
   /**

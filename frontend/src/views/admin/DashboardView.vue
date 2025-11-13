@@ -28,9 +28,9 @@ const statsData = ref({
   totalPastes: 0,
   totalFiles: 0,
   totalApiKeys: 0,
-  totalS3Configs: 0,
+  totalStorageConfigs: 0,
   totalStorageUsed: 0,
-  s3Buckets: [],
+  storages: [],
   lastWeekPastes: [],
   lastWeekFiles: [],
 });
@@ -41,7 +41,7 @@ const cacheStats = ref({
     cacheSize: 0,
     hitRate: 0,
   },
-  s3Url: {
+  url: {
     cacheSize: 0,
     hitRate: 0,
   },
@@ -68,7 +68,7 @@ const versionInfo = ref({
 });
 
 // 当前选中的存储桶
-const selectedBucketId = ref(null);
+const selectedStorageId = ref(null);
 
 // 加载状态
 const isLoading = ref(true);
@@ -188,23 +188,23 @@ const chartOptions = computed(() => {
 
 // 获取当前选择的存储桶数据
 const currentBucketData = computed(() => {
-  if (!selectedBucketId.value) {
+  if (!selectedStorageId.value) {
     // 返回总体存储使用情况
     return {
-      name: t("admin.dashboard.allBuckets"),
+      name: t("admin.dashboard.allStorages"),
       usedStorage: statsData.value.totalStorageUsed,
-      totalStorage: statsData.value.s3Buckets.reduce((total, bucket) => total + bucket.totalStorage, 0),
+      totalStorage: (statsData.value.storages || []).reduce((total, bucket) => total + (bucket.totalStorage || 0), 0),
       usagePercent: calculateTotalUsagePercent(),
     };
   }
 
   // 返回选中的存储桶数据
-  const bucket = statsData.value.s3Buckets.find((b) => b.id === selectedBucketId.value);
+  const bucket = (statsData.value.storages || []).find((b) => b.id === selectedStorageId.value);
   return (
     bucket || {
-      name: t("admin.dashboard.allBuckets"),
+      name: t("admin.dashboard.allStorages"),
       usedStorage: statsData.value.totalStorageUsed,
-      totalStorage: statsData.value.s3Buckets.reduce((total, bucket) => total + bucket.totalStorage, 0),
+      totalStorage: (statsData.value.storages || []).reduce((total, bucket) => total + (bucket.totalStorage || 0), 0),
       usagePercent: calculateTotalUsagePercent(),
     }
   );
@@ -213,7 +213,7 @@ const currentBucketData = computed(() => {
 // 计算总体存储使用百分比
 const calculateTotalUsagePercent = () => {
   const totalUsed = statsData.value.totalStorageUsed;
-  const totalAvailable = statsData.value.s3Buckets.reduce((total, bucket) => total + bucket.totalStorage, 0);
+  const totalAvailable = (statsData.value.storages || []).reduce((total, bucket) => total + (bucket.totalStorage || 0), 0);
 
   if (!totalAvailable) return 0;
   return Math.min(100, Math.round((totalUsed / totalAvailable) * 100));
@@ -221,18 +221,18 @@ const calculateTotalUsagePercent = () => {
 
 // 获取指定服务商存储桶的使用占比
 const getProviderPercent = (providerType) => {
-  if (!statsData.value.s3Buckets || statsData.value.s3Buckets.length === 0) {
+  if (!statsData.value.storages || statsData.value.storages.length === 0) {
     // 如果没有数据，则按服务商平均分配
     const providers = ["Cloudflare R2", "Backblaze B2", "AWS S3", "Other"];
     return Math.floor(100 / providers.length);
   }
 
   // 计算指定服务商的配置数量（不是存储使用量）
-  const providerBuckets = statsData.value.s3Buckets.filter((bucket) => bucket.providerType === providerType);
+  const providerBuckets = statsData.value.storages.filter((bucket) => bucket.providerType === providerType);
 
   // 配置数量占比 = 该服务商配置数量 / 总配置数量
   const configCount = providerBuckets.length;
-  const totalConfigs = statsData.value.s3Buckets.length;
+  const totalConfigs = statsData.value.storages.length;
 
   // 计算占比
   return Math.round((configCount / totalConfigs) * 100) || 0;
@@ -242,16 +242,16 @@ const getProviderPercent = (providerType) => {
 const getOtherProvidersPercent = () => {
   const mainProviders = ["Cloudflare R2", "Backblaze B2", "AWS S3"];
 
-  if (!statsData.value.s3Buckets || statsData.value.s3Buckets.length === 0) {
+  if (!statsData.value.storages || statsData.value.storages.length === 0) {
     return Math.floor(100 / 4); // 平均分配
   }
 
   // 计算其他服务商的配置数量
-  const otherBuckets = statsData.value.s3Buckets.filter((bucket) => !mainProviders.includes(bucket.providerType));
+  const otherBuckets = statsData.value.storages.filter((bucket) => !mainProviders.includes(bucket.providerType));
 
   // 计算占比
   const otherCount = otherBuckets.length;
-  const totalConfigs = statsData.value.s3Buckets.length;
+  const totalConfigs = statsData.value.storages.length;
 
   return Math.round((otherCount / totalConfigs) * 100) || 0;
 };
@@ -271,8 +271,8 @@ const formatBytes = (bytes, decimals = 2) => {
 };
 
 // 切换选中的存储桶
-const selectBucket = (bucketId) => {
-  selectedBucketId.value = bucketId;
+const selectStorage = (storageId) => {
+  selectedStorageId.value = storageId;
 };
 
 // 切换图表类型
@@ -312,9 +312,9 @@ const fetchCacheStats = async () => {
           cacheSize: response.data.cache?.directory?.cacheSize || 0,
           hitRate: response.data.cache?.directory?.hitRate || 0,
         },
-        s3Url: {
-          cacheSize: response.data.cache?.s3Url?.cacheSize || 0,
-          hitRate: response.data.cache?.s3Url?.hitRate || 0,
+        url: {
+          cacheSize: response.data.cache?.url?.cacheSize || 0,
+          hitRate: response.data.cache?.url?.hitRate || 0,
         },
         search: {
           cacheSize: response.data.cache?.search?.cacheSize || 0,
@@ -381,6 +381,23 @@ const fetchDashboardStats = async () => {
   error.value = null;
 
   try {
+    // 统一后端返回的数据结构（通用命名优先）
+    const normalizeDashboardData = (raw) => {
+      const data = raw || {};
+      const storages = Array.isArray(data.storages) ? data.storages : [];
+
+      return {
+        totalPastes: Number.isFinite(data.totalPastes) ? data.totalPastes : 0,
+        totalFiles: Number.isFinite(data.totalFiles) ? data.totalFiles : 0,
+        totalApiKeys: Number.isFinite(data.totalApiKeys) ? data.totalApiKeys : 0,
+        totalStorageConfigs: Number.isFinite(data.totalStorageConfigs) ? data.totalStorageConfigs : 0,
+        totalStorageUsed: Number.isFinite(data.totalStorageUsed) ? data.totalStorageUsed : 0,
+        storages,
+        lastWeekPastes: Array.isArray(data.lastWeekPastes) ? data.lastWeekPastes : [],
+        lastWeekFiles: Array.isArray(data.lastWeekFiles) ? data.lastWeekFiles : [],
+      };
+    };
+
     // 并行获取仪表盘数据、缓存统计和版本信息
     const [dashboardResponse] = await Promise.all([
       api.admin.getDashboardStats(),
@@ -389,9 +406,9 @@ const fetchDashboardStats = async () => {
     ]);
 
     if (dashboardResponse.success && dashboardResponse.data) {
-      statsData.value = dashboardResponse.data;
+      statsData.value = normalizeDashboardData(dashboardResponse.data);
       // 重置选中的存储桶
-      selectedBucketId.value = null;
+      selectedStorageId.value = null;
     } else {
       throw new Error(dashboardResponse.error || t("admin.dashboard.fetchError"));
     }
@@ -543,15 +560,15 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <!-- S3存储配置统计 -->
+      <!-- 存储配置统计 -->
       <div class="p-4 rounded-lg shadow transition-shadow hover:shadow-md" :class="darkMode ? 'bg-gray-700' : 'bg-white'">
         <div class="flex justify-between">
           <div>
             <p class="text-sm font-medium" :class="darkMode ? 'text-gray-300' : 'text-gray-500'">
-              {{ t("admin.dashboard.totalS3Configs") }}
+              {{ t("admin.dashboard.totalStorageConfigs") }}
             </p>
             <p class="mt-1 text-2xl font-semibold" :class="darkMode ? 'text-white' : 'text-gray-800'">
-              {{ statsData.totalS3Configs }}
+              {{ statsData.totalStorageConfigs }}
             </p>
           </div>
           <div class="h-12 w-12 rounded-lg flex items-center justify-center" :class="darkMode ? 'bg-orange-500/20 text-orange-400' : 'bg-orange-100 text-orange-600'">
@@ -594,25 +611,25 @@ onBeforeUnmount(() => {
               <div class="py-1">
                 <a
                   href="#"
-                  @click.prevent="selectBucket(null)"
+                  @click.prevent="selectStorage(null)"
                   class="block px-4 py-2 text-xs"
                   :class="[
-                    !selectedBucketId ? (darkMode ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-900') : '',
+                    !selectedStorageId ? (darkMode ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-900') : '',
                     darkMode ? 'text-gray-300 hover:bg-gray-700 hover:text-white' : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900',
                   ]"
                 >
-                  {{ t("admin.dashboard.allBuckets") }}
+                  {{ t("admin.dashboard.allStorages") }}
                 </a>
 
-                <!-- 各个存储桶选项 -->
+                <!-- 各个存储配置选项 -->
                 <a
-                  v-for="bucket in statsData.s3Buckets"
+                  v-for="bucket in statsData.storages"
                   :key="bucket.id"
                   href="#"
-                  @click.prevent="selectBucket(bucket.id)"
+                  @click.prevent="selectStorage(bucket.id)"
                   class="block px-4 py-2 text-xs"
                   :class="[
-                    selectedBucketId === bucket.id ? (darkMode ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-900') : '',
+                    selectedStorageId === bucket.id ? (darkMode ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-900') : '',
                     darkMode ? 'text-gray-300 hover:bg-gray-700 hover:text-white' : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900',
                   ]"
                 >
@@ -642,7 +659,7 @@ onBeforeUnmount(() => {
       <!-- 存储桶分布占比 -->
       <div class="p-4 rounded-lg shadow transition-shadow hover:shadow-md" :class="darkMode ? 'bg-gray-700' : 'bg-white'">
         <h3 class="text-lg font-semibold mb-2" :class="darkMode ? 'text-white' : 'text-gray-800'">
-          {{ t("admin.dashboard.storageBucketDistribution") }}
+          {{ t("admin.dashboard.storageDistribution") }}
         </h3>
 
         <!-- 简易图表，按服务商类型固定展示 -->
@@ -695,8 +712,8 @@ onBeforeUnmount(() => {
                   {{ t("admin.dashboard.cacheMonitoring") }}
                 </p>
                 <p v-if="!isCacheExpanded && !cacheStats.error" class="text-sm" :class="darkMode ? 'text-gray-400' : 'text-gray-600'">
-                  {{ t("admin.dashboard.directoryCache") }}: {{ Math.round(cacheStats.directory.hitRate * 100) }}% | {{ t("admin.dashboard.s3UrlCache") }}:
-                  {{ Math.round(cacheStats.s3Url.hitRate * 100) }}% | {{ t("admin.dashboard.searchCache") }}: {{ Math.round(cacheStats.search.hitRate * 100) }}%
+                  {{ t("admin.dashboard.directoryCache") }}: {{ Math.round(cacheStats.directory.hitRate * 100) }}% | {{ t("admin.dashboard.urlCache") }}:
+                  {{ Math.round(cacheStats.url.hitRate * 100) }}% | {{ t("admin.dashboard.searchCache") }}: {{ Math.round(cacheStats.search.hitRate * 100) }}%
                 </p>
                 <p v-else-if="!isCacheExpanded && cacheStats.error" class="text-sm text-red-500">
                   {{ t("admin.dashboard.cacheUnavailable") }}
@@ -765,15 +782,15 @@ onBeforeUnmount(() => {
                 <p class="text-sm" :class="darkMode ? 'text-gray-400' : 'text-gray-600'">{{ t("admin.dashboard.cacheItems") }}: {{ cacheStats.directory.cacheSize }}</p>
               </div>
 
-              <!-- S3URL缓存 -->
+              <!-- URL缓存 -->
               <div class="p-3 rounded-lg" :class="darkMode ? 'bg-gray-600' : 'bg-gray-50'">
                 <p class="text-sm font-medium mb-1" :class="darkMode ? 'text-gray-300' : 'text-gray-700'">
-                  {{ t("admin.dashboard.s3UrlCache") }}
+                  {{ t("admin.dashboard.urlCache") }}
                 </p>
                 <p class="text-lg font-semibold" :class="darkMode ? 'text-white' : 'text-gray-800'">
-                  {{ t("admin.dashboard.hitRate") }}: {{ Math.round(cacheStats.s3Url.hitRate * 100) }}%
+                  {{ t("admin.dashboard.hitRate") }}: {{ Math.round(cacheStats.url.hitRate * 100) }}%
                 </p>
-                <p class="text-sm" :class="darkMode ? 'text-gray-400' : 'text-gray-600'">{{ t("admin.dashboard.cacheItems") }}: {{ cacheStats.s3Url.cacheSize }}</p>
+                <p class="text-sm" :class="darkMode ? 'text-gray-400' : 'text-gray-600'">{{ t("admin.dashboard.cacheItems") }}: {{ cacheStats.url.cacheSize }}</p>
               </div>
 
               <!-- 搜索缓存 -->

@@ -240,19 +240,3 @@ export class BaseCache {
   }
 }
 
-/**
- * 缓存工厂函数 - 用于创建特定类型的缓存实例
- * @param {string} type - 缓存类型
- * @param {Object} options - 配置选项
- * @returns {BaseCache} 缓存实例
- */
-export function createCache(type, options = {}) {
-  const defaultConfigs = {
-    directory: { maxItems: 300, defaultTtl: 300, name: "DirectoryCache" }, 
-    search: { maxItems: 200, defaultTtl: 600, name: "SearchCache" }, 
-    s3url: { maxItems: 1000, defaultTtl: 3600, name: "S3UrlCache" }, 
-  };
-
-  const config = { ...defaultConfigs[type], ...options };
-  return new BaseCache(config);
-}

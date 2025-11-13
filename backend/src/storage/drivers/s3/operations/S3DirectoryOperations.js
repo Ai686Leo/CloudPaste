@@ -8,7 +8,7 @@ import { ApiStatus, FILE_TYPES, FILE_TYPE_NAMES } from "../../../../constants/in
 import { S3Client, ListObjectsV2Command, PutObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { checkDirectoryExists, updateParentDirectoriesModifiedTime } from "../utils/S3DirectoryUtils.js";
 import { isMountRootPath } from "../utils/S3PathUtils.js";
-import { directoryCacheManager, clearDirectoryCache } from "../../../../cache/index.js";
+import { directoryCacheManager } from "../../../../cache/index.js";
 import { handleFsError } from "../../../fs/utils/ErrorHandler.js";
 import { GetFileType, getFileTypeName } from "../../../../utils/fileTypeDetector.js";
 
@@ -275,7 +275,7 @@ export class S3DirectoryOperations {
    * @returns {Promise<Object>} 创建结果
    */
   async createDirectory(s3SubPath, options = {}) {
-    const { mount, subPath, path } = options;
+    const { mount, subPath, path, db } = options;
 
     return handleFsError(
       async () => {
@@ -295,11 +295,6 @@ export class S3DirectoryOperations {
         console.log(`开始递归创建目录: ${s3SubPath}`);
         await this._ensureParentDirectoriesExist(s3SubPath);
 
-        // 清除缓存，因为目录结构已变更
-        if (mount && mount.id && subPath !== "/") {
-          await clearDirectoryCache({ mountId: mount.id });
-          console.log(`已清理挂载点 ${mount.id} 的缓存`);
-        }
 
         return {
           success: true,

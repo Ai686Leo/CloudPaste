@@ -48,8 +48,8 @@ export default {
         description: "存储挂载点配置",
       },
       storage_config: {
-        name: "S3配置管理",
-        description: "S3存储配置信息",
+        name: "存储配置管理",
+        description: "存储配置信息",
       },
       key_management: {
         name: "密钥管理",

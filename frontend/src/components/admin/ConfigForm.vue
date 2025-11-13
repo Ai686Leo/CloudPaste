@@ -24,6 +24,7 @@ const emit = defineEmits(["close", "success"]);
 // 表单数据
 const formData = ref({
   name: "",
+  storage_type: "S3",
   provider_type: "Cloudflare R2",
   endpoint_url: "",
   bucket_name: "",
@@ -45,6 +46,10 @@ const providerTypes = [
   { value: "AWS S3", label: "AWS S3" },
   { value: "Aliyun OSS", label: "阿里云OSS" },
   { value: "Other", label: "其他S3兼容服务" },
+];
+
+const storageTypes = [
+  { value: "S3", label: "S3 / 对象存储" },
 ];
 
 // 存储容量单位列表
@@ -106,9 +111,40 @@ const loading = ref(false);
 const error = ref("");
 const success = ref("");
 
+// 密钥揭示控制：none | masked | plain
+const showPlain = ref(false);
+const revealing = ref(false);
+const fetchedPlain = ref(false);
+
+const toggleReveal = async () => {
+  if (!props.isEdit || !props?.config?.id) {
+    showPlain.value = !showPlain.value;
+    return;
+  }
+  if (!showPlain.value && !fetchedPlain.value) {
+    revealing.value = true;
+    try {
+      const resp = await api.storage.getStorageConfigReveal(props.config.id, "plain");
+      const data = resp?.data || resp;
+      if (data) {
+        formData.value.access_key_id = data.access_key_id || "";
+        formData.value.secret_access_key = data.secret_access_key || "";
+        fetchedPlain.value = true;
+      }
+    } catch (e) {
+      error.value = e?.message || "获取密钥失败";
+    } finally {
+      revealing.value = false;
+    }
+  }
+  showPlain.value = !showPlain.value;
+};
+
 // 计算表单标题
+const isS3Type = computed(() => formData.value.storage_type === "S3");
+
 const formTitle = computed(() => {
-  return props.isEdit ? "编辑S3存储配置" : "添加S3存储配置";
+  return props.isEdit ? "编辑存储配置" : "添加存储配置";
 });
 
 // 输入处理函数
@@ -149,19 +185,24 @@ const isValidUrl = (url) => {
 
 // 表单验证
 const formValid = computed(() => {
-  // 基本必填字段检查
-  const basicFieldsValid = formData.value.name && formData.value.provider_type && formData.value.endpoint_url && formData.value.bucket_name;
-
-  // URL格式验证
-  const urlValid = isValidUrl(formData.value.endpoint_url) && isValidUrl(formData.value.custom_host);
-
-  // 编辑模式下不要求密钥字段必填
-  if (props.isEdit) {
-    return basicFieldsValid && urlValid;
+  const hasName = Boolean(formData.value.name && formData.value.name.trim());
+  if (!hasName || !formData.value.storage_type) {
+    return false;
   }
 
-  // 新建模式下需要检查密钥字段
-  return basicFieldsValid && urlValid && formData.value.access_key_id && formData.value.secret_access_key;
+  if (isS3Type.value) {
+    const s3FieldsValid = formData.value.provider_type && formData.value.endpoint_url && formData.value.bucket_name;
+    const urlValid = isValidUrl(formData.value.endpoint_url) && isValidUrl(formData.value.custom_host);
+
+    if (props.isEdit) {
+      return s3FieldsValid && urlValid;
+    }
+
+    return s3FieldsValid && urlValid && formData.value.access_key_id && formData.value.secret_access_key;
+  }
+
+  // 其他类型暂时只要求名称
+  return true;
 });
 
 // 根据提供商类型预填默认端点
@@ -208,35 +249,34 @@ watch(
   () => props.config,
   () => {
     if (props.config) {
-      // 编辑模式下，复制现有配置到表单
+      formData.value.storage_type = props.config.storage_type || "S3";
       formData.value.name = props.config.name;
-      formData.value.provider_type = props.config.provider_type;
-      formData.value.endpoint_url = props.config.endpoint_url;
-      formData.value.bucket_name = props.config.bucket_name;
-      formData.value.region = props.config.region || "";
-      formData.value.default_folder = props.config.default_folder || "";
-      formData.value.path_style = props.config.path_style === 1 || props.config.path_style === true;
-      formData.value.is_public = props.config.is_public === 1 || props.config.is_public === true;
 
-      // 新增字段
+      if (formData.value.storage_type === "S3") {
+        formData.value.provider_type = props.config.provider_type || formData.value.provider_type;
+        formData.value.endpoint_url = props.config.endpoint_url || "";
+        formData.value.bucket_name = props.config.bucket_name || "";
+        formData.value.region = props.config.region || "";
+        formData.value.default_folder = props.config.default_folder || "";
+        formData.value.path_style = props.config.path_style === 1 || props.config.path_style === true;
+      }
+
+      formData.value.is_public = props.config.is_public === 1 || props.config.is_public === true;
       formData.value.custom_host = props.config.custom_host || "";
       formData.value.signature_expires_in = props.config.signature_expires_in || 3600;
 
-      // 敏感信息在编辑时默认为空，只在主动填写时才提交
       formData.value.access_key_id = "";
       formData.value.secret_access_key = "";
 
-      // 设置存储容量显示
       if (props.config.total_storage_bytes) {
         setStorageSizeFromBytes(props.config.total_storage_bytes);
       } else {
-        // 使用默认值
-        setStorageSizeFromBytes(getDefaultStorageByProvider(props.config.provider_type));
+        setStorageSizeFromBytes(getDefaultStorageByProvider(props.config.provider_type || "Cloudflare R2"));
       }
     } else {
-      // 添加模式下重置表单
       formData.value = {
         name: "",
+        storage_type: "S3",
         provider_type: "Cloudflare R2",
         endpoint_url: "",
         bucket_name: "",
@@ -251,8 +291,6 @@ watch(
         signature_expires_in: 3600,
       };
       updateEndpoint();
-
-      // 设置默认存储容量显示
       setStorageSizeFromBytes(formData.value.total_storage_bytes);
     }
   },
@@ -307,14 +345,14 @@ const submitForm = async () => {
         delete updateData.secret_access_key;
       }
 
-      response = await api.storage.updateS3Config(props.config.id, updateData);
+      response = await api.storage.updateStorageConfig(props.config.id, updateData);
     } else {
       // 创建新配置
-      response = await api.storage.createS3Config(formData.value);
+      response = await api.storage.createStorageConfig(formData.value);
     }
 
     if (response.success) {
-      success.value = props.isEdit ? "S3配置更新成功！" : "S3配置创建成功！";
+      success.value = props.isEdit ? "存储配置更新成功！" : "存储配置创建成功！";
       emit("success", response.data);
       setTimeout(() => {
         emit("close");
@@ -323,7 +361,7 @@ const submitForm = async () => {
       throw new Error(response.message || "操作失败");
     }
   } catch (err) {
-    console.error("S3配置操作失败:", err);
+    console.error("存储配置操作失败:", err);
     error.value = err.message || "操作失败，请重试";
   } finally {
     loading.value = false;
@@ -361,6 +399,21 @@ const closeModal = () => {
           <div class="space-y-4">
             <h3 class="text-sm font-medium border-b pb-2" :class="darkMode ? 'text-gray-200 border-gray-600' : 'text-gray-700 border-gray-200'">基本信息</h3>
 
+            <div>
+              <label for="storage_type" class="block text-sm font-medium mb-1" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">
+                存储类型 <span class="text-red-500">*</span>
+              </label>
+              <select
+                id="storage_type"
+                v-model="formData.storage_type"
+                class="block w-full px-3 py-2 rounded-md text-sm transition-colors duration-200"
+                :class="darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300 text-gray-900'"
+              >
+                <option v-for="type in storageTypes" :key="type.value" :value="type.value">{{ type.label }}</option>
+              </select>
+              <p class="mt-1 text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">当前版本支持 S3 兼容对象存储，更多类型即将上线。</p>
+            </div>
+
             <!-- 配置名称 -->
             <div>
               <label for="name" class="block text-sm font-medium mb-1" :class="darkMode ? 'text-gray-200' : 'text-gray-700'"> 配置名称 <span class="text-red-500">*</span> </label>
@@ -377,7 +430,7 @@ const closeModal = () => {
               <p class="mt-1 text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">为此配置指定一个易于识别的名称</p>
             </div>
 
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div v-if="isS3Type" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label for="provider_type" class="block text-sm font-medium mb-1" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">
                   提供商类型 <span class="text-red-500">*</span>
@@ -412,6 +465,10 @@ const closeModal = () => {
               </div>
             </div>
 
+            <div v-else class="rounded-md border border-dashed p-3 text-xs" :class="darkMode ? 'border-gray-600 text-gray-300' : 'border-gray-300 text-gray-600'">
+              非 S3 类型的详细表单正在开发中，目前仅支持 S3 兼容存储。
+            </div>
+
             <div>
               <label for="storage_size" class="block text-sm font-medium mb-1" :class="darkMode ? 'text-gray-200' : 'text-gray-700'"> 存储容量限制 </label>
               <div class="flex space-x-2">
@@ -440,7 +497,7 @@ const closeModal = () => {
           </div>
 
           <!-- 连接配置 -->
-          <div class="space-y-4">
+          <div class="space-y-4" v-if="isS3Type">
             <h3 class="text-sm font-medium border-b pb-2" :class="darkMode ? 'text-gray-200 border-gray-600' : 'text-gray-700 border-gray-200'">连接配置</h3>
 
             <div>
@@ -494,13 +551,33 @@ const closeModal = () => {
           </div>
 
           <!-- 认证信息 -->
-          <div class="space-y-4">
+          <div class="space-y-4" v-if="isS3Type">
             <h3 class="text-sm font-medium border-b pb-2" :class="darkMode ? 'text-gray-200 border-gray-600' : 'text-gray-700 border-gray-200'">认证信息</h3>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label for="access_key_id" class="block text-sm font-medium mb-1" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">
-                  访问密钥ID <span class="text-red-500">{{ !isEdit ? "*" : "" }}</span>
+                <label for="access_key_id" class="block text-sm font-medium mb-1 flex items-center justify-between" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">
+                  <span>访问密钥ID <span class="text-red-500">{{ !isEdit ? "*" : "" }}</span></span>
+                  <button
+                    v-if="isEdit"
+                    type="button"
+                    @click="toggleReveal"
+                    class="ml-2 inline-flex items-center px-2 py-1 rounded text-xs"
+                    :class="darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'"
+                    :title="showPlain ? '隐藏明文' : '显示明文'"
+                  >
+                    <svg v-if="!revealing && !showPlain" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.477 0 8.268 2.943 9.542 7-1.274 4.057-5.065 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      <circle cx="12" cy="12" r="3" stroke-width="2" />
+                    </svg>
+                    <svg v-else-if="!revealing && showPlain" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.477 0-8.268-2.943-9.542-7a10.05 10.05 0 013.47-5.23M6.1 6.1C7.93 5.103 9.91 4.5 12 4.5c4.477 0 8.268 2.943 9.542 7-.337 1.075-.84 2.08-1.48 2.985M3 3l18 18" />
+                    </svg>
+                    <svg v-else class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                    </svg>
+                  </button>
                 </label>
                 <input
                   type="text"
@@ -512,17 +589,35 @@ const closeModal = () => {
                   :class="darkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300 text-gray-900 placeholder-gray-500'"
                   placeholder="AKIAXXXXXXXXXXXXXXXX"
                 />
-                <p class="mt-1 text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
-                  {{ isEdit ? "留空表示保持不变" : "S3访问密钥ID" }}
-                </p>
+                <p class="mt-1 text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">访问密钥ID用于签名请求；编辑留空表示保持不变。</p>
               </div>
 
               <div>
-                <label for="secret_access_key" class="block text-sm font-medium mb-1" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">
-                  秘密访问密钥 <span class="text-red-500">{{ !isEdit ? "*" : "" }}</span>
+                <label for="secret_access_key" class="block text-sm font-medium mb-1 flex items-center justify-between" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">
+                  <span>秘密访问密钥 <span class="text-red-500">{{ !isEdit ? "*" : "" }}</span></span>
+                  <button
+                    v-if="isEdit"
+                    type="button"
+                    @click="toggleReveal"
+                    class="ml-2 inline-flex items-center px-2 py-1 rounded text-xs"
+                    :class="darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'"
+                    :title="showPlain ? '隐藏明文' : '显示明文'"
+                  >
+                    <svg v-if="!revealing && !showPlain" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.477 0 8.268 2.943 9.542 7-1.274 4.057-5.065 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      <circle cx="12" cy="12" r="3" stroke-width="2" />
+                    </svg>
+                    <svg v-else-if="!revealing && showPlain" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.477 0-8.268-2.943-9.542-7a10.05 10.05 0 013.47-5.23M6.1 6.1C7.93 5.103 9.91 4.5 12 4.5c4.477 0 8.268 2.943 9.542 7-.337 1.075-.84 2.08-1.48 2.985M3 3l18 18" />
+                    </svg>
+                    <svg v-else class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                    </svg>
+                  </button>
                 </label>
                 <input
-                  type="password"
+                  :type="showPlain ? 'text' : 'password'"
                   id="secret_access_key"
                   autocomplete="new-password"
                   v-model="formData.secret_access_key"
@@ -532,15 +627,13 @@ const closeModal = () => {
                   :class="darkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300 text-gray-900 placeholder-gray-500'"
                   placeholder="••••••••••••••••••••••••••••••"
                 />
-                <p class="mt-1 text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
-                  {{ isEdit ? "留空表示保持不变" : "S3秘密访问密钥" }}
-                </p>
+                <p class="mt-1 text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">编辑留空表示保持不变。点击右侧小眼睛可按需显示掩码/明文（仅本次可见）。</p>
               </div>
             </div>
           </div>
 
           <!-- 高级配置 -->
-          <div class="space-y-4">
+          <div class="space-y-4" v-if="isS3Type">
             <h3 class="text-sm font-medium border-b pb-2" :class="darkMode ? 'text-gray-200 border-gray-600' : 'text-gray-700 border-gray-200'">高级配置</h3>
 
             <!-- 自定义域名 -->

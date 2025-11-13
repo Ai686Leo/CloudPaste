@@ -4,10 +4,11 @@
  * 在单个文件内修复所有标准违反问题
  */
 
-import { handleWebDAVError } from "../utils/errorUtils.js";
+import { withWebDAVErrorHandling } from "../utils/errorUtils.js";
+import { UserType } from "../../constants/index.js";
 import { MountManager } from "../../storage/managers/MountManager.js";
 import { FileSystem } from "../../storage/fs/FileSystem.js";
-import { authGateway } from "../../middlewares/authGatewayMiddleware.js";
+import { getAccessibleMountsForUser, canNavigatePath } from "../../security/helpers/access.js";
 import { getMimeTypeFromFilename } from "../../utils/fileUtils.js";
 import { lockManager } from "../utils/LockManager.js";
 import { buildLockDiscoveryXML } from "../utils/lockUtils.js";
@@ -543,7 +544,7 @@ function createErrorResponse(href, status, message) {
  * @returns {Response} HTTP响应
  */
 export async function handlePropfind(c, path, userId, userType, db) {
-  try {
+  return withWebDAVErrorHandling("PROPFIND", async () => {
     // 修复：Depth默认值应该是"infinity"（符合RFC 4918标准）
     const depth = c.req.header("Depth") || "infinity";
 
@@ -569,10 +570,10 @@ export async function handlePropfind(c, path, userId, userType, db) {
 
     // 获取用户信息（适配WebDAV中间件的格式）
     let userIdOrInfo, actualUserType;
-    if (userType === "admin") {
+    if (userType === UserType.ADMIN) {
       userIdOrInfo = userId;
-      actualUserType = "admin";
-    } else if (userType === "apiKey") {
+      actualUserType = UserType.ADMIN;
+    } else if (userType === UserType.API_KEY) {
       // 对于API密钥用户，userId应该是完整的信息对象
       if (typeof userId === "object" && userId !== null) {
         userIdOrInfo = {
@@ -584,16 +585,16 @@ export async function handlePropfind(c, path, userId, userType, db) {
       } else {
         return createErrorResponse("/dav" + path, 401, "API密钥信息格式错误");
       }
-      actualUserType = "apiKey";
+      actualUserType = UserType.API_KEY;
     } else {
       return createErrorResponse("/dav" + path, 401, "未知用户类型");
     }
 
-    return await processPropfindRequest(path, requestInfo, userIdOrInfo, actualUserType, db, c.env.ENCRYPTION_SECRET);
-  } catch (error) {
-    console.error("PROPFIND处理失败:", error);
-    return handleWebDAVError(error, "PROPFIND");
-  }
+    const { getEncryptionSecret } = await import("../../utils/environmentUtils.js");
+    const encryptionSecret = getEncryptionSecret(c);
+    const repositoryFactory = c.get("repos");
+    return await processPropfindRequest(path, requestInfo, userIdOrInfo, actualUserType, db, encryptionSecret, repositoryFactory);
+  }, { includeDetails: false });
 }
 
 /**
@@ -604,29 +605,30 @@ export async function handlePropfind(c, path, userId, userType, db) {
  * @param {string} actualUserType - 实际用户类型
  * @param {D1Database} db - 数据库实例
  * @param {string} encryptionSecret - 加密密钥
+ * @param {RepositoryFactory} repositoryFactory - 仓储工厂实例
  * @returns {Response} HTTP响应
  */
-async function processPropfindRequest(path, requestInfo, userIdOrInfo, actualUserType, db, encryptionSecret) {
+async function processPropfindRequest(path, requestInfo, userIdOrInfo, actualUserType, db, encryptionSecret, repositoryFactory) {
   try {
     // 检查API密钥用户的路径权限
-    if (actualUserType === "apiKey") {
-      if (!authGateway.utils.checkPathPermissionForNavigation(userIdOrInfo.basicPath, path)) {
+    if (actualUserType === UserType.API_KEY) {
+      if (!canNavigatePath(userIdOrInfo.basicPath, path)) {
         return createErrorResponse(WEBDAV_BASE_PATH + path, 403, "没有权限访问此路径");
       }
     }
 
     // 获取用户可访问的挂载点列表
-    const mounts = await authGateway.utils.getAccessibleMounts(db, userIdOrInfo, actualUserType);
+    const mounts = await getAccessibleMountsForUser(db, userIdOrInfo, actualUserType);
 
     // 检查是否为虚拟路径
     if (isVirtualPath(path, mounts)) {
       // 处理虚拟目录
-      const basicPath = actualUserType === "apiKey" ? userIdOrInfo.basicPath : null;
+      const basicPath = actualUserType === UserType.API_KEY ? userIdOrInfo.basicPath : null;
       return await handleVirtualDirectoryPropfind(mounts, path, basicPath, requestInfo);
     }
 
     // 处理实际存储路径
-    const mountManager = new MountManager(db, encryptionSecret);
+    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
     const fileSystem = new FileSystem(mountManager);
 
     return await handleStoragePropfind(fileSystem, path, requestInfo, userIdOrInfo, actualUserType);

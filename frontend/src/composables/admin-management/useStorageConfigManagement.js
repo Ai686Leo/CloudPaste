@@ -1,42 +1,74 @@
-import { ref } from "vue";
+import { ref, computed, watch } from "vue";
 import { useAdminBase } from "./useAdminBase.js";
 import { api } from "@/api";
 
 /**
- * S3存储配置管理composable
- * 提供S3配置的CRUD操作、分页管理、测试功能等
+ * 存储配置管理 composable
+ * 提供多存储配置的 CRUD、分页管理、测试等能力
  */
 export function useStorageConfigManagement() {
   // 继承基础功能，使用独立的页面标识符
   const base = useAdminBase("storage");
 
-  // S3配置特有状态
-  const s3Configs = ref([]);
+  const STORAGE_TYPE_UNKNOWN = "__UNSPECIFIED__";
+
+  // 存储配置状态
+  const storageConfigs = ref([]);
   const currentConfig = ref(null);
   const showAddForm = ref(false);
   const showEditForm = ref(false);
   const testResults = ref({});
+
+  const storageTypeFilter = ref("all");
+
+  const normalizeStorageTypeValue = (value) => {
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+    return STORAGE_TYPE_UNKNOWN;
+  };
+
+  const availableStorageTypes = computed(() => {
+    const set = new Set();
+    storageConfigs.value.forEach((config) => {
+      set.add(normalizeStorageTypeValue(config.storage_type));
+    });
+    return Array.from(set);
+  });
+
+  const filteredConfigs = computed(() => {
+    if (storageTypeFilter.value === "all") {
+      return storageConfigs.value;
+    }
+    return storageConfigs.value.filter((config) => normalizeStorageTypeValue(config.storage_type) === storageTypeFilter.value);
+  });
+
+  watch(availableStorageTypes, (types) => {
+    if (storageTypeFilter.value !== "all" && !types.includes(storageTypeFilter.value)) {
+      storageTypeFilter.value = "all";
+    }
+  });
 
   // 测试详情模态框状态
   const showTestDetails = ref(false);
   const selectedTestResult = ref(null);
   const showDetailedResults = ref(true);
 
-  // S3配置专用的分页选项：4、8、12
+  // 存储配置分页选项：4、8、12
   const pageSizeOptions = [4, 8, 12];
 
-  // 重写默认页面大小，S3配置默认4个
+  // 重写默认页面大小，默认 4 条记录
   const getDefaultPageSize = () => {
     try {
       const saved = localStorage.getItem("admin-page-size");
       if (saved) {
         const pageSizes = JSON.parse(saved);
         const savedSize = pageSizes["storage"] || 4;
-        // 确保保存的值在S3配置的选项范围内，否则使用默认值4
+        // 确保保存的值在分页选项范围内，否则使用默认值4
         return pageSizeOptions.includes(savedSize) ? savedSize : 4;
       }
     } catch (error) {
-      console.warn("解析S3配置分页设置失败:", error);
+      console.warn("解析存储配置分页设置失败:", error);
     }
     return 4;
   };
@@ -45,17 +77,17 @@ export function useStorageConfigManagement() {
   base.pagination.limit = getDefaultPageSize();
 
   /**
-   * 加载S3配置列表
+   * 加载存储配置列表
    */
-  const loadS3Configs = async () => {
+  const loadStorageConfigs = async () => {
     return await base.withLoading(async () => {
-      const response = await api.storage.getAllS3Configs({
+      const response = await api.storage.getStorageConfigs({
         page: base.pagination.page,
         limit: base.pagination.limit,
       });
 
       if (response.data) {
-        s3Configs.value = response.data;
+        storageConfigs.value = response.data;
         // 使用标准的updatePagination方法
         base.updatePagination(
           {
@@ -64,10 +96,10 @@ export function useStorageConfigManagement() {
           "page"
         );
         base.updateLastRefreshTime();
-        console.log(`S3配置列表加载完成，共 ${s3Configs.value.length} 条`);
+        console.log(`存储配置列表加载完成，共 ${storageConfigs.value.length} 条`);
       } else {
         base.showError(response.message || "加载数据失败");
-        s3Configs.value = [];
+        storageConfigs.value = [];
       }
     });
   };
@@ -77,7 +109,7 @@ export function useStorageConfigManagement() {
    */
   const handlePageChange = (page) => {
     base.handlePaginationChange(page, "page");
-    loadS3Configs();
+    loadStorageConfigs();
   };
 
   /**
@@ -85,11 +117,11 @@ export function useStorageConfigManagement() {
    */
   const handleLimitChange = (newLimit) => {
     base.changePageSize(newLimit);
-    loadS3Configs();
+    loadStorageConfigs();
   };
 
   /**
-   * 删除S3配置
+   * 删除存储配置
    */
   const handleDeleteConfig = async (configId) => {
     if (!confirm("确定要删除此存储配置吗？此操作不可恢复！")) {
@@ -98,15 +130,15 @@ export function useStorageConfigManagement() {
 
     return await base.withLoading(async () => {
       try {
-        await api.storage.deleteS3Config(configId);
+        await api.storage.deleteStorageConfig(configId);
         base.showSuccess("删除成功");
-        await loadS3Configs();
+        await loadStorageConfigs();
       } catch (err) {
-        console.error("删除S3配置失败:", err);
+        console.error("删除存储配置失败:", err);
         if (err.message && err.message.includes("有文件正在使用")) {
           base.showError(`无法删除此配置：${err.message}`);
         } else {
-          base.showError(err.message || "删除S3配置失败，请稍后再试");
+          base.showError(err.message || "删除存储配置失败，请稍后再试");
         }
       }
     });
@@ -136,7 +168,7 @@ export function useStorageConfigManagement() {
   const handleFormSuccess = async () => {
     showAddForm.value = false;
     showEditForm.value = false;
-    await loadS3Configs();
+    await loadStorageConfigs();
   };
 
   /**
@@ -145,11 +177,11 @@ export function useStorageConfigManagement() {
   const handleSetDefaultConfig = async (configId) => {
     return await base.withLoading(async () => {
       try {
-        await api.storage.setDefaultS3Config(configId);
+        await api.storage.setDefaultStorageConfig(configId);
         base.showSuccess("设置默认配置成功");
-        await loadS3Configs();
+        await loadStorageConfigs();
       } catch (err) {
-        console.error("设置默认S3配置失败:", err);
+        console.error("设置默认存储配置失败:", err);
         base.showError(err.message || "无法设置为默认配置，请稍后再试");
       }
     });
@@ -242,12 +274,12 @@ export function useStorageConfigManagement() {
   }
 
   /**
-   * 测试S3配置连接
+   * 测试存储配置连接
    */
   const testConnection = async (configId) => {
     try {
       testResults.value[configId] = { loading: true };
-      const response = await api.storage.testS3Config(configId);
+      const response = await api.storage.testStorageConfig(configId);
 
       // 使用测试结果处理器
       const processor = new TestResultProcessor(response.data?.result || {});
@@ -303,11 +335,14 @@ export function useStorageConfigManagement() {
     // 继承基础功能
     ...base,
 
-    // 重写分页选项为S3配置专用
+    // 重写分页选项
     pageSizeOptions,
 
-    // S3配置特有状态
-    s3Configs,
+    // 存储配置状态
+    storageConfigs,
+    filteredConfigs,
+    storageTypeFilter,
+    availableStorageTypes,
     currentConfig,
     showAddForm,
     showEditForm,
@@ -316,8 +351,8 @@ export function useStorageConfigManagement() {
     selectedTestResult,
     showDetailedResults,
 
-    // S3配置管理方法
-    loadS3Configs,
+    // 存储配置管理方法
+    loadStorageConfigs,
     handlePageChange,
     handleLimitChange,
     handleDeleteConfig,
@@ -332,5 +367,7 @@ export function useStorageConfigManagement() {
 
     // 工具方法
     getProviderIcon,
+    normalizeStorageTypeValue,
+    STORAGE_TYPE_UNKNOWN,
   };
 }

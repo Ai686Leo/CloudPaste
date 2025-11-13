@@ -9,7 +9,7 @@ export default defineConfig(({ command, mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
 
   // 统一版本管理
-  const APP_VERSION = "0.8.1";
+  const APP_VERSION = "0.8.5";
   const isDev = command === "serve";
 
   // 打印环境变量，帮助调试
@@ -86,15 +86,15 @@ export default defineConfig(({ command, mode }) => {
             // 第三方CDN资源 - StaleWhileRevalidate
             {
               urlPattern: ({ url }) =>
-                  url.origin !== self.location.origin &&
-                  (url.hostname.includes("cdn") ||
-                      url.hostname.includes("googleapis") ||
-                      url.hostname.includes("gstatic") ||
-                      url.hostname.includes("jsdelivr") ||
-                      url.hostname.includes("unpkg") ||
-                      url.hostname.includes("elemecdn") ||
-                      url.hostname.includes("bootcdn") ||
-                      url.hostname.includes("staticfile")),
+                url.origin !== self.location.origin &&
+                (url.hostname.includes("cdn") ||
+                  url.hostname.includes("googleapis") ||
+                  url.hostname.includes("gstatic") ||
+                  url.hostname.includes("jsdelivr") ||
+                  url.hostname.includes("unpkg") ||
+                  url.hostname.includes("elemecdn") ||
+                  url.hostname.includes("bootcdn") ||
+                  url.hostname.includes("staticfile")),
               handler: "StaleWhileRevalidate",
               options: {
                 cacheName: "external-cdn-resources",
@@ -122,7 +122,7 @@ export default defineConfig(({ command, mode }) => {
             // 图廊图片 - StaleWhileRevalidate（图片适合后台更新）
             {
               urlPattern: ({ request, url }) =>
-                  request.destination === "image" && (url.pathname.includes("/api/") || url.searchParams.has("X-Amz-Algorithm") || url.hostname !== self.location.hostname),
+                request.destination === "image" && (url.pathname.includes("/api/") || url.searchParams.has("X-Amz-Algorithm") || url.hostname !== self.location.hostname),
               handler: "StaleWhileRevalidate",
               options: {
                 cacheName: "gallery-images",
@@ -139,8 +139,8 @@ export default defineConfig(({ command, mode }) => {
             // 用户媒体文件 - NetworkFirst（大文件适度缓存）
             {
               urlPattern: ({ request, url }) =>
-                  (request.destination === "video" || request.destination === "audio" || /\.(mp4|webm|ogg|mp3|wav|flac|aac)$/i.test(url.pathname)) &&
-                  (url.pathname.includes("/api/") || url.searchParams.has("X-Amz-Algorithm") || url.hostname !== self.location.hostname),
+                (request.destination === "video" || request.destination === "audio" || /\.(mp4|webm|ogg|mp3|wav|flac|aac)$/i.test(url.pathname)) &&
+                (url.pathname.includes("/api/") || url.searchParams.has("X-Amz-Algorithm") || url.hostname !== self.location.hostname),
               handler: "NetworkFirst",
               options: {
                 cacheName: "user-media",
@@ -159,8 +159,8 @@ export default defineConfig(({ command, mode }) => {
             // 用户文档文件 - NetworkFirst（文档快速更新）
             {
               urlPattern: ({ url }) =>
-                  /\.(pdf|doc|docx|xls|xlsx|ppt|pptx|txt|md)$/i.test(url.pathname) &&
-                  (url.pathname.includes("/api/") || url.searchParams.has("X-Amz-Algorithm") || url.hostname !== self.location.hostname),
+                /\.(pdf|doc|docx|xls|xlsx|ppt|pptx|txt|md)$/i.test(url.pathname) &&
+                (url.pathname.includes("/api/") || url.searchParams.has("X-Amz-Algorithm") || url.hostname !== self.location.hostname),
               handler: "NetworkFirst",
               options: {
                 cacheName: "user-documents",
@@ -307,8 +307,8 @@ export default defineConfig(({ command, mode }) => {
             // 管理员配置写入API - NetworkOnly（POST/PUT/DELETE操作）
             {
               urlPattern: ({ request, url }) =>
-                  ["POST", "PUT", "DELETE"].includes(request.method) &&
-                  /^.*\/api\/(mount\/(create|[^\/]+)|admin\/api-keys|admin\/system-settings|admin\/login|admin\/change-password|admin\/cache).*$/.test(url.href),
+                ["POST", "PUT", "DELETE"].includes(request.method) &&
+                /^.*\/api\/(mount\/(create|[^\/]+)|admin\/api-keys|admin\/system-settings|admin\/login|admin\/change-password|admin\/cache).*$/.test(url.href),
               handler: "NetworkOnly",
               options: {
                 cacheName: "admin-config-write",

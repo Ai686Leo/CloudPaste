@@ -7,11 +7,13 @@ import { BaseDriver } from "../../interfaces/capabilities/BaseDriver.js";
 import { CAPABILITIES } from "../../interfaces/capabilities/index.js";
 import { HTTPException } from "hono/http-exception";
 import { ApiStatus } from "../../../constants/index.js";
-import { createS3Client } from "../../../utils/s3Utils.js";
+import { createS3Client } from "./utils/s3Utils.js";
+import { DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { normalizeS3SubPath, isCompleteFilePath } from "./utils/S3PathUtils.js";
 import { updateMountLastUsed, findMountPointByPath } from "../../fs/utils/MountResolver.js";
 import { buildFullProxyUrl, buildSignedProxyUrl } from "../../../constants/proxy.js";
 import { ProxySignatureService } from "../../../services/ProxySignatureService.js";
+import asHTTPException from "../../utils/fsError.js";
 
 // 导入各个操作模块
 import { S3FileOperations } from "./operations/S3FileOperations.js";
@@ -72,9 +74,7 @@ export class S3StorageDriver extends BaseDriver {
       console.log(`S3存储驱动初始化成功: ${this.config.name} (${this.config.provider_type})`);
     } catch (error) {
       console.error("S3存储驱动初始化失败:", error);
-      throw new HTTPException(ApiStatus.INTERNAL_ERROR, {
-        message: `S3存储驱动初始化失败: ${error.message}`,
-      });
+      throw asHTTPException(error, "S3存储驱动初始化失败");
     }
   }
 
@@ -97,14 +97,18 @@ export class S3StorageDriver extends BaseDriver {
       await updateMountLastUsed(db, mount.id);
     }
 
-    // 委托给目录操作模块，传递所有选项参数
-    return await this.directoryOps.listDirectory(s3SubPath, {
-      mount,
-      subPath, // 使用正确的子路径用于缓存键生成
-      path,
-      db,
-      ...options,
-    });
+    try {
+      // 委托给目录操作模块，传递所有选项参数
+      return await this.directoryOps.listDirectory(s3SubPath, {
+        mount,
+        subPath, // 使用正确的子路径用于缓存键生成
+        path,
+        db,
+        ...options,
+      });
+    } catch (error) {
+      throw asHTTPException(error, "列出目录失败");
+    }
   }
 
   /**
@@ -156,10 +160,10 @@ export class S3StorageDriver extends BaseDriver {
           });
         } catch (dirError) {
           // 如果目录也不存在，抛出原始错误
-          throw error;
+          throw asHTTPException(error, "获取资源信息失败");
         }
       }
-      throw error;
+      throw asHTTPException(error, "获取资源信息失败");
     }
   }
 
@@ -185,8 +189,12 @@ export class S3StorageDriver extends BaseDriver {
     // 提取文件名
     const fileName = path.split("/").filter(Boolean).pop() || "file";
 
-    // 委托给文件操作模块
-    return await this.fileOps.downloadFile(s3SubPath, fileName, request);
+    try {
+      // 委托给文件操作模块
+      return await this.fileOps.downloadFile(s3SubPath, fileName, request);
+    } catch (error) {
+      throw asHTTPException(error, "下载文件失败");
+    }
   }
 
   /**
@@ -204,24 +212,28 @@ export class S3StorageDriver extends BaseDriver {
     // 规范化S3子路径
     const s3SubPath = normalizeS3SubPath(subPath, false);
 
-    if (useMultipart) {
-      // 使用分片上传
-      return await this.uploadOps.initializeFrontendMultipartUpload(s3SubPath, {
-        fileName: file.name,
-        fileSize: file.size,
-        mount,
-        db,
-        userIdOrInfo,
-        userType,
-      });
-    } else {
-      // 使用直接上传
-      return await this.uploadOps.uploadFile(s3SubPath, file, {
-        mount,
-        db,
-        userIdOrInfo,
-        userType,
-      });
+    try {
+      if (useMultipart) {
+        // 使用分片上传
+        return await this.uploadOps.initializeFrontendMultipartUpload(s3SubPath, {
+          fileName: file.name,
+          fileSize: file.size,
+          mount,
+          db,
+          userIdOrInfo,
+          userType,
+        });
+      } else {
+        // 使用直接上传
+        return await this.uploadOps.uploadFile(s3SubPath, file, {
+          mount,
+          db,
+          userIdOrInfo,
+          userType,
+        });
+      }
+    } catch (error) {
+      throw asHTTPException(error, "上传文件失败");
     }
   }
 
@@ -243,17 +255,21 @@ export class S3StorageDriver extends BaseDriver {
     // 构建完整的S3 key
     const s3Key = this._normalizeFilePath(s3SubPath, path, filename);
 
-    // 委托给上传操作模块
-    return await this.uploadOps.uploadStream(s3Key, stream, {
-      mount,
-      db,
-      userIdOrInfo,
-      userType,
-      filename,
-      contentType,
-      contentLength,
-      useMultipart,
-    });
+    try {
+      // 委托给上传操作模块
+      return await this.uploadOps.uploadStream(s3Key, stream, {
+        mount,
+        db,
+        userIdOrInfo,
+        userType,
+        filename,
+        contentType,
+        contentLength,
+        useMultipart,
+      });
+    } catch (error) {
+      throw asHTTPException(error, "流式上传失败");
+    }
   }
 
   /**
@@ -275,12 +291,16 @@ export class S3StorageDriver extends BaseDriver {
       await updateMountLastUsed(db, mount.id);
     }
 
-    // 委托给目录操作模块
-    return await this.directoryOps.createDirectory(s3SubPath, {
-      mount,
-      subPath,
-      path,
-    });
+    try {
+      // 委托给目录操作模块
+      return await this.directoryOps.createDirectory(s3SubPath, {
+        mount,
+        subPath,
+        path,
+      });
+    } catch (error) {
+      throw asHTTPException(error, "创建目录失败");
+    }
   }
 
   /**
@@ -293,11 +313,15 @@ export class S3StorageDriver extends BaseDriver {
   async renameItem(oldPath, newPath, options = {}) {
     this._ensureInitialized();
 
-    // 委托给批量操作模块
-    return await this.batchOps.renameItem(oldPath, newPath, {
-      ...options,
-      findMountPointByPath,
-    });
+    try {
+      // 委托给批量操作模块
+      return await this.batchOps.renameItem(oldPath, newPath, {
+        ...options,
+        findMountPointByPath,
+      });
+    } catch (error) {
+      throw asHTTPException(error, "重命名失败");
+    }
   }
 
   /**
@@ -309,11 +333,57 @@ export class S3StorageDriver extends BaseDriver {
   async batchRemoveItems(paths, options = {}) {
     this._ensureInitialized();
 
-    // 委托给批量操作模块
-    return await this.batchOps.batchRemoveItems(paths, {
-      ...options,
-      findMountPointByPath,
-    });
+    try {
+      // 委托给批量操作模块
+      return await this.batchOps.batchRemoveItems(paths, {
+        ...options,
+        findMountPointByPath,
+      });
+    } catch (error) {
+      throw asHTTPException(error, "批量删除失败");
+    }
+  }
+
+  /**
+   * 通过存储路径直接删除对象（storage-first 场景）
+   * @param {string} storagePath - 对象 Key
+   * @param {Object} options - 扩展选项（预留）
+   * @returns {Promise<Object>} 删除结果
+   */
+  async deleteObjectByStoragePath(storagePath, options = {}) {
+    this._ensureInitialized();
+
+    try {
+      const params = {
+        Bucket: this.config.bucket_name,
+        Key: storagePath,
+      };
+      const cmd = new DeleteObjectCommand(params);
+      await this.s3Client.send(cmd);
+      return { success: true };
+    } catch (error) {
+      throw asHTTPException(error, "删除对象失败");
+    }
+  }
+
+  /**
+   * 通过存储路径生成下载直链
+   * @param {string} storagePath
+   * @param {Object} options
+   * @param {boolean} options.forceDownload
+   * @param {string} options.contentType
+   * @returns {Promise<string>} 预签名URL
+   */
+  async generateDownloadUrlByStoragePath(storagePath, options = {}) {
+    this._ensureInitialized();
+    try {
+      const { forceDownload = false, contentType = null, expiresIn = null } = options || {};
+      const { generatePresignedUrl } = await import("./utils/s3Utils.js");
+      const url = await generatePresignedUrl(this.config, storagePath, this.encryptionSecret, expiresIn, forceDownload, contentType, { enableCache: false });
+      return url;
+    } catch (error) {
+      throw asHTTPException(error, "生成下载URL失败");
+    }
   }
 
   /**
@@ -325,12 +395,15 @@ export class S3StorageDriver extends BaseDriver {
    */
   async copyItem(sourcePath, targetPath, options = {}) {
     this._ensureInitialized();
-
-    // 委托给批量操作模块
-    return await this.batchOps.copyItem(sourcePath, targetPath, {
-      ...options,
-      findMountPointByPath,
-    });
+    try {
+      // 委托给批量操作模块
+      return await this.batchOps.copyItem(sourcePath, targetPath, {
+        ...options,
+        findMountPointByPath,
+      });
+    } catch (error) {
+      throw asHTTPException(error, "复制失败");
+    }
   }
 
   /**
@@ -341,12 +414,15 @@ export class S3StorageDriver extends BaseDriver {
    */
   async batchCopyItems(items, options = {}) {
     this._ensureInitialized();
-
-    // 委托给批量操作模块
-    return await this.batchOps.batchCopyItems(items, {
-      ...options,
-      findMountPointByPath,
-    });
+    try {
+      // 委托给批量操作模块
+      return await this.batchOps.batchCopyItems(items, {
+        ...options,
+        findMountPointByPath,
+      });
+    } catch (error) {
+      throw asHTTPException(error, "批量复制失败");
+    }
   }
 
   /**
@@ -370,22 +446,61 @@ export class S3StorageDriver extends BaseDriver {
     }
 
     // 根据操作类型委托给不同的模块
-    if (operation === "upload") {
-      const { fileName, fileSize, expiresIn } = options;
-      return await this.uploadOps.generatePresignedUploadUrl(s3SubPath, {
+    try {
+      if (operation === "upload") {
+        const { fileName, fileSize, expiresIn } = options;
+        return await this.uploadOps.generatePresignedUploadUrl(s3SubPath, {
+          fileName,
+          fileSize,
+          expiresIn,
+        });
+      } else {
+        const { expiresIn, forceDownload, userType, userId } = options;
+        return await this.fileOps.generatePresignedUrl(s3SubPath, {
+          expiresIn,
+          forceDownload,
+          userType,
+          userId,
+          mount,
+        });
+      }
+    } catch (error) {
+      throw asHTTPException(error, operation === "upload" ? "生成上传URL失败" : "生成下载URL失败");
+    }
+  }
+
+  /**
+   * 处理上传完成后的逻辑（用于预签名上传后端对齐）
+   * @param {string} path - 目标路径
+   * @param {Object} options - 选项 { mount, subPath, db, fileName, fileSize, contentType, etag }
+   * @returns {Promise<Object>} 处理结果
+   */
+  async handleUploadComplete(path, options = {}) {
+    this._ensureInitialized();
+
+    const { mount, subPath, db, fileName, fileSize, contentType, etag } = options;
+
+    // 规范化S3子路径
+    const s3SubPath = normalizeS3SubPath(subPath, false);
+
+    try {
+      const result = await this.uploadOps.handleUploadComplete(s3SubPath, {
+        mount,
+        db,
         fileName,
         fileSize,
-        expiresIn,
+        contentType,
+        etag,
       });
-    } else {
-      const { expiresIn, forceDownload, userType, userId } = options;
-      return await this.fileOps.generatePresignedUrl(s3SubPath, {
-        expiresIn,
-        forceDownload,
-        userType,
-        userId,
-        mount,
-      });
+
+      // 更新挂载点的最后使用时间
+      if (db && mount?.id) {
+        await updateMountLastUsed(db, mount.id);
+      }
+
+      return result;
+    } catch (error) {
+      throw asHTTPException(error, "处理上传完成失败");
     }
   }
 
@@ -412,12 +527,6 @@ export class S3StorageDriver extends BaseDriver {
       fileName,
     });
 
-    // 处理缓存清理
-    const { clearDirectoryCache } = await import("../../../cache/index.js");
-    if (mount && mount.cache_ttl > 0) {
-      await clearDirectoryCache({ mountId: mount.id });
-    }
-
     // 更新挂载点的最后使用时间
     if (db && mount.id) {
       await updateMountLastUsed(db, mount.id);
@@ -435,9 +544,12 @@ export class S3StorageDriver extends BaseDriver {
    */
   async handleCrossStorageCopy(sourcePath, targetPath, options = {}) {
     this._ensureInitialized();
-
-    // 委托给批量操作模块
-    return await this.batchOps.handleCrossStorageCopy(options.db, sourcePath, targetPath, options.userIdOrInfo, options.userType);
+    try {
+      // 委托给批量操作模块
+      return await this.batchOps.handleCrossStorageCopy(options.db, sourcePath, targetPath, options.userIdOrInfo, options.userType);
+    } catch (error) {
+      throw asHTTPException(error, "跨存储复制失败");
+    }
   }
 
   /**
@@ -454,8 +566,12 @@ export class S3StorageDriver extends BaseDriver {
     // 规范化S3子路径
     const s3SubPath = normalizeS3SubPath(subPath, false);
 
-    // 委托给文件操作模块检查存在性
-    return await this.fileOps.exists(s3SubPath);
+    try {
+      // 委托给文件操作模块检查存在性
+      return await this.fileOps.exists(s3SubPath);
+    } catch (error) {
+      throw asHTTPException(error, "存在性检查失败");
+    }
   }
 
   /**
@@ -470,9 +586,12 @@ export class S3StorageDriver extends BaseDriver {
    */
   async search(query, options = {}) {
     this._ensureInitialized();
-
-    // 委托给搜索操作模块
-    return await this.searchOps.searchInMount(query, options);
+    try {
+      // 委托给搜索操作模块
+      return await this.searchOps.searchInMount(query, options);
+    } catch (error) {
+      throw asHTTPException(error, "搜索失败");
+    }
   }
 
   /**
@@ -520,17 +639,21 @@ export class S3StorageDriver extends BaseDriver {
     // 规范化S3子路径
     const s3SubPath = normalizeS3SubPath(subPath, false);
 
-    // 委托给上传操作模块
-    return await this.uploadOps.initializeFrontendMultipartUpload(s3SubPath, {
-      fileName,
-      fileSize,
-      partSize,
-      partCount,
-      mount,
-      db,
-      userIdOrInfo,
-      userType,
-    });
+    try {
+      // 委托给上传操作模块
+      return await this.uploadOps.initializeFrontendMultipartUpload(s3SubPath, {
+        fileName,
+        fileSize,
+        partSize,
+        partCount,
+        mount,
+        db,
+        userIdOrInfo,
+        userType,
+      });
+    } catch (error) {
+      throw asHTTPException(error, "初始化分片上传失败");
+    }
   }
 
   /**
@@ -547,17 +670,21 @@ export class S3StorageDriver extends BaseDriver {
     // 规范化S3子路径
     const s3SubPath = normalizeS3SubPath(subPath, false);
 
-    // 委托给上传操作模块
-    return await this.uploadOps.completeFrontendMultipartUpload(s3SubPath, {
-      uploadId,
-      parts,
-      fileName,
-      fileSize,
-      mount,
-      db,
-      userIdOrInfo,
-      userType,
-    });
+    try {
+      // 委托给上传操作模块
+      return await this.uploadOps.completeFrontendMultipartUpload(s3SubPath, {
+        uploadId,
+        parts,
+        fileName,
+        fileSize,
+        mount,
+        db,
+        userIdOrInfo,
+        userType,
+      });
+    } catch (error) {
+      throw asHTTPException(error, "完成分片上传失败");
+    }
   }
 
   /**
@@ -574,15 +701,19 @@ export class S3StorageDriver extends BaseDriver {
     // 规范化S3子路径
     const s3SubPath = normalizeS3SubPath(subPath, false);
 
-    // 委托给上传操作模块
-    return await this.uploadOps.abortFrontendMultipartUpload(s3SubPath, {
-      uploadId,
-      fileName,
-      mount,
-      db,
-      userIdOrInfo,
-      userType,
-    });
+    try {
+      // 委托给上传操作模块
+      return await this.uploadOps.abortFrontendMultipartUpload(s3SubPath, {
+        uploadId,
+        fileName,
+        mount,
+        db,
+        userIdOrInfo,
+        userType,
+      });
+    } catch (error) {
+      throw asHTTPException(error, "中止分片上传失败");
+    }
   }
 
   /**
@@ -604,8 +735,12 @@ export class S3StorageDriver extends BaseDriver {
       await updateMountLastUsed(db, mount.id);
     }
 
-    // 委托给上传操作模块
-    return await this.uploadOps.listMultipartUploads(s3SubPath, options);
+    try {
+      // 委托给上传操作模块
+      return await this.uploadOps.listMultipartUploads(s3SubPath, options);
+    } catch (error) {
+      throw asHTTPException(error, "列出进行中的分片上传失败");
+    }
   }
 
   /**
@@ -628,8 +763,12 @@ export class S3StorageDriver extends BaseDriver {
       await updateMountLastUsed(db, mount.id);
     }
 
-    // 委托给上传操作模块
-    return await this.uploadOps.listMultipartParts(s3SubPath, uploadId, options);
+    try {
+      // 委托给上传操作模块
+      return await this.uploadOps.listMultipartParts(s3SubPath, uploadId, options);
+    } catch (error) {
+      throw asHTTPException(error, "列出已上传分片失败");
+    }
   }
 
   /**
@@ -653,8 +792,12 @@ export class S3StorageDriver extends BaseDriver {
       await updateMountLastUsed(db, mount.id);
     }
 
-    // 委托给上传操作模块
-    return await this.uploadOps.refreshMultipartUrls(s3SubPath, uploadId, partNumbers, options);
+    try {
+      // 委托给上传操作模块
+      return await this.uploadOps.refreshMultipartUrls(s3SubPath, uploadId, partNumbers, options);
+    } catch (error) {
+      throw asHTTPException(error, "刷新分片URL失败");
+    }
   }
 
   /**

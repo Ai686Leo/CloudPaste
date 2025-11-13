@@ -126,12 +126,19 @@ const routes = [
         },
       },
       {
-        path: "storage-config",
-        name: "AdminStorageConfig",
-        component: createOfflineAwareImport(() => import("../views/admin/StorageConfigView.vue"), "存储配置"),
+        path: "storage",
+        name: "AdminStorage",
+        component: createOfflineAwareImport(() => import("../views/admin/StorageConfigView.vue"), "存储管理"),
         meta: {
-          title: "S3存储配置 - CloudPaste",
+          title: "存储管理 - CloudPaste",
           adminOnly: true, // 只有管理员可访问
+        },
+      },
+      {
+        path: "storage-config",
+        redirect: { name: "AdminStorage" },
+        meta: {
+          adminOnly: true,
         },
       },
       {
@@ -540,7 +547,7 @@ router.afterEach(async (to, from) => {
       case "AdminFileManagement":
         title = `${t("pageTitle.adminModules.fileManagement")} - ${siteTitle}`;
         break;
-      case "AdminStorageConfig":
+      case "AdminStorage":
         title = `${t("pageTitle.adminModules.storageConfig")} - ${siteTitle}`;
         break;
       case "AdminMountManagement":

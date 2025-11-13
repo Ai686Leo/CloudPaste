@@ -45,7 +45,7 @@ const currentPageTitle = computed(() => {
       return t("pageTitle.adminModules.textManagement");
     case "AdminFileManagement":
       return t("pageTitle.adminModules.fileManagement");
-    case "AdminStorageConfig":
+    case "AdminStorage":
       return t("pageTitle.adminModules.storageConfig");
     case "AdminMountManagement":
       return t("pageTitle.adminModules.mountManagement");

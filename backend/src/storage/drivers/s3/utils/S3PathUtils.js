@@ -1,9 +1,9 @@
+import path from "node:path";
+
 /**
  * S3路径处理工具
  * 提供S3存储驱动专用的路径规范化功能
  */
-
-import path from "path";
 
 /**
  * 规范化S3子路径
@@ -13,7 +13,8 @@ import path from "path";
  */
 export function normalizeS3SubPath(subPath, asDirectory = false) {
   // 规范化S3子路径，移除开头的斜杠
-  let s3SubPath = subPath.startsWith("/") ? subPath.substring(1) : subPath;
+  const __raw = subPath == null ? "" : String(subPath);
+  let s3SubPath = __raw.startsWith("/") ? __raw.substring(1) : __raw;
 
   // 如果路径为空，设置为根路径
   if (!s3SubPath) {
@@ -43,7 +44,6 @@ export function normalizeS3SubPath(subPath, asDirectory = false) {
 export function isCompleteFilePath(s3SubPath, originalFileName) {
   if (!s3SubPath || !originalFileName) return false;
 
-  // Node.js path 模块解析路径
   const pathInfo = path.parse(s3SubPath);
   const originalInfo = path.parse(originalFileName);
 

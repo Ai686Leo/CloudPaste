@@ -6,7 +6,7 @@
 export { BaseRepository } from "./BaseRepository.js";
 export { FileRepository } from "./FileRepository.js";
 export { MountRepository } from "./MountRepository.js";
-export { S3ConfigRepository } from "./S3ConfigRepository.js";
+export { StorageConfigRepository } from "./StorageConfigRepository.js";
 export { AdminRepository } from "./AdminRepository.js";
 export { ApiKeyRepository } from "./ApiKeyRepository.js";
 export { PasteRepository } from "./PasteRepository.js";
@@ -16,7 +16,7 @@ export { SystemRepository } from "./SystemRepository.js";
 import { BaseRepository } from "./BaseRepository.js";
 import { FileRepository } from "./FileRepository.js";
 import { MountRepository } from "./MountRepository.js";
-import { S3ConfigRepository } from "./S3ConfigRepository.js";
+import { StorageConfigRepository } from "./StorageConfigRepository.js";
 import { AdminRepository } from "./AdminRepository.js";
 import { ApiKeyRepository } from "./ApiKeyRepository.js";
 import { PasteRepository } from "./PasteRepository.js";
@@ -59,14 +59,14 @@ export class RepositoryFactory {
   }
 
   /**
-   * 获取S3ConfigRepository实例
-   * @returns {S3ConfigRepository} S3ConfigRepository实例
+   * 获取StorageConfigRepository实例（通用）
+   * @returns {StorageConfigRepository}
    */
-  getS3ConfigRepository() {
-    if (!this._repositories.has("s3config")) {
-      this._repositories.set("s3config", new S3ConfigRepository(this.db));
+  getStorageConfigRepository() {
+    if (!this._repositories.has("storageconfig")) {
+      this._repositories.set("storageconfig", new StorageConfigRepository(this.db));
     }
-    return this._repositories.get("s3config");
+    return this._repositories.get("storageconfig");
   }
 
   /**
@@ -128,7 +128,7 @@ export class RepositoryFactory {
     return {
       file: this.getFileRepository(),
       mount: this.getMountRepository(),
-      s3Config: this.getS3ConfigRepository(),
+      storageConfig: this.getStorageConfigRepository(),
       admin: this.getAdminRepository(),
       apiKey: this.getApiKeyRepository(),
       paste: this.getPasteRepository(),

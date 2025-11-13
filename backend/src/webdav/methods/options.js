@@ -1,4 +1,3 @@
-import { createWebDAVErrorResponse } from "../utils/errorUtils.js";
 import { getStandardWebDAVHeaders } from "../utils/headerUtils.js";
 import { WEBDAV_CONFIG } from "../auth/config/WebDAVConfig.js";
 
@@ -12,14 +11,9 @@ import { WEBDAV_CONFIG } from "../auth/config/WebDAVConfig.js";
  * @returns {Response} HTTP响应
  */
 export async function handleOptions(c, path, userId, userType, db) {
-  try {
-    // WebDAV能力发现请求处理
-    return await handleWebDAVOptionsRequest(c, path, userType);
-  } catch (error) {
-    console.error("WebDAV OPTIONS请求处理失败:", error);
-    return createWebDAVErrorResponse("WebDAV OPTIONS请求处理失败", 500, false);
-  }
+  return handleWebDAVOptionsRequest(c, path, userType);
 }
+
 
 /**
  * 处理WebDAV OPTIONS请求

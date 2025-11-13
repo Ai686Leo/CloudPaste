@@ -11,13 +11,13 @@ export default {
     totalPastes: "Text Shares",
     totalFiles: "File Uploads",
     totalApiKeys: "API Keys",
-    totalS3Configs: "S3 Configs",
+    totalStorageConfigs: "Storage Configs",
     totalStorageUsed: "Storage Used",
 
     // Cache monitoring
     cacheMonitoring: "Cache Monitoring",
     directoryCache: "Directory Cache",
-    s3UrlCache: "S3 URL Cache",
+    urlCache: "URL Cache",
     searchCache: "Search Cache",
     hitRate: "Hit Rate",
     cacheItems: "Cache Items",
@@ -26,8 +26,8 @@ export default {
 
     // Storage related
     storageUsage: "Storage Usage",
-    allBuckets: "All Buckets",
-    selectBucket: "Select Bucket",
+    allStorages: "All Storages",
+    selectStorage: "Select Storage",
     usagePercent: "Usage",
     availableStorage: "Available Storage",
     usedStorage: "Used Storage",
@@ -94,13 +94,13 @@ export default {
     dataStorage: "Data Storage",
 
     // Storage bucket distribution
-    storageBucketDistribution: "Storage Bucket Distribution",
+    storageDistribution: "Storage Distribution",
     otherStorage: "Other Storage",
 
     // Tips and messages
     tips: {
       noApiKeys: "No API keys created yet",
-      noS3Configs: "No S3 storage configured yet",
+      noStorageConfigs: "No storage configuration yet",
       noActivity: "No recent activity",
       lowStorage: "Low storage space",
     },

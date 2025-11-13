@@ -20,7 +20,7 @@ export function useMountManagement() {
 
   // 挂载点管理特有状态
   const mounts = ref([]);
-  const s3ConfigsList = ref([]);
+  const storageConfigsList = ref([]);
   const apiKeyNames = ref({});
   const showForm = ref(false);
   const currentMount = ref(null);
@@ -85,26 +85,26 @@ export function useMountManagement() {
   };
 
   /**
-   * 加载S3配置列表
+   * 加载存储配置列表
    */
-  const loadS3Configs = async () => {
+  const loadStorageConfigs = async () => {
     try {
-      const response = await api.storage.getAllS3Configs();
+      const response = await api.storage.getStorageConfigs();
       if (response.code === 200 && response.data) {
-        s3ConfigsList.value = response.data;
+        storageConfigsList.value = response.data;
       } else {
-        console.error("加载S3配置列表失败:", response.message);
+        console.error("加载存储配置列表失败:", response.message);
       }
     } catch (err) {
-      console.error("加载S3配置列表错误:", err);
+      console.error("加载存储配置列表错误:", err);
     }
   };
 
   /**
-   * 根据ID获取S3配置
+   * 根据ID获取存储配置
    */
-  const getS3ConfigById = (configId) => {
-    return s3ConfigsList.value.find((config) => config.id === configId) || null;
+  const getStorageConfigById = (configId) => {
+    return storageConfigsList.value.find((config) => config.id === configId) || null;
   };
 
   /**
@@ -156,9 +156,9 @@ export function useMountManagement() {
           // 更新分页信息
           updateMountPagination();
 
-          // 如果S3配置列表为空，尝试重新加载
-          if (s3ConfigsList.value.length === 0) {
-            loadS3Configs();
+          // 如果存储配置列表为空，尝试重新加载
+          if (storageConfigsList.value.length === 0) {
+            loadStorageConfigs();
           }
 
           // 检查是否需要加载API密钥信息
@@ -441,20 +441,20 @@ export function useMountManagement() {
     // 基本验证
     if (!mount) return "-";
 
-    if (mount.storage_type === "S3" && mount.storage_config_id) {
-      // 如果S3配置列表尚未加载完成
-      if (s3ConfigsList.value.length === 0) {
-        return `${mount.storage_type} (加载中...)`;
+    if (mount.storage_config_id) {
+      if (storageConfigsList.value.length === 0) {
+        return `${mount.storage_type || "-"} (加载中...)`;
       }
 
-      const config = getS3ConfigById(mount.storage_config_id);
+      const config = getStorageConfigById(mount.storage_config_id);
       if (config) {
-        return `${config.name} (${config.provider_type})`;
-      } else {
-        // 未找到配置时显示配置ID
-        return `${mount.storage_type} (ID: ${mount.storage_config_id})`;
+        const providerLabel = config.provider_type ? ` (${config.provider_type})` : "";
+        return `${config.name}${providerLabel}`;
       }
+
+      return `${mount.storage_type || "-"} (ID: ${mount.storage_config_id})`;
     }
+
     return mount.storage_type || "-";
   };
 
@@ -464,7 +464,7 @@ export function useMountManagement() {
 
     // 挂载点管理特有状态
     mounts,
-    s3ConfigsList,
+    storageConfigsList,
     apiKeyNames,
     showForm,
     currentMount,
@@ -478,7 +478,7 @@ export function useMountManagement() {
 
     // 挂载点管理方法
     loadMounts,
-    loadS3Configs,
+    loadStorageConfigs,
     loadApiKeyNames,
     handleOffsetChange,
     openCreateForm,
@@ -490,7 +490,7 @@ export function useMountManagement() {
 
     // 工具方法
     formatDate,
-    getS3ConfigById,
+    getStorageConfigById,
     updateMountPagination,
     getStorageTypeClass,
     getStatusClass,

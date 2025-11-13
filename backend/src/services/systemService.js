@@ -1,19 +1,22 @@
 import { DEFAULT_MAX_UPLOAD_SIZE_MB } from "../constants/index.js";
 import { SETTING_GROUPS } from "../constants/settings.js";
-import { getS3ConfigsWithUsage } from "./s3ConfigService.js";
-import { RepositoryFactory } from "../repositories/index.js";
+import { getStorageConfigsWithUsage } from "./storageConfigService.js";
+import { ensureRepositoryFactory } from "../utils/repositories.js";
 import { previewSettingsCache } from "../cache/index.js";
+import { processWeeklyData } from "../utils/common.js";
+
+const resolveRepositoryFactory = ensureRepositoryFactory;
 
 /**
  * 获取最大上传文件大小限制
  * @param {D1Database} db - D1数据库实例
  * @returns {Promise<number>} 最大上传大小(MB)
  */
-export async function getMaxUploadSize(db) {
+export async function getMaxUploadSize(db, repositoryFactory) {
   try {
     // 使用 SystemRepository 的新方法
-    const repositoryFactory = new RepositoryFactory(db);
-    const systemRepository = repositoryFactory.getSystemRepository();
+    const factory = resolveRepositoryFactory(db, repositoryFactory);
+    const systemRepository = factory.getSystemRepository();
 
     // 使用 getSettingMetadata 获取最大上传大小设置
     const setting = await systemRepository.getSettingMetadata("max_upload_size");
@@ -33,21 +36,21 @@ export async function getMaxUploadSize(db) {
  * @param {string} adminId - 管理员ID
  * @returns {Promise<Object>} 仪表盘统计数据
  */
-export async function getDashboardStats(db, adminId) {
+export async function getDashboardStats(db, adminId, repositoryFactory) {
   try {
     if (!adminId) {
       throw new Error("未授权");
     }
 
     // 使用 SystemRepository
-    const repositoryFactory = new RepositoryFactory(db);
-    const systemRepository = repositoryFactory.getSystemRepository();
+    const factory = resolveRepositoryFactory(db, repositoryFactory);
+    const systemRepository = factory.getSystemRepository();
 
     // 获取基础统计数据
     const basicStats = await systemRepository.getDashboardStats();
 
-    // 获取所有S3存储配置的使用情况
-    const s3ConfigsWithUsage = await getS3ConfigsWithUsage(db);
+    // 获取所有存储配置的使用情况（通用命名）
+    const storageConfigsWithUsage = await getStorageConfigsWithUsage(db);
 
     // 获取最近一周的趋势数据
     const weeklyTrends = await systemRepository.getWeeklyTrends();
@@ -57,10 +60,10 @@ export async function getDashboardStats(db, adminId) {
     const lastWeekFiles = processWeeklyData(weeklyTrends.files);
 
     // 总体存储使用情况
-    const totalStorageUsed = s3ConfigsWithUsage.reduce((total, config) => total + (config.usage?.total_size || 0), 0);
+    const totalStorageUsed = storageConfigsWithUsage.reduce((total, config) => total + (config.usage?.total_size || 0), 0);
 
-    // 转换S3配置数据格式
-    const s3Buckets = s3ConfigsWithUsage.map((config) => {
+    // 统一输出结构（通用命名）
+    const storages = storageConfigsWithUsage.map((config) => {
       const usedStorage = config.usage?.total_size || 0;
       const totalStorage = config.total_storage_bytes || 0;
 
@@ -81,9 +84,9 @@ export async function getDashboardStats(db, adminId) {
       totalPastes: basicStats.totalPastes,
       totalFiles: basicStats.totalFiles,
       totalApiKeys: basicStats.totalApiKeys,
-      totalS3Configs: basicStats.totalS3Configs,
+      totalStorageConfigs: basicStats.totalS3Configs,
       totalStorageUsed,
-      s3Buckets,
+      storages,
       lastWeekPastes,
       lastWeekFiles,
     };
@@ -91,36 +94,6 @@ export async function getDashboardStats(db, adminId) {
     console.error("获取仪表盘统计数据失败:", error);
     throw new Error("获取仪表盘统计数据失败: " + error.message);
   }
-}
-
-/**
- * 处理每周数据，确保有7天的数据
- * @param {Array} data - 包含日期和数量的数据
- * @returns {Array} 处理后的数据
- */
-function processWeeklyData(data) {
-  const result = new Array(7).fill(0);
-
-  if (!data || data.length === 0) return result;
-
-  // 获取过去7天的日期
-  const dates = [];
-  for (let i = 6; i >= 0; i--) {
-    const date = new Date();
-    date.setDate(date.getDate() - i);
-    dates.push(date.toISOString().split("T")[0]); // 格式：YYYY-MM-DD
-  }
-
-  // 将数据映射到对应日期
-  data.forEach((item) => {
-    const itemDate = item.date.split("T")[0]; // 处理可能的时间部分
-    const index = dates.indexOf(itemDate);
-    if (index !== -1) {
-      result[index] = item.count;
-    }
-  });
-
-  return result;
 }
 
 // ==================== 新增：分组设置管理服务方法 ====================
@@ -132,10 +105,10 @@ function processWeeklyData(data) {
  * @param {boolean} includeMetadata - 是否包含元数据
  * @returns {Promise<Array>} 设置项列表
  */
-export async function getSettingsByGroup(db, groupId, includeMetadata = true) {
+export async function getSettingsByGroup(db, groupId, includeMetadata = true, repositoryFactory) {
   try {
-    const repositoryFactory = new RepositoryFactory(db);
-    const systemRepository = repositoryFactory.getSystemRepository();
+    const factory = resolveRepositoryFactory(db, repositoryFactory);
+    const systemRepository = factory.getSystemRepository();
 
     return await systemRepository.getSettingsByGroup(groupId, includeMetadata);
   } catch (error) {
@@ -150,10 +123,10 @@ export async function getSettingsByGroup(db, groupId, includeMetadata = true) {
  * @param {boolean} includeSystemGroup - 是否包含系统内部分组
  * @returns {Promise<Object>} 按分组组织的设置项
  */
-export async function getAllSettingsByGroups(db, includeSystemGroup = false) {
+export async function getAllSettingsByGroups(db, includeSystemGroup = false, repositoryFactory) {
   try {
-    const repositoryFactory = new RepositoryFactory(db);
-    const systemRepository = repositoryFactory.getSystemRepository();
+    const factory = resolveRepositoryFactory(db, repositoryFactory);
+    const systemRepository = factory.getSystemRepository();
 
     return await systemRepository.getAllSettingsByGroups(includeSystemGroup);
   } catch (error) {
@@ -167,10 +140,10 @@ export async function getAllSettingsByGroups(db, includeSystemGroup = false) {
  * @param {D1Database} db - D1数据库实例
  * @returns {Promise<Array>} 分组信息列表
  */
-export async function getGroupsInfo(db) {
+export async function getGroupsInfo(db, repositoryFactory) {
   try {
-    const repositoryFactory = new RepositoryFactory(db);
-    const systemRepository = repositoryFactory.getSystemRepository();
+    const factory = resolveRepositoryFactory(db, repositoryFactory);
+    const systemRepository = factory.getSystemRepository();
 
     return await systemRepository.getGroupsInfo();
   } catch (error) {
@@ -187,10 +160,10 @@ export async function getGroupsInfo(db) {
  * @param {Object} options - 选项
  * @returns {Promise<Object>} 操作结果
  */
-export async function updateGroupSettings(db, groupId, settings, options = {}) {
+export async function updateGroupSettings(db, groupId, settings, options = {}, repositoryFactory) {
   try {
-    const repositoryFactory = new RepositoryFactory(db);
-    const systemRepository = repositoryFactory.getSystemRepository();
+    const factory = resolveRepositoryFactory(db, repositoryFactory);
+    const systemRepository = factory.getSystemRepository();
 
     const result = await systemRepository.updateGroupSettings(groupId, settings, options);
 
@@ -218,10 +191,10 @@ export async function updateGroupSettings(db, groupId, settings, options = {}) {
  * @param {string} key - 设置键名
  * @returns {Promise<Object|null>} 设置项元数据
  */
-export async function getSettingMetadata(db, key) {
+export async function getSettingMetadata(db, key, repositoryFactory) {
   try {
-    const repositoryFactory = new RepositoryFactory(db);
-    const systemRepository = repositoryFactory.getSystemRepository();
+    const factory = resolveRepositoryFactory(db, repositoryFactory);
+    const systemRepository = factory.getSystemRepository();
 
     return await systemRepository.getSettingMetadata(key);
   } catch (error) {

@@ -4,7 +4,7 @@
  */
 
 import { HeadObjectCommand, ListObjectsV2Command, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
-import { createS3Client } from "../../../../utils/s3Utils.js";
+import { createS3Client } from "./s3Utils.js";
 
 /**
  * 统一的父目录时间更新工具函数

@@ -1,19 +1,18 @@
 import crypto from "crypto";
-import { RepositoryFactory } from "../repositories/index.js";
+import { ensureRepositoryFactory } from "../utils/repositories.js";
 
 /**
  * 代理签名服务
  * 支持两层签名策略：全局签名所有 + 存储级签名
  */
 export class ProxySignatureService {
-  constructor(db, encryptionSecret) {
+  constructor(db, encryptionSecret, repositoryFactory = null) {
     this.db = db;
     this.secret = encryptionSecret;
     this.configCache = new Map(); // 配置缓存
 
-    // 初始化Repository
-    const repositoryFactory = new RepositoryFactory(db);
-    this.systemRepository = repositoryFactory.getSystemRepository();
+    const factory = ensureRepositoryFactory(db, repositoryFactory);
+    this.systemRepository = factory.getSystemRepository();
   }
 
   /**

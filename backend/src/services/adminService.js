@@ -2,7 +2,9 @@ import { ApiStatus } from "../constants/index.js";
 import { generateRandomString, createErrorResponse } from "../utils/common.js";
 import { hashPassword, verifyPassword } from "../utils/crypto.js";
 import { HTTPException } from "hono/http-exception";
-import { RepositoryFactory } from "../repositories/index.js";
+import { ensureRepositoryFactory } from "../utils/repositories.js";
+
+const resolveRepositoryFactory = ensureRepositoryFactory;
 
 /**
  * 验证管理员令牌
@@ -10,13 +12,13 @@ import { RepositoryFactory } from "../repositories/index.js";
  * @param {string} token - JWT令牌
  * @returns {Promise<string|null>} 管理员ID或null
  */
-export async function validateAdminToken(db, token) {
+export async function validateAdminToken(db, token, repositoryFactory) {
   console.log("验证管理员令牌:", token.substring(0, 5) + "..." + token.substring(token.length - 5));
 
   try {
     // 使用 AdminRepository 验证令牌
-    const repositoryFactory = new RepositoryFactory(db);
-    const adminRepository = repositoryFactory.getAdminRepository();
+    const factory = resolveRepositoryFactory(db, repositoryFactory);
+    const adminRepository = factory.getAdminRepository();
 
     const adminId = await adminRepository.validateToken(token);
 
@@ -38,18 +40,17 @@ export async function validateAdminToken(db, token) {
  * @param {D1Database} db - D1数据库实例
  * @param {string} username - 用户名
  * @param {string} password - 密码
- * @param {Object} env - 环境变量对象
  * @returns {Promise<Object>} 登录结果，包含token和过期时间
  */
-export async function login(db, username, password, env = {}) {
+export async function login(db, username, password, repositoryFactory) {
   // 参数验证
   if (!username || !password) {
     throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "用户名和密码不能为空" });
   }
 
   // 使用 AdminRepository 查询管理员
-  const repositoryFactory = new RepositoryFactory(db);
-  const adminRepository = repositoryFactory.getAdminRepository();
+  const factory = resolveRepositoryFactory(db, repositoryFactory);
+  const adminRepository = factory.getAdminRepository();
 
   const admin = await adminRepository.findByUsername(username);
 
@@ -89,10 +90,7 @@ export async function login(db, username, password, env = {}) {
   // 生成并存储令牌
   const token = generateRandomString(32);
   const expiresAt = new Date();
-
-  // 从环境变量读取token过期天数，默认7天
-  const expiryDays = parseInt(env.ADMIN_TOKEN_EXPIRY_DAYS || "7", 10);
-  expiresAt.setDate(expiresAt.getDate() + expiryDays);
+  expiresAt.setDate(expiresAt.getDate() + 1); // 1天过期
 
   // 使用 AdminRepository 创建令牌
   await adminRepository.createToken(admin.id, token, expiresAt);
@@ -111,10 +109,10 @@ export async function login(db, username, password, env = {}) {
  * @param {string} token - 认证令牌
  * @returns {Promise<void>}
  */
-export async function logout(db, token) {
+export async function logout(db, token, repositoryFactory) {
   // 使用 AdminRepository 删除令牌
-  const repositoryFactory = new RepositoryFactory(db);
-  const adminRepository = repositoryFactory.getAdminRepository();
+  const factory = resolveRepositoryFactory(db, repositoryFactory);
+  const adminRepository = factory.getAdminRepository();
 
   await adminRepository.deleteToken(token);
 }
@@ -128,10 +126,10 @@ export async function logout(db, token) {
  * @param {string} newUsername - 新用户名，可选
  * @returns {Promise<void>}
  */
-export async function changePassword(db, adminId, currentPassword, newPassword, newUsername) {
+export async function changePassword(db, adminId, currentPassword, newPassword, newUsername, repositoryFactory) {
   // 使用 AdminRepository
-  const repositoryFactory = new RepositoryFactory(db);
-  const adminRepository = repositoryFactory.getAdminRepository();
+  const factory = resolveRepositoryFactory(db, repositoryFactory);
+  const adminRepository = factory.getAdminRepository();
 
   // 验证当前密码
   const admin = await adminRepository.findById(adminId);
@@ -181,7 +179,7 @@ export async function changePassword(db, adminId, currentPassword, newPassword, 
  * @param {string} token - JWT令牌
  * @returns {Promise<boolean>} 令牌是否有效
  */
-export async function testAdminToken(db, token) {
-  const adminId = await validateAdminToken(db, token);
+export async function testAdminToken(db, token, repositoryFactory) {
+  const adminId = await validateAdminToken(db, token, repositoryFactory);
   return adminId !== null;
 }

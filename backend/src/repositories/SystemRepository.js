@@ -25,8 +25,11 @@ export class SystemRepository extends BaseRepository {
     // API密钥总数
     stats.totalApiKeys = await this.count(DbTables.API_KEYS);
 
-    // S3配置总数
-    stats.totalS3Configs = await this.count(DbTables.S3_CONFIGS);
+    // S3配置总数（storage_configs 按类型过滤）
+    const totalS3Result = await this.queryFirst(
+      `SELECT COUNT(*) AS cnt FROM ${DbTables.STORAGE_CONFIGS} WHERE storage_type = 'S3'`
+    );
+    stats.totalS3Configs = totalS3Result?.cnt || 0;
 
     return stats;
   }
@@ -78,12 +81,16 @@ export class SystemRepository extends BaseRepository {
     // 获取所有S3配置的使用情况
     const s3ConfigsQuery = `
       SELECT
-        s.id, s.name, s.provider_type, s.total_storage_bytes,
+        s.id,
+        s.name,
+        json_extract(s.config_json,'$.provider_type') AS provider_type,
+        json_extract(s.config_json,'$.total_storage_bytes') AS total_storage_bytes,
         COUNT(f.id) as file_count,
         COALESCE(SUM(f.size), 0) as total_size
-      FROM ${DbTables.S3_CONFIGS} s
+      FROM ${DbTables.STORAGE_CONFIGS} s
       LEFT JOIN ${DbTables.FILES} f ON s.id = f.storage_config_id AND f.storage_type = 'S3'
-      GROUP BY s.id, s.name, s.provider_type, s.total_storage_bytes
+      WHERE s.storage_type = 'S3'
+      GROUP BY s.id, s.name, provider_type, total_storage_bytes
       ORDER BY s.name ASC
     `;
 

@@ -243,26 +243,26 @@
       <!-- 上传选项表单 -->
       <div class="upload-form">
         <form @submit.prevent="submitUpload">
-          <!-- S3配置选择 -->
+          <!-- 存储配置选择 -->
           <div class="mb-6">
             <h3 class="text-lg font-medium mb-4" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">{{ t("file.storage") }}</h3>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div class="form-group flex flex-col">
                 <label class="form-label text-sm font-medium mb-1.5" :class="darkMode ? 'text-gray-300' : 'text-gray-700'">{{ t("file.storage") }}</label>
                 <div class="relative">
-                  <select
-                    v-model="formData.s3_config_id"
+                <select
+                  v-model="formData.storage_config_id"
                     class="form-input w-full rounded-md shadow-sm focus:ring-2 focus:ring-offset-1 focus:border-transparent appearance-none"
                     :class="[
                       darkMode
                         ? 'bg-gray-700 border-gray-600 text-white focus:ring-blue-600 focus:ring-offset-gray-800'
                         : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500 focus:ring-offset-white',
                     ]"
-                    :disabled="!s3Configs.length || loading || isUploading"
+                    :disabled="!storageConfigs.length || loading || isUploading"
                     required
                   >
-                    <option value="" disabled selected>{{ s3Configs.length ? t("file.selectStorage") : t("file.noStorage") }}</option>
-                    <option v-for="config in s3Configs" :key="config.id" :value="config.id">{{ config.name }} ({{ config.provider_type }})</option>
+                    <option value="" disabled selected>{{ storageConfigs.length ? t("file.selectStorage") : t("file.noStorage") }}</option>
+                    <option v-for="config in storageConfigs" :key="config.id" :value="config.id">{{ formatStorageOptionLabel(config) }}</option>
                   </select>
                   <div class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
                     <svg
@@ -430,10 +430,10 @@
             <div class="submit-section mt-6 flex flex-row items-center gap-3">
               <button
                 type="submit"
-                :disabled="selectedFiles.length === 0 || !formData.s3_config_id || isUploading || loading"
+                :disabled="selectedFiles.length === 0 || !formData.storage_config_id || isUploading || loading"
                 class="btn-primary px-4 py-2 rounded-md font-medium focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors flex items-center justify-center min-w-[120px]"
                 :class="[
-                  selectedFiles.length === 0 || !formData.s3_config_id || isUploading || loading
+                  selectedFiles.length === 0 || !formData.storage_config_id || isUploading || loading
                     ? darkMode
                       ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
                       : 'bg-gray-200 text-gray-500 cursor-not-allowed'
@@ -480,7 +480,7 @@
     <div v-else>
       <UrlUploader
         :darkMode="darkMode"
-        :s3Configs="s3Configs"
+        :storage-configs="storageConfigs"
         :loading="loading"
         :isAdmin="isAdmin"
         @upload-success="$emit('upload-success', $event)"
@@ -492,7 +492,8 @@
 </template>
 
 <script setup>
-import { ref, reactive, defineProps, defineEmits, getCurrentInstance, onMounted, onUnmounted, watch } from "vue";
+import { useDeleteSettingsStore } from "@/stores/deleteSettingsStore.js";
+import { ref, reactive, computed, defineProps, defineEmits, getCurrentInstance, onMounted, onUnmounted, watch } from "vue";
 import { api } from "@/api";
 import { API_BASE_URL } from "../../api/config"; // 导入API_BASE_URL
 import { useI18n } from "vue-i18n"; // 导入i18n
@@ -508,7 +509,7 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
-  s3Configs: {
+  storageConfigs: {
     type: Array,
     default: () => [],
   },
@@ -521,6 +522,17 @@ const props = defineProps({
     default: false,
   },
 });
+
+const storageConfigs = computed(() => props.storageConfigs || []);
+
+const formatStorageOptionLabel = (config) => {
+  if (!config) {
+    return t("file.storage");
+  }
+
+  const meta = config.provider_type || config.storage_type;
+  return meta ? `${config.name} (${meta})` : config.name;
+};
 
 const emit = defineEmits(["upload-success", "upload-error", "refresh-files"]);
 
@@ -547,7 +559,7 @@ const totalProgress = ref(0);
 
 // 表单数据
 const formData = reactive({
-  s3_config_id: "",
+  storage_config_id: "",
   slug: "",
   path: "",
   remark: "",
@@ -616,23 +628,25 @@ const handlePaste = (event) => {
   }
 };
 
-// 监听s3Configs变化，自动选择默认配置
+// 监听存储配置变化，自动选择默认或首个可用配置
 watch(
-  () => props.s3Configs,
+  storageConfigs,
   (configs) => {
-    if (configs && configs.length > 0) {
-      // 查找默认配置
-      const defaultConfig = configs.find((config) => config.is_default);
-      if (defaultConfig) {
-        // 使用默认配置的ID
-        formData.s3_config_id = defaultConfig.id;
-      } else if (!formData.s3_config_id && configs.length > 0) {
-        // 如果没有默认配置且当前未选择配置，则选择第一个
-        formData.s3_config_id = configs[0].id;
-      }
+    const list = configs || [];
+
+    if (list.length === 0) {
+      formData.storage_config_id = "";
+      return;
     }
+
+    if (formData.storage_config_id && list.some((config) => config.id === formData.storage_config_id)) {
+      return;
+    }
+
+    const defaultConfig = list.find((config) => config.is_default);
+    formData.storage_config_id = (defaultConfig || list[0]).id;
   },
-  { immediate: true } // 页面加载时立即执行
+  { immediate: true }
 );
 
 /**
@@ -825,8 +839,9 @@ const cancelUpload = () => {
         // 如果已获取了文件ID，则删除相应的文件记录
         if (fileItem.fileId) {
           // 使用统一的批量删除API
+          const deleteSettingsStore = useDeleteSettingsStore();
           api.file
-            .batchDeleteFiles([fileItem.fileId])
+            .batchDeleteFiles([fileItem.fileId], deleteSettingsStore.getDeleteMode())
             .then(() => {
               console.log("已成功删除被取消的文件记录", fileItem.fileId);
             })
@@ -876,7 +891,7 @@ const validateCustomLink = () => {
 
 // 上传文件
 const submitUpload = async () => {
-  if (selectedFiles.value.length === 0 || !formData.s3_config_id || isUploading.value) return;
+  if (selectedFiles.value.length === 0 || !formData.storage_config_id || isUploading.value) return;
 
   // 检查是否有文件可以上传（排除已上传成功或正在上传的文件）
   const filesToUpload = fileItems.value.filter((item) => item.status !== "success" && item.status !== "uploading");
@@ -969,11 +984,11 @@ const submitUpload = async () => {
       // 如果有自定义slug，则根据文件索引添加后缀，避免冲突
       const fileSlug = formData.slug ? (selectedFiles.value.length > 1 ? `${formData.slug}-${i + 1}` : formData.slug) : "";
 
-      // 使用直接上传到S3的方法
+      // 使用直接上传方法将文件推送到选定存储
       const response = await api.file.directUploadFile(
         file,
         {
-          s3_config_id: formData.s3_config_id,
+          storage_config_id: formData.storage_config_id,
           slug: fileSlug,
           path: formData.path || "",
           remark: formData.remark || "",
@@ -1246,7 +1261,7 @@ const processInsufficientStorageError = (errorMessage) => {
 
 // 重试上传单个文件
 const retryUpload = async (index) => {
-  if (!selectedFiles.value[index] || !formData.s3_config_id || isUploading.value) return;
+  if (!selectedFiles.value[index] || !formData.storage_config_id || isUploading.value) return;
 
   const file = selectedFiles.value[index];
   const fileItem = fileItems.value[index];
@@ -1274,7 +1289,7 @@ const retryUpload = async (index) => {
     const response = await api.file.directUploadFile(
       file,
       {
-        s3_config_id: formData.s3_config_id,
+        storage_config_id: formData.storage_config_id,
         slug: fileSlug,
         path: formData.path || "",
         remark: formData.remark || "",
@@ -1411,8 +1426,9 @@ const cancelSingleUpload = (index) => {
   // 如果已获取了文件ID，则删除相应的文件记录
   if (fileItem.fileId) {
     // 使用统一的批量删除API
-    api.file
-      .batchDeleteFiles([fileItem.fileId])
+  const deleteSettingsStore = useDeleteSettingsStore();
+  api.file
+    .batchDeleteFiles([fileItem.fileId], deleteSettingsStore.getDeleteMode())
       .then(() => {
         console.log("已成功删除被取消的文件记录", fileItem.fileId);
       })

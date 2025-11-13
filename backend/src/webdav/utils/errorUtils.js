@@ -121,6 +121,14 @@ export function handleWebDAVError(operation, error, includeDetails = false, useX
       });
 }
 
+export async function withWebDAVErrorHandling(operation, handler, { includeDetails = false, useXmlResponse = true } = {}) {
+  try {
+    return await handler();
+  } catch (error) {
+    return handleWebDAVError(operation, error, includeDetails, useXmlResponse);
+  }
+}
+
 /**
  * 创建WebDAV错误响应
  * @param {string} message - 错误消息

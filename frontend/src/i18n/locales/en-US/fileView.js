@@ -20,7 +20,7 @@ export default {
       expiresAt: "Expires At",
       accessMode: "Access Mode",
       proxyAccess: "Worker Proxy Access",
-      directAccess: "S3/CDN Direct Access",
+      directAccess: "Storage/CDN Direct Access",
       limit: "limit",
     },
 

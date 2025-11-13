@@ -4,7 +4,7 @@
 
 import { get, post, del } from "../client";
 import { API_BASE_URL } from "../config";
-import { S3MultipartUploader } from "./S3MultipartUploader.js";
+import { StorageMultipartUploader } from "./StorageMultipartUploader.js";
 
 /******************************************************************************
  * 统一文件系统API函数
@@ -136,7 +136,7 @@ export async function updateFile(path, content) {
 /**
  * 获取文件直链
  * @param {string} path 文件路径
- * @param {number|null} expiresIn 过期时间（秒），null表示使用S3配置的默认签名时间
+ * @param {number|null} expiresIn 过期时间（秒），null表示使用存储配置的默认签名时间
  * @param {boolean} forceDownload 是否强制下载而非预览
  * @returns {Promise<Object>} 包含预签名URL的响应对象
  */
@@ -319,7 +319,7 @@ export async function batchCopyItems(items, skipExisting = true, options = {}) {
  * 提交批量复制完成
  * @param {Object} data 批量复制完成数据
  * @param {string} data.targetMountId 目标挂载点ID
- * @param {Array<Object>} data.files 文件列表，每个对象包含 {targetPath, s3Path, contentType?, fileSize?, etag?}
+ * @param {Array<Object>} data.files 文件列表，每个对象包含 {targetPath, storagePath, contentType?, fileSize?, etag?}
  * @returns {Promise<Object>} 提交结果响应对象
  */
 export async function commitBatchCopy(data) {
@@ -357,7 +357,7 @@ export async function copyItem(sourcePath, targetPath, skipExisting = true, opti
  * @param {string} data.sourcePath 源文件路径
  * @param {string} data.targetPath 目标文件路径
  * @param {string} data.targetMountId 目标挂载点ID
- * @param {string} data.s3Path S3存储路径
+ * @param {string} data.storagePath 存储路径
  * @param {string} [data.etag] 文件ETag（可选）
  * @param {string} [data.contentType] 文件MIME类型（可选）
  * @param {number} [data.fileSize] 文件大小（字节）（可选）
@@ -370,7 +370,7 @@ export async function commitCopy(data) {
     files: [
       {
         targetPath: data.targetPath,
-        s3Path: data.s3Path,
+        storagePath: data.storagePath,
         contentType: data.contentType,
         fileSize: data.fileSize,
         etag: data.etag,
@@ -606,10 +606,12 @@ export async function performClientSideCopy(options) {
           // 添加文件名
           targetPath += item.fileName;
 
+          const resolvedTargetKey = item.targetKey || item.storagePath || null;
           return {
             ...item,
             targetMount: result.targetMount,
             targetPath: targetPath,
+            targetKey: resolvedTargetKey,
           };
         });
         allCopyItems.push(...itemsWithMetadata);
@@ -620,9 +622,11 @@ export async function performClientSideCopy(options) {
         }
       } else if (!result.isDirectory) {
         // 文件复制
+        const resolvedTargetKey = result.storagePath || result.targetKey || null;
         const fileItem = {
           ...result,
           targetPath: result.target,
+          targetKey: resolvedTargetKey,
         };
         allCopyItems.push(fileItem);
 
@@ -682,7 +686,8 @@ export async function performClientSideCopy(options) {
       }
 
       // 上传文件内容到目标位置
-      console.log(`上传到目标位置: ${singleFileCopy.targetS3Path || singleFileCopy.targetKey}`);
+      const targetKey = singleFileCopy.targetKey || singleFileCopy.storagePath;
+      console.log(`上传到目标位置: ${targetKey}`);
       const uploadResult = await uploadToPresignedUrl({
         url: singleFileCopy.uploadUrl,
         data: fileContent,
@@ -708,7 +713,7 @@ export async function performClientSideCopy(options) {
         files: [
           {
             targetPath: singleFileCopy.targetPath,
-            s3Path: singleFileCopy.targetS3Path || singleFileCopy.targetKey,
+            storagePath: targetKey,
             contentType: singleFileCopy.contentType,
             fileSize: fileContent.byteLength,
             etag: uploadResult.etag,
@@ -765,7 +770,8 @@ export async function performClientSideCopy(options) {
       }
 
       // 上传文件内容
-      console.log(`上传到目标位置: ${item.targetS3Path || item.targetKey}`);
+      const targetKey = item.targetKey || item.storagePath;
+      console.log(`上传到目标位置: ${targetKey}`);
       const uploadResult = await uploadToPresignedUrl({
         url: item.uploadUrl,
         data: fileContent,
@@ -791,7 +797,7 @@ export async function performClientSideCopy(options) {
       // 记录完成的文件
       completedFiles.push({
         targetPath: item.targetPath,
-        s3Path: item.targetS3Path || item.targetKey,
+        storagePath: targetKey,
         contentType: item.contentType,
         fileSize: fileContent.byteLength,
         etag: uploadResult.etag,
@@ -854,12 +860,12 @@ export async function performMultipartUpload(file, path, onProgress, onCancel, o
   try {
     console.log(`开始分片上传: 文件=${file.name}, 大小=${file.size}, 路径=${path}`);
 
-    // 1. 检查是否有进行中的上传（AWS S3标准流程）
+    // 1. 检查是否有进行中的上传（对象存储标准流程）
     console.log("检查进行中的分片上传...");
     const uploadsResponse = await listMultipartUploads(path);
 
     if (uploadsResponse.success && uploadsResponse.data.uploads) {
-      console.log(`S3中进行中的上传数量: ${uploadsResponse.data.uploads.length}`);
+      console.log(`存储中进行中的上传数量: ${uploadsResponse.data.uploads.length}`);
 
       // 查找匹配的上传（基于文件名和大小）
       const targetFileName = path.endsWith("/") ? path + file.name : path + "/" + file.name;
@@ -970,7 +976,7 @@ export async function performMultipartUpload(file, path, onProgress, onCancel, o
     }
 
     // 2. 创建分片上传器
-    multipartUploader = new S3MultipartUploader({
+    multipartUploader = new StorageMultipartUploader({
       maxConcurrentUploads: 3,
       onProgress: onProgress,
       onError: (error) => {
@@ -986,23 +992,23 @@ export async function performMultipartUpload(file, path, onProgress, onCancel, o
     if (uploadedParts.length > 0) {
       console.log("恢复已上传的分片状态...");
 
-      // 将S3的分片信息转换为S3MultipartUploader期望的格式
-      const s3Parts = uploadedParts.map((part) => ({
+      // 将存储返回的分片信息转换为上传器期望的格式
+      const storageParts = uploadedParts.map((part) => ({
         PartNumber: part.partNumber,
         ETag: part.etag,
         Size: part.size,
         LastModified: part.lastModified,
       }));
 
-      // 调用S3MultipartUploader的恢复方法
-      multipartUploader.restoreFromS3ListParts(s3Parts);
+      // 调用上传器的恢复方法
+      multipartUploader.restoreFromStorageListParts(storageParts);
 
       console.log(`已恢复${uploadedParts.length}个分片的状态`);
     }
 
     // 如果提供了XHR创建回调，需要适配到分片上传器
     if (onXhrCreated) {
-      // 注意：S3MultipartUploader内部管理多个XHR，这里只能提供一个引用
+      // 注意：分片上传器内部管理多个XHR，这里只能提供一个引用
       // 实际的取消逻辑应该通过multipartUploader.abort()来处理
       onXhrCreated({
         abort: () => multipartUploader.abort(),
@@ -1065,7 +1071,7 @@ export async function performPresignedUpload(file, path, onProgress, onCancel, o
 
     const { presignedUrl: uploadUrl, ...uploadInfo } = presignResponse.data;
 
-    // 2. 使用 uploadWithPresignedUrl 上传到S3，支持进度和取消（使用后端推断的MIME类型）
+    // 2. 使用 uploadWithPresignedUrl 上传到目标存储，支持进度和取消（使用后端推断的MIME类型）
     let uploadXhr = null;
     const uploadResult = await uploadWithPresignedUrl(uploadUrl, file, uploadInfo.contentType, onProgress, onCancel, (xhr) => {
       uploadXhr = xhr;

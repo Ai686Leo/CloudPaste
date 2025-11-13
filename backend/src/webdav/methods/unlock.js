@@ -5,8 +5,10 @@
 
 import { lockManager } from "../utils/LockManager.js";
 import { parseLockTokenHeader } from "../utils/lockUtils.js";
-import { handleWebDAVError, createWebDAVErrorResponse } from "../utils/errorUtils.js";
+import { withWebDAVErrorHandling } from "../utils/errorUtils.js";
 import { getStandardWebDAVHeaders } from "../utils/headerUtils.js";
+import { HTTPException } from "hono/http-exception";
+import { ApiStatus, UserType } from "../../constants/index.js";
 
 /**
  * 处理UNLOCK请求
@@ -18,21 +20,21 @@ import { getStandardWebDAVHeaders } from "../utils/headerUtils.js";
  * @returns {Response} HTTP响应
  */
 export async function handleUnlock(c, path, userId, userType, db) {
-  try {
+  return withWebDAVErrorHandling("UNLOCK", async () => {
     console.log(`WebDAV UNLOCK 请求 - 路径: ${path}, 用户类型: ${userType}`);
 
     // 获取Lock-Token头
     const lockTokenHeader = c.req.header("Lock-Token");
     if (!lockTokenHeader) {
       console.log(`UNLOCK失败 - 路径: ${path}, 缺少Lock-Token头`);
-      return createWebDAVErrorResponse("缺少Lock-Token头", 400);
+      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "缺少Lock-Token头" });
     }
 
     // 解析锁令牌
     const token = parseLockTokenHeader(lockTokenHeader);
     if (!token) {
       console.log(`UNLOCK失败 - 路径: ${path}, 无效的Lock-Token格式: ${lockTokenHeader}`);
-      return createWebDAVErrorResponse("无效的Lock-Token格式", 400);
+      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "无效的Lock-Token格式" });
     }
 
     console.log(`UNLOCK请求 - 路径: ${path}, 令牌: ${token}`);
@@ -41,7 +43,7 @@ export async function handleUnlock(c, path, userId, userType, db) {
     const lockInfo = lockManager.getLockByToken(token);
     if (!lockInfo) {
       console.log(`UNLOCK失败 - 令牌: ${token}, 锁定不存在或已过期`);
-      return createWebDAVErrorResponse("锁定不存在或已过期", 409);
+      throw new HTTPException(ApiStatus.CONFLICT, { message: "锁定不存在或已过期" });
     }
 
     // 验证路径匹配
@@ -52,9 +54,9 @@ export async function handleUnlock(c, path, userId, userType, db) {
 
     // 验证所有权（可选的安全检查）
     let expectedOwner = "unknown";
-    if (userType === "admin") {
+    if (userType === UserType.ADMIN) {
       expectedOwner = `admin:${userId}`;
-    } else if (userType === "apiKey" && typeof userId === "object") {
+    } else if (userType === UserType.API_KEY && typeof userId === "object") {
       expectedOwner = `apiKey:${userId.name || userId.id}`;
     }
 
@@ -68,7 +70,7 @@ export async function handleUnlock(c, path, userId, userType, db) {
     const unlocked = lockManager.unlock(token);
     if (!unlocked) {
       console.log(`UNLOCK失败 - 路径: ${path}, 删除锁定失败`);
-      return createWebDAVErrorResponse("删除锁定失败", 500);
+      throw new HTTPException(ApiStatus.INTERNAL_ERROR, { message: "删除锁定失败" });
     }
 
     console.log(`UNLOCK成功 - 路径: ${path}, 令牌: ${token}`);
@@ -82,8 +84,5 @@ export async function handleUnlock(c, path, userId, userType, db) {
         },
       }),
     });
-  } catch (error) {
-    console.error("处理UNLOCK失败:", error);
-    return handleWebDAVError("UNLOCK", error);
-  }
+  }, { includeDetails: false });
 }

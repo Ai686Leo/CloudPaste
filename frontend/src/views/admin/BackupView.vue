@@ -266,7 +266,7 @@ export default {
         text_management: "txt",
         file_management: "file",
         mount_management: "mount",
-        storage_config: "s3cfg",
+        storage_config: "storage",
         key_management: "key",
         account_management: "admin",
         system_settings: "sys",

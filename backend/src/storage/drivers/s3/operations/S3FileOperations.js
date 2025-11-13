@@ -5,7 +5,7 @@
 
 import { HTTPException } from "hono/http-exception";
 import { ApiStatus } from "../../../../constants/index.js";
-import { generatePresignedUrl, createS3Client } from "../../../../utils/s3Utils.js";
+import { generatePresignedUrl, createS3Client } from "../utils/s3Utils.js";
 import { S3Client, GetObjectCommand, PutObjectCommand, DeleteObjectCommand, ListObjectsV2Command, CopyObjectCommand } from "@aws-sdk/client-s3";
 import { getMimeTypeFromFilename } from "../../../../utils/fileUtils.js";
 import { handleFsError } from "../../../fs/utils/ErrorHandler.js";

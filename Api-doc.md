@@ -412,7 +412,7 @@ X-Custom-Auth-Key: <api_key>
   - 请求体：
     ```json
     {
-      "s3_config_id": "S3配置ID", // 必填
+      "storage_config_id": "存储配置ID", // 必填
       "filename": "文件名.jpg", // 必填
       "size": 1024, // 可选，文件大小（字节）
       "mimetype": "image/jpeg", // 可选，MIME类型
@@ -848,7 +848,7 @@ X-Custom-Auth-Key: <api_key>
             "hitRate": 0.85,
             "missRate": 0.15
           },
-          "s3Url": {
+          "url": {
             "totalEntries": 50,
             "hitRate": 0.9,
             "missRate": 0.1
@@ -877,14 +877,14 @@ X-Custom-Auth-Key: <api_key>
 
 - `POST /api/admin/cache/clear`
 
-  - 描述：清理系统缓存（支持目录缓存、S3URL 缓存和搜索缓存）
+  - 描述：清理系统缓存（支持目录缓存、URL 缓存和搜索缓存）
   - 授权：需要管理员令牌
   - 请求体：
     ```json
     {
       "mountId": "挂载点ID", // 可选，清理特定挂载点的缓存
-      "s3ConfigId": "S3配置ID" // 可选，清理特定S3配置相关的缓存
-      // 注意：如果两个参数都不提供，将清理所有缓存（目录、S3URL、搜索）
+      "storageConfigId": "存储配置ID" // 可选，清理特定存储配置相关的缓存
+      // 注意：如果两个参数都不提供，将清理所有缓存（目录、URL、搜索）
     }
     ```
   - 响应：清理结果
@@ -1164,14 +1164,14 @@ X-Custom-Auth-Key: <api_key>
         // 必填，已复制文件列表
         {
           "targetPath": "目标路径1", // 必填
-          "s3Path": "S3存储路径1", // 必填
+          "storagePath": "存储路径1", // 必填
           "contentType": "文件MIME类型", // 可选
           "fileSize": 1024000, // 可选，文件大小（字节）
           "etag": "文件ETag" // 可选
         },
         {
           "targetPath": "目标路径2",
-          "s3Path": "S3存储路径2"
+          "storagePath": "存储路径2"
         }
       ]
     }
@@ -1351,46 +1351,57 @@ X-Custom-Auth-Key: <api_key>
 
 #### URL 上传准备与提交
 
-- `POST /api/url/presign`
+- `POST /api/share/url/presign`
 
-  - 描述：为 URL 上传准备预签名 URL 和文件记录
+  - 描述：根据 URL 元信息生成上传预签名（客户端 PUT 到对象存储），并返回提交建议
   - 授权：需要管理员令牌或有文件权限的 API 密钥
   - 请求体：
     ```json
     {
-      "url": "https://example.com/image.jpg", // 必填，源文件URL
-      "s3_config_id": "S3配置ID", // 必填，上传目标S3配置
-      "metadata": {
-        // 可选，自定义元数据
-        "filename": "自定义文件名.jpg",
-        "contentType": "image/jpeg"
+      "url": "https://example.com/image.jpg",           // 必填，源URL
+      "storage_config_id": "配置ID",                     // 可选，不提供则选择默认（API Key 仅公开）
+      "filename": "自定义文件名.jpg",                    // 可选，覆盖元信息文件名
+      "contentType": "image/jpeg",                      // 可选
+      "fileSize": 102400,                                // 可选
+      "path": "custom/path"                             // 可选，存储目录（与 default_folder 组合）
+    }
+    ```
+  - 响应：
+    ```json
+    {
+      "presign": {
+        "uploadUrl": "...",            // 预签名上传URL（PUT）
+        "key": "images/a.jpg",         // 对象Key（用于提交）
+        "storage_config_id": "...",     // 提交所需配置ID
+        "expiresIn": 3600,
+        "filename": "a.jpg"
       },
-      "filename": "自定义文件名.jpg", // 可选，覆盖元数据中的文件名
-      "slug": "custom-slug", // 可选，自定义短链接
-      "remark": "文件备注", // 可选，文件说明
-      "path": "custom/path/" // 可选，自定义存储路径
+      "metadata": { "filename": "a.jpg", "contentType": "image/jpeg", "size": 102400 },
+      "commit_suggestion": { "key": "images/a.jpg", "storage_config_id": "...", "filename": "a.jpg", "size": 102400 }
     }
     ```
-  - 响应：包含上传信息和预签名 URL 的对象
 
-- `POST /api/url/commit`
+- `POST /api/share/commit`
 
-  - 描述：URL 上传完成后的提交确认
+  - 描述：确认预签名上传完成，创建或更新分享记录（覆盖策略由系统 `file_naming_strategy` 决定）
   - 授权：需要管理员令牌或有文件权限的 API 密钥
   - 请求体：
     ```json
     {
-      "file_id": "文件ID", // 必填
-      "etag": "文件ETag", // 必填，S3返回的ETag
-      "size": 1024000, // 可选，文件大小（字节）
-      "remark": "文件备注", // 可选
-      "password": "访问密码", // 可选
-      "expires_in": 168, // 可选，过期时间（小时）
-      "max_views": 10, // 可选，最大查看次数
-      "slug": "custom-slug" // 可选，自定义短链接
+      "key": "images/a.jpg",                 // 必填，对象Key
+      "storage_config_id": "...",            // 必填，目标存储配置ID
+      "filename": "a.jpg",                   // 必填，用于展示与MIME推断
+      "size": 102400,                         // 建议提供，便于配额校验
+      "etag": "...",                         // 建议提供
+      "remark": "备注",                      // 可选
+      "password": "...",                     // 可选
+      "expires_in": 24,                       // 可选（小时）
+      "max_views": 0,                         // 可选（0=不限）
+      "slug": "custom-slug",                 // 可选，支持覆盖（需同一创建者）
+      "use_proxy": true                        // 可选；不提供时使用系统 default_use_proxy
     }
     ```
-  - 响应：文件提交结果和访问信息
+  - 响应：包含 slug、代理/直链 URL、直链签名等访问信息
 
 #### URL 分片上传
 
@@ -1402,7 +1413,7 @@ X-Custom-Auth-Key: <api_key>
     ```json
     {
       "url": "https://example.com/largefile.zip", // 必填，源文件URL
-      "s3_config_id": "S3配置ID", // 必填，上传目标S3配置
+      "storage_config_id": "存储配置ID", // 必填，上传目标存储配置
       "metadata": {
         // 可选，自定义元数据
         "filename": "自定义文件名.zip",

@@ -1,8 +1,8 @@
 /**
- * S3分片上传器
- * 专注于分片上传的核心逻辑，基于S3实际状态进行断点续传
+ * 多存储分片上传器
+ * 专注于分片上传的核心逻辑，基于后端存储返回的状态进行断点续传
  */
-export class S3MultipartUploader {
+export class StorageMultipartUploader {
   constructor(options = {}) {
     // 基础配置
     this.maxConcurrentUploads = options.maxConcurrentUploads || 3;
@@ -75,25 +75,25 @@ export class S3MultipartUploader {
   }
 
   /**
-   * 从S3 ListParts结果恢复分片状态
-   * @param {Array} s3Parts - S3 ListParts API返回的分片信息
+   * 根据存储的 ListParts 结果恢复分片状态
+   * @param {Array} parts - 存储后端返回的分片信息
    * @returns {boolean} 是否成功恢复状态
    */
-  restoreFromS3ListParts(s3Parts) {
-    if (!Array.isArray(s3Parts) || s3Parts.length === 0) {
-      console.log("没有S3分片信息需要恢复");
+  restoreFromStorageListParts(parts) {
+    if (!Array.isArray(parts) || parts.length === 0) {
+      console.log("没有分片信息需要恢复");
       return false;
     }
 
-    console.log(`开始从S3恢复${s3Parts.length}个分片的状态`);
+    console.log(`开始恢复${parts.length}个分片的状态`);
 
     let restoredCount = 0;
 
-    // 遍历S3分片信息，更新对应的chunks状态
-    s3Parts.forEach((s3Part) => {
-      const partNumber = s3Part.PartNumber;
-      const etag = s3Part.ETag;
-      const size = s3Part.Size;
+    // 遍历分片信息，更新对应的chunks状态
+    parts.forEach((part) => {
+      const partNumber = part.PartNumber;
+      const etag = part.ETag;
+      const size = part.Size;
 
       // 查找对应的chunk（partNumber从1开始，数组索引从0开始）
       const chunkIndex = partNumber - 1;
@@ -113,14 +113,14 @@ export class S3MultipartUploader {
         console.log(`恢复分片 ${partNumber}: ETag=${etag}, Size=${size}`);
         restoredCount++;
       } else {
-        console.warn(`S3分片 ${partNumber} 超出了chunks范围，跳过恢复`);
+        console.warn(`分片 ${partNumber} 超出了chunks范围，跳过恢复`);
       }
     });
 
     // 重新计算上传进度
     this._updateProgress();
 
-    console.log(`S3状态恢复完成: 成功恢复${restoredCount}个分片，总进度${this._calculateProgress().toFixed(1)}%`);
+    console.log(`状态恢复完成: 成功恢复${restoredCount}个分片，总进度${this._calculateProgress().toFixed(1)}%`);
 
     return restoredCount > 0;
   }

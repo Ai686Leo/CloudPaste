@@ -4,6 +4,8 @@
  */
 import crypto from "crypto";
 import { BaseCache } from "./BaseCache.js";
+import { UserType } from "../constants/index.js";
+import { getMountsVersion } from "./cacheState.js";
 
 class SearchCacheManager extends BaseCache {
   /**
@@ -31,21 +33,24 @@ class SearchCacheManager extends BaseCache {
    * @param {string|Object} userIdOrInfo - 用户ID或API密钥信息
    * @returns {string} - 缓存键
    */
-  generateKey(query, searchParams, userType, userIdOrInfo) {
+  generateKey(query, searchParams, userType, userIdOrInfo, meta = {}) {
     // 构建缓存键的组成部分
     const keyComponents = {
       query: query.toLowerCase().trim(),
       scope: searchParams.scope || "global",
       mountId: searchParams.mountId || "",
       path: searchParams.path || "",
+      limit: Number.isFinite(searchParams.limit) ? Number(searchParams.limit) : 50,
+      offset: Number.isFinite(searchParams.offset) ? Number(searchParams.offset) : 0,
       filters: searchParams.filters || {},
       userType: userType,
+      mountsVersion: meta.mountsVersion || 0,
     };
 
     // 根据用户类型添加用户标识
-    if (userType === "admin") {
-      keyComponents.userId = userIdOrInfo;
-    } else if (userType === "apiKey") {
+    if (userType === UserType.ADMIN) {
+      keyComponents.userId = typeof userIdOrInfo === "string" ? userIdOrInfo : userIdOrInfo?.id || "";
+    } else if (userType === UserType.API_KEY) {
       // 对于API密钥用户，使用basicPath作为权限标识
       keyComponents.basicPath = userIdOrInfo.basicPath || "";
       keyComponents.apiKeyId = userIdOrInfo.id || "";
@@ -59,13 +64,6 @@ class SearchCacheManager extends BaseCache {
     return `search:${hash.substring(0, 16)}`;
   }
 
-  /**
-   * 生成搜索缓存键 - 兼容性方法
-   * @deprecated 使用 generateKey 方法
-   */
-  generateSearchKey(query, searchParams, userType, userIdOrInfo) {
-    return this.generateKey(query, searchParams, userType, userIdOrInfo);
-  }
 
   /**
    * 获取缓存的搜索结果 - 使用基类方法
@@ -76,7 +74,7 @@ class SearchCacheManager extends BaseCache {
    * @returns {Object|null} - 缓存的搜索结果，如果缓存未命中则返回null
    */
   get(query, searchParams, userType, userIdOrInfo) {
-    return super.get(query, searchParams, userType, userIdOrInfo);
+    return super.get(query, searchParams, userType, userIdOrInfo, { mountsVersion: getMountsVersion() });
   }
 
   /**
@@ -88,9 +86,12 @@ class SearchCacheManager extends BaseCache {
    * @param {Object} data - 要缓存的搜索结果数据
    * @param {number} ttlSeconds - 缓存的生存时间（秒），可选
    */
-  set(query, searchParams, userType, userIdOrInfo, data, ttlSeconds = null) {
-    // 保持原有参数顺序，内部调用基类方法时调整参数顺序
-    super.set(data, ttlSeconds, query, searchParams, userType, userIdOrInfo);
+  set(query, searchParams, userType, userIdOrInfo, data, ttlSeconds = null, meta = {}) {
+    const cacheMeta = {
+      mountsVersion: meta.mountsVersion ?? getMountsVersion(),
+      mountIds: Array.isArray(meta.mountIds) ? meta.mountIds : [],
+    };
+    super.set(data, ttlSeconds, query, searchParams, userType, userIdOrInfo, cacheMeta);
   }
 
   /**
@@ -101,17 +102,19 @@ class SearchCacheManager extends BaseCache {
    * @param {string|Object} userIdOrInfo - 用户ID或API密钥信息
    * @returns {Object} 额外的缓存数据
    */
-  getAdditionalCacheData(query, searchParams, userType, userIdOrInfo) {
+  getAdditionalCacheData(query, searchParams, userType, userIdOrInfo, meta = {}) {
     const additionalData = {
       query: query,
       searchParams: searchParams,
       userType: userType,
+      mountsVersion: meta.mountsVersion ?? 0,
+      mountIds: meta.mountIds ?? [],
     };
 
     // 根据用户类型添加用户标识字段，用于invalidateUser方法
-    if (userType === "admin") {
-      additionalData.userId = typeof userIdOrInfo === "string" ? userIdOrInfo : userIdOrInfo.id;
-    } else if (userType === "apiKey") {
+    if (userType === UserType.ADMIN) {
+      additionalData.userId = typeof userIdOrInfo === "string" ? userIdOrInfo : userIdOrInfo?.id || "";
+    } else if (userType === UserType.API_KEY) {
       additionalData.basicPath = userIdOrInfo.basicPath || "";
       additionalData.apiKeyId = userIdOrInfo.id || "";
     }
@@ -130,10 +133,13 @@ class SearchCacheManager extends BaseCache {
 
     // 找出所有涉及该挂载点的搜索缓存
     for (const [key, cacheItem] of this.cache.entries()) {
-      const { searchParams } = cacheItem;
+      const { searchParams, mountIds = [] } = cacheItem;
+      const involvesMount =
+        mountIds.includes(mountId) ||
+        searchParams.mountId === mountId ||
+        (searchParams.scope === "global" && !searchParams.mountId);
 
-      // 检查是否涉及该挂载点
-      if (searchParams.mountId === mountId || (searchParams.scope === "global" && !searchParams.mountId)) {
+      if (involvesMount) {
         keysToDelete.push(key);
       }
     }
@@ -183,14 +189,14 @@ class SearchCacheManager extends BaseCache {
       if (cacheItem.userType === userType) {
         let shouldDelete = false;
 
-        if (userType === "admin") {
+        if (userType === UserType.ADMIN) {
           // 对于管理员，直接比较用户ID
           const adminId = typeof userIdOrInfo === "string" ? userIdOrInfo : userIdOrInfo.id;
           // 正确访问：检查额外数据中的用户信息
           if (cacheItem.userId === adminId) {
             shouldDelete = true;
           }
-        } else if (userType === "apiKey") {
+        } else if (userType === UserType.API_KEY) {
           // 对于API密钥用户，比较basicPath和apiKeyId
           const apiKeyInfo = userIdOrInfo;
           // 正确访问：检查额外数据中的API密钥信息

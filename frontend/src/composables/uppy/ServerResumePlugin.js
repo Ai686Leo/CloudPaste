@@ -1,6 +1,6 @@
 /**
  * ServerResumePlugin - Uppy服务器端断点续传插件
- * 基于S3服务器状态的智能断点续传
+ * 基于存储服务器状态的智能断点续传
  */
 
 import { BasePlugin } from "@uppy/core";

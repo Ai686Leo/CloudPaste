@@ -2,10 +2,15 @@
  * WebDAV认证核心
  */
 
-import { getMethodPermission } from "../config/WebDAVConfig.js";
-import { authGateway } from "../../../middlewares/authGatewayMiddleware.js";
 import { MountManager } from "../../../storage/managers/MountManager.js";
+import { UserType } from "../../../constants/index.js";
 import { processWebDAVPath } from "../../utils/webdavUtils.js";
+import { getAccessibleMountsForUser } from "../../../security/helpers/access.js";
+
+/**
+ * WebDAVAuth 只负责协议层兼容（Basic Challenge + 路径验权），
+ * 具体的读/写授权交由 webdavRoutes 中的策略完成。
+ */
 
 /**
  * 认证结果类型枚举
@@ -27,28 +32,6 @@ export class WebDAVAuth {
   }
 
   /**
-   * 权限检查
-   * @param {Object} authResult - 认证结果
-   * @param {string} method - HTTP方法
-   * @returns {boolean} 是否有权限
-   */
-  checkWebDAVPermission(authResult, method) {
-    // 管理员绕过所有检查
-    if (authResult.isAdmin()) {
-      return true;
-    }
-
-    // 获取所需权限
-    const requiredPermission = getMethodPermission(method);
-    if (!requiredPermission) {
-      return false;
-    }
-
-    // 检查权限
-    return authResult.hasPermission(requiredPermission);
-  }
-
-  /**
    * 验证WebDAV路径权限
    * 检查API密钥用户是否有权限访问指定路径
    * @param {Object} keyInfo - API密钥信息
@@ -67,13 +50,15 @@ export class WebDAVAuth {
       }
 
       // 2. 检查挂载点权限
-      const mountManager = new MountManager(this.db, c.env.ENCRYPTION_SECRET);
+      const { getEncryptionSecret } = await import("../../../utils/environmentUtils.js");
+      const repositoryFactory = c.get("repos");
+      const mountManager = new MountManager(this.db, getEncryptionSecret(c), repositoryFactory);
 
       try {
         const { mount } = await mountManager.getDriverByPath(path, keyInfo, "apiKey");
 
         // 3. 验证API密钥是否有权限访问该挂载点
-        const accessibleMounts = await authGateway.utils.getAccessibleMounts(this.db, keyInfo, "apiKey");
+        const accessibleMounts = await getAccessibleMountsForUser(this.db, keyInfo, "apiKey");
         const isAccessible = accessibleMounts.some((m) => m.id === mount.id);
 
         if (!isAccessible) {
@@ -137,6 +122,7 @@ export class WebDAVAuth {
         const url = new URL(c.req.url);
         const rawPath = url.pathname;
         let requestPath = this.processPath(rawPath);
+        c.set("webdavPath", requestPath);
 
         // OPTIONS 方法特殊处理 - 允许未认证访问进行能力发现
         if (c.req.method === "OPTIONS") {
@@ -148,8 +134,6 @@ export class WebDAVAuth {
         const authResult = await this.performUnifiedAuth(c, requestPath);
 
         if (authResult.type === AuthResultType.SUCCESS) {
-          // 设置认证信息到上下文
-          c.set("webdavAuth", authResult);
           c.set("userType", authResult.userType);
           c.set("userId", authResult.userId);
           return await next();
@@ -190,25 +174,30 @@ export class WebDAVAuth {
    */
   async performUnifiedAuth(c, requestPath) {
     try {
-      // 执行基础认证
-      await authGateway.performAuth(c);
-      const authResult = authGateway.utils.getAuthResult(c);
-
-      if (!authResult || !authResult.isAuthenticated) {
+      const principal = c.get("principal");
+      if (!principal || principal.type === "guest") {
         return this.generateAuthChallenge();
       }
 
-      // 方法权限检查
-      if (!this.checkWebDAVPermission(authResult, c.req.method)) {
+      const userType = principal.isAdmin ? UserType.ADMIN : principal.type;
+      if (userType !== UserType.ADMIN && userType !== UserType.API_KEY) {
         return {
           type: AuthResultType.FORBIDDEN,
-          message: "方法权限不足",
+          message: "不支持的身份类型",
         };
       }
 
-      // 路径权限检查（仅对非管理员用户）
-      if (!authResult.isAdmin() && authResult.keyInfo) {
-        const hasPathPermission = await this.validateWebDAVPathPermission(authResult.keyInfo, requestPath, c.req.method, c);
+      let apiKeyInfo = null;
+      if (userType === UserType.API_KEY) {
+        apiKeyInfo = principal.attributes?.keyInfo ?? null;
+        if (!apiKeyInfo) {
+          return {
+            type: AuthResultType.ERROR,
+            message: "API密钥信息缺失",
+          };
+        }
+
+        const hasPathPermission = await this.validateWebDAVPathPermission(apiKeyInfo, requestPath, c.req.method, c);
         if (!hasPathPermission) {
           return {
             type: AuthResultType.FORBIDDEN,
@@ -217,20 +206,10 @@ export class WebDAVAuth {
         }
       }
 
-      // 准备用户信息
-      const userType = authGateway.utils.getUserType(c);
-      let userId = authGateway.utils.getUserId(c);
-
-      // 对于API密钥用户，传递完整的keyInfo对象
-      if (userType === "apiKey" && authResult.keyInfo) {
-        userId = authResult.keyInfo;
-      }
-
       return {
         type: AuthResultType.SUCCESS,
-        authResult: authResult,
-        userType: userType,
-        userId: userId,
+        userType,
+        userId: userType === UserType.ADMIN ? principal.id : apiKeyInfo,
       };
     } catch (error) {
       console.error("WebDAV统一认证错误:", error);

@@ -13,7 +13,7 @@ import {
 } from "@aws-sdk/client-s3";
 import { handleFsError } from "../../../fs/utils/ErrorHandler.js";
 import { getMimeTypeFromFilename } from "../../../../utils/fileUtils.js";
-import { buildS3Url } from "../../../../utils/s3Utils.js";
+import { buildS3Url } from "../utils/s3Utils.js";
 import { updateParentDirectoriesModifiedTime, checkDirectoryExists } from "../utils/S3DirectoryUtils.js";
 import { HTTPException } from "hono/http-exception";
 import { ApiStatus } from "../../../../constants/index.js";
@@ -212,14 +212,14 @@ export class S3BackendMultipartOperations {
         const rootPrefix = this.config.root_prefix ? (this.config.root_prefix.endsWith("/") ? this.config.root_prefix : this.config.root_prefix + "/") : "";
         await updateParentDirectoriesModifiedTime(this.s3Client, this.config.bucket_name, s3SubPath, rootPrefix);
 
-        // 构建S3直接访问URL
+        // 构建公共URL
         const s3Url = buildS3Url(this.config, s3SubPath);
 
         return {
           success: true,
           etag: completeResponse.ETag,
           location: completeResponse.Location,
-          s3Url: s3Url,
+          publicUrl: s3Url,
         };
       },
       "完成后端分片上传",

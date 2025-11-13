@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { DbTables } from "../constants/index.js";
+import { StorageConfigUtils } from "../storage/utils/StorageConfigUtils.js";
 
 /**
  * 数据备份与还原服务
@@ -14,7 +15,7 @@ export class BackupService {
       text_management: ["pastes", "paste_passwords"],
       file_management: ["files", "file_passwords"],
       mount_management: ["storage_mounts"],
-      storage_config: ["s3_configs"],
+      storage_config: ["storage_configs"],
       key_management: ["api_keys"],
       account_management: ["admins", "admin_tokens"],
       system_settings: ["system_settings"],
@@ -26,8 +27,8 @@ export class BackupService {
       paste_passwords: ["pastes"],
       file_passwords: ["files"],
       admin_tokens: ["admins"],
-      s3_configs: ["admins"], // s3_configs.admin_id -> admins.id
-      storage_mounts: ["s3_configs"], // storage_mounts.storage_config_id -> s3_configs.id
+      storage_configs: ["admins"], // storage_configs.admin_id -> admins.id
+      storage_mounts: ["storage_configs"], // storage_mounts.storage_config_id -> storage_configs.id
     };
   }
 
@@ -131,8 +132,8 @@ export class BackupService {
 
     let { data } = backupData;
 
-    // 进行 admin_id 映射（覆盖和合并模式）
-    if (currentAdminId && (mode === "merge" || mode === "overwrite")) {
+    // 进行 admin_id 映射（仅合并模式需要挂接到现有管理员）
+    if (currentAdminId && mode === "merge") {
       data = this.mapAdminIds(data, currentAdminId);
     }
 
@@ -303,27 +304,25 @@ export class BackupService {
     // 检查 storage_mounts 的依赖
     if (data.storage_mounts) {
       for (const mount of data.storage_mounts) {
-        if (mount.storage_config_id && mount.storage_type === "S3") {
-          // 检查对应的 s3_configs 是否存在于备份数据中
-          const hasS3Config = data.s3_configs?.some((config) => config.id === mount.storage_config_id);
-          if (!hasS3Config) {
-            // 检查数据库中是否存在
+        if (mount.storage_config_id) {
+          // 通用检查：备份数据中是否包含此存储配置记录
+          const hasConfig = data.storage_configs?.some((config) => config.id === mount.storage_config_id);
+          if (!hasConfig) {
             try {
-              const existingConfig = await this.db.prepare(`SELECT id FROM s3_configs WHERE id = ?`).bind(mount.storage_config_id).first();
-
-              if (!existingConfig) {
+              const exists = await StorageConfigUtils.configExists(this.db, mount.storage_type || "S3", mount.storage_config_id);
+              if (!exists) {
                 issues.push({
                   type: "missing_dependency",
                   table: "storage_mounts",
                   record_id: mount.id,
                   record_name: mount.name,
-                  dependency_table: "s3_configs",
+                  dependency_table: "storage_configs",
                   dependency_id: mount.storage_config_id,
-                  message: `挂载点 "${mount.name}" 依赖的S3配置 "${mount.storage_config_id}" 不存在`,
+                  message: `挂载点 "${mount.name}" 依赖的存储配置 "${mount.storage_config_id}" 不存在`,
                 });
               }
             } catch (error) {
-              console.warn(`[BackupService] 检查S3配置依赖时出错: ${error.message}`);
+              console.warn(`[BackupService] 检查存储配置依赖时出错: ${error.message}`);
             }
           }
         }
@@ -422,14 +421,14 @@ export class BackupService {
 
     console.log(`[BackupService] 映射 admin_id 到当前管理员 ${currentAdminId}`);
 
-    // 处理 s3_configs 表
-    if (mappedData.s3_configs) {
-      const originalCount = mappedData.s3_configs.length;
-      mappedData.s3_configs = mappedData.s3_configs.map((record) => ({
+    // 处理 storage_configs 表
+    if (mappedData.storage_configs) {
+      const originalCount = mappedData.storage_configs.length;
+      mappedData.storage_configs = mappedData.storage_configs.map((record) => ({
         ...record,
         admin_id: currentAdminId,
       }));
-      console.log(`[BackupService] 映射 s3_configs 表：${originalCount} 条记录的 admin_id 已更新`);
+      console.log(`[BackupService] 映射 storage_configs 表：${originalCount} 条记录的 admin_id 已更新`);
     }
 
     // 处理 storage_mounts 表

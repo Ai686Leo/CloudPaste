@@ -1,3 +1,4 @@
+import { withWebDAVErrorHandling } from "../utils/errorUtils.js";
 /**
  * 处理 WebDAV PROPPATCH 请求
  * "允许所有属性"的简单响应，客户端兼容性
@@ -9,7 +10,7 @@
  * @returns {Response} HTTP响应
  */
 export async function handleProppatch(c, path, userId, userType, db) {
-  try {
+  return withWebDAVErrorHandling("PROPPATCH", async () => {
     console.log(`WebDAV PROPPATCH 请求 - 路径: ${path} (兼容性实现)`);
 
     // 获取请求体
@@ -88,13 +89,5 @@ ${propstatElements}
         "Content-Length": responseXml.length.toString(),
       },
     });
-  } catch (error) {
-    console.error("PROPPATCH 错误:", error);
-    return new Response("Internal Server Error", {
-      status: 500,
-      headers: {
-        "Content-Type": "text/plain; charset=utf-8",
-      },
-    });
-  }
+  }, { includeDetails: false });
 }

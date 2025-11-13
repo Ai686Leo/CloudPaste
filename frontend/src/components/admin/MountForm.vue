@@ -26,12 +26,12 @@ const props = defineProps({
 
 const emit = defineEmits(["close", "save-success"]);
 
-// S3配置列表
-const s3Configs = ref([]);
+// 存储配置列表
+const storageConfigs = ref([]);
 // 表单数据
 const formData = ref({
   name: "",
-  storage_type: "S3", // 默认存储类型为S3
+  storage_type: "",
   storage_config_id: "",
   mount_path: "",
   remark: "",
@@ -64,23 +64,41 @@ const formTitle = computed(() => {
   return isEditMode.value ? t("admin.mount.editMount") : t("admin.mount.createMount");
 });
 
-// 存储类型选项
-const storageTypeOptions = computed(() => [
-  { value: "S3", label: t("admin.mount.form.storageTypes.s3") },
-  // { value: "WebDAV", label: "WebDAV" },
-  // { value: "FTP", label: "FTP" },
-  // { value: "SMB", label: "SMB/CIFS" },
-]);
+const storageTypeLabelMap = computed(() => ({
+  S3: t("admin.mount.form.storageTypes.S3"),
+  WEBDAV: t("admin.mount.form.storageTypes.WEBDAV"),
+  LOCAL: t("admin.mount.form.storageTypes.LOCAL"),
+  UNKNOWN: t("admin.mount.form.storageTypes.UNKNOWN"),
+}));
+
+const storageTypeDisplay = computed(() => {
+  const type = formData.value.storage_type;
+  if (!type) {
+    return t("admin.mount.form.storageTypeHint");
+  }
+  return storageTypeLabelMap.value[type] || type;
+});
 
 // 判断用户类型
 const isAdmin = computed(() => props.userType === "admin");
 const isApiKeyUser = computed(() => props.userType === "apikey");
 
 // 监听存储类型变化，根据类型重置相关字段
-const handleStorageTypeChange = () => {
-  // 如果切换类型，清空存储配置ID
-  formData.value.storage_config_id = "";
-  // 如果表单已提交过，验证该字段
+const syncStorageTypeWithConfig = () => {
+  if (!formData.value.storage_config_id) {
+    formData.value.storage_type = "";
+    return;
+  }
+
+  const selectedConfig = storageConfigs.value.find((config) => config.id === formData.value.storage_config_id);
+  if (selectedConfig) {
+    formData.value.storage_type = selectedConfig.storage_type || "";
+  }
+};
+
+const handleStorageConfigChange = () => {
+  handleFieldChange("storage_config_id");
+  syncStorageTypeWithConfig();
   if (formSubmitted.value) {
     validateField("storage_type");
   }
@@ -110,8 +128,8 @@ const validateField = (fieldName) => {
       break;
 
     case "storage_config_id":
-      if (formData.value.storage_type === "S3" && !formData.value.storage_config_id) {
-        newErrors.storage_config_id = t("admin.mount.validation.s3ConfigRequired");
+      if (!formData.value.storage_config_id) {
+        newErrors.storage_config_id = t("admin.mount.validation.storageConfigRequired");
       } else {
         delete newErrors.storage_config_id;
       }
@@ -273,20 +291,19 @@ const submitForm = async () => {
   }
 };
 
-// 加载S3配置列表
-const loadS3Configs = async () => {
+// 加载存储配置列表
+const loadStorageConfigs = async () => {
   loading.value = true;
 
   try {
-    const response = await api.storage.getAllS3Configs();
+    const response = await api.storage.getStorageConfigs();
     if (response.code === 200 && response.data) {
-      s3Configs.value = response.data;
+      storageConfigs.value = response.data;
     } else {
-      // 修改为向父组件通知错误，或者本地处理这个错误
-      console.error("加载S3配置失败:", response.message);
+      console.error("加载存储配置失败:", response.message);
     }
   } catch (err) {
-    console.error("加载S3配置错误:", err);
+    console.error("加载存储配置错误:", err);
   } finally {
     loading.value = false;
   }
@@ -299,8 +316,8 @@ const closeForm = () => {
 
 // 组件挂载时初始化数据
 onMounted(async () => {
-  // 加载S3配置
-  await loadS3Configs();
+  // 加载存储配置
+  await loadStorageConfigs();
 
   // 如果是编辑模式，复制现有数据到表单
   if (isEditMode.value) {
@@ -331,6 +348,24 @@ watch(
   { deep: true }
 );
 
+watch(
+  storageConfigs,
+  (configs) => {
+    if (!configs || configs.length === 0) {
+      formData.value.storage_config_id = "";
+      formData.value.storage_type = "";
+      return;
+    }
+
+    if (!formData.value.storage_config_id || !configs.some((config) => config.id === formData.value.storage_config_id)) {
+      formData.value.storage_config_id = configs[0].id;
+    }
+
+    syncStorageTypeWithConfig();
+  },
+  { immediate: true }
+);
+
 // 初始化表单数据的函数
 const initializeFormData = () => {
   if (!props.mount) return;
@@ -346,13 +381,15 @@ const initializeFormData = () => {
       }
     }
   });
+
+  syncStorageTypeWithConfig();
 };
 
 // 重置表单数据为默认值
 const resetFormData = () => {
   formData.value = {
     name: "",
-    storage_type: "S3", // 默认存储类型为S3
+    storage_type: "",
     storage_config_id: "",
     mount_path: "",
     remark: "",
@@ -424,40 +461,39 @@ const resetFormData = () => {
             <label for="storage_type" class="block text-sm font-medium mb-1" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">
               {{ t("admin.mount.form.storageType") }} <span class="text-red-500">*</span>
             </label>
-            <select
+            <input
               id="storage_type"
-              v-model="formData.storage_type"
-              @change="handleStorageTypeChange"
-              @blur="validateField('storage_type')"
-              class="block w-full px-3 py-1.5 sm:py-2 rounded-md text-sm transition-colors duration-200"
-              :class="[darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300 text-gray-900', errors.storage_type ? 'border-red-500' : '']"
-            >
-              <option v-for="option in storageTypeOptions" :key="option.value" :value="option.value">
-                {{ option.label }}
-              </option>
-            </select>
+              type="text"
+              :value="storageTypeDisplay"
+              disabled
+              class="block w-full px-3 py-1.5 sm:py-2 rounded-md text-sm transition-colors duration-200 cursor-not-allowed"
+              :class="darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-100 border-gray-300 text-gray-700'"
+            />
+            <p class="mt-1 text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">{{ t("admin.mount.form.storageTypeHint") }}</p>
             <p v-if="errors.storage_type" class="mt-1 text-sm text-red-500">{{ errors.storage_type }}</p>
           </div>
 
-          <!-- S3配置选择（仅当存储类型为S3时显示） -->
-          <div v-if="formData.storage_type === 'S3'">
+          <!-- 存储配置选择 -->
+          <div>
             <label for="storage_config_id" class="block text-sm font-medium mb-1" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">
-              {{ t("admin.mount.form.s3Config") }} <span class="text-red-500">*</span>
+              {{ t("admin.mount.form.storageConfig") }} <span class="text-red-500">*</span>
             </label>
             <select
               id="storage_config_id"
               v-model="formData.storage_config_id"
-              @change="handleFieldChange('storage_config_id')"
+              @change="handleStorageConfigChange"
               @blur="validateField('storage_config_id')"
               class="block w-full px-3 py-1.5 sm:py-2 rounded-md text-sm transition-colors duration-200"
               :class="[darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300 text-gray-900', errors.storage_config_id ? 'border-red-500' : '']"
               :disabled="loading"
             >
-              <option value="">{{ t("admin.mount.form.selectS3Config") }}</option>
-              <option v-for="config in s3Configs" :key="config.id" :value="config.id">{{ config.name }} ({{ config.provider_type }})</option>
+              <option value="">{{ t("admin.mount.form.selectStorageConfig") }}</option>
+              <option v-for="config in storageConfigs" :key="config.id" :value="config.id">
+                {{ config.name }} ({{ config.provider_type }})
+              </option>
             </select>
             <p v-if="errors.storage_config_id" class="mt-1 text-sm text-red-500">{{ errors.storage_config_id }}</p>
-            <p v-if="s3Configs.length === 0 && !loading" class="mt-1 text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">{{ t("admin.mount.form.noS3Config") }}</p>
+            <p v-if="storageConfigs.length === 0 && !loading" class="mt-1 text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">{{ t("admin.mount.form.noStorageConfig") }}</p>
           </div>
 
           <!-- 挂载路径 -->

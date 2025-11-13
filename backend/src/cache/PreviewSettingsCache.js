@@ -3,7 +3,7 @@
  * 文件类型检测缓存机制
  */
 
-import { RepositoryFactory } from "../repositories/index.js";
+import { ensureRepositoryFactory } from "../utils/repositories.js";
 import { SETTING_GROUPS } from "../constants/settings.js";
 
 /**
@@ -52,7 +52,7 @@ export class PreviewSettingsCache {
    * 刷新缓存（从数据库重新加载预览设置）
    * @param {D1Database} db - 数据库实例（可选，用于外部调用）
    */
-  async refresh(db = null) {
+  async refresh(db = null, repositoryFactory = null) {
     try {
       // 如果没有传入db，尝试从全局获取（在实际使用中需要传入）
       if (!db) {
@@ -60,8 +60,8 @@ export class PreviewSettingsCache {
         return;
       }
 
-      const repositoryFactory = new RepositoryFactory(db);
-      const systemRepository = repositoryFactory.getSystemRepository();
+      const factory = ensureRepositoryFactory(db, repositoryFactory);
+      const systemRepository = factory.getSystemRepository();
 
       // 获取预览设置分组的所有设置
       const previewSettings = await systemRepository.getSettingsByGroup(SETTING_GROUPS.PREVIEW, false);

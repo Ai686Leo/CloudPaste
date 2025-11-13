@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted } from "vue";
+import { onMounted, computed } from "vue";
 import { useStorageConfigManagement } from "@/composables/admin-management/useStorageConfigManagement.js";
 import ConfigForm from "@/components/admin/ConfigForm.vue";
 import CommonPagination from "@/components/common/CommonPagination.vue";
@@ -13,12 +13,15 @@ const props = defineProps({
   },
 });
 
-// 使用S3配置管理composable
+// 使用存储配置管理 composable
 const {
   // 状态
   loading,
   error,
-  s3Configs,
+  storageConfigs,
+  filteredConfigs,
+  storageTypeFilter,
+  availableStorageTypes,
   pagination,
   pageSizeOptions,
   currentConfig,
@@ -30,7 +33,7 @@ const {
   showDetailedResults,
 
   // 方法
-  loadS3Configs,
+  loadStorageConfigs,
   handlePageChange,
   handleLimitChange,
   handleDeleteConfig,
@@ -41,7 +44,30 @@ const {
   testConnection,
   showTestDetailsModal,
   getProviderIcon,
+  STORAGE_TYPE_UNKNOWN,
 } = useStorageConfigManagement();
+
+const formatStorageTypeLabel = (type) => {
+  if (!type || type === STORAGE_TYPE_UNKNOWN) {
+    return "未指定类型";
+  }
+  const map = {
+    S3: "S3 / 对象存储",
+    WEBDAV: "WebDAV",
+    LOCAL: "本地存储",
+  };
+  return map[type] || type;
+};
+
+const storageTypeOptions = computed(() =>
+  availableStorageTypes.value.map((type) => ({
+    value: type,
+    label: formatStorageTypeLabel(type),
+  }))
+);
+
+const hasAnyConfig = computed(() => storageConfigs.value.length > 0);
+const hasFilteredResult = computed(() => filteredConfigs.value.length > 0);
 
 // 格式化标签
 const formatLabel = (key) => {
@@ -64,15 +90,15 @@ const formatDate = (isoDate) => {
 
 // 组件加载时获取列表
 onMounted(() => {
-  loadS3Configs();
+  loadStorageConfigs();
 });
 </script>
 
 <template>
   <div class="p-4 flex-1 flex flex-col overflow-y-auto">
-    <h2 class="text-lg sm:text-xl font-medium mb-4" :class="darkMode ? 'text-gray-100' : 'text-gray-900'">S3存储配置</h2>
+    <h2 class="text-lg sm:text-xl font-medium mb-4" :class="darkMode ? 'text-gray-100' : 'text-gray-900'">存储管理</h2>
 
-    <div class="flex flex-wrap gap-3 mb-5">
+    <div class="flex flex-wrap gap-3 mb-5 items-center">
       <button @click="addNewConfig" class="px-3 py-2 rounded-md flex items-center space-x-1 bg-primary-500 hover:bg-primary-600 text-white font-medium transition text-sm">
         <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
@@ -81,7 +107,7 @@ onMounted(() => {
       </button>
 
       <button
-        @click="loadS3Configs"
+        @click="loadStorageConfigs"
         class="px-3 py-2 rounded-md flex items-center space-x-1 font-medium transition text-sm"
         :class="darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-200 hover:bg-gray-300 text-gray-700'"
       >
@@ -95,6 +121,24 @@ onMounted(() => {
         </svg>
         <span>刷新列表</span>
       </button>
+
+      <div
+        v-if="storageTypeOptions.length > 0"
+        class="flex items-center gap-2 text-sm ml-auto"
+        :class="darkMode ? 'text-gray-300' : 'text-gray-600'"
+      >
+        <span>存储类型</span>
+        <select
+          v-model="storageTypeFilter"
+          class="px-2 py-1 rounded-md border text-sm"
+          :class="darkMode ? 'bg-gray-800 border-gray-600 text-gray-100' : 'bg-white border-gray-300 text-gray-800'"
+        >
+          <option value="all">全部</option>
+          <option v-for="option in storageTypeOptions" :key="option.value" :value="option.value">
+            {{ option.label }}
+          </option>
+        </select>
+      </div>
     </div>
 
     <!-- 错误提示 -->
@@ -127,13 +171,13 @@ onMounted(() => {
         </svg>
       </div>
 
-      <!-- S3配置列表 -->
-      <template v-else-if="s3Configs.length > 0">
-        <!-- 卡片网格布局 -->
-        <div class="bg-white dark:bg-gray-800 shadow-md rounded-lg p-3">
+      <!-- 存储配置列表 -->
+      <template v-else-if="hasAnyConfig">
+        <!-- 有筛选结果时显示配置列表 -->
+        <div v-if="hasFilteredResult" class="bg-white dark:bg-gray-800 shadow-md rounded-lg p-3">
           <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4">
             <div
-              v-for="config in s3Configs"
+              v-for="config in filteredConfigs"
               :key="config.id"
               class="rounded-lg shadow-md overflow-hidden transition-colors duration-200 border relative"
               :class="[
@@ -157,9 +201,14 @@ onMounted(() => {
                     默认
                   </span>
                 </div>
-                <span class="text-xs px-2 py-1 rounded-full font-medium" :class="darkMode ? 'bg-primary-900/40 text-primary-200' : 'bg-primary-100 text-primary-800'">
-                  {{ config.provider_type }}
-                </span>
+                <div class="flex items-center gap-2">
+                  <span class="text-xs px-2 py-1 rounded-full font-medium" :class="darkMode ? 'bg-primary-900/40 text-primary-200' : 'bg-primary-100 text-primary-800'">
+                    {{ config.provider_type || '未指定' }}
+                  </span>
+                  <span class="text-xs px-2 py-1 rounded-full font-medium" :class="darkMode ? 'bg-gray-800 text-gray-200 border border-gray-600' : 'bg-gray-100 text-gray-700 border border-gray-200'">
+                    {{ formatStorageTypeLabel(config.storage_type) }}
+                  </span>
+                </div>
               </div>
 
               <div class="p-4">
@@ -175,12 +224,12 @@ onMounted(() => {
                       <span>{{ config.region || "自动" }}</span>
                     </div>
 
-                    <div class="flex justify-between">
+                    <div class="flex justify-between" v-if="config.default_folder">
                       <span class="font-medium">默认文件夹:</span>
                       <span>{{ config.default_folder || "根目录" }}</span>
                     </div>
 
-                    <div class="flex justify-between">
+                    <div class="flex justify-between" v-if="config.path_style !== undefined">
                       <span class="font-medium">路径样式:</span>
                       <span>{{ config.path_style ? "路径样式" : "虚拟主机样式" }}</span>
                     </div>
@@ -321,18 +370,23 @@ onMounted(() => {
               </div>
             </div>
           </div>
+
+          <!-- 分页组件 - 只在有筛选结果时显示 -->
+          <div class="mt-4">
+            <CommonPagination
+              :dark-mode="darkMode"
+              :pagination="pagination"
+              :page-size-options="pageSizeOptions"
+              mode="page"
+              @page-changed="handlePageChange"
+              @limit-changed="handleLimitChange"
+            />
+          </div>
         </div>
 
-        <!-- 分页组件 - 移到卡片列表外面 -->
-        <div class="mt-4">
-          <CommonPagination
-            :dark-mode="darkMode"
-            :pagination="pagination"
-            :page-size-options="pageSizeOptions"
-            mode="page"
-            @page-changed="handlePageChange"
-            @limit-changed="handleLimitChange"
-          />
+        <!-- 无筛选结果时显示提示 - 使用v-if而非v-else -->
+        <div v-if="!hasFilteredResult" class="bg-white dark:bg-gray-800 shadow-md rounded-lg p-6 text-center text-sm" :class="darkMode ? 'text-gray-300' : 'text-gray-600'">
+          <p>没有符合当前筛选条件的存储配置。</p>
         </div>
       </template>
 
@@ -345,8 +399,8 @@ onMounted(() => {
         <svg class="mx-auto h-16 w-16 mb-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
         </svg>
-        <h3 class="text-lg font-medium mb-2" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">还没有S3存储配置</h3>
-        <p class="mb-5 text-sm max-w-md">添加您的第一个S3兼容存储服务配置，用于文件上传和分享。</p>
+        <h3 class="text-lg font-medium mb-2" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">尚未配置任何存储</h3>
+        <p class="mb-5 text-sm max-w-md">添加您的第一个存储配置，支持多种对象存储或 WebDAV 服务。</p>
         <button @click="addNewConfig" class="px-4 py-2 rounded-md bg-primary-500 hover:bg-primary-600 text-white font-medium transition inline-flex items-center">
           <svg class="h-5 w-5 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
@@ -377,7 +431,7 @@ onMounted(() => {
     >
       <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-lg overflow-hidden" @click.stop>
         <div class="p-3 sm:p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
-          <h3 class="text-base sm:text-lg font-medium text-gray-900 dark:text-white">S3存储测试结果</h3>
+          <h3 class="text-base sm:text-lg font-medium text-gray-900 dark:text-white">存储连接测试结果</h3>
           <button @click="showTestDetails = false" class="text-gray-400 hover:text-gray-500">
             <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
               <path
@@ -461,7 +515,7 @@ onMounted(() => {
             </div>
 
             <!-- 读取权限测试 -->
-            <div class="mb-3">
+            <div class="mb-3" v-if="selectedTestResult.result?.read">
               <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">读取权限测试</h4>
               <div class="bg-gray-50 dark:bg-gray-900/50 rounded p-2 sm:p-3 text-xs sm:text-sm">
                 <div class="flex items-center mb-1">
@@ -524,7 +578,7 @@ onMounted(() => {
             </div>
 
             <!-- 写入权限测试 -->
-            <div class="mb-3">
+            <div class="mb-3" v-if="selectedTestResult.result?.write">
               <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">写入权限测试</h4>
               <div class="bg-gray-50 dark:bg-gray-900/50 rounded p-2 sm:p-3 text-xs sm:text-sm">
                 <div class="flex items-center mb-1">
@@ -587,7 +641,7 @@ onMounted(() => {
             </div>
 
             <!-- 跨域CORS测试 -->
-            <div class="mb-3">
+            <div class="mb-3" v-if="selectedTestResult.result?.cors">
               <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center">
                 跨域CORS配置测试
                 <span
@@ -656,8 +710,8 @@ onMounted(() => {
               </div>
             </div>
 
-            <!-- 前端模拟测试 (新增部分) -->
-            <div class="mb-3">
+            <!-- 前端模拟上传测试 -->
+            <div class="mb-3" v-if="selectedTestResult.result?.frontendSim">
               <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center">
                 前端上传模拟测试
                 <span

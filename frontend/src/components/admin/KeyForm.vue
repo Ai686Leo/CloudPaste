@@ -490,16 +490,16 @@ const loadMounts = async () => {
 
   isLoadingMounts.value = true;
   try {
-    // 先获取所有公开的S3配置
-    let publicS3Configs = [];
+    // 先获取所有公开的存储配置
+    let publicStorageConfigs = [];
     try {
-      const s3Result = await api.storage.getAllS3Configs();
-      if (s3Result.success && s3Result.data) {
-        // 过滤出公开的S3配置
-        publicS3Configs = s3Result.data.filter((config) => config.is_public === true || config.is_public === 1);
+      const storageResult = await api.storage.getStorageConfigs();
+      if (storageResult.success && storageResult.data) {
+        // 过滤出公开的配置
+        publicStorageConfigs = storageResult.data.filter((config) => config.is_public === true || config.is_public === 1);
       }
-    } catch (s3Error) {
-      console.error("加载S3配置列表失败:", s3Error);
+    } catch (storageError) {
+      console.error("加载存储配置列表失败:", storageError);
     }
 
     // 获取所有挂载点
@@ -512,12 +512,11 @@ const loadMounts = async () => {
           return false;
         }
 
-        // 对于S3类型的挂载点，检查其配置ID是否在公开配置列表中
-        if (mount.storage_type === "S3" && mount.storage_config_id) {
-          return publicS3Configs.some((config) => config.id === mount.storage_config_id);
+        // 对于需要公开校验的挂载点，检查其配置ID是否在公开配置列表中
+        if (mount.storage_config_id) {
+          return publicStorageConfigs.some((config) => config.id === mount.storage_config_id);
         }
 
-        // 非S3类型挂载点不显示
         return false;
       });
 

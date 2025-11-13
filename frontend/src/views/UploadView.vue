@@ -19,7 +19,7 @@
       <div class="card mb-6 p-4 sm:p-6">
         <FileUploader
           :dark-mode="darkMode"
-          :s3-configs="s3Configs"
+          :storage-configs="storageConfigs"
           :loading="loadingConfigs"
           :is-admin="isAdmin"
           @upload-success="handleUploadSuccess"
@@ -123,11 +123,43 @@ const props = defineProps({
 });
 
 // 数据状态
-const s3Configs = ref([]);
+const storageConfigs = ref([]);
 const files = ref([]);
 const loadingConfigs = ref(false);
 const loadingFiles = ref(false);
 const message = ref(null);
+
+const normalizeStorageConfigs = (payload) => {
+  if (!payload) return [];
+  if (Array.isArray(payload)) return payload;
+
+  const directArrays = [
+    payload.data,
+    payload.data?.data,
+    payload.data?.items,
+    payload.items,
+    payload.result,
+    payload.records,
+  ];
+
+  for (const candidate of directArrays) {
+    if (Array.isArray(candidate)) {
+      return candidate;
+    }
+  }
+
+  const nestedSources = [payload.data, payload.result];
+  for (const source of nestedSources) {
+    if (source && typeof source === "object") {
+      const nested = normalizeStorageConfigs(source);
+      if (nested.length) {
+        return nested;
+      }
+    }
+  }
+
+  return [];
+};
 
 // 从Store获取权限状态的计算属性
 const hasPermission = computed(() => authStore.hasFilePermission);
@@ -153,11 +185,11 @@ const handlePermissionChange = async (hasPermissionValue) => {
 
   if (hasPermissionValue) {
     console.log("用户获得权限，开始加载配置和文件列表");
-    await Promise.all([loadS3Configs(), loadFiles()]);
+    await Promise.all([loadStorageConfigs(), loadFiles()]);
   } else {
     console.log("用户失去权限，清空数据");
     // 清空相关数据
-    s3Configs.value = [];
+    storageConfigs.value = [];
     files.value = [];
   }
 };
@@ -167,22 +199,21 @@ const handleAuthStateChange = async (e) => {
   console.log("FileUpload: 接收到认证状态变化事件:", e.detail);
   // 权限状态会自动更新，这里只需要重新加载数据
   if (hasPermission.value) {
-    await Promise.all([loadS3Configs(), loadFiles()]);
+    await Promise.all([loadStorageConfigs(), loadFiles()]);
   }
 };
 
-// 加载S3配置
-const loadS3Configs = async () => {
+// 加载存储配置（默认抓取前100个即可覆盖常见场景）
+const loadStorageConfigs = async () => {
   if (!hasPermission.value) return;
 
   loadingConfigs.value = true;
   try {
-    const response = await api.file.getS3Configs();
-    if (response.success && response.data) {
-      s3Configs.value = response.data;
-    }
+    const response = await api.storage.getStorageConfigs({ limit: 100 });
+    const configs = normalizeStorageConfigs(response);
+    storageConfigs.value = configs;
   } catch (error) {
-    console.error("加载S3配置失败:", error);
+    console.error("加载存储配置失败:", error);
   } finally {
     loadingConfigs.value = false;
   }

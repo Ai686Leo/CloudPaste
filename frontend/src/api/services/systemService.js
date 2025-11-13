@@ -115,7 +115,7 @@ export function clearExpiredPastes() {
  * 清理目录缓存（管理员）
  * @param {Object} options - 清理选项
  * @param {string} [options.mountId] - 要清理的挂载点ID
- * @param {string} [options.s3ConfigId] - S3配置ID
+ * @param {string} [options.storageConfigId] - 存储配置ID
  * @returns {Promise<Object>} 清理结果
  */
 export function clearCacheAdmin(options = {}) {
@@ -126,7 +126,7 @@ export function clearCacheAdmin(options = {}) {
  * 清理目录缓存（API密钥用户）
  * @param {Object} options - 清理选项
  * @param {string} [options.mountId] - 要清理的挂载点ID
- * @param {string} [options.s3ConfigId] - S3配置ID
+ * @param {string} [options.storageConfigId] - 存储配置ID
  * @returns {Promise<Object>} 清理结果
  */
 export function clearCacheUser(options = {}) {

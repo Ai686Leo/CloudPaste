@@ -40,7 +40,7 @@ const {
 
   // 方法
   loadMounts,
-  loadS3Configs,
+  loadStorageConfigs,
   handleOffsetChange,
   openCreateForm,
   openEditForm,
@@ -58,7 +58,7 @@ const {
 
 // 组件挂载时加载数据
 onMounted(() => {
-  loadS3Configs(); // 先加载S3配置列表
+  loadStorageConfigs(); // 先加载存储配置列表
   loadMounts(); // 然后加载挂载点列表
 });
 </script>

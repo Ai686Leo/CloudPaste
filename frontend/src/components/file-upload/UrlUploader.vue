@@ -170,7 +170,7 @@
     <!-- 上传选项表单 -->
     <div class="upload-form">
       <form @submit.prevent="submitUpload">
-        <!-- S3配置选择 -->
+        <!-- 存储配置选择 -->
         <div class="mb-6">
           <h3 class="text-lg font-medium mb-4" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">{{ t("file.storage") }}</h3>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -178,18 +178,18 @@
               <label class="form-label text-sm font-medium mb-1.5" :class="darkMode ? 'text-gray-300' : 'text-gray-700'">{{ t("file.storage") }}</label>
               <div class="relative">
                 <select
-                  v-model="formData.s3_config_id"
+                  v-model="formData.storage_config_id"
                   class="form-input w-full rounded-md shadow-sm focus:ring-2 focus:ring-offset-1 focus:border-transparent appearance-none"
                   :class="[
                     darkMode
                       ? 'bg-gray-700 border-gray-600 text-white focus:ring-blue-600 focus:ring-offset-gray-800'
                       : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500 focus:ring-offset-white',
                   ]"
-                  :disabled="!s3Configs.length || loading || isUploading"
+                  :disabled="!storageConfigs.length || loading || isUploading"
                   required
                 >
-                  <option value="" disabled selected>{{ s3Configs.length ? t("file.selectStorage") : t("file.noStorage") }}</option>
-                  <option v-for="config in s3Configs" :key="config.id" :value="config.id">{{ config.name }} ({{ config.provider_type }})</option>
+                  <option value="" disabled selected>{{ storageConfigs.length ? t("file.selectStorage") : t("file.noStorage") }}</option>
+                  <option v-for="config in storageConfigs" :key="config.id" :value="config.id">{{ formatStorageOptionLabel(config) }}</option>
                 </select>
                 <div class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
                   <svg
@@ -329,24 +329,6 @@
             </div>
           </div>
 
-          <!-- 上传方式选择 -->
-          <div class="mt-4">
-            <label class="text-base font-medium mb-2 block" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">{{ t("file.uploadMethod") }}</label>
-            <div class="flex space-x-4">
-              <label class="inline-flex items-center">
-                <input type="radio" v-model="uploadMethod" value="presigned" class="form-radio" :disabled="isUploading" />
-                <span class="ml-2" :class="darkMode ? 'text-gray-300' : 'text-gray-700'">{{ t("file.presignedUpload") }}</span>
-              </label>
-              <label class="inline-flex items-center">
-                <input type="radio" v-model="uploadMethod" value="multipart" class="form-radio" :disabled="isUploading" />
-                <span class="ml-2" :class="darkMode ? 'text-gray-300' : 'text-gray-700'">{{ t("file.multipartUpload") }}</span>
-              </label>
-            </div>
-            <p class="text-xs mt-1" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
-              {{ uploadMethod === "presigned" ? t("file.presignedUploadDesc") : t("file.multipartUploadDesc") }}
-            </p>
-          </div>
-
           <!-- 上传进度 -->
           <div v-if="uploadProgress > 0 && isUploading" class="mt-4">
             <div class="flex justify-between items-center mb-1">
@@ -413,10 +395,10 @@
           <div class="submit-section mt-6 flex flex-row items-center gap-3">
             <button
               type="submit"
-              :disabled="!fileInfo || !formData.s3_config_id || isUploading || loading"
+              :disabled="!fileInfo || !formData.storage_config_id || isUploading || loading"
               class="btn-primary px-4 py-2 rounded-md font-medium focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors flex items-center justify-center min-w-[120px]"
               :class="[
-                !fileInfo || !formData.s3_config_id || isUploading || loading
+                !fileInfo || !formData.storage_config_id || isUploading || loading
                   ? darkMode
                     ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
                     : 'bg-gray-200 text-gray-500 cursor-not-allowed'
@@ -476,7 +458,7 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
-  s3Configs: {
+  storageConfigs: {
     type: Array,
     default: () => [],
   },
@@ -489,6 +471,17 @@ const props = defineProps({
     default: false,
   },
 });
+
+const storageConfigs = computed(() => props.storageConfigs || []);
+
+const formatStorageOptionLabel = (config) => {
+  if (!config) {
+    return t("file.storage");
+  }
+
+  const meta = config.provider_type || config.storage_type;
+  return meta ? `${config.name} (${meta})` : config.name;
+};
 
 const emit = defineEmits(["upload-success", "upload-error", "refresh-files"]);
 
@@ -506,17 +499,13 @@ const uploadSpeed = ref("");
 const activeXhr = ref(null);
 const lastLoaded = ref(0);
 const lastTime = ref(0);
-const uploadMethod = ref("presigned"); // presigned或multipart
 const slugError = ref("");
-const fileId = ref(null);
-const uploadId = ref(null); // 添加 uploadId 状态变量
 const isCancelled = ref(false); // 取消上传标志
-const multipartUploader = ref(null); // 分片上传器实例
 const currentStage = ref("starting"); // 添加 currentStage 状态变量
 
 // 表单数据
 const formData = reactive({
-  s3_config_id: "",
+  storage_config_id: "",
   slug: "",
   path: "",
   remark: "",
@@ -571,23 +560,25 @@ const displayFilename = computed(() => {
   }
 });
 
-// 监听s3Configs变化，自动选择默认配置
+// 监听存储配置变化，自动选择默认或首个可用配置
 watch(
-  () => props.s3Configs,
+  storageConfigs,
   (configs) => {
-    if (configs && configs.length > 0) {
-      // 查找默认配置
-      const defaultConfig = configs.find((config) => config.is_default);
-      if (defaultConfig) {
-        // 使用默认配置的ID
-        formData.s3_config_id = defaultConfig.id;
-      } else if (!formData.s3_config_id && configs.length > 0) {
-        // 如果没有默认配置且当前未选择配置，则选择第一个
-        formData.s3_config_id = configs[0].id;
-      }
+    const list = configs || [];
+
+    if (list.length === 0) {
+      formData.storage_config_id = "";
+      return;
     }
+
+    if (formData.storage_config_id && list.some((config) => config.id === formData.storage_config_id)) {
+      return;
+    }
+
+    const defaultConfig = list.find((config) => config.is_default);
+    formData.storage_config_id = (defaultConfig || list[0]).id;
   },
-  { immediate: true } // 页面加载时立即执行
+  { immediate: true }
 );
 
 /**
@@ -746,16 +737,6 @@ const formatSpeed = (bytesPerSecond) => {
  * @param {Object} fileItem - 文件项对象
  */
 const cleanupFileUploadReferences = (fileItem) => {
-  // 清理所有可能的上传引用
-  if (fileItem.multipartUploader) {
-    try {
-      fileItem.multipartUploader.abort();
-    } catch (error) {
-      console.warn("清理multipartUploader时出错:", error);
-    }
-    fileItem.multipartUploader = null;
-  }
-
   if (fileItem.xhr) {
     try {
       fileItem.xhr.abort();
@@ -826,7 +807,7 @@ const validateMaxViews = (event) => {
  * 根据选择的上传方式（预签名直传或分片上传）执行相应的上传逻辑
  */
 const submitUpload = async () => {
-  if (!fileInfo.value || !formData.s3_config_id || isUploading.value) return;
+  if (!fileInfo.value || !formData.storage_config_id || isUploading.value) return;
 
   // 验证可打开次数，确保是非负整数
   if (formData.max_views < 0) {
@@ -859,12 +840,7 @@ const submitUpload = async () => {
   lastTime.value = Date.now();
 
   try {
-    // 根据上传方式选择不同的上传策略
-    if (uploadMethod.value === "presigned") {
-      await presignedDirectUpload();
-    } else {
-      await chunkedMultipartUpload();
-    }
+    await presignedDirectUpload();
 
     // 上传成功，通知父组件
     emit("upload-success", {
@@ -888,7 +864,7 @@ const submitUpload = async () => {
 
 /**
  * 预签名直传方式
- * 先从URL获取内容，然后使用预签名URL上传到S3
+ * 先从URL获取内容，然后使用预签名URL上传到目标存储
  */
 const presignedDirectUpload = async () => {
   try {
@@ -904,27 +880,25 @@ const presignedDirectUpload = async () => {
 
     const presignedResponse = await api.urlUpload.getUrlUploadPresignedUrl({
       url: urlInput.value,
-      s3_config_id: formData.s3_config_id,
-      filename: customFilename.value || fileInfo.value.filename,
-      slug: formData.slug,
-      remark: formData.remark,
+      storage_config_id: formData.storage_config_id,
+      filename: customFilename.value || fileInfo.value?.filename,
       path: formData.path,
-      password: formData.password,
-      expires_in: Number(formData.expires_in),
-      max_views: formData.max_views,
-      metadata: {
-        source_url: urlInput.value,
-      },
+      contentType: fileInfo.value?.contentType,
+      fileSize: fileInfo.value?.size,
     });
 
     if (!presignedResponse.success || !presignedResponse.data) {
       throw new Error(t("file.messages.getPresignedUrlFailed"));
     }
 
-    // 保存文件ID
-    fileId.value = presignedResponse.data.file_id;
+    const presignBundle = presignedResponse.data;
+    const presignData = presignBundle.presign || presignBundle;
+    const commitSuggestion = presignBundle.commit_suggestion || presignBundle.commitSuggestion;
 
-    // 如果已经取消，则中止上传
+    if (!presignData?.uploadUrl || !presignData?.key) {
+      throw new Error(t("file.messages.getPresignedUrlFailed"));
+    }
+
     if (isCancelled.value) {
       throw new Error(t("file.messages.uploadCancelled"));
     }
@@ -934,9 +908,9 @@ const presignedDirectUpload = async () => {
     // 2. 使用预签名URL上传文件
     currentStage.value = "uploading";
 
-    const uploadResult = await api.urlUpload.uploadFromUrlToS3({
+    const uploadResult = await api.urlUpload.uploadUrlContentToStorage({
       url: urlInput.value,
-      uploadUrl: presignedResponse.data.upload_url,
+      uploadUrl: presignData.uploadUrl || presignData.upload_url,
       onProgress: (progress, loaded, _total, phase) => {
         // 如果已取消，不再更新进度
         if (isCancelled.value) return;
@@ -980,8 +954,19 @@ const presignedDirectUpload = async () => {
     // 3. 提交完成信息
     currentStage.value = "finalizing";
 
+    const commitKey = commitSuggestion?.key || presignData.key;
+    const commitStorageConfigId = commitSuggestion?.storage_config_id || presignData.storage_config_id || null;
+    const commitFilename =
+      customFilename.value || commitSuggestion?.filename || presignData.filename || presignData.fileName || fileInfo.value?.filename || "url-upload.bin";
+
+    if (!commitKey || !commitStorageConfigId) {
+      throw new Error(t("file.messages.getPresignedUrlFailed"));
+    }
+
     await api.urlUpload.commitUrlUpload({
-      file_id: fileId.value,
+      key: commitKey,
+      storage_config_id: commitStorageConfigId,
+      filename: commitFilename,
       etag: uploadResult.etag,
       size: uploadResult.size,
       remark: formData.remark,
@@ -989,7 +974,6 @@ const presignedDirectUpload = async () => {
       expires_in: Number(formData.expires_in),
       max_views: formData.max_views,
       slug: formData.slug,
-      path: formData.path,
     });
 
     // 完成
@@ -1000,135 +984,14 @@ const presignedDirectUpload = async () => {
     return true;
   } catch (error) {
     console.error("客户端URL上传失败:", error);
-
-    // 如果已经获取了文件ID，尝试取消并清理文件记录
-    if (fileId.value) {
-      try {
-        await api.urlUpload.cancelUrlUpload(fileId.value);
-        console.log(`已清理未完成的上传记录: ${fileId.value}`);
-      } catch (cancelError) {
-        console.error("清理未完成的上传记录失败:", cancelError);
-      }
-      // 重置fileId
-      fileId.value = null;
-    }
-
     throw error;
   }
 };
 
 /**
  * 分片上传方式
- * 先从URL获取内容，然后使用分片上传到S3
+ * 先从URL获取内容，然后使用分片上传到目标存储
  */
-const chunkedMultipartUpload = async () => {
-  try {
-    // 重置取消标志
-    isCancelled.value = false;
-
-    // 设置初始阶段和进度
-    currentStage.value = "starting";
-    uploadProgress.value = 5;
-
-    // 步骤1: 下载文件内容 (5% -> 40%)
-    currentStage.value = "downloading";
-
-    // 重置上传速度计算相关变量
-    lastLoaded.value = 0;
-    lastTime.value = Date.now();
-
-    const blob = await api.urlUpload.fetchUrlContent({
-      url: urlInput.value,
-      onProgress: (progress, loaded, _total, _phase, phaseType) => {
-        if (isCancelled.value) return;
-
-        // 下载阶段占总进度的35%（从5%到40%）
-        const downloadProgress = 5 + Math.round((progress / 49) * 35);
-        uploadProgress.value = downloadProgress;
-
-        // 如果是使用代理的方式，更新阶段状态
-        if (phaseType === "proxyDownload") {
-          currentStage.value = "downloading_proxy";
-        }
-
-        // 计算下载速度
-        const now = Date.now();
-        const timeElapsed = (now - lastTime.value) / 1000; // 转换为秒
-
-        if (timeElapsed > 0.5) {
-          // 每0.5秒更新一次速度
-          const loadedChange = loaded - lastLoaded.value;
-          const speed = loadedChange / timeElapsed; // 字节/秒
-          uploadSpeed.value = formatSpeed(speed);
-
-          // 更新上次加载值和时间
-          lastLoaded.value = loaded;
-          lastTime.value = now;
-        }
-      },
-      setXhr: (xhr) => {
-        activeXhr.value = xhr; // 保存xhr引用，以便能够取消下载
-      },
-    });
-
-    if (isCancelled.value) {
-      throw new Error(t("file.messages.uploadCancelled"));
-    }
-
-    uploadProgress.value = 40;
-
-    // 步骤2: 准备上传配置
-    const uploadConfig = {
-      s3_config_id: formData.s3_config_id,
-      filename: customFilename.value || fileInfo.value.filename,
-      slug: formData.slug,
-      remark: formData.remark,
-      password: formData.password,
-      expires_in: Number(formData.expires_in),
-      max_views: formData.max_views,
-      path: formData.path,
-    };
-
-    // 步骤3: 执行分片上传 (40% -> 100%)
-    currentStage.value = "uploading";
-
-    const result = await api.urlUpload.performUrlMultipartUpload(urlInput.value, blob, uploadConfig, {
-      onProgress: (progress, _uploadedBytes, _totalBytes, speed) => {
-        // 上传占总进度的60%，40%~100%之间
-        const adjustedProgress = 40 + Math.round(progress * 0.6);
-        uploadProgress.value = Math.min(adjustedProgress, 100);
-
-        // 更新上传速度
-        if (speed > 0) {
-          uploadSpeed.value = formatSpeed(speed);
-        }
-      },
-      onCancel: () => isCancelled.value,
-      onXhrCreated: (uploaderRef) => {
-        // 保存上传器引用，用于取消操作
-        multipartUploader.value = uploaderRef;
-      },
-      onError: (error, partNumber) => {
-        console.error(`分片 ${partNumber || "未知"} 上传失败:`, error);
-      },
-    });
-
-    if (!result.success) {
-      throw new Error(result.message || "分片上传失败");
-    }
-
-    // 完成
-    currentStage.value = "completed";
-    uploadProgress.value = 100;
-    uploadSpeed.value = "";
-
-    return true;
-  } catch (error) {
-    console.error("分片上传失败:", error);
-    throw error;
-  }
-};
-
 /**
  * 取消上传
  */
@@ -1143,42 +1006,15 @@ const cancelUpload = async () => {
 
   // 使用统一的清理函数清理所有上传引用
   const tempFileItem = {
-    multipartUploader: multipartUploader.value,
     xhr: activeXhr.value,
   };
   cleanupFileUploadReferences(tempFileItem);
 
-  // 更新引用
-  multipartUploader.value = null;
   activeXhr.value = null;
-
-  // 如果已经有文件ID和uploadId，尝试通知服务器取消上传
-  if (fileId.value && uploadId.value) {
-    try {
-      if (uploadMethod.value === "multipart") {
-        await api.urlUpload.abortMultipartUpload(fileId.value, uploadId.value);
-      }
-      // 预签名直传方式不需要额外的取消操作，文件会在提交阶段自动被覆盖
-    } catch (error) {
-      console.error("取消上传失败:", error);
-    }
-  }
-  // 如果只有文件ID但没有uploadId（预签名直传方式），尝试清理文件记录
-  else if (fileId.value && !uploadId.value) {
-    try {
-      await api.urlUpload.cancelUrlUpload(fileId.value);
-      console.log(`已清理未完成的上传记录: ${fileId.value}`);
-    } catch (cancelError) {
-      console.error("清理未完成的上传记录失败:", cancelError);
-    }
-  }
 
   isUploading.value = false;
   uploadProgress.value = 0;
   uploadSpeed.value = "";
-  multipartUploader.value = null;
-  uploadId.value = null; // 重置 uploadId
-  fileId.value = null; // 重置文件ID
 
   emit("upload-error", new Error(t("file.uploadCancelled")));
 };
@@ -1192,26 +1028,22 @@ const resetForm = () => {
   customFilename.value = "";
   uploadProgress.value = 0;
   uploadSpeed.value = "";
-  fileId.value = null;
-  uploadId.value = null; // 重置 uploadId
   urlError.value = "";
   isCancelled.value = false;
   currentStage.value = ""; // 重置上传阶段
 
   // 使用统一的清理函数清理所有上传引用
   const tempFileItem = {
-    multipartUploader: multipartUploader.value,
     xhr: activeXhr.value,
   };
   cleanupFileUploadReferences(tempFileItem);
 
-  multipartUploader.value = null;
   activeXhr.value = null;
 
-  // 保留S3配置ID，重置其他表单字段
-  const s3ConfigId = formData.s3_config_id;
+  // 保留存储配置ID，重置其他表单字段
+  const storageConfigId = formData.storage_config_id;
   Object.assign(formData, {
-    s3_config_id: s3ConfigId,
+    storage_config_id: storageConfigId,
     slug: "",
     path: "",
     remark: "",

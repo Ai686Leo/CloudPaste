@@ -30,39 +30,15 @@ function getAccurateMimeType(file) {
  * @param {Object} options - 上传选项
  * @returns {Promise<Object>} 上传响应
  */
-export async function uploadFile(file, options) {
-  // 获取更准确的MIME类型
-  const accurateMimeType = getAccurateMimeType(file);
-
-  // 创建FormData对象
-  const formData = new FormData();
-  formData.append("file", file);
-
-  // 添加文件MIME类型（确保后端能正确识别）
-  formData.append("mimetype", accurateMimeType);
-
-  // 添加其他选项
-  if (options.s3_config_id) formData.append("s3_config_id", options.s3_config_id);
-  if (options.slug) formData.append("slug", options.slug);
-  if (options.path) formData.append("path", options.path);
-  if (options.remark) formData.append("remark", options.remark);
-  if (options.password) formData.append("password", options.password);
-  if (options.expires_in) formData.append("expires_in", options.expires_in);
-  if (options.max_views) formData.append("max_views", options.max_views);
-
-  // 执行上传请求
-  return await post("upload", formData, {
-    headers: {
-      // 不设置Content-Type，让浏览器自动设置multipart/form-data边界
-      "Content-Type": undefined,
-    },
-  });
+export async function uploadFile(file, options = {}) {
+  // 统一走直传预签名流程，保持对旧API的兼容
+  return directUploadFile(file, options);
 }
 
 /**
  * 获取上传预签名URL
  * @param {Object} options - 上传选项
- * @param {string} options.s3_config_id - S3配置ID
+ * @param {string} options.storage_config_id - 存储配置ID
  * @param {string} options.filename - 文件名
  * @param {string} options.mimetype - 文件的MIME类型
  * @param {string} [options.path] - 自定义存储路径
@@ -72,29 +48,20 @@ export async function uploadFile(file, options) {
  */
 export async function getUploadPresignedUrl(options) {
   try {
-    // 构建请求数据
     const data = {
-      s3_config_id: options.s3_config_id,
       filename: options.filename,
-      mimetype: options.mimetype,
-      path: options.path,
-      slug: options.slug,
-      size: options.size,
-      remark: options.remark,
-      password: options.password,
-      expires_in: options.expires_in,
-      max_views: options.max_views,
-      use_proxy: options.use_proxy,
+      fileSize: options.size ?? options.fileSize ?? options.filesize,
+      contentType: options.mimetype,
+      path: options.path || null,
+      storage_config_id: options.storage_config_id || null,
     };
 
-    return await post("s3/presign", data);
+    return await post("share/presign", data);
   } catch (error) {
-    // 增强错误处理，特别是对409冲突状态码的处理
     if (error.message && error.message.includes("链接后缀已被占用")) {
       throw new Error("链接后缀已被占用，请尝试其他后缀");
     }
 
-    // 将原始错误包装为更友好的错误消息
     throw new Error(`获取预签名URL失败: ${error.message}`);
   }
 }
@@ -105,11 +72,28 @@ export async function getUploadPresignedUrl(options) {
  * @returns {Promise<Object>} 更新响应
  */
 export async function completeFileUpload(data) {
-  return await post("s3/commit", data);
+  // 新协议优先：key + storage_config_id；兼容旧 path（虚拟路径）
+  const payload = {
+    key: data.key || undefined,
+    storage_config_id: data.storage_config_id || undefined,
+    path: data.path || undefined,
+    filename: data.filename,
+    size: Number(data.size ?? data.fileSize ?? 0),
+    etag: data.etag,
+    slug: data.slug,
+    remark: data.remark,
+    password: data.password,
+    expires_in: data.expires_in ?? data.expiresIn,
+    max_views: data.max_views ?? data.maxViews,
+    use_proxy: data.use_proxy ?? data.useProxy,
+    original_filename: data.original_filename ?? data.originalFilename ?? false,
+  };
+
+  return await post("share/commit", payload);
 }
 
 /**
- * 直接上传文件到S3（前端直接上传）
+ * 直接上传文件到对象存储（前端直接上传）
  * @param {File} file - 要上传的文件
  * @param {Object} options - 上传选项
  * @param {Function} onProgress - 上传进度回调函数，参数为0-100的进度百分比、已加载字节数和总字节数
@@ -117,104 +101,65 @@ export async function completeFileUpload(data) {
  * @param {Function} onFileIdReady - 在获取到文件ID后的回调，用于支持取消上传时清理文件记录
  * @returns {Promise<Object>} 上传响应
  */
-export async function directUploadFile(file, options, onProgress, onXhrReady, onFileIdReady) {
-  let fileId = null;
+export async function directUploadFile(file, options = {}, onProgress, onXhrReady, onFileIdReady) {
   try {
-    // 获取更准确的MIME类型
     const accurateMimeType = getAccurateMimeType(file);
 
-    // 步骤1: 获取预签名上传URL
     const presignedData = await getUploadPresignedUrl({
-      s3_config_id: options.s3_config_id,
+      storage_config_id: options.storage_config_id,
       filename: file.name,
       mimetype: accurateMimeType,
       path: options.path,
-      slug: options.slug,
-      size: file.size, // 传递文件大小供后端验证
-      remark: options.remark,
-      password: options.password,
-      expires_in: options.expires_in,
-      max_views: options.max_views,
-      use_proxy: options.use_proxy,
+      size: file.size,
     });
 
-    if (!presignedData.success) {
-      // 增强错误处理，处理服务器返回的特定错误消息
-      if (presignedData.message) {
-        // 判断是否是链接后缀冲突错误
-        if (presignedData.message.includes("链接后缀已被占用")) {
-          throw new Error("链接后缀已被占用，请尝试其他后缀");
-        }
-        // 判断是否是存储容量不足的错误
-        else if (
-          presignedData.message.includes("存储空间不足") ||
-          presignedData.message.includes("insufficient storage") ||
-          presignedData.message.includes("exceed") ||
-          presignedData.message.includes("容量")
-        ) {
-          throw new Error(`存储空间不足: ${presignedData.message}`);
-        }
-        // 其他类型的错误消息
-        throw new Error(presignedData.message);
-      }
-      throw new Error("获取预签名URL失败");
+    if (!presignedData?.success || !presignedData?.data) {
+      const message = presignedData?.message || "获取预签名URL失败";
+      throw new Error(message);
     }
 
-    if (!presignedData.data) {
-      throw new Error("获取预签名URL失败：服务器未返回有效数据");
+    const presignPayload = presignedData.data;
+    const uploadUrl = presignPayload.uploadUrl || presignPayload.upload_url;
+    const commitKey = presignPayload.key || null;
+    const storageConfigId = presignPayload.storage_config_id || options.storage_config_id || null;
+    const resolvedFilename = presignPayload.filename || presignPayload.fileName || file.name;
+    const providerType = presignPayload.provider_type || presignPayload.providerType;
+    const inferredContentType = presignPayload.contentType || presignPayload.mimetype || accurateMimeType;
+
+    if (!uploadUrl || !commitKey || !storageConfigId) {
+      throw new Error("预签名响应缺少必要的上传信息（key 或 storage_config_id）");
     }
 
-    const { upload_url, file_id, storage_path, s3_url, slug, provider_type, contentType } = presignedData.data;
-
-    // 保存文件ID，用于错误处理时删除记录
-    fileId = file_id;
-
-    // 获取到文件ID后，调用回调函数
-    if (typeof onFileIdReady === "function" && fileId) {
-      onFileIdReady(fileId);
-    }
-
-    // 步骤2: 使用预签名URL直接上传文件到S3
     const uploadResult = await new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
 
-      // 添加清理函数防止内存泄漏
       const cleanup = () => {
-        if (xhr.upload) {
-          xhr.upload.removeEventListener("progress", progressHandler);
-        }
+        xhr.upload?.removeEventListener("progress", progressHandler);
         xhr.removeEventListener("load", loadHandler);
         xhr.removeEventListener("error", errorHandler);
         xhr.removeEventListener("abort", abortHandler);
       };
 
-      // 传递XHR实例给父组件，以支持取消上传
       if (typeof onXhrReady === "function") {
         onXhrReady(xhr);
       }
 
-      // 定义事件处理器，便于清理
       const progressHandler = (event) => {
-        if (event.lengthComputable) {
+        if (event.lengthComputable && typeof onProgress === "function") {
           const progress = Math.round((event.loaded / event.total) * 100);
-          if (typeof onProgress === "function") {
-            onProgress(progress, event.loaded, event.total);
-          }
+          onProgress(progress, event.loaded, event.total);
         }
       };
 
       const loadHandler = () => {
         cleanup();
         if (xhr.status >= 200 && xhr.status < 300) {
-          // 获取ETag (S3返回的文件标识符)
           const etag = xhr.getResponseHeader("ETag");
-          console.log("S3上传成功，返回的ETag:", etag); // 添加日志打印ETag
           resolve({
             success: true,
-            etag: etag ? etag.replace(/"/g, "") : null, // 移除引号
+            etag: etag ? etag.replace(/"/g, "") : null,
           });
         } else {
-          console.error("上传失败，状态码:", xhr.status, "响应:", xhr.responseText);
           reject(new Error(`上传失败: ${xhr.status} ${xhr.statusText}`));
         }
       };
@@ -230,82 +175,52 @@ export async function directUploadFile(file, options, onProgress, onXhrReady, on
         reject(new Error("上传被取消"));
       };
 
-      // 设置事件监听
       xhr.upload.addEventListener("progress", progressHandler);
       xhr.addEventListener("load", loadHandler);
       xhr.addEventListener("error", errorHandler);
       xhr.addEventListener("abort", abortHandler);
 
-      // 配置请求
-      xhr.open("PUT", upload_url, true);
-      // 使用后端推断的正确MIME类型，而不是前端的 accurateMimeType
-      xhr.setRequestHeader("Content-Type", contentType || accurateMimeType);
+      xhr.open("PUT", uploadUrl, true);
+      xhr.setRequestHeader("Content-Type", inferredContentType);
 
-      // 根据提供商类型添加特定的请求头
-      if (provider_type === "Backblaze B2") {
-        // B2特定请求头
-        xhr.setRequestHeader("X-Bz-Content-Sha1", "do_not_verify"); // 通知B2不验证内容SHA1
-        // 尝试添加额外的请求头以帮助CORS预检请求通过
+      if (providerType === "Backblaze B2") {
+        xhr.setRequestHeader("X-Bz-Content-Sha1", "do_not_verify");
         xhr.setRequestHeader("X-Requested-With", "XMLHttpRequest");
-        // xhr.setRequestHeader("Cache-Control", "no-cache");
-        // xhr.setRequestHeader("X-Bz-File-Name", encodeURIComponent(file.name));
-        // 日志调试
-        console.log("上传到B2的URL:", upload_url);
       }
 
-      // 发送文件数据
       xhr.send(file);
     });
 
-    // 步骤3: 通知后端上传完成并更新文件信息
     const completeData = await completeFileUpload({
-      file_id: fileId,
-      s3_config_id: options.s3_config_id,
-      storage_path,
-      s3_url,
-      filename: file.name,
-      mimetype: contentType || accurateMimeType, // 使用后端推断的正确MIME类型
-      size: file.size.toString(), // 确保size是字符串
+      key: commitKey,
+      storage_config_id: storageConfigId,
+      filename: resolvedFilename,
+      size: file.size,
       etag: uploadResult.etag,
-      slug,
+      slug: options.slug,
       remark: options.remark,
       password: options.password,
       expires_in: options.expires_in,
       max_views: options.max_views,
+      use_proxy: options.use_proxy,
+      original_filename: options.original_filename ?? false,
     });
 
-    // 记录日志，用于调试
+    if (typeof onFileIdReady === "function" && completeData?.data?.id) {
+      onFileIdReady(completeData.data.id);
+    }
+
     console.log("文件上传完成，提交的元数据:", {
-      file_id: fileId,
-      size: file.size.toString(),
+      key: commitKey,
+      storage_config_id: storageConfigId,
+      filename: resolvedFilename,
+      size: file.size,
       etag: uploadResult.etag,
     });
 
     return completeData;
   } catch (error) {
-    console.error("直接上传文件到S3失败:", error);
-
-    // 如果已经创建了文件记录，但上传失败，则删除文件记录
-    if (fileId) {
-      console.log("上传失败，正在删除文件记录:", fileId);
-      try {
-        // 使用认证Store检查用户身份
-        const { useAuthStore } = await import("@/stores/authStore.js");
-        const authStore = useAuthStore();
-
-        // 使用统一的批量删除API删除文件
-        if (authStore.isAdmin || (authStore.authType === "apikey" && authStore.apiKey)) {
-          await batchDeleteFiles([fileId]);
-          console.log("已成功删除上传失败的文件记录（统一API）");
-        } else {
-          console.warn("未检测到有效的管理员令牌或API密钥，无法删除文件记录");
-        }
-      } catch (deleteError) {
-        console.error("删除上传失败的文件记录错误:", deleteError);
-        // 即使删除失败，我们仍然继续抛出原始错误
-      }
-    }
-
+    console.error("直接上传文件到存储失败:", error);
     throw error;
   }
 }

@@ -20,7 +20,7 @@ export default {
       expiresAt: "过期时间",
       accessMode: "访问模式",
       proxyAccess: "Worker代理访问",
-      directAccess: "S3/CDN直链访问",
+      directAccess: "存储/CDN直链访问",
       limit: "限制",
     },
 

@@ -71,6 +71,16 @@ export function getRecommendedConcurrency() {
 }
 
 /**
+ * 获取加密密钥（统一入口）
+ * 优先读取环境变量，回退到默认值
+ * @param {import('hono').Context} c
+ * @returns {string}
+ */
+export function getEncryptionSecret(c) {
+  return (c && c.env && c.env.ENCRYPTION_SECRET) || "default-encryption-key";
+}
+
+/**
  * 检测当前是否运行在Node.js环境
  * @returns {boolean} 是否为Node.js环境
  */

@@ -48,8 +48,8 @@ export default {
         description: "Storage mount point configurations",
       },
       storage_config: {
-        name: "S3 Config Management",
-        description: "S3 storage configuration information",
+        name: "Storage Config Management",
+        description: "Storage configuration information",
       },
       key_management: {
         name: "Key Management",
