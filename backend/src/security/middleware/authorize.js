@@ -1,5 +1,5 @@
-import { HTTPException } from "hono/http-exception";
 import { ApiStatus } from "../../constants/index.js";
+import { AppError, AuthenticationError, AuthorizationError } from "../../http/errors.js";
 import { PermissionChecker } from "../../constants/permissions.js";
 import { createGuestPrincipal } from "./securityContext.js";
 
@@ -83,6 +83,19 @@ const emitAuditEvent = (c, principal, { decision, policyName, reason = null, sta
   console.log(JSON.stringify(payload));
 };
 
+const statusToCode = (status) => {
+  switch (status) {
+    case ApiStatus.UNAUTHORIZED:
+      return "UNAUTHORIZED";
+    case ApiStatus.FORBIDDEN:
+      return "FORBIDDEN";
+    case ApiStatus.BAD_REQUEST:
+      return "BAD_REQUEST";
+    default:
+      return "AUTH_ERROR";
+  }
+};
+
 const raiseAuthError = (c, principal, { status, message, reason, policyName }) => {
   emitAuditEvent(c, principal, {
     decision: "deny",
@@ -90,7 +103,13 @@ const raiseAuthError = (c, principal, { status, message, reason, policyName }) =
     reason,
     status,
   });
-  throw new HTTPException(status, { message });
+  if (status === ApiStatus.UNAUTHORIZED) {
+    throw new AuthenticationError(message);
+  }
+  if (status === ApiStatus.FORBIDDEN) {
+    throw new AuthorizationError(message);
+  }
+  throw new AppError(message, { status, code: statusToCode(status), expose: true });
 };
 
 const checkPermissions = (principal, permissions, mode) => {

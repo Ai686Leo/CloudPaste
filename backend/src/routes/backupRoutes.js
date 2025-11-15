@@ -1,7 +1,8 @@
 import { Hono } from "hono";
-import { HTTPException } from "hono/http-exception";
+import { ValidationError } from "../http/errors.js";
 import { BackupService } from "../services/BackupService.js";
 import { ApiStatus, UserType } from "../constants/index.js";
+import { jsonOk } from "../utils/common.js";
 import { usePolicy } from "../security/policies/policies.js";
 import { resolvePrincipal } from "../security/helpers/principal.js";
 
@@ -17,7 +18,7 @@ backupRoutes.post("/api/admin/backup/create", requireAdmin, async (c) => {
   const { backup_type = "full", selected_modules = [] } = body;
 
   if (backup_type === "modules" && (!selected_modules || selected_modules.length === 0)) {
-    throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "模块备份必须选择至少一个模块" });
+    throw new ValidationError("模块备份必须选择至少一个模块");
   }
 
   const backupService = new BackupService(c.env.DB);
@@ -48,18 +49,18 @@ backupRoutes.post("/api/admin/backup/restore", requireAdmin, async (c) => {
   const mode = formData.get("mode") || "overwrite";
 
   if (!file) {
-    throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "请选择备份文件" });
+    throw new ValidationError("请选择备份文件");
   }
 
   if (!file.name.endsWith(".json")) {
-    throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "只支持JSON格式的备份文件" });
+    throw new ValidationError("只支持JSON格式的备份文件");
   }
 
   const fileContent = await file.text();
   const backupData = await Promise.resolve()
     .then(() => JSON.parse(fileContent))
     .catch(() => {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "备份文件格式错误，请确保是有效的JSON文件" });
+      throw new ValidationError("备份文件格式错误，请确保是有效的JSON文件");
     });
 
   const backupService = new BackupService(c.env.DB);
@@ -74,11 +75,9 @@ backupRoutes.post("/api/admin/backup/restore", requireAdmin, async (c) => {
     preserveTimestamps,
   });
 
-  return c.json({
-    code: ApiStatus.SUCCESS,
-    message: "数据还原成功",
-    success: true,
-    data: {
+  return jsonOk(
+    c,
+    {
       restored_tables: result.restored_tables,
       total_records: result.total_records,
       results: result.results,
@@ -88,7 +87,8 @@ backupRoutes.post("/api/admin/backup/restore", requireAdmin, async (c) => {
         timestamp: backupData.metadata.timestamp,
       },
     },
-  });
+    "数据还原成功"
+  );
 });
 
 /**
@@ -99,12 +99,7 @@ backupRoutes.get("/api/admin/backup/modules", requireAdmin, async (c) => {
   const backupService = new BackupService(c.env.DB);
   const modules = await backupService.getModulesInfo();
 
-  return c.json({
-    code: ApiStatus.SUCCESS,
-    message: "获取模块信息成功",
-    success: true,
-    data: { modules },
-  });
+  return jsonOk(c, { modules }, "获取模块信息成功");
 });
 
 export { backupRoutes };

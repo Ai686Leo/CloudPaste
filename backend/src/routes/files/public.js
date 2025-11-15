@@ -1,5 +1,6 @@
-import { HTTPException } from "hono/http-exception";
 import { ApiStatus } from "../../constants/index.js";
+import { AppError, NotFoundError, AuthenticationError, ValidationError } from "../../http/errors.js";
+import { jsonOk } from "../../utils/common.js";
 import { generateFileDownloadUrl, getFileBySlug, getPublicFileInfo, incrementAndCheckFileViews, isFileAccessible } from "../../services/fileService.js";
 import { verifyPassword } from "../../utils/crypto.js";
 import { useRepositories } from "../../utils/repositories.js";
@@ -15,24 +16,24 @@ export const registerFilesPublicRoutes = (router) => {
     const accessCheck = await isFileAccessible(db, file, encryptionSecret);
     if (!accessCheck.accessible) {
       if (accessCheck.reason === "expired") {
-        throw new HTTPException(ApiStatus.GONE, { message: "文件已过期" });
+        throw new AppError("文件已过期", { status: ApiStatus.GONE, code: "GONE", expose: true });
       }
-      throw new HTTPException(ApiStatus.NOT_FOUND, { message: "文件不存在" });
+      throw new NotFoundError("文件不存在");
     }
 
     const requiresPassword = !!file.password;
     if (!requiresPassword) {
       const result = await incrementAndCheckFileViews(db, file, encryptionSecret);
       if (result.isExpired) {
-        throw new HTTPException(ApiStatus.GONE, { message: "文件已达到最大查看次数" });
+        throw new AppError("文件已达到最大查看次数", { status: ApiStatus.GONE, code: "GONE", expose: true });
       }
       const urlsObj = await generateFileDownloadUrl(db, result.file, encryptionSecret, c.req.raw);
       const publicInfo = await getPublicFileInfo(result.file, requiresPassword, urlsObj);
-      return c.json({ code: ApiStatus.SUCCESS, message: "获取文件成功", data: publicInfo, success: true });
+      return jsonOk(c, publicInfo, "获取文件成功");
     }
 
     const publicInfo = await getPublicFileInfo(file, true);
-    return c.json({ code: ApiStatus.SUCCESS, message: "获取文件成功", data: publicInfo, success: true });
+    return jsonOk(c, publicInfo, "获取文件成功");
   });
 
   router.get("/api/public/files/:slug", async (c) => {
@@ -44,9 +45,9 @@ export const registerFilesPublicRoutes = (router) => {
     const accessCheck = await isFileAccessible(db, file, encryptionSecret);
     if (!accessCheck.accessible) {
       if (accessCheck.reason === "expired") {
-        throw new HTTPException(ApiStatus.GONE, { message: "文件已过期" });
+        throw new AppError("文件已过期", { status: ApiStatus.GONE, code: "GONE", expose: true });
       }
-      throw new HTTPException(ApiStatus.NOT_FOUND, { message: "文件不存在" });
+      throw new NotFoundError("文件不存在");
     }
 
     const requiresPassword = !!file.password;
@@ -67,27 +68,17 @@ export const registerFilesPublicRoutes = (router) => {
         })().catch((error) => {
           console.error(`尝试再次删除文件(${file.id})时出错:`, error);
         });
-        throw new HTTPException(ApiStatus.GONE, { message: "文件已达到最大查看次数" });
+        throw new AppError("文件已达到最大查看次数", { status: ApiStatus.GONE, code: "GONE", expose: true });
       }
 
       const urlsObj = await generateFileDownloadUrl(db, result.file, encryptionSecret, c.req.raw);
       const publicInfo = await getPublicFileInfo(result.file, requiresPassword, urlsObj);
 
-      return c.json({
-        code: ApiStatus.SUCCESS,
-        message: "获取文件成功",
-        data: publicInfo,
-        success: true,
-      });
+      return jsonOk(c, publicInfo, "获取文件成功");
     }
 
     const publicInfo = await getPublicFileInfo(file, true);
-    return c.json({
-      code: ApiStatus.SUCCESS,
-      message: "获取文件成功",
-      data: publicInfo,
-      success: true,
-    });
+    return jsonOk(c, publicInfo, "获取文件成功");
   });
 
   router.post("/api/public/files/:slug/verify", async (c) => {
@@ -97,38 +88,33 @@ export const registerFilesPublicRoutes = (router) => {
     const encryptionSecret = getEncryptionSecret(c);
 
     if (!body.password) {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "密码是必需的" });
+      throw new ValidationError("密码是必需的");
     }
 
     const file = await getFileBySlug(db, slug);
     const accessCheck = await isFileAccessible(db, file, encryptionSecret);
     if (!accessCheck.accessible) {
       if (accessCheck.reason === "expired") {
-        throw new HTTPException(ApiStatus.GONE, { message: "文件已过期" });
+        throw new AppError("文件已过期", { status: ApiStatus.GONE, code: "GONE", expose: true });
       }
-      throw new HTTPException(ApiStatus.NOT_FOUND, { message: "文件不存在" });
+      throw new NotFoundError("文件不存在");
     }
 
     if (!file.password) {
       const urlsObj = await generateFileDownloadUrl(db, file, encryptionSecret, c.req.raw);
       const publicInfo = await getPublicFileInfo(file, false, urlsObj);
-      return c.json({
-        code: ApiStatus.BAD_REQUEST,
-        message: "此文件不需要密码",
-        data: publicInfo,
-        success: true,
-      });
+      return jsonOk(c, publicInfo, "此文件不需要密码");
     }
 
     const passwordValid = await verifyPassword(body.password, file.password);
     if (!passwordValid) {
-      throw new HTTPException(ApiStatus.UNAUTHORIZED, { message: "密码不正确" });
+      throw new AuthenticationError("密码不正确");
     }
 
     const result = await incrementAndCheckFileViews(db, file, encryptionSecret);
 
     if (result.isExpired) {
-      throw new HTTPException(ApiStatus.GONE, { message: "文件已达到最大查看次数" });
+      throw new AppError("文件已达到最大查看次数", { status: ApiStatus.GONE, code: "GONE", expose: true });
     }
 
     const urlsObj = await generateFileDownloadUrl(db, result.file, encryptionSecret, c.req.raw);
@@ -148,11 +134,6 @@ export const registerFilesPublicRoutes = (router) => {
 
       const publicInfo = await getPublicFileInfo(fileWithPassword, false, urlsObj);
 
-    return c.json({
-      code: ApiStatus.SUCCESS,
-      message: "密码验证成功",
-      data: publicInfo,
-      success: true,
-    });
+    return jsonOk(c, publicInfo, "密码验证成功");
   });
 };

@@ -1,5 +1,5 @@
-import { HTTPException } from "hono/http-exception";
-import { ApiStatus } from "../../constants/index.js";
+import { ValidationError, NotFoundError } from "../../http/errors.js";
+import { jsonOk } from "../../utils/common.js";
 import { MountManager } from "../../storage/managers/MountManager.js";
 import { FileSystem } from "../../storage/fs/FileSystem.js";
 import { useRepositories } from "../../utils/repositories.js";
@@ -57,18 +57,14 @@ export const registerOpsRoutes = (router, helpers) => {
     const newPath = body.newPath;
 
     if (!oldPath || !newPath) {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "请提供原路径和新路径" });
+      throw new ValidationError("请提供原路径和新路径");
     }
 
     const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
     const fileSystem = new FileSystem(mountManager);
     await fileSystem.renameItem(oldPath, newPath, userIdOrInfo, userType);
 
-    return c.json({
-      code: ApiStatus.SUCCESS,
-      message: "重命名成功",
-      success: true,
-    });
+    return jsonOk(c, undefined, "重命名成功");
   });
 
   router.delete("/api/fs/batch-remove", parseJsonBody, usePolicy("fs.delete", { pathResolver: listPathsResolver("paths") }), async (c) => {
@@ -82,19 +78,14 @@ export const registerOpsRoutes = (router, helpers) => {
     const paths = body.paths;
 
     if (!paths || !Array.isArray(paths) || paths.length === 0) {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "请提供有效的路径数组" });
+      throw new ValidationError("请提供有效的路径数组");
     }
 
     const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
     const fileSystem = new FileSystem(mountManager);
     const result = await fileSystem.batchRemoveItems(paths, userIdOrInfo, userType);
 
-    return c.json({
-      code: ApiStatus.SUCCESS,
-      message: "批量删除成功",
-      data: result,
-      success: true,
-    });
+    return jsonOk(c, result, "批量删除成功");
   });
 
   router.post("/api/fs/batch-copy", parseJsonBody, usePolicy("fs.copy", { pathResolver: copyItemsResolver }), async (c) => {
@@ -109,7 +100,7 @@ export const registerOpsRoutes = (router, helpers) => {
     const skipExisting = body.skipExisting !== false;
 
     if (!items || !Array.isArray(items) || items.length === 0) {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "请提供有效的复制项数组" });
+      throw new ValidationError("请提供有效的复制项数组");
     }
 
     const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
@@ -126,10 +117,9 @@ export const registerOpsRoutes = (router, helpers) => {
     const crossStorageResults = result.crossStorageResults || [];
 
     if (hasCrossStorageOperations) {
-      return c.json({
-        code: ApiStatus.SUCCESS,
-        message: "FILE_COPY_SUCCESS",
-        data: {
+      return jsonOk(
+        c,
+        {
           crossStorage: true,
           requiresClientSideCopy: true,
           standardCopyResults: {
@@ -141,22 +131,21 @@ export const registerOpsRoutes = (router, helpers) => {
           failed: allFailedItems,
           details: allDetails,
         },
-        success: true,
-      });
+        "FILE_COPY_SUCCESS"
+      );
     }
 
-    return c.json({
-      code: ApiStatus.SUCCESS,
-      message: "FILE_COPY_SUCCESS",
-      data: {
+    return jsonOk(
+      c,
+      {
         crossStorage: false,
         success: totalSuccess,
         skipped: totalSkipped,
         failed: totalFailed,
         details: allDetails,
       },
-      success: true,
-    });
+      "FILE_COPY_SUCCESS"
+    );
   });
 
   router.post("/api/fs/batch-copy-commit", parseJsonBody, usePolicy("fs.copy", { pathCheck: false }), async (c) => {
@@ -167,20 +156,20 @@ export const registerOpsRoutes = (router, helpers) => {
     const { targetMountId, files } = body;
 
     if (!targetMountId || !Array.isArray(files) || files.length === 0) {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "请提供有效的目标挂载点ID和文件列表" });
+      throw new ValidationError("请提供有效的目标挂载点ID和文件列表");
     }
 
     const repositoryFactory = useRepositories(c);
     const mountRepository = repositoryFactory.getMountRepository();
     const mount = await mountRepository.findById(targetMountId);
     if (!mount) {
-      throw new HTTPException(ApiStatus.NOT_FOUND, { message: "目标挂载点不存在" });
+      throw new NotFoundError("目标挂载点不存在");
     }
 
     const { getEncryptionSecret } = await import("../../utils/environmentUtils.js");
     const storageConfig = await getStorageConfigByUserType(db, mount.storage_config_id, userIdOrInfo, userType, getEncryptionSecret(c));
     if (!storageConfig) {
-      throw new HTTPException(ApiStatus.NOT_FOUND, { message: "存储配置不存在" });
+      throw new NotFoundError("存储配置不存在");
     }
 
     const mountManager = new MountManager(db, getEncryptionSecret(c), repositoryFactory);
@@ -191,14 +180,6 @@ export const registerOpsRoutes = (router, helpers) => {
     const hasSuccess = results.success.length > 0;
     const overallSuccess = hasSuccess;
 
-    return c.json({
-      code: overallSuccess ? ApiStatus.SUCCESS : ApiStatus.ACCEPTED,
-      message: "FILE_COPY_SUCCESS",
-      data: {
-        ...results,
-        crossStorage: true,
-      },
-      success: overallSuccess,
-    });
+    return jsonOk(c, { ...results, crossStorage: true }, "FILE_COPY_SUCCESS");
   });
 };

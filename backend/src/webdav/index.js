@@ -14,7 +14,7 @@ import { handleCopy } from "./methods/copy.js";
 import { handleLock } from "./methods/lock.js";
 import { handleUnlock } from "./methods/unlock.js";
 import { handleProppatch } from "./methods/proppatch.js";
-import { HTTPException } from "hono/http-exception";
+import { AppError } from "../http/errors.js";
 import { ApiStatus } from "../constants/index.js";
 import { WebDAVAuth } from "./auth/core/WebDAVAuth.js";
 import { processWebDAVPath } from "./utils/webdavUtils.js";
@@ -95,9 +95,7 @@ export async function handleWebDAV(c) {
       break;
     default:
       console.warn(`WebDAV不支持的方法: ${method}`);
-      throw new HTTPException(ApiStatus.METHOD_NOT_ALLOWED, {
-        message: `Method ${method} not supported`,
-      });
+      throw new AppError(`Method ${method} not supported`, { status: ApiStatus.METHOD_NOT_ALLOWED, code: "METHOD_NOT_ALLOWED", expose: true });
   }
 
   console.log(`WebDAV响应: ${method} ${path}, 状态码: ${response.status}`);

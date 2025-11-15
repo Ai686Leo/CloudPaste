@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, computed } from "vue";
+import { onMounted, computed, ref, watch } from "vue";
 import { useStorageConfigManagement } from "@/composables/admin-management/useStorageConfigManagement.js";
 import ConfigForm from "@/components/admin/ConfigForm.vue";
 import CommonPagination from "@/components/common/CommonPagination.vue";
@@ -60,14 +60,35 @@ const formatStorageTypeLabel = (type) => {
 };
 
 const storageTypeOptions = computed(() =>
-  availableStorageTypes.value.map((type) => ({
-    value: type,
-    label: formatStorageTypeLabel(type),
-  }))
+    availableStorageTypes.value.map((type) => ({
+      value: type,
+      label: formatStorageTypeLabel(type),
+    }))
 );
 
 const hasAnyConfig = computed(() => storageConfigs.value.length > 0);
 const hasFilteredResult = computed(() => filteredConfigs.value.length > 0);
+
+const isCorsHeadersExpanded = ref(false);
+const isExposeHeadersExpanded = ref(false);
+const toggleCorsHeaders = () => {
+  isCorsHeadersExpanded.value = !isCorsHeadersExpanded.value;
+};
+const toggleExposeHeaders = () => {
+  isExposeHeadersExpanded.value = !isExposeHeadersExpanded.value;
+};
+
+watch(showTestDetails, (visible) => {
+  if (!visible) {
+    isCorsHeadersExpanded.value = false;
+    isExposeHeadersExpanded.value = false;
+  }
+});
+
+watch(selectedTestResult, () => {
+  isCorsHeadersExpanded.value = false;
+  isExposeHeadersExpanded.value = false;
+});
 
 // 格式化标签
 const formatLabel = (key) => {
@@ -107,31 +128,31 @@ onMounted(() => {
       </button>
 
       <button
-        @click="loadStorageConfigs"
-        class="px-3 py-2 rounded-md flex items-center space-x-1 font-medium transition text-sm"
-        :class="darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-200 hover:bg-gray-300 text-gray-700'"
+          @click="loadStorageConfigs"
+          class="px-3 py-2 rounded-md flex items-center space-x-1 font-medium transition text-sm"
+          :class="darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-200 hover:bg-gray-300 text-gray-700'"
       >
         <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
           />
         </svg>
         <span>刷新列表</span>
       </button>
 
       <div
-        v-if="storageTypeOptions.length > 0"
-        class="flex items-center gap-2 text-sm ml-auto"
-        :class="darkMode ? 'text-gray-300' : 'text-gray-600'"
+          v-if="storageTypeOptions.length > 0"
+          class="flex items-center gap-2 text-sm ml-auto"
+          :class="darkMode ? 'text-gray-300' : 'text-gray-600'"
       >
         <span>存储类型</span>
         <select
-          v-model="storageTypeFilter"
-          class="px-2 py-1 rounded-md border text-sm"
-          :class="darkMode ? 'bg-gray-800 border-gray-600 text-gray-100' : 'bg-white border-gray-300 text-gray-800'"
+            v-model="storageTypeFilter"
+            class="px-2 py-1 rounded-md border text-sm"
+            :class="darkMode ? 'bg-gray-800 border-gray-600 text-gray-100' : 'bg-white border-gray-300 text-gray-800'"
         >
           <option value="all">全部</option>
           <option v-for="option in storageTypeOptions" :key="option.value" :value="option.value">
@@ -177,10 +198,10 @@ onMounted(() => {
         <div v-if="hasFilteredResult" class="bg-white dark:bg-gray-800 shadow-md rounded-lg p-3">
           <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4">
             <div
-              v-for="config in filteredConfigs"
-              :key="config.id"
-              class="rounded-lg shadow-md overflow-hidden transition-colors duration-200 border relative"
-              :class="[
+                v-for="config in filteredConfigs"
+                :key="config.id"
+                class="rounded-lg shadow-md overflow-hidden transition-colors duration-200 border relative"
+                :class="[
                 darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200',
                 config.is_default ? (darkMode ? 'ring-3 ring-primary-500 border-primary-500 shadow-lg' : 'ring-3 ring-primary-500 border-primary-500 shadow-lg') : '',
               ]"
@@ -194,9 +215,9 @@ onMounted(() => {
                     {{ config.name }}
                   </h3>
                   <span
-                    v-if="config.is_default"
-                    class="ml-2 text-xs px-2 py-0.5 rounded-full font-medium"
-                    :class="darkMode ? 'bg-primary-600 text-white' : 'bg-primary-500 text-white'"
+                      v-if="config.is_default"
+                      class="ml-2 text-xs px-2 py-0.5 rounded-full font-medium"
+                      :class="darkMode ? 'bg-primary-600 text-white' : 'bg-primary-500 text-white'"
                   >
                     默认
                   </span>
@@ -239,10 +260,10 @@ onMounted(() => {
                       <span class="flex items-center">
                         <svg class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" :class="config.is_public ? 'text-green-500' : 'text-gray-400'">
                           <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="2"
-                            :d="
+                              stroke-linecap="round"
+                              stroke-linejoin="round"
+                              stroke-width="2"
+                              :d="
                               config.is_public
                                 ? 'M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z'
                                 : 'M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636'
@@ -268,8 +289,8 @@ onMounted(() => {
                   <div class="mt-2">
                     <div v-if="testResults[config.id] && !testResults[config.id].loading" class="mt-2">
                       <div
-                        :class="[testResults[config.id].success ? 'text-green-500' : testResults[config.id].partialSuccess ? 'text-amber-500' : 'text-red-500']"
-                        class="font-semibold"
+                          :class="[testResults[config.id].success ? 'text-green-500' : testResults[config.id].partialSuccess ? 'text-amber-500' : 'text-red-500']"
+                          class="font-semibold"
                       >
                         {{ testResults[config.id].message }}
                       </div>
@@ -288,10 +309,10 @@ onMounted(() => {
 
                 <div class="mt-4 flex flex-wrap gap-2">
                   <button
-                    v-if="!config.is_default"
-                    @click="handleSetDefaultConfig(config.id)"
-                    class="flex items-center px-3 py-1.5 rounded text-sm font-medium transition"
-                    :class="darkMode ? 'bg-primary-600 hover:bg-primary-700 text-white' : 'bg-primary-100 hover:bg-primary-200 text-primary-800'"
+                      v-if="!config.is_default"
+                      @click="handleSetDefaultConfig(config.id)"
+                      class="flex items-center px-3 py-1.5 rounded text-sm font-medium transition"
+                      :class="darkMode ? 'bg-primary-600 hover:bg-primary-700 text-white' : 'bg-primary-100 hover:bg-primary-200 text-primary-800'"
                   >
                     <svg class="h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
@@ -300,24 +321,24 @@ onMounted(() => {
                   </button>
 
                   <button
-                    @click="testConnection(config.id)"
-                    class="flex items-center px-3 py-1.5 rounded text-sm font-medium transition"
-                    :class="
+                      @click="testConnection(config.id)"
+                      class="flex items-center px-3 py-1.5 rounded text-sm font-medium transition"
+                      :class="
                       testResults[config.id]?.loading
                         ? 'opacity-50 cursor-wait'
                         : darkMode
                         ? 'bg-blue-600 hover:bg-blue-700 text-white'
                         : 'bg-blue-100 hover:bg-blue-200 text-blue-800'
                     "
-                    :disabled="testResults[config.id]?.loading"
+                      :disabled="testResults[config.id]?.loading"
                   >
                     <template v-if="testResults[config.id]?.loading">
                       <svg class="animate-spin h-4 w-4 mr-1.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                         <path
-                          class="opacity-75"
-                          fill="currentColor"
-                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                            class="opacity-75"
+                            fill="currentColor"
+                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                         ></path>
                       </svg>
                       测试中...
@@ -325,10 +346,10 @@ onMounted(() => {
                     <template v-else>
                       <svg class="h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          stroke-width="2"
-                          d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
                         />
                       </svg>
                       测试连接
@@ -336,32 +357,32 @@ onMounted(() => {
                   </button>
 
                   <button
-                    @click="editConfig(config)"
-                    class="flex items-center px-3 py-1.5 rounded text-sm font-medium transition"
-                    :class="darkMode ? 'bg-gray-600 hover:bg-gray-700 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-800'"
+                      @click="editConfig(config)"
+                      class="flex items-center px-3 py-1.5 rounded text-sm font-medium transition"
+                      :class="darkMode ? 'bg-gray-600 hover:bg-gray-700 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-800'"
                   >
                     <svg class="h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
                       />
                     </svg>
                     编辑
                   </button>
 
                   <button
-                    @click="handleDeleteConfig(config.id)"
-                    class="flex items-center px-3 py-1.5 rounded text-sm font-medium transition"
-                    :class="darkMode ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-red-100 hover:bg-red-200 text-red-800'"
+                      @click="handleDeleteConfig(config.id)"
+                      class="flex items-center px-3 py-1.5 rounded text-sm font-medium transition"
+                      :class="darkMode ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-red-100 hover:bg-red-200 text-red-800'"
                   >
                     <svg class="h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
                       />
                     </svg>
                     删除
@@ -374,12 +395,12 @@ onMounted(() => {
           <!-- 分页组件 - 只在有筛选结果时显示 -->
           <div class="mt-4">
             <CommonPagination
-              :dark-mode="darkMode"
-              :pagination="pagination"
-              :page-size-options="pageSizeOptions"
-              mode="page"
-              @page-changed="handlePageChange"
-              @limit-changed="handleLimitChange"
+                :dark-mode="darkMode"
+                :pagination="pagination"
+                :page-size-options="pageSizeOptions"
+                mode="page"
+                @page-changed="handlePageChange"
+                @limit-changed="handleLimitChange"
             />
           </div>
         </div>
@@ -392,9 +413,9 @@ onMounted(() => {
 
       <!-- 空状态 -->
       <div
-        v-else-if="!loading"
-        class="rounded-lg p-6 text-center transition-colors duration-200 flex-1 flex flex-col justify-center items-center bg-white dark:bg-gray-800 shadow-md"
-        :class="darkMode ? 'text-gray-300' : 'text-gray-600'"
+          v-else-if="!loading"
+          class="rounded-lg p-6 text-center transition-colors duration-200 flex-1 flex flex-col justify-center items-center bg-white dark:bg-gray-800 shadow-md"
+          :class="darkMode ? 'text-gray-300' : 'text-gray-600'"
       >
         <svg class="mx-auto h-16 w-16 mb-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
@@ -412,22 +433,22 @@ onMounted(() => {
 
     <!-- 添加/编辑表单弹窗 -->
     <ConfigForm
-      v-if="showAddForm || showEditForm"
-      :dark-mode="darkMode"
-      :config="currentConfig"
-      :is-edit="showEditForm"
-      @close="
+        v-if="showAddForm || showEditForm"
+        :dark-mode="darkMode"
+        :config="currentConfig"
+        :is-edit="showEditForm"
+        @close="
         showAddForm = false;
         showEditForm = false;
       "
-      @success="handleFormSuccess"
+        @success="handleFormSuccess"
     />
 
     <!-- 测试结果详情模态框 -->
     <div
-      v-if="showTestDetails && selectedTestResult"
-      class="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black bg-opacity-50 overflow-y-auto"
-      @click="showTestDetails = false"
+        v-if="showTestDetails && selectedTestResult"
+        class="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black bg-opacity-50 overflow-y-auto"
+        @click="showTestDetails = false"
     >
       <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-lg overflow-hidden" @click.stop>
         <div class="p-3 sm:p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
@@ -435,9 +456,9 @@ onMounted(() => {
           <button @click="showTestDetails = false" class="text-gray-400 hover:text-gray-500">
             <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
               <path
-                fill-rule="evenodd"
-                d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
-                clip-rule="evenodd"
+                  fill-rule="evenodd"
+                  d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                  clip-rule="evenodd"
               ></path>
             </svg>
           </button>
@@ -446,8 +467,8 @@ onMounted(() => {
         <div class="p-3 sm:p-4 max-h-[70vh] overflow-y-auto">
           <!-- 连接总结 -->
           <div
-            class="mb-3 p-2 sm:p-3 rounded"
-            :class="[
+              class="mb-3 p-2 sm:p-3 rounded"
+              :class="[
               selectedTestResult.success
                 ? 'bg-green-50 dark:bg-green-900/30'
                 : selectedTestResult.partialSuccess
@@ -456,8 +477,8 @@ onMounted(() => {
             ]"
           >
             <div
-              class="font-semibold"
-              :class="[
+                class="font-semibold"
+                :class="[
                 selectedTestResult.success
                   ? 'text-green-700 dark:text-green-400'
                   : selectedTestResult.partialSuccess
@@ -475,8 +496,8 @@ onMounted(() => {
           <!-- 折叠/展开控制 -->
           <div class="mb-3">
             <button
-              @click="showDetailedResults = !showDetailedResults"
-              class="text-sm flex items-center text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
+                @click="showDetailedResults = !showDetailedResults"
+                class="text-sm flex items-center text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
             >
               <svg class="h-4 w-4 mr-1 transition-transform duration-200" :class="showDetailedResults ? 'rotate-90' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
@@ -492,7 +513,7 @@ onMounted(() => {
                 <svg class="h-4 w-4 mr-1 mt-0.5 flex-shrink-0 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                <div>前端模拟测试是判断配置能否在实际前端环境中正常工作的关键指标</div>
+                <div>S3 存储测试，最终请以实际上传结果为准</div>
               </div>
             </div>
 
@@ -504,8 +525,8 @@ onMounted(() => {
                   <div v-for="(value, key) in selectedTestResult.result.connectionInfo" :key="key" class="connection-info-item">
                     <div class="text-gray-500 dark:text-gray-400 font-medium mb-0.5">{{ formatLabel(key) }}:</div>
                     <div
-                      class="pl-2 text-gray-900 dark:text-gray-200 break-all overflow-wrap-anywhere"
-                      :class="{ 'endpoint-url': key === 'endpoint' || key.includes('url') || key.includes('URI') }"
+                        class="pl-2 text-gray-900 dark:text-gray-200 break-all overflow-wrap-anywhere"
+                        :class="{ 'endpoint-url': key === 'endpoint' || key.includes('url') || key.includes('URI') }"
                     >
                       {{ value || "未设置" }}
                     </div>
@@ -522,10 +543,10 @@ onMounted(() => {
                   <span class="mr-1" :class="selectedTestResult.result?.read?.success ? 'text-green-500' : 'text-red-500'">
                     <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        :d="selectedTestResult.result?.read?.success ? 'M5 13l4 4L19 7' : 'M6 18L18 6M6 6l12 12'"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          :d="selectedTestResult.result?.read?.success ? 'M5 13l4 4L19 7' : 'M6 18L18 6M6 6l12 12'"
                       ></path>
                     </svg>
                   </span>
@@ -553,7 +574,7 @@ onMounted(() => {
 
                   <!-- 显示首几个对象 -->
                   <div v-if="selectedTestResult.result.read.firstObjects && selectedTestResult.result.read.firstObjects.length > 0" class="mt-2">
-                    <div class="text-gray-500 dark:text-gray-400 mb-1">存储桶中的对象:</div>
+                    <div class="text-gray-500 dark:text-gray-400 mb-1">存储桶中的对象(仅展示前3个):</div>
                     <div class="bg-gray-100 dark:bg-gray-800 rounded p-1 max-h-16 overflow-y-auto">
                       <div v-for="(obj, index) in selectedTestResult.result.read.firstObjects" :key="index" class="text-xs py-0.5">
                         <div class="flex items-start">
@@ -585,10 +606,10 @@ onMounted(() => {
                   <span class="mr-1" :class="selectedTestResult.result?.write?.success ? 'text-green-500' : 'text-red-500'">
                     <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        :d="selectedTestResult.result?.write?.success ? 'M5 13l4 4L19 7' : 'M6 18L18 6M6 6l12 12'"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          :d="selectedTestResult.result?.write?.success ? 'M5 13l4 4L19 7' : 'M6 18L18 6M6 6l12 12'"
                       ></path>
                     </svg>
                   </span>
@@ -620,8 +641,8 @@ onMounted(() => {
                   </div>
 
                   <div
-                    v-if="selectedTestResult.result.write.note && !selectedTestResult.result.write.note.includes('后端')"
-                    class="mt-1 text-gray-500 dark:text-gray-400 text-xs italic"
+                      v-if="selectedTestResult.result.write.note && !selectedTestResult.result.write.note.includes('后端')"
+                      class="mt-1 text-gray-500 dark:text-gray-400 text-xs italic"
                   >
                     {{ selectedTestResult.result.write.note }}
                   </div>
@@ -645,8 +666,8 @@ onMounted(() => {
               <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center">
                 跨域CORS配置测试
                 <span
-                  class="ml-1.5 text-xs px-1.5 py-0.5 rounded"
-                  :class="
+                    class="ml-1.5 text-xs px-1.5 py-0.5 rounded"
+                    :class="
                     selectedTestResult.result?.cors?.success
                       ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-400'
                       : 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-400'
@@ -660,10 +681,10 @@ onMounted(() => {
                   <span class="mr-1" :class="selectedTestResult.result?.cors?.success ? 'text-green-500' : 'text-red-500'">
                     <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        :d="selectedTestResult.result?.cors?.success ? 'M5 13l4 4L19 7' : 'M6 18L18 6M6 6l12 12'"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          :d="selectedTestResult.result?.cors?.success ? 'M5 13l4 4L19 7' : 'M6 18L18 6M6 6l12 12'"
                       ></path>
                     </svg>
                   </span>
@@ -685,16 +706,54 @@ onMounted(() => {
                   <div class="text-gray-900 dark:text-gray-200 truncate">{{ selectedTestResult.result.cors.allowMethods || "未指定" }}</div>
 
                   <div class="text-gray-500 dark:text-gray-400">允许的头部:</div>
-                  <div class="text-gray-900 dark:text-gray-200 truncate">
-                    {{ selectedTestResult.result.cors.allowHeaders || "未指定" }}
+                  <div class="text-gray-900 dark:text-gray-200 flex items-start gap-2">
                     <span
-                      v-if="selectedTestResult.result.cors.allowHeaders && selectedTestResult.result.cors.allowHeaders.length > 20"
-                      class="text-xs text-blue-600 dark:text-blue-400 cursor-pointer hover:underline"
-                      @click="$event.currentTarget.previousElementSibling.classList.toggle('truncate')"
+                        :class="[
+                        'flex-1',
+                        isCorsHeadersExpanded ? 'whitespace-normal break-words' : 'truncate max-w-full'
+                      ]"
                     >
-                      (展开/收起)
+                      {{ selectedTestResult.result.cors.allowHeaders || "未指定" }}
                     </span>
+                    <button
+                        v-if="selectedTestResult.result.cors.allowHeaders && selectedTestResult.result.cors.allowHeaders.length > 40"
+                        @click="toggleCorsHeaders"
+                        class="text-xs text-blue-600 dark:text-blue-400 hover:underline whitespace-nowrap"
+                    >
+                      {{ isCorsHeadersExpanded ? "收起" : "展开" }}
+                    </button>
                   </div>
+
+                  <template v-if="selectedTestResult.result.cors.exposeHeaders">
+                    <div class="text-gray-500 dark:text-gray-400">暴露的头部:</div>
+                    <div class="text-gray-900 dark:text-gray-200 flex items-start gap-2">
+                      <span
+                          :class="[
+                          'flex-1',
+                          isExposeHeadersExpanded ? 'whitespace-normal break-words' : 'truncate max-w-full'
+                        ]"
+                      >
+                        {{ selectedTestResult.result.cors.exposeHeaders }}
+                      </span>
+                      <button
+                          v-if="selectedTestResult.result.cors.exposeHeaders.length > 40"
+                          @click="toggleExposeHeaders"
+                          class="text-xs text-blue-600 dark:text-blue-400 hover:underline whitespace-nowrap"
+                      >
+                        {{ isExposeHeadersExpanded ? "收起" : "展开" }}
+                      </button>
+                    </div>
+                  </template>
+
+                  <div class="text-gray-500 dark:text-gray-400">缓存时间 (秒):</div>
+                  <div class="text-gray-900 dark:text-gray-200">{{ selectedTestResult.result.cors.maxAge || "未指定" }}</div>
+                </div>
+
+                <div
+                    v-if="selectedTestResult.result?.cors?.supportedNotes && !selectedTestResult.result.cors.success"
+                    class="mt-1 pl-5 text-amber-600 dark:text-amber-400 text-xs"
+                >
+                  {{ selectedTestResult.result.cors.supportedNotes }}
                 </div>
 
                 <div v-if="selectedTestResult.result?.cors?.error" class="mt-1 text-red-600 dark:text-red-400">
@@ -710,13 +769,48 @@ onMounted(() => {
               </div>
             </div>
 
-            <!-- 前端模拟上传测试 -->
+            <!-- 存储诊断信息 -->
+            <div class="mb-3" v-if="selectedTestResult.result?.diagnostics">
+              <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center">
+                存储诊断
+                <span class="ml-1.5 text-xs px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-400">辅助</span>
+              </h4>
+              <div class="bg-gray-50 dark:bg-gray-900/50 rounded p-2 sm:p-3 text-xs sm:text-sm space-y-2">
+                <div v-if="selectedTestResult.result.diagnostics?.lifecycle">
+                  <div class="font-medium text-gray-700 dark:text-gray-200 mt-2">生命周期配置</div>
+                  <div v-if="!selectedTestResult.result.diagnostics.lifecycle.supported" class="text-gray-500 dark:text-gray-400 mt-1">
+                    无法获取生命周期信息：{{ selectedTestResult.result.diagnostics.lifecycle.error || '提供商不支持' }}
+                  </div>
+                  <div v-else-if="selectedTestResult.result.diagnostics.lifecycle.hasRules" class="mt-1 space-y-1">
+                    <div
+                        v-for="(rule, idx) in selectedTestResult.result.diagnostics.lifecycle.rules"
+                        :key="rule.id || idx"
+                        class="border border-gray-200 dark:border-gray-700 rounded p-2 text-xs"
+                    >
+                      <div class="flex justify-between text-gray-700 dark:text-gray-200">
+                        <span>规则 {{ rule.id || idx + 1 }}</span>
+                        <span class="text-xs">{{ rule.status || 'UNKNOWN' }}</span>
+                      </div>
+                      <div v-if="rule.expiration" class="text-gray-500 dark:text-gray-400 mt-1">
+                        过期策略: {{ JSON.stringify(rule.expiration) }}
+                      </div>
+                      <div v-if="rule.transitions?.length" class="text-gray-500 dark:text-gray-400 mt-1">
+                        转储策略: {{ JSON.stringify(rule.transitions) }}
+                      </div>
+                    </div>
+                  </div>
+                  <div v-else class="text-gray-500 dark:text-gray-400 mt-1">未配置生命周期规则</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 预签名 PUT 链路自测 -->
             <div class="mb-3" v-if="selectedTestResult.result?.frontendSim">
               <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center">
-                前端上传模拟测试
+                预签名上传测试
                 <span
-                  class="ml-1.5 text-xs px-1.5 py-0.5 rounded"
-                  :class="
+                    class="ml-1.5 text-xs px-1.5 py-0.5 rounded"
+                    :class="
                     selectedTestResult.result?.frontendSim?.success
                       ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-400'
                       : 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-400'
@@ -730,17 +824,16 @@ onMounted(() => {
                   <span class="mr-1" :class="selectedTestResult.result?.frontendSim?.success ? 'text-green-500' : 'text-red-500'">
                     <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        :d="selectedTestResult.result?.frontendSim?.success ? 'M5 13l4 4L19 7' : 'M6 18L18 6M6 6l12 12'"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          :d="selectedTestResult.result?.frontendSim?.success ? 'M5 13l4 4L19 7' : 'M6 18L18 6M6 6l12 12'"
                       ></path>
                     </svg>
                   </span>
                   <span :class="selectedTestResult.result?.frontendSim?.success ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'">
-                    {{ selectedTestResult.result?.frontendSim?.success ? "前端上传模拟测试成功" : "前端上传模拟测试失败" }}
+                  {{ selectedTestResult.result?.frontendSim?.success ? "上传测试通过" : "上传测试失败" }}
                   </span>
-                  <span class="ml-1.5 text-xs px-1.5 py-0.5 rounded font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300"> 最关键测试 </span>
                 </div>
 
                 <!-- 添加测试说明 -->
@@ -757,8 +850,8 @@ onMounted(() => {
                   <div class="bg-gray-100 dark:bg-gray-800 rounded p-1.5">
                     <div class="flex items-center">
                       <span
-                        class="w-4 h-4 flex-shrink-0 mr-1.5 rounded-full flex items-center justify-center text-white text-xs"
-                        :class="selectedTestResult.result.frontendSim.steps.step1?.success ? 'bg-green-500' : 'bg-red-500'"
+                          class="w-4 h-4 flex-shrink-0 mr-1.5 rounded-full flex items-center justify-center text-white text-xs"
+                          :class="selectedTestResult.result.frontendSim.steps.step1?.success ? 'bg-green-500' : 'bg-red-500'"
                       >
                         1
                       </span>
@@ -766,10 +859,10 @@ onMounted(() => {
                       <span class="ml-auto" :class="selectedTestResult.result.frontendSim.steps.step1?.success ? 'text-green-500' : 'text-red-500'">
                         <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="2"
-                            :d="selectedTestResult.result.frontendSim.steps.step1?.success ? 'M5 13l4 4L19 7' : 'M6 18L18 6M6 6l12 12'"
+                              stroke-linecap="round"
+                              stroke-linejoin="round"
+                              stroke-width="2"
+                              :d="selectedTestResult.result.frontendSim.steps.step1?.success ? 'M5 13l4 4L19 7' : 'M6 18L18 6M6 6l12 12'"
                           ></path>
                         </svg>
                       </span>
@@ -782,8 +875,8 @@ onMounted(() => {
                           {{ selectedTestResult.result.frontendSim.steps.step1.presignedUrl }}
                         </span>
                         <button
-                          @click="$event.currentTarget.previousElementSibling.classList.toggle('whitespace-nowrap')"
-                          class="text-blue-500 hover:text-blue-600 text-xs ml-1 inline-flex items-center"
+                            @click="$event.currentTarget.previousElementSibling.classList.toggle('whitespace-nowrap')"
+                            class="text-blue-500 hover:text-blue-600 text-xs ml-1 inline-flex items-center"
                         >
                           <svg class="h-3 w-3 mr-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
@@ -801,8 +894,8 @@ onMounted(() => {
                   <div class="bg-gray-100 dark:bg-gray-800 rounded p-1.5">
                     <div class="flex items-center">
                       <span
-                        class="w-4 h-4 flex-shrink-0 mr-1.5 rounded-full flex items-center justify-center text-white text-xs"
-                        :class="
+                          class="w-4 h-4 flex-shrink-0 mr-1.5 rounded-full flex items-center justify-center text-white text-xs"
+                          :class="
                           selectedTestResult.result.frontendSim.steps.step2?.success
                             ? 'bg-green-500'
                             : selectedTestResult.result.frontendSim.steps.step1?.success
@@ -814,16 +907,16 @@ onMounted(() => {
                       </span>
                       <span class="font-medium">{{ selectedTestResult.result.frontendSim.steps.step2?.name || "模拟文件上传" }}</span>
                       <span
-                        v-if="selectedTestResult.result.frontendSim.steps.step1?.success"
-                        class="ml-auto"
-                        :class="selectedTestResult.result.frontendSim.steps.step2?.success ? 'text-green-500' : 'text-red-500'"
+                          v-if="selectedTestResult.result.frontendSim.steps.step1?.success"
+                          class="ml-auto"
+                          :class="selectedTestResult.result.frontendSim.steps.step2?.success ? 'text-green-500' : 'text-red-500'"
                       >
                         <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="2"
-                            :d="selectedTestResult.result.frontendSim.steps.step2?.success ? 'M5 13l4 4L19 7' : 'M6 18L18 6M6 6l12 12'"
+                              stroke-linecap="round"
+                              stroke-linejoin="round"
+                              stroke-width="2"
+                              :d="selectedTestResult.result.frontendSim.steps.step2?.success ? 'M5 13l4 4L19 7' : 'M6 18L18 6M6 6l12 12'"
                           ></path>
                         </svg>
                       </span>
@@ -859,8 +952,8 @@ onMounted(() => {
                   <div class="bg-gray-100 dark:bg-gray-800 rounded p-1.5">
                     <div class="flex items-center">
                       <span
-                        class="w-4 h-4 flex-shrink-0 mr-1.5 rounded-full flex items-center justify-center text-white text-xs"
-                        :class="
+                          class="w-4 h-4 flex-shrink-0 mr-1.5 rounded-full flex items-center justify-center text-white text-xs"
+                          :class="
                           selectedTestResult.result.frontendSim.steps.step3?.success
                             ? 'bg-green-500'
                             : selectedTestResult.result.frontendSim.steps.step2?.success
@@ -872,16 +965,16 @@ onMounted(() => {
                       </span>
                       <span class="font-medium">{{ selectedTestResult.result.frontendSim.steps.step3?.name || "验证上传结果" }}</span>
                       <span
-                        v-if="selectedTestResult.result.frontendSim.steps.step2?.success"
-                        class="ml-auto"
-                        :class="selectedTestResult.result.frontendSim.steps.step3?.success ? 'text-green-500' : 'text-red-500'"
+                          v-if="selectedTestResult.result.frontendSim.steps.step2?.success"
+                          class="ml-auto"
+                          :class="selectedTestResult.result.frontendSim.steps.step3?.success ? 'text-green-500' : 'text-red-500'"
                       >
                         <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="2"
-                            :d="selectedTestResult.result.frontendSim.steps.step3?.success ? 'M5 13l4 4L19 7' : 'M6 18L18 6M6 6l12 12'"
+                              stroke-linecap="round"
+                              stroke-linejoin="round"
+                              stroke-width="2"
+                              :d="selectedTestResult.result.frontendSim.steps.step3?.success ? 'M5 13l4 4L19 7' : 'M6 18L18 6M6 6l12 12'"
                           ></path>
                         </svg>
                       </span>
@@ -939,8 +1032,8 @@ onMounted(() => {
 
         <div class="p-3 sm:p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end">
           <button
-            @click="showTestDetails = false"
-            class="px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded hover:bg-gray-200 dark:hover:bg-gray-600 text-sm"
+              @click="showTestDetails = false"
+              class="px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded hover:bg-gray-200 dark:hover:bg-gray-600 text-sm"
           >
             关闭
           </button>

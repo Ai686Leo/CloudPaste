@@ -1,6 +1,6 @@
 import { Hono } from "hono";
-import { HTTPException } from "hono/http-exception";
 import { ApiStatus, UserType } from "../constants/index.js";
+import { AuthenticationError, AuthorizationError } from "../http/errors.js";
 import { usePolicy } from "../security/policies/policies.js";
 import { getStorageConfigByIdForAdmin, getPublicStorageConfigById } from "../services/storageConfigService.js";
 import { getAccessibleMountsForUser } from "../security/helpers/access.js";
@@ -17,7 +17,7 @@ const unifiedFsAuthMiddleware = async (c, next) => {
   const principal = c.get("principal");
 
   if (!principal || principal.type === "guest") {
-    throw new HTTPException(ApiStatus.UNAUTHORIZED, { message: "需要认证访问" });
+    throw new AuthenticationError("需要认证访问");
   }
 
   if (principal.isAdmin) {
@@ -39,7 +39,7 @@ const unifiedFsAuthMiddleware = async (c, next) => {
       hasFullAccess: false,
     });
   } else {
-    throw new HTTPException(ApiStatus.FORBIDDEN, { message: "不支持的身份类型" });
+    throw new AuthorizationError("不支持的身份类型");
   }
 
   await next();

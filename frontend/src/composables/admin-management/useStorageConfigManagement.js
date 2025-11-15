@@ -1,6 +1,7 @@
 import { ref, computed, watch } from "vue";
 import { useAdminBase } from "./useAdminBase.js";
 import { api } from "@/api";
+import { useStorageConfigsStore } from "@/stores/storageConfigsStore.js";
 
 /**
  * 存储配置管理 composable
@@ -9,8 +10,17 @@ import { api } from "@/api";
 export function useStorageConfigManagement() {
   // 继承基础功能，使用独立的页面标识符
   const base = useAdminBase("storage");
+  const storageConfigsStore = useStorageConfigsStore();
 
   const STORAGE_TYPE_UNKNOWN = "__UNSPECIFIED__";
+
+  const refreshSharedConfigs = async () => {
+    try {
+      await storageConfigsStore.refreshConfigs();
+    } catch (error) {
+      console.warn("刷新全局存储配置缓存失败", error);
+    }
+  };
 
   // 存储配置状态
   const storageConfigs = ref([]);
@@ -86,17 +96,15 @@ export function useStorageConfigManagement() {
         limit: base.pagination.limit,
       });
 
-      if (response.data) {
-        storageConfigs.value = response.data;
-        // 使用标准的updatePagination方法
-        base.updatePagination(
-          {
-            total: response.total || response.data.length,
-          },
-          "page"
-        );
+      if (response && response.data) {
+        const dataBlock = response.data;
+        const items = Array.isArray(dataBlock) ? dataBlock : dataBlock.items || [];
+        const total = response.total ?? (typeof dataBlock.total === "number" ? dataBlock.total : items.length);
+
+        storageConfigs.value = items;
+        base.updatePagination({ total }, "page");
         base.updateLastRefreshTime();
-        console.log(`存储配置列表加载完成，共 ${storageConfigs.value.length} 条`);
+        console.log(`存储配置列表加载完成，共 ${items.length} 条`);
       } else {
         base.showError(response.message || "加载数据失败");
         storageConfigs.value = [];
@@ -133,6 +141,7 @@ export function useStorageConfigManagement() {
         await api.storage.deleteStorageConfig(configId);
         base.showSuccess("删除成功");
         await loadStorageConfigs();
+        await refreshSharedConfigs();
       } catch (err) {
         console.error("删除存储配置失败:", err);
         if (err.message && err.message.includes("有文件正在使用")) {
@@ -169,6 +178,7 @@ export function useStorageConfigManagement() {
     showAddForm.value = false;
     showEditForm.value = false;
     await loadStorageConfigs();
+    await refreshSharedConfigs();
   };
 
   /**
@@ -180,6 +190,7 @@ export function useStorageConfigManagement() {
         await api.storage.setDefaultStorageConfig(configId);
         base.showSuccess("设置默认配置成功");
         await loadStorageConfigs();
+        await refreshSharedConfigs();
       } catch (err) {
         console.error("设置默认存储配置失败:", err);
         base.showError(err.message || "无法设置为默认配置，请稍后再试");

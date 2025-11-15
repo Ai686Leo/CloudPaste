@@ -6,7 +6,13 @@
  * - 前端模拟直传（预签名 PUT → HEAD 验证 → 清理）
  */
 import { createS3Client } from "../utils/s3Utils.js";
-import { ListObjectsV2Command, PutObjectCommand, DeleteObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
+import {
+  ListObjectsV2Command,
+  PutObjectCommand,
+  DeleteObjectCommand,
+  HeadObjectCommand,
+  GetBucketLifecycleConfigurationCommand,
+} from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { S3ProviderTypes } from "../../../../constants/index.js";
 import { formatFileSize } from "../../../../utils/common.js";
@@ -18,14 +24,15 @@ const buildPrefix = (defaultFolder) => {
 };
 
 const getCorsHeaders = (provider, origin) => {
+  const baseHeaders = ["content-type", "x-amz-content-sha256", "x-amz-date", "authorization"];
+  if (provider === S3ProviderTypes.B2) {
+    baseHeaders.push("x-bz-content-sha1", "x-requested-with");
+  }
   const headers = {
     Origin: origin || "https://example.com",
     "Access-Control-Request-Method": "PUT",
-    "Access-Control-Request-Headers": "content-type,x-amz-content-sha256,x-amz-date,authorization",
+    "Access-Control-Request-Headers": baseHeaders.join(","),
   };
-  if (provider === S3ProviderTypes.B2) {
-    headers["Access-Control-Request-Headers"] += ",x-bz-content-sha1,x-requested-with";
-  }
   return headers;
 };
 
@@ -41,6 +48,30 @@ const getUploadHeaders = (provider, origin, contentType) => {
 
 const shouldSkipWriteTest = (provider) => provider === S3ProviderTypes.B2;
 
+async function collectLifecycleInfo(client, bucket) {
+  try {
+    const resp = await client.send(new GetBucketLifecycleConfigurationCommand({ Bucket: bucket }));
+    const rules = resp?.Rules || [];
+    if (!rules.length) {
+      return { supported: true, hasRules: false };
+    }
+    const summary = rules.map((rule) => ({
+      id: rule.ID || null,
+      status: rule.Status || "UNKNOWN",
+      filter: rule.Filter || null,
+      transitions: rule.Transitions || [],
+      expiration: rule.Expiration || null,
+    }));
+    return { supported: true, hasRules: true, rules: summary };
+  } catch (error) {
+    const code = error?.name || error?.Code;
+    if (code === "NoSuchLifecycleConfiguration") {
+      return { supported: true, hasRules: false };
+    }
+    return { supported: false, error: error?.message || String(error) };
+  }
+}
+
 export async function s3TestConnection(config, encryptionSecret, requestOrigin = null) {
   const client = await createS3Client(config, encryptionSecret);
   const prefix = buildPrefix(config.default_folder);
@@ -51,7 +82,7 @@ export async function s3TestConnection(config, encryptionSecret, requestOrigin =
     read: { success: false, error: null, note: "后端直接测试，不代表前端访问" },
     write: { success: false, error: null, note: "后端直接测试，不代表前端上传" },
     cors: { success: false, error: null, note: "CORS 预检仅作诊断，仍以前端实际结果为准" },
-    frontendSim: { success: false, error: null, note: "端到端模拟前端直传（预签名→PUT→验证）" },
+    frontendSim: { success: false, error: null, note: "预签名 PUT 链路测试（由后端模拟）" },
     connectionInfo: {
       bucket: config.bucket_name,
       endpoint: config.endpoint_url || "默认",
@@ -61,6 +92,9 @@ export async function s3TestConnection(config, encryptionSecret, requestOrigin =
       defaultFolder: config.default_folder || "",
       customHost: config.custom_host || "未配置",
       signatureExpiresIn: `${expiresIn}秒`,
+    },
+    diagnostics: {
+      lifecycle: null,
     },
   };
 
@@ -136,12 +170,14 @@ export async function s3TestConnection(config, encryptionSecret, requestOrigin =
       result.cors.allowHeaders = allowHeaders || "";
       result.cors.maxAge = maxAge || "";
       result.cors.statusCode = resp.status;
-      const supportsPut = (allowMethods || "").toLowerCase().includes("put");
+      const allowedMethodsList = (allowMethods || "")
+        .split(",")
+        .map((m) => m.trim().toUpperCase())
+        .filter(Boolean);
+      const supportsPut = allowedMethodsList.includes("PUT") || allowedMethodsList.includes("*");
       const supportsOrigin = !requestOrigin || allowOrigin === "*" || allowOrigin === requestOrigin;
       result.cors.uploadSupported = !!(supportsPut && supportsOrigin);
-      if (!result.cors.uploadSupported) {
-        result.cors.warning = `缺少支持: ${!supportsPut ? "PUT方法 " : ""}${!supportsOrigin ? "来源域名匹配" : ""}`.trim();
-      }
+      result.cors.supportedNotes = result.cors.uploadSupported ? "" : "允许的方法或来源未覆盖当前请求";
     } else {
       result.cors.success = false;
       result.cors.statusCode = resp?.status || 0;
@@ -185,6 +221,12 @@ export async function s3TestConnection(config, encryptionSecret, requestOrigin =
       step.step2.statusCode = uploadResp.status;
       step.step2.etag = (uploadResp.headers.get("ETag") || "").replace(/"/g, "") || null;
       step.step2.bytesUploaded = body.byteLength;
+      const exposeHeaders =
+        uploadResp.headers.get("Access-Control-Expose-Headers") ||
+        uploadResp.headers.get("access-control-expose-headers");
+      if (exposeHeaders) {
+        result.cors.exposeHeaders = exposeHeaders;
+      }
       if (step.step2.duration > 0) {
         const seconds = step.step2.duration / 1000;
         const bytesPerSecond = seconds > 0 ? body.byteLength / seconds : body.byteLength;
@@ -197,7 +239,7 @@ export async function s3TestConnection(config, encryptionSecret, requestOrigin =
       step.step2.duration = Math.round(t2e - t2s);
       step.step2.statusCode = uploadResp.status;
       step.step2.statusText = uploadResp.statusText;
-      throw new Error(`HTTP ${uploadResp.status}: ${uploadResp.statusText}`);
+      throw new DriverError(`HTTP ${uploadResp.status}: ${uploadResp.statusText}`);
     }
 
     // step3
@@ -226,10 +268,14 @@ export async function s3TestConnection(config, encryptionSecret, requestOrigin =
     result.frontendSim.success = true;
     result.frontendSim.totalDuration = step.step1.duration + step.step2.duration + step.step3.duration;
     result.frontendSim.testFile = simKey;
+    result.presignedPutTest = result.frontendSim;
   } catch (e) {
     result.frontendSim.success = false;
     result.frontendSim.error = e?.message || String(e);
+    result.presignedPutTest = result.frontendSim;
   }
+
+  result.diagnostics.lifecycle = await collectLifecycleInfo(client, config.bucket_name);
 
   // 汇总消息
   const basicConnectSuccess = result.read.success;
@@ -258,3 +304,4 @@ export async function s3TestConnection(config, encryptionSecret, requestOrigin =
 
   return { success: overallSuccess, message, result };
 }
+import { DriverError } from "../../../../http/errors.js";

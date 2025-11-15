@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { Permission, PermissionChecker } from "../constants/permissions.js";
 import { getAllApiKeys, createApiKey, updateApiKey, deleteApiKey } from "../services/apiKeyService.js";
 import { ApiStatus } from "../constants/index.js";
+import { jsonOk, jsonCreated } from "../utils/common.js";
 import { usePolicy } from "../security/policies/policies.js";
 import { resolvePrincipal } from "../security/helpers/principal.js";
 
@@ -19,10 +20,7 @@ apiKeyRoutes.get("/api/test/api-key", requireAuth, async (c) => {
 
   // 如果是管理员，返回管理员信息
   if (isAdmin) {
-    return c.json({
-      code: ApiStatus.SUCCESS,
-      message: "管理员令牌验证成功",
-      data: {
+    return jsonOk(c, {
         name: "管理员",
         basic_path: "/",
         permissions: {
@@ -42,17 +40,12 @@ apiKeyRoutes.get("/api/test/api-key", requireAuth, async (c) => {
           basic_path: "/",
         },
         is_admin: true,
-      },
-      success: true,
-    });
+      }, "管理员令牌验证成功");
   }
 
   // API密钥用户，返回具体的权限信息
   const permissions = apiKeyInfo?.permissions || 0;
-  return c.json({
-    code: ApiStatus.SUCCESS,
-    message: "API密钥验证成功",
-    data: {
+  return jsonOk(c, {
       name: apiKeyInfo?.name || "未知",
       basic_path: apiKeyInfo?.basicPath || "/",
       permissions: {
@@ -71,9 +64,7 @@ apiKeyRoutes.get("/api/test/api-key", requireAuth, async (c) => {
         name: apiKeyInfo?.name || "未知",
         basic_path: apiKeyInfo?.basicPath || "/",
       },
-    },
-    success: true,
-  });
+    }, "API密钥验证成功");
 });
 
 // 获取所有API密钥列表
@@ -82,12 +73,7 @@ apiKeyRoutes.get("/api/admin/api-keys", requireAdmin, async (c) => {
   const repositoryFactory = c.get("repos");
   const keys = await getAllApiKeys(db, repositoryFactory);
 
-  return c.json({
-    code: ApiStatus.SUCCESS,
-    message: "获取成功",
-    data: keys,
-    success: true, // 添加兼容字段
-  });
+  return jsonOk(c, keys, "获取成功");
 });
 
 // 创建新的API密钥
@@ -97,12 +83,7 @@ apiKeyRoutes.post("/api/admin/api-keys", requireAdmin, async (c) => {
   const repositoryFactory = c.get("repos");
   const apiKey = await createApiKey(db, body, repositoryFactory);
 
-  return c.json({
-    code: ApiStatus.CREATED,
-    message: "API密钥创建成功",
-    data: apiKey,
-    success: true,
-  });
+  return jsonCreated(c, apiKey, "API密钥创建成功");
 });
 
 // 修改API密钥
@@ -113,11 +94,7 @@ apiKeyRoutes.put("/api/admin/api-keys/:id", requireAdmin, async (c) => {
   const repositoryFactory = c.get("repos");
   await updateApiKey(db, id, body, repositoryFactory);
 
-  return c.json({
-    code: ApiStatus.SUCCESS,
-    message: "API密钥已更新",
-    success: true,
-  });
+  return jsonOk(c, undefined, "API密钥已更新");
 });
 
 // 删除API密钥
@@ -127,11 +104,7 @@ apiKeyRoutes.delete("/api/admin/api-keys/:id", requireAdmin, async (c) => {
   const repositoryFactory = c.get("repos");
   await deleteApiKey(db, id, repositoryFactory);
 
-  return c.json({
-    code: ApiStatus.SUCCESS,
-    message: "密钥已删除",
-    success: true,
-  });
+  return jsonOk(c, undefined, "密钥已删除");
 });
 
 export default apiKeyRoutes;

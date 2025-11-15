@@ -8,9 +8,8 @@ import { lockManager } from "../utils/LockManager.js";
 import { parseLockXML, parseTimeoutHeader, parseDepthHeader, buildLockResponseXML, hasLockConflict } from "../utils/lockUtils.js";
 import { createWebDAVErrorResponse, withWebDAVErrorHandling } from "../utils/errorUtils.js";
 import { getStandardWebDAVHeaders } from "../utils/headerUtils.js";
-import { HTTPException } from "hono/http-exception";
 import { UserType } from "../../constants/index.js";
-import { ApiStatus } from "../../constants/index.js";
+import { AppError } from "../../http/errors.js";
 
 /**
  * 处理LOCK请求
@@ -86,8 +85,8 @@ export async function handleLock(c, path, userId, userType, db) {
       lockInfo = lockManager.createLock(path, lockRequest.owner || owner, timeoutSeconds, depth, lockRequest.scope, lockRequest.type);
     } catch (error) {
       console.error("创建锁定失败:", error);
-      if (error instanceof HTTPException) {
-        return createWebDAVErrorResponse(error.message, error.status);
+      if (error instanceof AppError) {
+        return createWebDAVErrorResponse(error.message, error.status ?? 500);
       }
       return createWebDAVErrorResponse("创建锁定失败", 500);
     }

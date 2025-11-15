@@ -48,7 +48,7 @@ export class PresignedCapable {
       case "upload":
         return await this.generateUploadUrl(path, options);
       default:
-        throw new Error(`不支持的预签名URL操作类型: ${operation}`);
+        throw new ValidationError(`不支持的预签名URL操作类型: ${operation}`);
     }
   }
 
@@ -120,3 +120,4 @@ export function isPresignedCapable(obj) {
  * PresignedCapable能力的标识符
  */
 export const PRESIGNED_CAPABILITY = "PresignedCapable";
+import { ValidationError } from "../../../http/errors.js";

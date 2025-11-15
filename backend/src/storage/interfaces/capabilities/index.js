@@ -55,7 +55,7 @@ export const CAPABILITY_CHECKERS = {
 export function hasCapability(obj, capability) {
   const checker = CAPABILITY_CHECKERS[capability];
   if (!checker) {
-    throw new Error(`未知的能力类型: ${capability}`);
+    throw new ValidationError(`未知的能力类型: ${capability}`);
   }
   return checker(obj);
 }
@@ -122,3 +122,4 @@ export function mixinCapabilities(BaseClass, ...capabilities) {
 
   return MixedClass;
 }
+import { ValidationError } from "../../../http/errors.js";

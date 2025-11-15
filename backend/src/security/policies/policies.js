@@ -1,6 +1,7 @@
 import { Permission } from "../../constants/permissions.js";
 import { authorize } from "../middleware/authorize.js";
 import { processWebDAVPath } from "../../webdav/utils/webdavUtils.js";
+import { ValidationError } from "../../http/errors.js";
 
 // 所有策略都集中在这里，方便审计和扩展：
 //  - key 采用 “域.操作” 命名（fs.read、webdav.manage 等）。
@@ -131,7 +132,7 @@ export const getPolicy = (name) => {
 export const usePolicy = (name, overrides = {}) => {
   const policy = getPolicy(name);
   if (!policy) {
-    throw new Error(`Policy '${name}' 未定义`);
+    throw new ValidationError(`Policy '${name}' 未定义`);
   }
 
   const merged = { ...policy, ...overrides };

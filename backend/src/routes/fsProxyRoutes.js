@@ -5,7 +5,7 @@
  */
 
 import { Hono } from "hono";
-import { HTTPException } from "hono/http-exception";
+import { AppError, AuthenticationError, DriverError } from "../http/errors.js";
 import { ApiStatus } from "../constants/index.js";
 import { MountManager } from "../storage/managers/MountManager.js";
 import { FileSystem } from "../storage/fs/FileSystem.js";
@@ -71,7 +71,9 @@ fsProxyRoutes.get(`${PROXY_CONFIG.ROUTE_PREFIX}/*`, async (c) => {
         signatureRequired: false,
         signatureProvided: Boolean(c.req.query(PROXY_CONFIG.SIGN_PARAM)),
       });
-      throw new HTTPException(mountResult.error.status, { message: mountResult.error.message });
+      const status = mountResult.error.status;
+      const code = status === 401 ? "UNAUTHORIZED" : status === 403 ? "FORBIDDEN" : status === 404 ? "NOT_FOUND" : "PROXY_ERROR";
+      throw new AppError(mountResult.error.message, { status, code, expose: true });
     }
 
     // 挂载点验证成功，mountResult包含mount和subPath信息
@@ -94,9 +96,7 @@ fsProxyRoutes.get(`${PROXY_CONFIG.ROUTE_PREFIX}/*`, async (c) => {
           signatureProvided: false,
           mountId: mountResult.mount.id,
         });
-        throw new HTTPException(ApiStatus.UNAUTHORIZED, {
-          message: `此文件需要签名访问 (${signatureNeed.description})`,
-        });
+        throw new AuthenticationError(`此文件需要签名访问 (${signatureNeed.description})`);
       }
 
       const verifyResult = signatureService.verifyStorageSignature(path, signature);
@@ -110,9 +110,7 @@ fsProxyRoutes.get(`${PROXY_CONFIG.ROUTE_PREFIX}/*`, async (c) => {
           signatureProvided: true,
           mountId: mountResult.mount.id,
         });
-        throw new HTTPException(ApiStatus.UNAUTHORIZED, {
-          message: `签名验证失败: ${verifyResult.reason}`,
-        });
+        throw new AuthenticationError(`签名验证失败: ${verifyResult.reason}`);
       }
 
       console.log(`[fsProxy] 签名验证成功: ${path}`);
@@ -172,7 +170,7 @@ fsProxyRoutes.get(`${PROXY_CONFIG.ROUTE_PREFIX}/*`, async (c) => {
   return run().catch((error) => {
     console.error("文件系统代理访问错误:", error);
 
-    if (!(error instanceof HTTPException)) {
+    if (!(error instanceof AppError)) {
       const signatureParam = typeof c.req?.query === "function" ? c.req.query(PROXY_CONFIG.SIGN_PARAM) : null;
       emitProxyAudit(c, {
         path: c.req?.path ?? null,
@@ -181,7 +179,7 @@ fsProxyRoutes.get(`${PROXY_CONFIG.ROUTE_PREFIX}/*`, async (c) => {
         signatureRequired: false,
         signatureProvided: Boolean(signatureParam),
       });
-      throw new HTTPException(ApiStatus.INTERNAL_ERROR, { message: "代理访问失败" });
+      throw new DriverError("代理访问失败", { details: { cause: error?.message } });
     }
 
     throw error;

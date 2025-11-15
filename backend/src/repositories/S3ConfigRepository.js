@@ -29,6 +29,13 @@ export class S3ConfigRepository extends BaseRepository {
           merged.access_key_id = cfg?.access_key_id;
           merged.secret_access_key = cfg?.secret_access_key;
         }
+        // 保留原始 config_json 对象（非枚举属性，避免对外暴露）
+        Object.defineProperty(merged, "__config_json__", {
+          value: cfg,
+          enumerable: false,
+          configurable: false,
+          writable: false,
+        });
         delete merged.config_json;
         return merged;
       }

@@ -8,7 +8,7 @@ import { ConfiguredRetryStrategy } from "@smithy/util-retry";
 import { decryptValue } from "../../../../utils/crypto.js";
 import { S3ProviderTypes } from "../../../../constants/index.js";
 import { getEffectiveMimeType, getContentTypeAndDisposition } from "../../../../utils/fileUtils.js";
-
+import { ValidationError, S3DriverError } from "../../../../http/errors.js";
 /**
  * 创建S3客户端
  * @param {Object} config - S3配置对象
@@ -21,7 +21,7 @@ export async function createS3Client(config, encryptionSecret) {
   const secretAccessKey = await decryptValue(config.secret_access_key, encryptionSecret);
 
   if (!accessKeyId || !secretAccessKey) {
-    throw new Error("S3凭据缺失：access_key_id 或 secret_access_key 为空或不可用");
+    throw new ValidationError("S3凭据缺失：access_key_id 或 secret_access_key 为空或不可用");
   }
 
   // 创建S3客户端配置
@@ -196,7 +196,18 @@ export async function generatePresignedPutUrl(s3Config, storagePath, mimetype, e
     return url;
   } catch (error) {
     console.error("生成上传预签名URL出错:", error);
-    throw new Error("无法生成文件上传链接: " + (error.message || "未知错误"));
+    throw new S3DriverError("无法生成文件上传链接", {
+      details: {
+        op: "presignPut",
+        provider: s3Config?.provider_type,
+        bucket: s3Config?.bucket_name,
+        key: normalizedPath,
+        region: s3Config?.region,
+        endpoint: s3Config?.endpoint_url,
+        expiresIn: finalExpiresIn,
+        cause: error?.message,
+      },
+    });
   }
 }
 
@@ -281,7 +292,21 @@ async function generateOriginalPresignedUrl(s3Config, storagePath, encryptionSec
     return url;
   } catch (error) {
     console.error("生成预签名URL出错:", error);
-    throw new Error("无法生成文件下载链接: " + (error.message || "未知错误"));
+    // 注意：此函数内变量名存在：s3Client/command/expiresIn/mimetype/forceDownload 等
+    throw new S3DriverError("无法生成文件下载链接", {
+      details: {
+        op: "presignGet",
+        provider: s3Config?.provider_type,
+        bucket: s3Config?.bucket_name,
+        key: normalizedPath,
+        region: s3Config?.region,
+        endpoint: s3Config?.endpoint_url,
+        expiresIn: finalExpiresIn,
+        forceDownload: !!forceDownload,
+        contentType: mimetype || null,
+        cause: error?.message,
+      },
+    });
   }
 }
 

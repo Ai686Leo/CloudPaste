@@ -3,8 +3,8 @@
  * 负责目录相关操作：列出内容、创建目录、删除目录等
  */
 
-import { HTTPException } from "hono/http-exception";
-import { ApiStatus, FILE_TYPES, FILE_TYPE_NAMES } from "../../../../constants/index.js";
+import { FILE_TYPES, FILE_TYPE_NAMES } from "../../../../constants/index.js";
+import { NotFoundError } from "../../../../http/errors.js";
 import { S3Client, ListObjectsV2Command, PutObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { checkDirectoryExists, updateParentDirectoriesModifiedTime } from "../utils/S3DirectoryUtils.js";
 import { isMountRootPath } from "../utils/S3PathUtils.js";
@@ -518,6 +518,6 @@ export class S3DirectoryOperations {
       };
     }
 
-    throw new HTTPException(ApiStatus.NOT_FOUND, { message: "目录不存在" });
+    throw new NotFoundError("目录不存在");
   }
 }

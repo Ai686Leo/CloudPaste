@@ -164,7 +164,6 @@ export const api = {
       validateUrlInfo: urlUploadService.validateUrlInfo,
       getProxyUrl: urlUploadService.getProxyUrl,
       getUrlUploadPresignedUrl: urlUploadService.getUrlUploadPresignedUrl,
-      uploadUrlContentToStorage: urlUploadService.uploadUrlContentToStorage,
       commitUrlUpload: urlUploadService.commitUrlUpload,
     },
 

@@ -7,7 +7,7 @@
 import { StorageFactory } from "../factory/StorageFactory.js";
 import { invalidateFsCache } from "../../cache/invalidation.js";
 import { shouldUseRandomSuffix, getFileNameAndExt, generateShortId } from "../../utils/common.js";
-import { HTTPException } from "hono/http-exception";
+import { ValidationError, NotFoundError } from "../../http/errors.js";
 import { ApiStatus } from "../../constants/index.js";
 import { PathPolicy } from "../../services/share/PathPolicy.js";
 
@@ -21,7 +21,7 @@ export class ObjectStore {
 
   async _getStorageConfig(storage_config_id) {
     if (!storage_config_id) {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "缺少 storage_config_id" });
+      throw new ValidationError("缺少 storage_config_id");
     }
     // 优先读取带密钥版本，确保驱动初始化可用
     let storageConfig = null;
@@ -31,7 +31,7 @@ export class ObjectStore {
       storageConfig = await this.storageConfigRepo.findById(storage_config_id);
     }
     if (!storageConfig) {
-      throw new HTTPException(ApiStatus.NOT_FOUND, { message: "存储配置不存在" });
+      throw new NotFoundError("存储配置不存在");
     }
     return storageConfig;
   }
@@ -45,7 +45,7 @@ export class ObjectStore {
       const useRandom = await shouldUseRandomSuffix(this.db).catch(() => false);
       if (useRandom) {
         const fileRepo = this.repositoryFactory.getFileRepository();
-        if (!storageConfig.storage_type) throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "存储配置缺少 storage_type" });
+        if (!storageConfig.storage_type) throw new ValidationError("存储配置缺少 storage_type");
         const exists = await fileRepo.findByStoragePath(storageConfig.id, key, storageConfig.storage_type);
         if (exists) {
           const { name, ext } = getFileNameAndExt(filename);
@@ -68,7 +68,7 @@ export class ObjectStore {
   async presignUpload({ storage_config_id, directory, filename, fileSize, contentType }) {
     const storageConfig = await this._getStorageConfig(storage_config_id);
     if (!storageConfig.storage_type) {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "存储配置缺少 storage_type" });
+      throw new ValidationError("存储配置缺少 storage_type");
     }
     const driver = await StorageFactory.createDriver(storageConfig.storage_type, storageConfig, this.encryptionSecret);
 
@@ -93,7 +93,7 @@ export class ObjectStore {
   async uploadDirect({ storage_config_id, directory, filename, bodyStream, size, contentType }) {
     const storageConfig = await this._getStorageConfig(storage_config_id);
     if (!storageConfig.storage_type) {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "存储配置缺少 storage_type" });
+      throw new ValidationError("存储配置缺少 storage_type");
     }
     const driver = await StorageFactory.createDriver(storageConfig.storage_type, storageConfig, this.encryptionSecret);
 

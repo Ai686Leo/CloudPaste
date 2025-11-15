@@ -8,65 +8,65 @@
       <div class="flex justify-between items-center">
         <h2 class="text-xl font-semibold">{{ $t("markdown.title") }}</h2>
         <button
-          class="px-2 py-1 text-sm rounded transition-colors"
-          :class="darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'"
-          @click="toggleEditorMode"
+            class="px-2 py-1 text-sm rounded transition-colors"
+            :class="darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'"
+            @click="toggleEditorMode"
         >
           {{ isPlainTextMode ? $t("markdown.switchToMarkdown") : $t("markdown.switchToPlainText") }}
         </button>
       </div>
     </div>
 
-    <!-- 🎯 公告弹窗 - 主流设计 -->
+    <!-- 公告弹窗 --->
     <AnnouncementModal :content="siteSettings.site_announcement_content" :enabled="siteSettings.site_announcement_enabled" :dark-mode="darkMode" />
 
     <!-- 权限管理组件 -->
     <PermissionManager
-      :dark-mode="darkMode"
-      permission-type="text"
-      :permission-required-text="$t('markdown.permissionRequired')"
-      :login-auth-text="$t('markdown.loginOrAuth')"
-      @permission-change="handlePermissionChange"
-      @navigate-to-admin="navigateToAdmin"
+        :dark-mode="darkMode"
+        permission-type="text"
+        :permission-required-text="$t('markdown.permissionRequired')"
+        :login-auth-text="$t('markdown.loginOrAuth')"
+        @permission-change="handlePermissionChange"
+        @navigate-to-admin="navigateToAdmin"
     />
 
     <!-- 编辑器组件 -->
     <div class="editor-wrapper">
       <div class="flex flex-col md:flex-row gap-4">
         <VditorUnified
-          ref="editorRef"
-          :dark-mode="darkMode"
-          :is-plain-text-mode="isPlainTextMode"
-          v-model="editorContent"
-          @editor-ready="handleEditorReady"
-          @content-change="handleContentChange"
-          @import-file="triggerImportFile"
-          @clear-content="clearEditorContent"
-          @show-copy-formats="showCopyFormatsMenu"
+            ref="editorRef"
+            :dark-mode="darkMode"
+            :is-plain-text-mode="isPlainTextMode"
+            v-model="editorContent"
+            @editor-ready="handleEditorReady"
+            @content-change="handleContentChange"
+            @import-file="triggerImportFile"
+            @clear-content="clearEditorContent"
+            @show-copy-formats="showCopyFormatsMenu"
         />
       </div>
     </div>
 
     <!-- 表单组件 -->
     <EditorForm
-      ref="formRef"
-      :dark-mode="darkMode"
-      :has-permission="hasPermission"
-      :is-submitting="isSubmitting"
-      :saving-status="savingStatus"
-      @submit="saveContent"
-      @form-change="handleFormChange"
+        ref="formRef"
+        :dark-mode="darkMode"
+        :has-permission="hasPermission"
+        :is-submitting="isSubmitting"
+        :saving-status="savingStatus"
+        @submit="saveContent"
+        @form-change="handleFormChange"
     />
 
     <!-- 分享链接组件 -->
     <ShareLinkBox
-      ref="shareLinkRef"
-      :dark-mode="darkMode"
-      :share-link="shareLink"
-      :share-password="currentSharePassword"
-      @show-qr-code="showQRCode"
-      @status-message="handleStatusMessage"
-      @countdown-end="handleCountdownEnd"
+        ref="shareLinkRef"
+        :dark-mode="darkMode"
+        :share-link="shareLink"
+        :share-password="currentSharePassword"
+        @show-qr-code="showQRCode"
+        @status-message="handleStatusMessage"
+        @countdown-end="handleCountdownEnd"
     />
 
     <!-- 二维码弹窗组件 -->
@@ -74,12 +74,12 @@
 
     <!-- 复制格式菜单组件 -->
     <CopyFormatMenu
-      :visible="copyFormatMenuVisible"
-      :position="copyFormatMenuPosition"
-      :editor="currentEditor"
-      :dark-mode="darkMode"
-      @close="closeCopyFormatMenu"
-      @status-message="handleStatusMessage"
+        :visible="copyFormatMenuVisible"
+        :position="copyFormatMenuPosition"
+        :editor="currentEditor"
+        :dark-mode="darkMode"
+        @close="closeCopyFormatMenu"
+        @status-message="handleStatusMessage"
     />
   </div>
 </template>
@@ -326,7 +326,7 @@ const saveContent = async (formData) => {
 
     //  {code: 200/201, message: "", data: {slug: "..."}}
     if (result && typeof result === "object" && "code" in result) {
-      if ((result.code === 200 || result.code === 201) && result.data && result.data.slug) {
+      if (result?.success && result.data && result.data.slug) {
         slug = result.data.slug;
       } else {
         throw new Error(result.message || "创建失败");

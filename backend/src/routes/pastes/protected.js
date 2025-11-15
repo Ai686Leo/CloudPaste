@@ -1,4 +1,4 @@
-import { HTTPException } from "hono/http-exception";
+import { ValidationError, NotFoundError } from "../../http/errors.js";
 import { usePolicy } from "../../security/policies/policies.js";
 import { resolvePrincipal } from "../../security/helpers/principal.js";
 import {
@@ -11,7 +11,7 @@ import {
   createPaste,
 } from "../../services/pasteService.js";
 import { ApiStatus, DbTables, UserType } from "../../constants/index.js";
-import { getPagination } from "../../utils/common.js";
+import { getPagination, jsonOk, jsonCreated } from "../../utils/common.js";
 import { useRepositories } from "../../utils/repositories.js";
 
 const getPrincipalContext = (c) => {
@@ -34,10 +34,7 @@ export const registerPastesProtectedRoutes = (router) => {
     const created_by = authType === UserType.ADMIN ? userId : authType === UserType.API_KEY ? `apikey:${userId}` : null;
     const paste = await createPaste(db, body, created_by);
 
-    return c.json({
-      ...paste,
-      authorizedBy: authType,
-    });
+    return jsonCreated(c, { ...paste, authorizedBy: authType }, "文本创建成功");
   });
 
   router.get("/api/pastes", usePolicy("pastes.manage"), async (c) => {
@@ -57,22 +54,15 @@ export const registerPastesProtectedRoutes = (router) => {
       result = await getUserPastes(db, userId, limit, offset, search);
     }
 
-    const response = {
-      code: ApiStatus.SUCCESS,
-      message: "获取成功",
-      data: result.results || result,
-      success: true,
-    };
+    const responseData = result.results || result;
 
     if (result.pagination) {
-      response.pagination = result.pagination;
+      // 追加分页信息到数据体（不再拼到顶层）
+      responseData.pagination = result.pagination;
     }
 
-    if (userType === UserType.API_KEY) {
-      response.key_info = apiKeyInfo;
-    }
-
-    return c.json(response);
+    const data = userType === UserType.API_KEY ? { ...responseData, key_info: apiKeyInfo } : responseData;
+    return jsonOk(c, data, "获取成功");
   });
 
   router.get("/api/pastes/:id", usePolicy("pastes.manage"), async (c) => {
@@ -94,7 +84,7 @@ export const registerPastesProtectedRoutes = (router) => {
       });
 
       if (!paste) {
-        throw new HTTPException(ApiStatus.NOT_FOUND, { message: "文本不存在或无权访问" });
+        throw new NotFoundError("文本不存在或无权访问");
       }
 
       paste.has_password = !!paste.password;
@@ -110,12 +100,7 @@ export const registerPastesProtectedRoutes = (router) => {
       };
     }
 
-    return c.json({
-      code: ApiStatus.SUCCESS,
-      message: "获取成功",
-      data: result,
-      success: true,
-    });
+    return jsonOk(c, result, "获取成功");
   });
 
   router.delete("/api/pastes/batch-delete", usePolicy("pastes.manage"), async (c) => {
@@ -125,15 +110,11 @@ export const registerPastesProtectedRoutes = (router) => {
     const { ids } = await c.req.json();
 
     if (!ids || !Array.isArray(ids) || ids.length === 0) {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "请提供有效的文本ID数组" });
+      throw new ValidationError("请提供有效的文本ID数组");
     }
     const deletedCount = userType === UserType.ADMIN ? await batchDeletePastes(db, ids, false) : await batchDeleteUserPastes(db, ids, userId);
 
-    return c.json({
-      code: ApiStatus.SUCCESS,
-      message: `已删除 ${deletedCount} 个分享`,
-      success: true,
-    });
+    return jsonOk(c, undefined, `已删除 ${deletedCount} 个分享`);
   });
 
   router.put("/api/pastes/:slug", usePolicy("pastes.manage"), async (c) => {
@@ -144,25 +125,13 @@ export const registerPastesProtectedRoutes = (router) => {
 
     const result = userType === UserType.ADMIN ? await updatePaste(db, slug, body) : await updatePaste(db, slug, body, `apikey:${userId}`);
 
-    return c.json({
-      code: ApiStatus.SUCCESS,
-      message: "文本更新成功",
-      data: {
-        id: result.id,
-        slug: result.slug,
-      },
-      success: true,
-    });
+    return jsonOk(c, { id: result.id, slug: result.slug }, "文本更新成功");
   });
 
   router.post("/api/pastes/clear-expired", usePolicy("pastes.admin"), async (c) => {
     const db = c.env.DB;
 
     const deletedCount = await batchDeletePastes(db, null, true);
-    return c.json({
-      code: ApiStatus.SUCCESS,
-      message: `已清理 ${deletedCount} 个过期分享`,
-      success: true,
-    });
+    return jsonOk(c, undefined, `已清理 ${deletedCount} 个过期分享`);
   });
 };

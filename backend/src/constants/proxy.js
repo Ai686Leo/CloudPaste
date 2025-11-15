@@ -1,3 +1,5 @@
+import { ValidationError } from "../http/errors.js";
+
 /**
  * 代理功能相关常量配置
  * 统一管理代理功能的配置参数，避免硬编码
@@ -134,17 +136,17 @@ export function safeDecodeProxyPath(encodedPath) {
     // 检查危险字符
     for (const pattern of PROXY_SECURITY.FORBIDDEN_PATTERNS) {
       if (decoded.includes(pattern)) {
-        throw new Error("路径包含禁止的字符");
+        throw new ValidationError("路径包含禁止的字符");
       }
     }
 
     // 检查路径长度
     if (decoded.length > PROXY_SECURITY.MAX_PATH_LENGTH) {
-      throw new Error("路径长度超出限制");
+      throw new ValidationError("路径长度超出限制");
     }
 
     return decoded;
   } catch (error) {
-    throw new Error(PROXY_SECURITY.DECODE_ERROR_MESSAGE);
+    throw new ValidationError(PROXY_SECURITY.DECODE_ERROR_MESSAGE);
   }
 }

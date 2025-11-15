@@ -1,6 +1,6 @@
-import { HTTPException } from "hono/http-exception";
+import { ValidationError, AuthenticationError } from "../../http/errors.js";
 import { ApiStatus } from "../../constants/index.js";
-import { generateFileId } from "../../utils/common.js";
+import { generateFileId, jsonOk } from "../../utils/common.js";
 import { MountManager } from "../../storage/managers/MountManager.js";
 import { FileSystem } from "../../storage/fs/FileSystem.js";
 import { invalidateFsCache } from "../../cache/invalidation.js";
@@ -46,7 +46,7 @@ export const registerMultipartRoutes = (router, helpers) => {
   const requireUserContext = (c) => {
     const userInfo = c.get("userInfo");
     if (!userInfo) {
-      throw new HTTPException(ApiStatus.UNAUTHORIZED, { message: "未授权访问" });
+      throw new AuthenticationError("未授权访问");
     }
     const { userIdOrInfo, userType } = getServiceParams(userInfo);
     return { db: c.env.DB, encryptionSecret: getEncryptionSecret(c), repositoryFactory: c.get("repos"), userInfo, userIdOrInfo, userType };
@@ -58,19 +58,14 @@ export const registerMultipartRoutes = (router, helpers) => {
     const { path, fileName, fileSize, partSize = 5 * 1024 * 1024, partCount } = body;
 
     if (!path || !fileName) {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "缺少必要参数" });
+      throw new ValidationError("缺少必要参数");
     }
 
     const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
     const fileSystem = new FileSystem(mountManager);
     const result = await fileSystem.initializeFrontendMultipartUpload(path, fileName, fileSize, userIdOrInfo, userType, partSize, partCount);
 
-    return c.json({
-      code: ApiStatus.SUCCESS,
-      message: "前端分片上传初始化成功",
-      data: result,
-      success: true,
-    });
+    return jsonOk(c, result, "前端分片上传初始化成功");
   });
 
   router.post("/api/fs/multipart/complete", parseJsonBody, usePolicy("fs.upload", { pathResolver: jsonPathResolver() }), async (c) => {
@@ -79,19 +74,14 @@ export const registerMultipartRoutes = (router, helpers) => {
     const { path, uploadId, parts, fileName, fileSize } = body;
 
     if (!path || !uploadId || !Array.isArray(parts) || parts.length === 0) {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "缺少必要参数" });
+      throw new ValidationError("缺少必要参数");
     }
 
     const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
     const fileSystem = new FileSystem(mountManager);
   const result = await fileSystem.completeFrontendMultipartUpload(path, uploadId, parts, fileName, fileSize, userIdOrInfo, userType);
 
-    return c.json({
-      code: ApiStatus.SUCCESS,
-      message: "前端分片上传完成",
-      data: { ...result, publicUrl: result.publicUrl || null },
-      success: true,
-    });
+    return jsonOk(c, { ...result, publicUrl: result.publicUrl || null }, "前端分片上传完成");
   });
 
   router.post("/api/fs/multipart/abort", parseJsonBody, usePolicy("fs.upload", { pathResolver: jsonPathResolver() }), async (c) => {
@@ -100,18 +90,14 @@ export const registerMultipartRoutes = (router, helpers) => {
     const { path, uploadId, fileName } = body;
 
     if (!path || !uploadId || !fileName) {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "缺少必要参数" });
+      throw new ValidationError("缺少必要参数");
     }
 
     const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
     const fileSystem = new FileSystem(mountManager);
     await fileSystem.abortFrontendMultipartUpload(path, uploadId, fileName, userIdOrInfo, userType);
 
-    return c.json({
-      code: ApiStatus.SUCCESS,
-      message: "已中止分片上传",
-      success: true,
-    });
+    return jsonOk(c, undefined, "已中止分片上传");
   });
 
   router.post("/api/fs/multipart/list-uploads", parseJsonBody, usePolicy("fs.upload", { pathCheck: true, pathResolver: jsonPathResolver("path", { optional: true }) }), async (c) => {
@@ -123,12 +109,7 @@ export const registerMultipartRoutes = (router, helpers) => {
     const fileSystem = new FileSystem(mountManager);
     const result = await fileSystem.listMultipartUploads(path, userIdOrInfo, userType);
 
-    return c.json({
-      code: ApiStatus.SUCCESS,
-      message: "列出进行中的分片上传成功",
-      data: result,
-      success: true,
-    });
+    return jsonOk(c, result, "列出进行中的分片上传成功");
   });
 
   router.post("/api/fs/multipart/list-parts", parseJsonBody, usePolicy("fs.upload", { pathResolver: jsonPathResolver() }), async (c) => {
@@ -137,19 +118,14 @@ export const registerMultipartRoutes = (router, helpers) => {
     const { path, uploadId, fileName } = body;
 
     if (!path || !uploadId || !fileName) {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "缺少必要参数" });
+      throw new ValidationError("缺少必要参数");
     }
 
     const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
     const fileSystem = new FileSystem(mountManager);
     const result = await fileSystem.listMultipartParts(path, uploadId, fileName, userIdOrInfo, userType);
 
-    return c.json({
-      code: ApiStatus.SUCCESS,
-      message: "列出已上传的分片成功",
-      data: result,
-      success: true,
-    });
+    return jsonOk(c, result, "列出已上传的分片成功");
   });
 
   router.post("/api/fs/multipart/refresh-urls", parseJsonBody, usePolicy("fs.upload", { pathResolver: jsonPathResolver() }), async (c) => {
@@ -158,19 +134,14 @@ export const registerMultipartRoutes = (router, helpers) => {
     const { path, uploadId, partNumbers } = body;
 
     if (!path || !uploadId || !Array.isArray(partNumbers) || partNumbers.length === 0) {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "缺少必要参数" });
+      throw new ValidationError("缺少必要参数");
     }
 
     const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
     const fileSystem = new FileSystem(mountManager);
     const result = await fileSystem.refreshMultipartUrls(path, uploadId, partNumbers, userIdOrInfo, userType);
 
-    return c.json({
-      code: ApiStatus.SUCCESS,
-      message: "刷新分片上传预签名URL成功",
-      data: result,
-      success: true,
-    });
+    return jsonOk(c, result, "刷新分片上传预签名URL成功");
   });
 
   router.post("/api/fs/presign", parseJsonBody, usePolicy("fs.upload", { pathResolver: presignTargetResolver }), async (c) => {
@@ -179,7 +150,7 @@ export const registerMultipartRoutes = (router, helpers) => {
     const { path, fileName, contentType = "application/octet-stream", fileSize = 0 } = body;
 
     if (!path || !fileName) {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "请提供上传路径和文件名" });
+      throw new ValidationError("请提供上传路径和文件名");
     }
 
     const targetPath = presignTargetResolver(c);
@@ -188,7 +159,7 @@ export const registerMultipartRoutes = (router, helpers) => {
     const { mount } = await mountManager.getDriverByPath(path, userIdOrInfo, userType);
 
     if (!mount || !mount.storage_config_id) {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "当前路径不支持预签名URL上传" });
+      throw new ValidationError("当前路径不支持预签名URL上传");
     }
 
     const fileSystem = new FileSystem(mountManager);
@@ -201,10 +172,7 @@ export const registerMultipartRoutes = (router, helpers) => {
 
     const fileId = generateFileId();
 
-  return c.json({
-      code: ApiStatus.SUCCESS,
-      message: "获取预签名URL成功",
-      data: {
+  return jsonOk(c, {
         presignedUrl: result.uploadUrl,
         fileId,
         storagePath: result.storagePath,
@@ -214,8 +182,8 @@ export const registerMultipartRoutes = (router, helpers) => {
         targetPath,
         contentType: result.contentType,
       },
-      success: true,
-    });
+      { success: true },
+    );
   });
 
   router.post("/api/fs/presign/commit", parseJsonBody, usePolicy("fs.upload", { pathResolver: jsonPathResolver("targetPath") }), async (c) => {
@@ -228,7 +196,7 @@ export const registerMultipartRoutes = (router, helpers) => {
     const contentType = body.contentType || undefined;
 
     if (!targetPath || !mountId) {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "请提供完整的上传信息" });
+      throw new ValidationError("请提供完整的上传信息");
     }
 
     const fileName = targetPath.split("/").filter(Boolean).pop();
@@ -246,17 +214,6 @@ export const registerMultipartRoutes = (router, helpers) => {
     // 同时触发目录缓存失效（冗余保护，确保一致性）
     invalidateFsCache({ mountId, reason: "presign-commit", db });
 
-    return c.json({
-      code: ApiStatus.SUCCESS,
-      message: "文件上传完成",
-      data: {
-        ...result,
-        publicUrl: result.publicUrl || null,
-        fileName,
-        targetPath,
-        fileSize,
-      },
-      success: true,
-    });
+    return jsonOk(c, { ...result, publicUrl: result.publicUrl || null, fileName, targetPath, fileSize }, "文件上传完成");
   });
 };

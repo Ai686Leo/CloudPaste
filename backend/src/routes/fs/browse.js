@@ -1,9 +1,9 @@
-import { HTTPException } from "hono/http-exception";
-import { ApiStatus, UserType } from "../../constants/index.js";
+import { ValidationError } from "../../http/errors.js";
+import { UserType } from "../../constants/index.js";
 import { MountManager } from "../../storage/managers/MountManager.js";
 import { FileSystem } from "../../storage/fs/FileSystem.js";
 import { getVirtualDirectoryListing, isVirtualPath } from "../../storage/fs/utils/VirtualDirectory.js";
-import { getQueryBool } from "../../utils/common.js";
+import { getQueryBool, jsonOk } from "../../utils/common.js";
 import { getEncryptionSecret } from "../../utils/environmentUtils.js";
 
 export const registerBrowseRoutes = (router, helpers) => {
@@ -28,24 +28,14 @@ export const registerBrowseRoutes = (router, helpers) => {
       const basicPath = userType === UserType.API_KEY ? userIdOrInfo.basicPath : null;
       const result = await getVirtualDirectoryListing(mounts, path, basicPath);
 
-      return c.json({
-        code: ApiStatus.SUCCESS,
-        message: "获取目录列表成功",
-        data: result,
-        success: true,
-      });
+      return jsonOk(c, result, "获取目录列表成功");
     }
 
     const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
     const fileSystem = new FileSystem(mountManager);
     const result = await fileSystem.listDirectory(path, userIdOrInfo, userType, { refresh });
 
-    return c.json({
-      code: ApiStatus.SUCCESS,
-      message: "获取目录列表成功",
-      data: result,
-      success: true,
-    });
+    return jsonOk(c, result, "获取目录列表成功");
   });
 
   router.get("/api/fs/get", async (c) => {
@@ -57,19 +47,14 @@ export const registerBrowseRoutes = (router, helpers) => {
     const repositoryFactory = c.get("repos");
 
     if (!path) {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "请提供文件路径" });
+      throw new ValidationError("请提供文件路径");
     }
 
     const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
     const fileSystem = new FileSystem(mountManager);
     const result = await fileSystem.getFileInfo(path, userIdOrInfo, userType, c.req.raw);
 
-    return c.json({
-      code: ApiStatus.SUCCESS,
-      message: "获取文件信息成功",
-      data: result,
-      success: true,
-    });
+    return jsonOk(c, result, "获取文件信息成功");
   });
 
   router.get("/api/fs/download", async (c) => {
@@ -81,7 +66,7 @@ export const registerBrowseRoutes = (router, helpers) => {
     const repositoryFactory = c.get("repos");
 
     if (!path) {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "请提供文件路径" });
+      throw new ValidationError("请提供文件路径");
     }
 
     const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
@@ -103,7 +88,7 @@ export const registerBrowseRoutes = (router, helpers) => {
     const forceDownload = getQueryBool(c, "force_download", false);
 
     if (!path) {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "请提供文件路径" });
+      throw new ValidationError("请提供文件路径");
     }
 
     const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
@@ -116,11 +101,6 @@ export const registerBrowseRoutes = (router, helpers) => {
       forceDownload,
     });
 
-    return c.json({
-      code: ApiStatus.SUCCESS,
-      message: "获取文件直链成功",
-      data: result,
-      success: true,
-    });
+    return jsonOk(c, result, "获取文件直链成功");
   });
 };

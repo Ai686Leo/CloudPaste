@@ -1,7 +1,7 @@
 import { ApiStatus } from "../constants/index.js";
 import { generateRandomString, createErrorResponse } from "../utils/common.js";
 import { hashPassword, verifyPassword } from "../utils/crypto.js";
-import { HTTPException } from "hono/http-exception";
+import { ValidationError, AuthenticationError, NotFoundError, ConflictError } from "../http/errors.js";
 import { ensureRepositoryFactory } from "../utils/repositories.js";
 
 const resolveRepositoryFactory = ensureRepositoryFactory;
@@ -45,7 +45,7 @@ export async function validateAdminToken(db, token, repositoryFactory) {
 export async function login(db, username, password, repositoryFactory) {
   // 参数验证
   if (!username || !password) {
-    throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "用户名和密码不能为空" });
+    throw new ValidationError("用户名和密码不能为空");
   }
 
   // 使用 AdminRepository 查询管理员
@@ -55,13 +55,13 @@ export async function login(db, username, password, repositoryFactory) {
   const admin = await adminRepository.findByUsername(username);
 
   if (!admin) {
-    throw new HTTPException(ApiStatus.UNAUTHORIZED, { message: "用户名或密码错误" });
+    throw new AuthenticationError("用户名或密码错误");
   }
 
   // 验证密码
   const isValid = await verifyPassword(password, admin.password);
   if (!isValid) {
-    throw new HTTPException(ApiStatus.UNAUTHORIZED, { message: "用户名或密码错误" });
+    throw new AuthenticationError("用户名或密码错误");
   }
 
   // ===== token管理：限制并发session数量 =====
@@ -134,16 +134,16 @@ export async function changePassword(db, adminId, currentPassword, newPassword, 
   // 验证当前密码
   const admin = await adminRepository.findById(adminId);
   if (!admin) {
-    throw new HTTPException(ApiStatus.NOT_FOUND, { message: "管理员不存在" });
+    throw new NotFoundError("管理员不存在");
   }
 
   if (!(await verifyPassword(currentPassword, admin.password))) {
-    throw new HTTPException(ApiStatus.UNAUTHORIZED, { message: "当前密码错误" });
+    throw new AuthenticationError("当前密码错误");
   }
 
   // 检查新密码是否与当前密码相同
   if (newPassword && (await verifyPassword(newPassword, admin.password))) {
-    throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "新密码不能与当前密码相同" });
+    throw new ValidationError("新密码不能与当前密码相同");
   }
 
   // 如果提供了新用户名，先检查用户名是否已存在
@@ -151,7 +151,7 @@ export async function changePassword(db, adminId, currentPassword, newPassword, 
     const usernameExists = await adminRepository.existsByUsername(newUsername, adminId);
 
     if (usernameExists) {
-      throw new HTTPException(ApiStatus.CONFLICT, { message: "用户名已存在" });
+      throw new ConflictError("用户名已存在");
     }
 
     // 更新用户名和密码
@@ -166,7 +166,7 @@ export async function changePassword(db, adminId, currentPassword, newPassword, 
     const newPasswordHash = await hashPassword(newPassword);
     await adminRepository.updateAdmin(adminId, { password: newPasswordHash });
   } else {
-    throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "未提供新密码或新用户名" });
+    throw new ValidationError("未提供新密码或新用户名");
   }
 
   // 成功修改后，删除该管理员的所有认证令牌，强制重新登录

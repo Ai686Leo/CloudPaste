@@ -1,5 +1,5 @@
-import { HTTPException } from "hono/http-exception";
 import { ApiStatus, UserType } from "../constants/index.js";
+import { ValidationError, NotFoundError, DriverError } from "../http/errors.js";
 import { LimitGuard } from "./share/LimitGuard.js";
 import { ShareRecordService } from "./share/ShareRecordService.js";
 
@@ -41,18 +41,18 @@ export class FileShareService {
 
   // 预签名初始化
   async createPresignedShareUpload({ filename, fileSize, contentType, path = null, storage_config_id = null, userIdOrInfo, userType }) {
-    if (!filename) throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "缺少 filename" });
+    if (!filename) throw new ValidationError("缺少 filename");
     await this.limit.check(fileSize);
 
     const { ObjectStore } = await import("../storage/object/ObjectStore.js");
     const cfg = await this.resolveStorageConfig({ storageConfigId: storage_config_id, userType });
-    if (!cfg) throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "未找到可用的存储配置，无法生成预签名URL" });
+    if (!cfg) throw new ValidationError("未找到可用的存储配置，无法生成预签名URL");
 
     const store = new ObjectStore(this.db, this.encryptionSecret, this.repositoryFactory);
     const presign = await store.presignUpload({ storage_config_id: cfg.id, directory: path, filename, fileSize, contentType });
     // 配额校验：考虑覆盖同路径时排除旧记录体积
     const fileRepo = this.repositoryFactory.getFileRepository();
-    if (!cfg.storage_type) throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "存储配置缺少 storage_type" });
+    if (!cfg.storage_type) throw new ValidationError("存储配置缺少 storage_type");
     const existing = await fileRepo.findByStoragePath(cfg.id, presign.key, cfg.storage_type).catch(() => null);
     await this.limit.checkStorageQuota(cfg.id, Number(fileSize) || 0, { excludeFileId: existing?.id || null });
     return {
@@ -74,7 +74,7 @@ export class FileShareService {
     const finalKey = key;
     const finalStorageConfigId = storage_config_id;
     if (!finalKey || !finalStorageConfigId) {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "缺少 key 或 storage_config_id" });
+      throw new ValidationError("缺少 key 或 storage_config_id");
     }
 
     const { ObjectStore } = await import("../storage/object/ObjectStore.js");
@@ -83,7 +83,7 @@ export class FileShareService {
 
     const storageConfig = await this.resolveStorageConfig({ storageConfigId: finalStorageConfigId, userType });
     if (!storageConfig) {
-      throw new HTTPException(ApiStatus.NOT_FOUND, { message: "存储配置不存在" });
+      throw new NotFoundError("存储配置不存在");
     }
     const { getEffectiveMimeType } = await import("../utils/fileUtils.js");
     const mimeType = getEffectiveMimeType(undefined, filename);
@@ -117,9 +117,9 @@ export class FileShareService {
 
   // 直传
   async uploadDirectToStorageAndShare(filename, bodyStream, fileSize, userIdOrInfo, userType, options = {}) {
-    if (!filename) throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "缺少文件名参数" });
+    if (!filename) throw new ValidationError("缺少文件名参数");
     const normalizedSize = Number(fileSize) || 0;
-    if (!bodyStream || normalizedSize <= 0) throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "上传内容为空" });
+    if (!bodyStream || normalizedSize <= 0) throw new ValidationError("上传内容为空");
     await this.limit.check(normalizedSize);
     const { ObjectStore } = await import("../storage/object/ObjectStore.js");
     const storedFilename = filename;
@@ -128,13 +128,13 @@ export class FileShareService {
 
     // 选择 storage_config：显式优先，否则选默认（API Key 需公开）
     const cfg = await this.resolveStorageConfig({ storageConfigId: options.storage_config_id, userType });
-    if (!cfg) throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "未找到可用的存储配置，无法上传" });
+    if (!cfg) throw new ValidationError("未找到可用的存储配置，无法上传");
 
     const store = new ObjectStore(this.db, this.encryptionSecret, this.repositoryFactory);
     // 预先计算最终Key用于配额校验（考虑命名策略与冲突重命名）
     const plannedKey = await store.getPlannedKey(cfg.id, options.path || null, storedFilename);
     const fileRepo = this.repositoryFactory.getFileRepository();
-    if (!cfg.storage_type) throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "存储配置缺少 storage_type" });
+    if (!cfg.storage_type) throw new ValidationError("存储配置缺少 storage_type");
     const existing = await fileRepo.findByStoragePath(cfg.id, plannedKey, cfg.storage_type).catch(() => null);
     await this.limit.checkStorageQuota(cfg.id, normalizedSize, { excludeFileId: existing?.id || null });
     const result = await store.uploadDirect({
@@ -181,7 +181,7 @@ export class FileShareService {
     const fileSystem = new FileSystem(mountManager);
     const fileInfo = await fileSystem.getFileInfo(fsPath, userIdOrInfo, userType);
     if (!fileInfo || fileInfo.isDirectory) {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "只能为文件创建分享" });
+      throw new ValidationError("只能为文件创建分享");
     }
     const { mount, subPath } = await mountManager.getDriverByPath(fsPath, userIdOrInfo, userType);
     return await this.records.createShareRecord({
@@ -212,12 +212,25 @@ export class FileShareService {
     try {
       const parsedUrl = new URL(url);
       if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
-        throw new Error("仅支持 HTTP/HTTPS URL");
+        throw new ValidationError("仅支持 HTTP/HTTPS URL");
       }
       let response; let method = "HEAD"; let corsSupported = false;
-      try { response = await fetch(url, { method: "HEAD" }); corsSupported = response.ok; if (!response.ok) throw new Error(); }
-      catch { response = await fetch(url, { method: "GET" }); method = "GET"; corsSupported = response.ok; }
-      if (!response.ok) throw new Error(`远程服务返回错误状态: ${response.status}`);
+      try {
+        response = await fetch(url, { method: "HEAD" });
+        corsSupported = response.ok;
+        if (!response.ok) {
+          throw new DriverError("HEAD 请求失败", { details: { status: response.status } });
+        }
+      } catch {
+        response = await fetch(url, { method: "GET" });
+        method = "GET";
+        corsSupported = response.ok;
+      }
+      if (!response.ok) {
+        throw new DriverError("远程服务返回错误状态", {
+          details: { status: response.status },
+        });
+      }
       const contentType = response.headers.get("content-type") || "application/octet-stream";
       const contentLength = response.headers.get("content-length");
       const lastModified = response.headers.get("last-modified");
@@ -229,14 +242,22 @@ export class FileShareService {
       metadata = { url, filename, contentType, size: contentLength ? parseInt(contentLength, 10) : null, lastModified, method, corsSupported };
       return metadata;
     } catch (error) {
-      if (error instanceof TypeError && error.message.includes("Invalid URL")) { throw new Error("无效的 URL 格式"); }
-      throw error;
+      if (error instanceof TypeError && error.message.includes("Invalid URL")) {
+        throw new ValidationError("无效的 URL 格式");
+      }
+      if (error instanceof DriverError) {
+        throw error;
+      }
+      // 其它网络/上游错误归类为 DriverError
+      throw new DriverError("获取 URL 元信息失败", {
+        details: { cause: error?.message },
+      });
     }
   }
   async proxyUrlContent(url) {
     const parsedUrl = new URL(url);
     if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "仅支持 HTTP/HTTPS URL" });
+      throw new ValidationError("仅支持 HTTP/HTTPS URL");
     }
     return await fetch(url);
   }

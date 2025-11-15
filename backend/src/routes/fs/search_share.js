@@ -1,5 +1,6 @@
-import { HTTPException } from "hono/http-exception";
+import { ValidationError } from "../../http/errors.js";
 import { ApiStatus } from "../../constants/index.js";
+import { jsonOk } from "../../utils/common.js";
 import { MountManager } from "../../storage/managers/MountManager.js";
 import { FileSystem } from "../../storage/fs/FileSystem.js";
 import { useRepositories } from "../../utils/repositories.js";
@@ -48,19 +49,14 @@ export const registerSearchShareRoutes = (router, helpers) => {
       const { path } = body;
 
       if (!path) {
-        throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "文件路径不能为空" });
+        throw new ValidationError("文件路径不能为空");
       }
 
       const repositoryFactory = useRepositories(c);
       const svc = new FileShareService(db, encryptionSecret, repositoryFactory);
       const result = await svc.createShareFromFileSystem(path, userIdOrInfo, userType);
 
-      return c.json({
-        code: ApiStatus.SUCCESS,
-        message: "分享创建成功",
-        data: result,
-        success: true,
-      });
+      return jsonOk(c, result, "分享创建成功");
     }
   );
 
@@ -73,7 +69,7 @@ export const registerSearchShareRoutes = (router, helpers) => {
     const { userIdOrInfo, userType } = getServiceParams(userInfo);
 
     if (!searchParams.query || searchParams.query.trim().length < 2) {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "搜索查询至少需要2个字符" });
+      throw new ValidationError("搜索查询至少需要2个字符");
     }
 
     const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
@@ -81,11 +77,6 @@ export const registerSearchShareRoutes = (router, helpers) => {
     const accessibleMounts = await getAccessibleMounts(db, userIdOrInfo, userType);
     const result = await fileSystem.searchFiles(searchParams.query, searchParams, userIdOrInfo, userType, accessibleMounts);
 
-    return c.json({
-      code: ApiStatus.SUCCESS,
-      message: "搜索完成",
-      data: result,
-      success: true,
-    });
+    return jsonOk(c, result, "搜索完成");
   });
 };

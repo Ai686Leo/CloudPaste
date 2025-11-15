@@ -149,7 +149,7 @@ async function performFileCrossStorageTransfer(fileItem) {
     console.log(`下载文件: ${downloadUrl}`);
     const downloadResponse = await fetch(downloadUrl);
     if (!downloadResponse.ok) {
-      throw new Error(`下载失败: ${downloadResponse.status} ${downloadResponse.statusText}`);
+      throw new DriverError(`下载失败: ${downloadResponse.status} ${downloadResponse.statusText}`);
     }
 
     // 2. 获取文件内容长度
@@ -174,7 +174,7 @@ async function performFileCrossStorageTransfer(fileItem) {
     });
 
     if (!uploadResponse.ok) {
-      throw new Error(`上传失败: ${uploadResponse.status} ${uploadResponse.statusText}`);
+      throw new DriverError(`上传失败: ${uploadResponse.status} ${uploadResponse.statusText}`);
     }
 
     console.log(`文件跨存储传输成功: ${fileName}`);
@@ -390,3 +390,4 @@ export async function handleMove(c, path, userId, userType, db) {
     }
   }, { includeDetails: false, useXmlResponse: false });
 }
+import { DriverError } from "../../http/errors.js";

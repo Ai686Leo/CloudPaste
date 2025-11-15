@@ -2,7 +2,7 @@ import { generateRandomString } from "../utils/common.js";
 import { ApiStatus, DbTables } from "../constants/index.js";
 import { ensureRepositoryFactory } from "../utils/repositories.js";
 import { Permission, PermissionChecker } from "../constants/permissions.js";
-import { AppError } from "../http/errors.js";
+import { ValidationError, ConflictError, NotFoundError } from "../http/errors.js";
 
 const resolveRepositoryFactory = ensureRepositoryFactory;
 
@@ -67,11 +67,11 @@ export async function getAllApiKeys(db, repositoryFactory) {
  * @param {D1Database} db - D1数据库实例
  * @param {Object} keyData - API密钥数据
  * @returns {Promise<Object>} 创建的API密钥
- */
+  */
 export async function createApiKey(db, keyData, repositoryFactory) {
   // 必需参数：名称验证
   if (!keyData.name || keyData.name.trim() === "") {
-    throw new AppError("密钥名称不能为空", { status: ApiStatus.BAD_REQUEST });
+    throw new ValidationError("密钥名称不能为空");
   }
 
   // 如果用户提供了自定义密钥，验证其格式
@@ -79,7 +79,7 @@ export async function createApiKey(db, keyData, repositoryFactory) {
     // 验证密钥格式：只允许字母、数字、横杠和下划线
     const keyFormatRegex = /^[a-zA-Z0-9_-]+$/;
     if (!keyFormatRegex.test(keyData.custom_key)) {
-      throw new AppError("密钥只能包含字母、数字、横杠和下划线", { status: ApiStatus.BAD_REQUEST });
+      throw new ValidationError("密钥只能包含字母、数字、横杠和下划线");
     }
   }
 
@@ -90,7 +90,7 @@ export async function createApiKey(db, keyData, repositoryFactory) {
   // 检查名称是否已存在
   const nameExists = await apiKeyRepository.existsByName(keyData.name.trim());
   if (nameExists) {
-    throw new AppError("密钥名称已存在", { status: ApiStatus.CONFLICT });
+    throw new ConflictError("密钥名称已存在");
   }
 
   // 生成唯一ID
@@ -102,7 +102,7 @@ export async function createApiKey(db, keyData, repositoryFactory) {
   // 检查密钥是否已存在
   const keyExists = await apiKeyRepository.existsByKey(key);
   if (keyExists) {
-    throw new AppError("密钥已存在，请重新生成", { status: ApiStatus.CONFLICT });
+    throw new ConflictError("密钥已存在，请重新生成");
   }
 
   // 处理过期时间，默认为1天后
@@ -121,7 +121,7 @@ export async function createApiKey(db, keyData, repositoryFactory) {
 
   // 确保日期是有效的
   if (isNaN(expiresAt.getTime())) {
-    throw new AppError("无效的过期时间", { status: ApiStatus.BAD_REQUEST });
+    throw new ValidationError("无效的过期时间");
   }
 
   // 直接使用传入的位标志权限
@@ -129,7 +129,7 @@ export async function createApiKey(db, keyData, repositoryFactory) {
 
   // 验证权限值的有效性
   if (typeof permissions !== "number" || permissions < 0) {
-    throw new AppError("权限值必须是非负整数", { status: ApiStatus.BAD_REQUEST });
+    throw new ValidationError("权限值必须是非负整数");
   }
 
   // 准备API密钥数据
@@ -178,19 +178,19 @@ export async function updateApiKey(db, id, updateData, repositoryFactory) {
   // 检查密钥是否存在
   const keyExists = await apiKeyRepository.findById(id);
   if (!keyExists) {
-    throw new AppError("密钥不存在", { status: ApiStatus.NOT_FOUND });
+    throw new NotFoundError("密钥不存在");
   }
 
   // 验证名称
   if (updateData.name && !updateData.name.trim()) {
-    throw new AppError("密钥名称不能为空", { status: ApiStatus.BAD_REQUEST });
+    throw new ValidationError("密钥名称不能为空");
   }
 
   // 检查名称是否已存在（排除当前密钥）
   if (updateData.name && updateData.name !== keyExists.name) {
     const nameExists = await apiKeyRepository.existsByName(updateData.name.trim(), id);
     if (nameExists) {
-      throw new AppError("密钥名称已存在", { status: ApiStatus.CONFLICT });
+      throw new ConflictError("密钥名称已存在");
     }
   }
 
@@ -204,7 +204,7 @@ export async function updateApiKey(db, id, updateData, repositoryFactory) {
     const expiresAt = new Date(updateData.expires_at);
     // 确保日期是有效的
     if (isNaN(expiresAt.getTime())) {
-      throw new AppError("无效的过期时间", { status: ApiStatus.BAD_REQUEST });
+      throw new ValidationError("无效的过期时间");
     }
     processedUpdateData.expires_at = expiresAt.toISOString();
   }
@@ -212,7 +212,7 @@ export async function updateApiKey(db, id, updateData, repositoryFactory) {
   // 验证权限值（如果提供）
   if (updateData.permissions !== undefined) {
     if (typeof updateData.permissions !== "number" || updateData.permissions < 0) {
-      throw new AppError("权限值必须是非负整数", { status: ApiStatus.BAD_REQUEST });
+      throw new ValidationError("权限值必须是非负整数");
     }
     processedUpdateData.permissions = updateData.permissions;
   }
@@ -227,7 +227,7 @@ export async function updateApiKey(db, id, updateData, repositoryFactory) {
   const hasValidUpdates = validFields.some((field) => processedUpdateData[field] !== undefined);
 
   if (!hasValidUpdates) {
-    throw new AppError("没有提供有效的更新字段", { status: ApiStatus.BAD_REQUEST });
+    throw new ValidationError("没有提供有效的更新字段");
   }
 
   // 使用 Repository 更新密钥
@@ -248,7 +248,7 @@ export async function deleteApiKey(db, id, repositoryFactory) {
   // 检查密钥是否存在
   const keyExists = await apiKeyRepository.findById(id);
   if (!keyExists) {
-    throw new AppError("密钥不存在", { status: ApiStatus.NOT_FOUND });
+    throw new NotFoundError("密钥不存在");
   }
 
   // 删除密钥

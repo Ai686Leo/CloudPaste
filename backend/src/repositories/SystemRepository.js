@@ -189,11 +189,11 @@ export class SystemRepository extends BaseRepository {
 
     // 验证参数
     if (typeof signAll !== "boolean") {
-      throw new Error("signAll 必须是布尔值");
+      throw new ValidationError("signAll 必须是布尔值");
     }
 
     if (typeof expires !== "number" || expires < 0) {
-      throw new Error("expires 必须是非负数");
+      throw new ValidationError("expires 必须是非负数");
     }
 
     // 使用新的分组更新机制（代理签名设置属于全局设置组，group_id = 1）
@@ -293,7 +293,7 @@ export class SystemRepository extends BaseRepository {
         // 类型验证
         if (validateType && metadata.type) {
           if (!validateSettingValue(key, finalValue, metadata.type)) {
-            throw new Error(`设置值无效: ${key} = ${finalValue}`);
+            throw new ValidationError(`设置值无效: ${key} = ${finalValue}`);
           }
         }
 
@@ -366,3 +366,4 @@ export class SystemRepository extends BaseRepository {
     return groupNames[groupId] || `未知分组(${groupId})`;
   }
 }
+import { ValidationError } from "../http/errors.js";

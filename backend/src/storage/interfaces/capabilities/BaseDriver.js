@@ -105,7 +105,8 @@ export class BaseDriver {
    */
   _ensureInitialized() {
     if (!this.initialized) {
-      throw new Error(`存储驱动未初始化: ${this.type}`);
+      throw new DriverError(`存储驱动未初始化: ${this.type}`);
     }
   }
 }
+import { DriverError } from "../../../http/errors.js";

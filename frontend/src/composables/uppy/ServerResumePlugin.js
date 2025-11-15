@@ -4,7 +4,8 @@
  */
 
 import { BasePlugin } from "@uppy/core";
-import * as fsApi from "../../api/services/fsService.js";
+// fsApi direct calls removed; use driver hooks via resolveStorageConfigId
+import { resolveDriverByConfigId } from "@/drivers/storage/registry.js";
 
 export default class ServerResumePlugin extends BasePlugin {
   static VERSION = "1.0.0";
@@ -138,7 +139,17 @@ export default class ServerResumePlugin extends BasePlugin {
    * @returns {boolean} 是否使用分片上传
    */
   shouldUseMultipart(file) {
-    // 尝试获取AWS S3插件的shouldUseMultipart配置
+    // 允许通过插件配置强制/自定义判定
+    if (this.opts && Object.prototype.hasOwnProperty.call(this.opts, 'shouldUseMultipart')) {
+      const opt = this.opts.shouldUseMultipart;
+      if (typeof opt === 'function') {
+        try { return !!opt(file); } catch (e) { /* ignore */ }
+      } else {
+        return !!opt;
+      }
+    }
+
+    // 尝试获取AWS S3插件的shouldUseMultipart配置（兼容旧逻辑）
     const awsS3Plugin = this.uppy.getPlugin("AwsS3");
     if (awsS3Plugin && awsS3Plugin.opts.shouldUseMultipart) {
       if (typeof awsS3Plugin.opts.shouldUseMultipart === "function") {
@@ -148,9 +159,8 @@ export default class ServerResumePlugin extends BasePlugin {
       }
     }
 
-    // 如果没有找到AWS S3插件或配置，使用默认逻辑
-    // 默认是100MB以上使用分片上传
-    return file.size > 100 * 1024 * 1024;
+    // 默认不自动启用分片，仅在外部明确指定时启用
+    return false;
   }
 
   /**
@@ -161,8 +171,20 @@ export default class ServerResumePlugin extends BasePlugin {
       // 获取当前路径
       const currentPath = this.getCurrentPath();
 
-      // 调用后端API列出进行中的上传
-      const response = await fsApi.listMultipartUploads(currentPath);
+      // 优先通过驱动查询，解耦 API 直接依赖
+      let response;
+      if (typeof this.opts.resolveStorageConfigId === 'function') {
+        try {
+          const configId = await this.opts.resolveStorageConfigId();
+          if (configId) {
+            const driver = resolveDriverByConfigId(configId);
+            response = await driver.fs.listUploads({ path: currentPath });
+          }
+        } catch (e) {
+          // 无法通过驱动解析则放弃检查
+        }
+      }
+      if (!response) return [];
 
       if (!response.success || !response.data.uploads) {
         return [];
@@ -253,7 +275,19 @@ export default class ServerResumePlugin extends BasePlugin {
           const currentPath = this.getCurrentPath();
           const fullPath = currentPath.endsWith("/") ? currentPath + options.file.name : currentPath + "/" + options.file.name;
 
-          const partsResponse = await fsApi.listMultipartParts(fullPath, upload.uploadId, options.file.name);
+          let partsResponse;
+          if (typeof this.opts.resolveStorageConfigId === 'function') {
+            try {
+              const configId = await this.opts.resolveStorageConfigId();
+              if (configId) {
+                const driver = resolveDriverByConfigId(configId);
+                partsResponse = await driver.fs.listParts({ path: fullPath, uploadId: upload.uploadId, fileName: options.file.name });
+              }
+            } catch (e) {
+              // ignore
+            }
+          }
+          if (!partsResponse) return null;
 
           let uploadedParts = [];
           if (partsResponse.success && partsResponse.data.parts) {

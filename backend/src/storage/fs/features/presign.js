@@ -1,4 +1,4 @@
-import { HTTPException } from "hono/http-exception";
+import { DriverError } from "../../../http/errors.js";
 import { ApiStatus } from "../../../constants/index.js";
 import { CAPABILITIES } from "../../interfaces/capabilities/index.js";
 
@@ -6,8 +6,10 @@ export async function generatePresignedUrl(fs, path, userIdOrInfo, userType, opt
   const { driver, mount, subPath } = await fs.mountManager.getDriverByPath(path, userIdOrInfo, userType);
 
   if (!driver.hasCapability(CAPABILITIES.PRESIGNED)) {
-    throw new HTTPException(ApiStatus.NOT_IMPLEMENTED, {
-      message: `存储驱动 ${driver.getType()} 不支持预签名URL`,
+    throw new DriverError(`存储驱动 ${driver.getType()} 不支持预签名URL`, {
+      status: ApiStatus.NOT_IMPLEMENTED,
+      code: "DRIVER_ERROR.NOT_IMPLEMENTED",
+      expose: true,
     });
   }
 
@@ -26,8 +28,10 @@ export async function commitPresignedUpload(fs, path, filename, userIdOrInfo, us
   const { driver, mount, subPath } = await fs.mountManager.getDriverByPath(path, userIdOrInfo, userType);
 
   if (!driver.hasCapability(CAPABILITIES.WRITER)) {
-    throw new HTTPException(ApiStatus.NOT_IMPLEMENTED, {
-      message: `存储驱动 ${driver.getType()} 不支持写入操作`,
+    throw new DriverError(`存储驱动 ${driver.getType()} 不支持写入操作`, {
+      status: ApiStatus.NOT_IMPLEMENTED,
+      code: "DRIVER_ERROR.NOT_IMPLEMENTED",
+      expose: true,
     });
   }
 
@@ -49,4 +53,5 @@ export async function commitPresignedUpload(fs, path, filename, userIdOrInfo, us
   fs.emitCacheInvalidation({ mount, paths: [path], reason: "upload-complete" });
   return { success: true, message: "上传完成" };
 }
+
 

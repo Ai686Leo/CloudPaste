@@ -3,14 +3,13 @@
  * 负责文件上传相关操作：直接上传、分片上传（前端分片）、预签名上传等
  */
 
-import { HTTPException } from "hono/http-exception";
 import { ApiStatus } from "../../../../constants/index.js";
+import { AppError, ValidationError, S3DriverError } from "../../../../http/errors.js";
 import { generatePresignedPutUrl, buildS3Url } from "../utils/s3Utils.js";
-import { S3Client, PutObjectCommand, ListMultipartUploadsCommand, ListPartsCommand, UploadPartCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, ListMultipartUploadsCommand, ListPartsCommand, UploadPartCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { updateMountLastUsed } from "../../../fs/utils/MountResolver.js";
 import { getMimeTypeFromFilename } from "../../../../utils/fileUtils.js";
-
 import { handleFsError } from "../../../fs/utils/ErrorHandler.js";
 import { updateParentDirectoriesModifiedTime } from "../utils/S3DirectoryUtils.js";
 import { getEnvironmentOptimizedUploadConfig, convertStreamForAWSCompatibility } from "../../../../utils/environmentUtils.js";
@@ -275,6 +274,31 @@ export class S3UploadOperations {
     const { mount, db, fileName, fileSize, contentType, etag } = options;
 
     try {
+      // 后端验证文件是否真实存在并获取元数据
+      let verifiedETag = etag;
+      let verifiedSize = fileSize;
+      let verifiedContentType = contentType;
+
+      try {
+        const headParams = {
+          Bucket: this.config.bucket_name,
+          Key: s3SubPath,
+        };
+        const headCommand = new HeadObjectCommand(headParams);
+        const headResult = await this.s3Client.send(headCommand);
+
+        // 使用后端获取的真实元数据
+        verifiedETag = headResult.ETag ? headResult.ETag.replace(/"/g, "") : verifiedETag;
+        verifiedSize = headResult.ContentLength || verifiedSize;
+        verifiedContentType = headResult.ContentType || verifiedContentType;
+
+        console.log(`✅ 后端验证上传成功 - 文件[${s3SubPath}], ETag[${verifiedETag}], 大小[${verifiedSize}]`);
+      } catch (headError) {
+        // 如果 HeadObject 失败,说明文件不存在,上传实际失败
+        console.error(`❌ 后端验证失败 - 文件[${s3SubPath}]不存在:`, headError);
+        throw new ValidationError("文件上传失败:文件不存在于存储桶中");
+      }
+
       // 更新父目录的修改时间
       const rootPrefix = this.config.root_prefix ? (this.config.root_prefix.endsWith("/") ? this.config.root_prefix : this.config.root_prefix + "/") : "";
       await updateParentDirectoriesModifiedTime(this.s3Client, this.config.bucket_name, s3SubPath, rootPrefix);
@@ -284,7 +308,6 @@ export class S3UploadOperations {
         await updateMountLastUsed(db, mount.id);
       }
 
-
       // 构建公共URL
       const s3Url = buildS3Url(this.config, s3SubPath);
 
@@ -292,17 +315,21 @@ export class S3UploadOperations {
         success: true,
         message: "上传完成处理成功",
         fileName: fileName,
-        size: fileSize,
-        contentType: contentType,
+        size: verifiedSize,
+        contentType: verifiedContentType,
         storagePath: s3SubPath,
         publicUrl: s3Url,
-        etag: etag ? etag.replace(/"/g, "") : null,
+        etag: verifiedETag,
       };
     } catch (error) {
       console.error("处理上传完成失败:", error);
-      throw new HTTPException(ApiStatus.INTERNAL_ERROR, {
-        message: `处理上传完成失败: ${error.message}`,
-      });
+
+      // 如果已经是 AppError，直接抛出
+      if (error instanceof AppError) {
+        throw error;
+      }
+
+      throw new S3DriverError("处理上传完成失败", { details: { cause: error?.message } });
     }
   }
 
@@ -335,9 +362,7 @@ export class S3UploadOperations {
       };
     } catch (error) {
       console.error("取消上传失败:", error);
-      throw new HTTPException(ApiStatus.INTERNAL_ERROR, {
-        message: `取消上传失败: ${error.message}`,
-      });
+      throw new S3DriverError("取消上传失败", { details: { cause: error?.message } });
     }
   }
 
@@ -461,7 +486,7 @@ export class S3UploadOperations {
         // 验证parts格式
         const validatedParts = parts.map((part) => {
           if (!part.PartNumber || !part.ETag) {
-            throw new Error(`分片数据不完整: PartNumber=${part.PartNumber}, ETag=${part.ETag}`);
+            throw new ValidationError(`分片数据不完整: PartNumber=${part.PartNumber}, ETag=${part.ETag}`);
           }
 
           return {
@@ -549,7 +574,17 @@ export class S3UploadOperations {
           UploadId: uploadId,
         });
 
-        await this.s3Client.send(abortCommand);
+        try {
+          await this.s3Client.send(abortCommand);
+        } catch (error) {
+          const code = error?.Code || error?.name;
+          if (code === "AccessDenied" || code === "NoSuchUpload") {
+            const friendly = new Error(`当前存储不支持清除分片：${code}`);
+            friendly.code = code;
+            throw friendly;
+          }
+          throw error;
+        }
 
         // 更新最后使用时间
         if (db && mount && mount.id) {
@@ -680,9 +715,7 @@ export class S3UploadOperations {
       }
 
       // 其他错误继续抛出
-      throw new HTTPException(ApiStatus.INTERNAL_ERROR, {
-        message: error.message || "列出已上传的分片失败",
-      });
+      throw new S3DriverError("列出已上传的分片失败", { details: { cause: error?.message } });
     }
   }
 

@@ -492,749 +492,518 @@
 </template>
 
 <script setup>
-import { useDeleteSettingsStore } from "@/stores/deleteSettingsStore.js";
-import { ref, reactive, computed, defineProps, defineEmits, getCurrentInstance, onMounted, onUnmounted, watch } from "vue";
+import { ref, computed, defineProps, defineEmits, onMounted, onUnmounted, watch } from "vue";
+import { useI18n } from "vue-i18n";
+import UrlUploader from "./UrlUploader.vue";
 import { api } from "@/api";
-import { API_BASE_URL } from "../../api/config"; // 导入API_BASE_URL
-import { useI18n } from "vue-i18n"; // 导入i18n
-import UrlUploader from "./UrlUploader.vue"; // 导入URL上传组件
-
-const { t } = useI18n(); // 初始化i18n
-
-// 添加选项卡状态
-const activeTab = ref("file"); // 默认选择文件上传
+import { useUploaderClient } from "@/composables/upload/useUploaderClient.js";
+import { formatFileSize } from "@/utils/fileUtils.js";
+import { useDeleteSettingsStore } from "@/stores/deleteSettingsStore.js";
+import { useStorageConfigsStore } from "@/stores/storageConfigsStore.js";
+import { useShareSettingsForm } from "@/composables/upload/useShareSettingsForm.js";
+import { useUploadQueue } from "@/composables/upload/useUploadQueue.js";
 
 const props = defineProps({
-  darkMode: {
-    type: Boolean,
-    default: false,
-  },
-  storageConfigs: {
-    type: Array,
-    default: () => [],
-  },
-  loading: {
-    type: Boolean,
-    default: false,
-  },
-  isAdmin: {
-    type: Boolean,
-    default: false,
-  },
+  darkMode: { type: Boolean, default: false },
+  loading: { type: Boolean, default: false },
+  isAdmin: { type: Boolean, default: false },
+  storageConfigs: { type: Array, default: () => [] },
 });
 
-const storageConfigs = computed(() => props.storageConfigs || []);
+const emit = defineEmits(["upload-success", "upload-error", "refresh-files"]);
+const { t } = useI18n();
+const deleteSettingsStore = useDeleteSettingsStore();
+const storageConfigsStore = useStorageConfigsStore();
+const {
+  fileInput,
+  selectedFiles,
+  fileItems,
+  isDragging,
+  appendFiles,
+  removeFileAt,
+  updateFileItem,
+  FILE_STATUS,
+} = useUploadQueue();
+
+const {
+  formData,
+  slugError,
+  validateSlug,
+  handleSlugInput,
+  handleMaxViewsInput,
+  selectDefaultStorageConfig,
+} = useShareSettingsForm();
+
+const uploaderClient = useUploaderClient();
+
+const storageConfigs = computed(() => (props.storageConfigs && props.storageConfigs.length ? props.storageConfigs : storageConfigsStore.sortedConfigs));
+const activeTab = ref("file");
+const maxFileSizeMB = ref(100);
+const isUploading = ref(false);
+const uploadSpeed = ref("");
+const totalProgress = ref(0);
+const message = ref(null);
+const lastLoaded = ref(0);
+const lastTime = ref(0);
+
+const activeShareSession = ref(null);
+const uppyIdByIndex = new Map();
+const pendingErrorDescriptors = [];
+
+const disposeShareSession = () => {
+  try {
+    activeShareSession.value?.destroy?.();
+  } catch {}
+  activeShareSession.value = null;
+  uppyIdByIndex.clear();
+};
+
+const findFileIndexById = (fileId) => {
+  for (const [index, id] of uppyIdByIndex.entries()) {
+    if (id === fileId) return index;
+  }
+  return -1;
+};
+
+watch(
+  storageConfigs,
+  (configs) => {
+    if (!configs || configs.length === 0) {
+      return;
+    }
+    if (formData.storage_config_id && configs.some((config) => config.id === formData.storage_config_id)) {
+      return;
+    }
+    formData.storage_config_id = configs[0].id;
+  },
+  { immediate: true }
+);
+
+onMounted(async () => {
+  try {
+    const size = await api.file.getMaxUploadSize();
+    if (size) {
+      maxFileSizeMB.value = size;
+    }
+  } catch (error) {
+    console.warn("获取最大上传大小失败", error);
+  }
+  document.addEventListener("paste", handlePaste);
+  selectDefaultStorageConfig();
+});
+
+onUnmounted(() => {
+  document.removeEventListener("paste", handlePaste);
+  disposeShareSession();
+});
 
 const formatStorageOptionLabel = (config) => {
   if (!config) {
     return t("file.storage");
   }
-
   const meta = config.provider_type || config.storage_type;
   return meta ? `${config.name} (${meta})` : config.name;
 };
 
-const emit = defineEmits(["upload-success", "upload-error", "refresh-files"]);
+const formatMaxFileSize = () => formatFileSize(maxFileSizeMB.value * 1024 * 1024);
 
-// 最大文件大小限制(MB)
-const maxFileSizeMB = ref(100); // 默认值
+const triggerFileInput = () => {
+  fileInput.value?.click?.();
+};
 
-// 拖拽状态
-const isDragging = ref(false);
-const fileInput = ref(null);
-const selectedFiles = ref([]);
-const fileItems = ref([]);
-
-// 上传状态
-const isUploading = ref(false);
-const uploadProgress = ref(0);
-const uploadSpeed = ref("");
-const message = ref(null);
-const activeXhr = ref(null);
-const lastLoaded = ref(0);
-const lastTime = ref(0);
-const slugError = ref(""); // 添加slug错误状态
-const currentUploadIndex = ref(-1);
-const totalProgress = ref(0);
-
-// 表单数据
-const formData = reactive({
-  storage_config_id: "",
-  slug: "",
-  path: "",
-  remark: "",
-  password: "",
-  expires_in: "0", // 默认永不过期
-  max_views: 0, // 默认无限制
-});
-
-// 当前上传文件的ID
-const currentFileId = ref(null);
-
-// 组件挂载时获取最大上传大小并添加粘贴事件监听
-onMounted(async () => {
-  try {
-    const size = await api.file.getMaxUploadSize();
-    maxFileSizeMB.value = size;
-  } catch (error) {
-    console.error("获取最大上传大小失败:", error);
-    // 失败时保持默认值
-  }
-
-  // 添加粘贴事件监听
-  document.addEventListener("paste", handlePaste);
-});
-
-// 组件卸载时移除粘贴事件监听
-onUnmounted(() => {
-  document.removeEventListener("paste", handlePaste);
-});
-
-// 处理粘贴事件
-const handlePaste = (event) => {
-  if (event.clipboardData && event.clipboardData.files.length > 0) {
-    event.preventDefault();
-
-    // 处理所有粘贴的文件
-    Array.from(event.clipboardData.files).forEach((file) => {
-      // 验证文件大小是否超过限制
-      if (file.size > maxFileSizeMB.value * 1024 * 1024) {
-        message.value = {
-          type: "error",
-          content: t("file.maxSizeExceeded", { size: maxFileSizeMB.value }),
-        };
-        // 触发错误事件，让父组件处理消息显示
-        emit("upload-error", new Error(t("file.maxSizeExceeded", { size: formatMaxFileSize() })));
-        return;
-      }
-
-      // 检查文件是否已经在列表中（基于名称和大小）
-      const isFileAlreadyAdded = selectedFiles.value.some((existingFile) => existingFile.name === file.name && existingFile.size === file.size);
-
-      if (!isFileAlreadyAdded) {
-        selectedFiles.value.push(file);
-
-        // 初始化文件项状态
-        fileItems.value.push({
-          file,
-          progress: 0,
-          status: "pending", // pending, uploading, success, error
-          message: "",
-          fileId: null,
-          xhr: null,
-        });
-      }
-    });
+const setErrorMessage = (text, type = "error") => {
+  message.value = { type, content: text };
+  if (type !== "success") {
+    emit("upload-error", new Error(text));
   }
 };
 
-// 监听存储配置变化，自动选择默认或首个可用配置
-watch(
-  storageConfigs,
-  (configs) => {
-    const list = configs || [];
-
-    if (list.length === 0) {
-      formData.storage_config_id = "";
+const handleFilesAddition = (fileList) => {
+  const files = Array.from(fileList || []);
+  if (!files.length) return;
+  const accepted = [];
+  let rejected = false;
+  files.forEach((file) => {
+    if (file.size > maxFileSizeMB.value * 1024 * 1024) {
+      rejected = true;
       return;
     }
-
-    if (formData.storage_config_id && list.some((config) => config.id === formData.storage_config_id)) {
-      return;
-    }
-
-    const defaultConfig = list.find((config) => config.is_default);
-    formData.storage_config_id = (defaultConfig || list[0]).id;
-  },
-  { immediate: true }
-);
-
-/**
- * 验证并处理可打开次数的输入
- * 确保输入的是有效的非负整数
- * @param {Event} event - 输入事件对象
- */
-const validateMaxViews = (event) => {
-  // 获取输入的值
-  const value = event.target.value;
-
-  // 如果是负数，则设置为0
-  if (value < 0) {
-    formData.max_views = 0;
-    return;
+    accepted.push(file);
+  });
+  if (rejected) {
+    setErrorMessage(t("file.maxSizeExceeded", { size: formatMaxFileSize() }));
   }
-
-  // 如果包含小数点，截取整数部分
-  if (value.toString().includes(".")) {
-    formData.max_views = parseInt(value);
-  }
-
-  // 确保值为有效数字
-  if (isNaN(value) || value === "") {
-    formData.max_views = 0;
-  } else {
-    // 确保是整数
-    formData.max_views = parseInt(value);
+  if (accepted.length) {
+    appendFiles(accepted);
   }
 };
 
-// 拖拽处理函数
-const onDragOver = () => {
+const onFileSelected = (event) => {
+  handleFilesAddition(event?.target?.files);
+  if (event?.target) {
+    event.target.value = "";
+  }
+};
+
+const handleDragOver = (event) => {
+  event?.preventDefault?.();
   isDragging.value = true;
 };
 
-const onDragLeave = (event) => {
-  // 只有当鼠标离开拖拽区域而不是其内部元素时才重置
-  const rect = event.currentTarget.getBoundingClientRect();
-  const x = event.clientX;
-  const y = event.clientY;
-
-  // 判断鼠标是否真的离开了整个区域
-  if (x <= rect.left || x >= rect.right || y <= rect.top || y >= rect.bottom) {
+const handleDragLeave = (event) => {
+  event?.preventDefault?.();
+  const rect = event?.currentTarget?.getBoundingClientRect?.();
+  const x = event?.clientX ?? 0;
+  const y = event?.clientY ?? 0;
+  if (!rect || x <= rect.left || x >= rect.right || y <= rect.top || y >= rect.bottom) {
     isDragging.value = false;
   }
 };
 
-const onDrop = (event) => {
+const handleDrop = (event) => {
+  event?.preventDefault?.();
   isDragging.value = false;
-  if (event.dataTransfer.files.length > 0) {
-    // 处理所有拖放的文件
-    Array.from(event.dataTransfer.files).forEach((file) => {
-      // 验证文件大小是否超过限制
-      if (file.size > maxFileSizeMB.value * 1024 * 1024) {
-        message.value = {
-          type: "error",
-          content: t("file.maxSizeExceeded", { size: maxFileSizeMB.value }),
-        };
-        // 触发错误事件，让父组件处理消息显示
-        emit("upload-error", new Error(t("file.maxSizeExceeded", { size: formatMaxFileSize() })));
-        return;
-      }
+  handleFilesAddition(event?.dataTransfer?.files || []);
+};
 
-      // 检查文件是否已经在列表中（基于名称和大小）
-      const isFileAlreadyAdded = selectedFiles.value.some((existingFile) => existingFile.name === file.name && existingFile.size === file.size);
-
-      if (!isFileAlreadyAdded) {
-        selectedFiles.value.push(file);
-
-        // 初始化文件项状态
-        fileItems.value.push({
-          file,
-          progress: 0,
-          status: "pending", // pending, uploading, success, error
-          message: "",
-          fileId: null,
-          xhr: null,
-        });
-      }
-    });
+const handlePaste = (event) => {
+  if (event?.clipboardData?.files?.length) {
+    event.preventDefault();
+    handleFilesAddition(event.clipboardData.files);
   }
 };
 
-// 点击选择文件
-const triggerFileInput = () => {
-  fileInput.value.click();
-};
-
-const onFileSelected = (event) => {
-  if (event.target.files.length > 0) {
-    // 处理所有选择的文件
-    Array.from(event.target.files).forEach((file) => {
-      // 验证文件大小是否超过限制
-      if (file.size > maxFileSizeMB.value * 1024 * 1024) {
-        message.value = {
-          type: "error",
-          content: t("file.maxSizeExceeded", { size: maxFileSizeMB.value }),
-        };
-        // 触发错误事件，让父组件处理消息显示
-        emit("upload-error", new Error(t("file.maxSizeExceeded", { size: formatMaxFileSize() })));
-        return;
-      }
-
-      // 检查文件是否已经在列表中（基于名称和大小）
-      const isFileAlreadyAdded = selectedFiles.value.some((existingFile) => existingFile.name === file.name && existingFile.size === file.size);
-
-      if (!isFileAlreadyAdded) {
-        selectedFiles.value.push(file);
-
-        // 初始化文件项状态
-        fileItems.value.push({
-          file,
-          progress: 0,
-          status: "pending", // pending, uploading, success, error
-          message: "",
-          fileId: null,
-          xhr: null,
-        });
-      }
-    });
-  }
-};
-
-// 清除已选文件
 const clearSelectedFile = (index) => {
-  // 检查文件是否正在上传
-  if (fileItems.value[index]?.status === "uploading") {
-    return; // 不允许删除正在上传的文件
-  }
-
-  // 从数组中移除文件
-  selectedFiles.value.splice(index, 1);
-  fileItems.value.splice(index, 1);
-
-  // 重置文件输入框，以便重新选择同一文件
-  if (fileInput.value && selectedFiles.value.length === 0) {
+  const item = fileItems.value[index];
+  if (!item || item.status === FILE_STATUS.UPLOADING) return;
+  removeFileAt(index);
+  if (!selectedFiles.value.length && fileInput.value) {
     fileInput.value.value = "";
   }
 };
 
-// 清除所有文件
 const clearAllFiles = () => {
-  // 过滤出非上传中的文件索引
-  const indicesToRemove = fileItems.value
-    .map((item, index) => (item.status !== "uploading" ? index : -1))
-    .filter((index) => index !== -1)
-    .sort((a, b) => b - a); // 倒序排列以便从后向前删除
-
-  // 从后向前删除文件
-  for (const index of indicesToRemove) {
-    selectedFiles.value.splice(index, 1);
-    fileItems.value.splice(index, 1);
+  for (let i = fileItems.value.length - 1; i >= 0; i -= 1) {
+    if (fileItems.value[i]?.status !== FILE_STATUS.UPLOADING) {
+      removeFileAt(i);
+    }
   }
-
-  // 重置文件输入框，以便重新选择同一文件
-  if (fileInput.value && selectedFiles.value.length === 0) {
+  if (!selectedFiles.value.length && fileInput.value) {
     fileInput.value.value = "";
   }
 };
 
-// 格式化最大文件大小
-const formatMaxFileSize = () => {
-  // 将MB转换为字节
-  const sizeInBytes = maxFileSizeMB.value * 1024 * 1024;
-  return formatFileSize(sizeInBytes);
+const validateMaxViews = (event) => {
+  handleMaxViewsInput(event?.target?.value ?? 0);
 };
 
-// 导入统一的工具函数
-import { formatFileSize } from "@/utils/fileUtils.js";
+const validateCustomLink = (event) => {
+  handleSlugInput(event?.target?.value ?? formData.slug);
+  return validateSlug();
+};
 
-// 取消上传
-const cancelUpload = () => {
-  if (isUploading.value) {
-    // 取消所有待上传和正在上传的文件
-    for (let i = 0; i < fileItems.value.length; i++) {
-      const fileItem = fileItems.value[i];
+const computeFileSlug = (index) => {
+  if (!formData.slug) return "";
+  return selectedFiles.value.length > 1 ? `${formData.slug}-${index + 1}` : formData.slug;
+};
 
-      // 只处理"正在上传"或"等待上传"的文件
-      if (fileItem.status === "uploading" || fileItem.status === "pending") {
-        // 如果有活动的XHR请求，取消它
-        if (fileItem.xhr) {
-          fileItem.xhr.abort();
-        }
+const buildPayloadForFile = (slug) => ({
+  storage_config_id: formData.storage_config_id,
+  slug: slug || formData.slug || "",
+  path: formData.path || "",
+  remark: formData.remark || "",
+  password: formData.password || "",
+  expires_in: formData.expires_in || "0",
+  max_views: Math.max(0, Number(formData.max_views) || 0),
+});
 
-        // 更新文件状态为取消
-        fileItem.status = "error";
-        fileItem.message = t("file.messages.uploadCancelled");
-
-        // 如果已获取了文件ID，则删除相应的文件记录
-        if (fileItem.fileId) {
-          // 使用统一的批量删除API
-          const deleteSettingsStore = useDeleteSettingsStore();
-          api.file
-            .batchDeleteFiles([fileItem.fileId], deleteSettingsStore.getDeleteMode())
-            .then(() => {
-              console.log("已成功删除被取消的文件记录", fileItem.fileId);
-            })
-            .catch((error) => {
-              console.error("删除被取消的文件记录失败:", error);
-            });
-        }
-      }
-    }
-
-    // 重置上传状态
-    isUploading.value = false;
-    uploadProgress.value = 0;
+const updateOverallProgress = (currentIndex, loaded, total) => {
+  const totalSize = selectedFiles.value.reduce((sum, file) => sum + file.size, 0);
+  if (!totalSize) {
     totalProgress.value = 0;
-    uploadSpeed.value = "";
-    currentUploadIndex.value = -1;
+    return;
+  }
+  const completedSize = selectedFiles.value.reduce((sum, file, idx) => {
+    const item = fileItems.value[idx];
+    if (!item) return sum;
+    if (idx < currentIndex) {
+      return sum + file.size;
+    }
+    if (idx === currentIndex) {
+      return sum + Math.min(loaded, total);
+    }
+    if (item.status === FILE_STATUS.SUCCESS) {
+      return sum + file.size;
+    }
+    return sum;
+  }, 0);
+  totalProgress.value = Math.round((completedSize / totalSize) * 100);
+};
 
-    message.value = {
-      type: "error",
-      content: t("file.messages.uploadCancelled"),
-    };
-
-    // 触发错误事件，让父组件处理消息显示
-    emit("upload-error", new Error(t("file.messages.uploadCancelled")));
+const updateSpeedMeter = (loaded) => {
+  const now = Date.now();
+  const elapsed = (now - lastTime.value) / 1000;
+  if (elapsed > 0.5) {
+    const delta = loaded - lastLoaded.value;
+    uploadSpeed.value = formatSpeed(delta / elapsed);
+    lastLoaded.value = loaded;
+    lastTime.value = now;
   }
 };
 
-// 验证自定义链接后缀格式
-const validateCustomLink = () => {
-  // 清除现有错误
-  slugError.value = "";
+const buildErrorDescriptor = (error) => {
+  const raw = error?.message || t("common.unknownError");
+  const isSlugConflict =
+    (raw.includes("slug") && (raw.includes("already exists") || raw.includes("already taken") || raw.includes("duplicate") || raw.includes("conflict"))) ||
+    raw.includes("链接后缀已被占用") ||
+    raw.includes("已存在");
+  const isInsufficientStorage =
+    raw.includes("存储空间不足") ||
+    raw.includes("insufficient storage") ||
+    raw.includes("超过剩余空间") ||
+    raw.includes("exceeds") ||
+    (raw.includes("storage") && (raw.includes("limit") || raw.includes("full") || raw.includes("quota")));
+  const isPermissionError =
+    raw.includes("没有权限使用此存储配置") ||
+    raw.includes("没有权限") ||
+    raw.includes("权限不足") ||
+    raw.includes("permission denied") ||
+    raw.includes("forbidden") ||
+    raw.includes("unauthorized");
 
-  // 如果为空则不验证（使用随机生成的slug）
-  if (!formData.slug) {
-    return true;
+  let messageText = raw;
+  if (isSlugConflict) {
+    messageText = t("file.messages.slugConflict");
+  } else if (isInsufficientStorage) {
+    messageText = processInsufficientStorageError(raw);
+  } else if (isPermissionError) {
+    messageText = t("file.messages.permissionError");
   }
 
-  // 验证格式：只允许字母、数字、连字符、下划线、点号
-  const slugRegex = /^[a-zA-Z0-9._-]+$/;
-  if (!slugRegex.test(formData.slug)) {
-    slugError.value = t("file.messages.slugInvalid");
-    return false;
-  }
-
-  return true;
+  return { message: messageText, raw, isSlugConflict, isInsufficientStorage, isPermissionError };
 };
 
-// 上传文件
-const submitUpload = async () => {
-  if (selectedFiles.value.length === 0 || !formData.storage_config_id || isUploading.value) return;
+// 旧的逐文件上传函数已移除，统一由 Uppy 批量处理
 
-  // 检查是否有文件可以上传（排除已上传成功或正在上传的文件）
-  const filesToUpload = fileItems.value.filter((item) => item.status !== "success" && item.status !== "uploading");
-
-  if (filesToUpload.length === 0) {
-    message.value = {
-      type: "warning",
-      content: t("file.messages.noFilesSelected"),
-    };
-    emit("upload-error", new Error(t("file.messages.noFilesSelected")));
-    return;
-  }
-
-  // 验证文件大小是否超过限制
-  for (let i = 0; i < selectedFiles.value.length; i++) {
-    const file = selectedFiles.value[i];
-    // 跳过已上传的文件
-    if (fileItems.value[i].status === "success") continue;
-
-    if (file.size > maxFileSizeMB.value * 1024 * 1024) {
-      message.value = {
-        type: "error",
-        content: t("file.messages.fileTooLarge"),
-      };
-      // 更新文件状态
-      fileItems.value[i].status = "error";
-      fileItems.value[i].message = t("file.messages.fileTooLarge");
-
-      // 触发错误事件，让父组件处理消息显示
-      emit("upload-error", new Error(t("file.messages.fileTooLarge")));
-      return;
+const removeSuccessfulItems = () => {
+  for (let i = fileItems.value.length - 1; i >= 0; i -= 1) {
+    if (fileItems.value[i]?.status === FILE_STATUS.SUCCESS) {
+      removeFileAt(i);
     }
   }
-
-  // 验证可打开次数，确保是非负整数
-  if (formData.max_views < 0) {
-    // 仍然设置message，但不在本组件中显示，而是通过事件传递给父组件
-    message.value = {
-      type: "error",
-      content: t("file.messages.negativeMaxViews"),
-    };
-
-    // 触发错误事件，让父组件处理消息显示
-    emit("upload-error", new Error(t("file.messages.negativeMaxViews")));
-    return;
+  if (!selectedFiles.value.length && fileInput.value) {
+    fileInput.value.value = "";
   }
+};
 
-  // 验证自定义链接格式
-  if (formData.slug && !validateCustomLink()) {
-    message.value = { type: "error", text: slugError.value };
-    return;
-  }
-
-  isUploading.value = true;
-  uploadProgress.value = 0;
-  totalProgress.value = 0;
-  uploadSpeed.value = "";
-  message.value = null;
-  currentUploadIndex.value = -1;
-
-  // 重置上传速度计算相关变量
-  lastLoaded.value = 0;
-  lastTime.value = Date.now();
-
-  const uploadResults = [];
-  const errors = [];
-
-  // 顺序上传每个文件
-  for (let i = 0; i < selectedFiles.value.length; i++) {
-    // 检查上传是否被取消，如果已取消则立即退出循环
-    if (!isUploading.value) {
-      console.log("上传已被取消，停止继续上传");
-      break;
-    }
-
-    // 跳过已上传成功的文件
-    if (fileItems.value[i].status === "success") {
-      continue;
-    }
-
-    currentUploadIndex.value = i;
-    const file = selectedFiles.value[i];
-    const fileItem = fileItems.value[i];
-
-    // 更新文件状态为上传中
-    fileItem.status = "uploading";
-    fileItem.progress = 0;
-
-    try {
-      // 如果有自定义slug，则根据文件索引添加后缀，避免冲突
-      const fileSlug = formData.slug ? (selectedFiles.value.length > 1 ? `${formData.slug}-${i + 1}` : formData.slug) : "";
-
-      // 使用直接上传方法将文件推送到选定存储
-      const response = await api.file.directUploadFile(
-        file,
-        {
-          storage_config_id: formData.storage_config_id,
-          slug: fileSlug,
-          path: formData.path || "",
-          remark: formData.remark || "",
-          password: formData.password || "",
-          expires_in: formData.expires_in || "0",
-          max_views: formData.max_views !== undefined ? Number(formData.max_views) : 0,
-        },
-        // 进度回调函数
-        (progress, loaded, total) => {
-          // 更新当前文件进度
-          fileItem.progress = progress;
-
-          // 更新整体进度
-          const totalSize = selectedFiles.value.reduce((sum, f) => sum + f.size, 0);
-          const completedSize = selectedFiles.value.filter((_, idx) => idx < i || fileItems.value[idx].status === "success").reduce((sum, f) => sum + f.size, 0);
-
-          const currentProgress = (loaded / total) * file.size;
-          totalProgress.value = Math.round(((completedSize + currentProgress) / totalSize) * 100);
-
-          // 计算上传速度
-          const now = Date.now();
-          const timeElapsed = (now - lastTime.value) / 1000; // 转换为秒
-
-          if (timeElapsed > 0.5) {
-            // 每0.5秒更新一次速度
-            const loadedChange = loaded - lastLoaded.value; // 这段时间内上传的字节数
-            const speed = loadedChange / timeElapsed; // 字节/秒
-
-            uploadSpeed.value = formatSpeed(speed);
-
-            // 更新上次加载值和时间
-            lastLoaded.value = loaded;
-            lastTime.value = now;
-          }
-        },
-        // 获取XHR实例的回调
-        (xhr) => {
-          activeXhr.value = xhr;
-          fileItem.xhr = xhr;
-        },
-        // 获取文件ID的回调
-        (fileId) => {
-          currentFileId.value = fileId;
-          fileItem.fileId = fileId;
-        }
-      );
-
-      // 上传成功，更新文件状态
-      fileItem.status = "success";
-      fileItem.progress = 100;
-
-      uploadResults.push(response);
-
-      // 再次检查上传是否被取消，如果已取消则立即退出循环
-      if (!isUploading.value) {
-        console.log("上传过程中被取消，停止继续上传其他文件");
-        break;
-      }
-    } catch (error) {
-      console.error(`上传文件 ${file.name} 失败:`, error);
-      // 检查是否是链接后缀冲突错误
-      const errorMessage = error.message || t("common.unknownError");
-      const isSlugConflict =
-        (errorMessage.includes("slug") &&
-          (errorMessage.includes("already exists") || errorMessage.includes("already taken") || errorMessage.includes("duplicate") || errorMessage.includes("conflict"))) ||
-        errorMessage.includes("链接后缀已被占用") ||
-        errorMessage.includes("已存在");
-
-      // 检查是否是存储空间不足错误
-      const isInsufficientStorage =
-        errorMessage.includes("存储空间不足") ||
-        errorMessage.includes("insufficient storage") ||
-        errorMessage.includes("超过剩余空间") ||
-        errorMessage.includes("exceeds") ||
-        (errorMessage.includes("storage") && (errorMessage.includes("limit") || errorMessage.includes("full") || errorMessage.includes("quota")));
-
-      // 检查是否是权限错误
-      const isPermissionError =
-        errorMessage.includes("没有权限使用此存储配置") ||
-        errorMessage.includes("没有权限") ||
-        errorMessage.includes("权限不足") ||
-        errorMessage.includes("permission denied") ||
-        errorMessage.includes("forbidden") ||
-        errorMessage.includes("unauthorized");
-
-      // 更新文件状态为错误
-      fileItem.status = "error";
-      // 如果是链接后缀冲突，提供更具体的错误消息
-      if (isSlugConflict) {
-        fileItem.message = t("file.messages.slugConflict");
-      } else if (isInsufficientStorage) {
-        // 处理存储空间不足的错误消息
-        fileItem.message = processInsufficientStorageError(errorMessage);
-      } else if (isPermissionError) {
-        // 处理权限错误
-        fileItem.message = t("file.messages.permissionError");
-      } else {
-        fileItem.message = errorMessage;
-      }
-
-      errors.push({
-        fileName: file.name,
-        error: error,
-        isSlugConflict: isSlugConflict,
-        isInsufficientStorage: isInsufficientStorage,
-        isPermissionError: isPermissionError,
-      });
-
-      // 文件上传失败后也检查上传是否被取消
-      if (!isUploading.value) {
-        console.log("上传过程中被取消，停止继续上传其他文件");
-        break;
-      }
-    }
-  }
-
-  // 处理整体上传结果
-  currentUploadIndex.value = -1;
-
-  if (errors.length > 0) {
-    // 检查是否所有错误都是链接后缀冲突
+const summarizeUploads = (errors, uploadResults) => {
+  if (errors.length) {
     const allSlugConflicts = errors.every((err) => err.isSlugConflict);
-    // 检查是否有链接后缀冲突
-    const hasSlugConflicts = errors.some((err) => err.isSlugConflict);
-    // 检查是否所有错误都是存储空间不足
-    const allInsufficientStorage = errors.every((err) => err.isInsufficientStorage);
-    // 检查是否所有错误都是权限错误
-    const allPermissionErrors = errors.every((err) => err.isPermissionError);
-    // 获取第一个存储空间不足错误（如果有的话）
+    const hasSlugConflict = errors.some((err) => err.isSlugConflict);
+    const allInsufficient = errors.every((err) => err.isInsufficientStorage);
+    const allPermission = errors.every((err) => err.isPermissionError);
     const firstStorageError = errors.find((err) => err.isInsufficientStorage);
 
-    // 有错误发生
     if (errors.length === selectedFiles.value.length) {
-      // 所有文件都上传失败
       if (allSlugConflicts) {
-        // 如果所有失败都是因为链接后缀冲突
-        message.value = {
-          type: "error",
-          content: t("file.allSlugConflicts"),
-        };
-        emit("upload-error", new Error(t("file.allSlugConflicts")));
-      } else if (allInsufficientStorage && firstStorageError) {
-        // 如果所有失败都是因为存储空间不足，显示第一个错误的具体信息
-        message.value = {
-          type: "error",
-          content: processInsufficientStorageError(firstStorageError.error.message),
-        };
-        emit("upload-error", new Error(processInsufficientStorageError(firstStorageError.error.message)));
-      } else if (allPermissionErrors) {
-        // 如果所有失败都是因为权限错误
-        message.value = {
-          type: "error",
-          content: t("file.allPermissionErrors"),
-        };
-        emit("upload-error", new Error(t("file.allPermissionErrors")));
+        setErrorMessage(t("file.allSlugConflicts"));
+      } else if (allInsufficient && firstStorageError) {
+        setErrorMessage(processInsufficientStorageError(firstStorageError.raw));
+      } else if (allPermission) {
+        setErrorMessage(t("file.allPermissionErrors"));
       } else {
-        message.value = {
-          type: "error",
-          content: t("file.allUploadsFailed"),
-        };
-        emit("upload-error", new Error(t("file.allUploadsFailed")));
+        setErrorMessage(t("file.allUploadsFailed"));
       }
     } else {
-      // 部分文件上传失败
-      if (hasSlugConflicts) {
-        // 如果有链接后缀冲突错误
-        const slugConflictCount = errors.filter((err) => err.isSlugConflict).length;
-        message.value = {
-          type: "warning",
-          content: slugConflictCount === errors.length ? t("file.someSlugConflicts", { count: slugConflictCount }) : t("file.someUploadsFailed", { count: errors.length }),
-        };
-        emit("upload-error", new Error(message.value.content));
+      if (hasSlugConflict) {
+        const slugCount = errors.filter((err) => err.isSlugConflict).length;
+        setErrorMessage(slugCount === errors.length ? t("file.someSlugConflicts", { count: slugCount }) : t("file.someUploadsFailed", { count: errors.length }), "warning");
       } else {
-        message.value = {
-          type: "warning",
-          content: t("file.someUploadsFailed", { count: errors.length }),
-        };
-        emit("upload-error", new Error(t("file.someUploadsFailed", { count: errors.length })));
+        setErrorMessage(t("file.someUploadsFailed", { count: errors.length }), "warning");
       }
     }
-  } else if (uploadResults.length > 0) {
-    // 至少有一个文件上传成功
+    return;
+  }
+
+  if (uploadResults.length > 0) {
     message.value = {
       type: "success",
       content: uploadResults.length > 1 ? t("file.multipleUploadsSuccessful", { count: uploadResults.length }) : t("file.uploadSuccessful"),
     };
-
-    // 成功事件
     emit("upload-success", uploadResults);
-
-    // 触发刷新文件列表事件
     emit("refresh-files");
-
-    // 重置表单数据
     formData.slug = "";
     formData.remark = "";
     formData.password = "";
   }
+};
 
-  // 清除已上传成功的文件
-  const successfulIndices = fileItems.value
-    .map((item, index) => (item.status === "success" ? index : -1))
-    .filter((index) => index !== -1)
-    .sort((a, b) => b - a); // 倒序排列以便从后向前删除
+const ensurePreconditions = () => {
+  if (!selectedFiles.value.length) {
+    setErrorMessage(t("file.messages.noFilesSelected"), "warning");
+    return false;
+  }
+  if (!formData.storage_config_id) {
+    selectDefaultStorageConfig();
+    if (!formData.storage_config_id) {
+      setErrorMessage(t("file.messages.noStorageConfig"));
+      return false;
+    }
+  }
+  if (Number(formData.max_views) < 0) {
+    setErrorMessage(t("file.messages.negativeMaxViews"));
+    return false;
+  }
+  if (formData.slug && !validateSlug()) {
+    message.value = { type: "error", content: slugError.value };
+    return false;
+  }
+  return true;
+};
 
-  // 是否全部文件都上传成功
-  const allSuccess = successfulIndices.length === selectedFiles.value.length;
+const submitUpload = async () => {
+  if (!ensurePreconditions()) return;
 
-  // 从后向前删除已上传成功的文件
-  for (const index of successfulIndices) {
-    selectedFiles.value.splice(index, 1);
-    fileItems.value.splice(index, 1);
+  disposeShareSession();
+
+  const basePayload = buildPayloadForFile("");
+  let session;
+  try {
+    session = uploaderClient.createShareUploadSession({
+      payload: basePayload,
+      events: {
+        onProgress: ({ fileId, bytesUploaded, bytesTotal, percent }) => {
+          const idx = findFileIndexById(fileId);
+          if (idx < 0) return;
+          updateFileItem(idx, { status: FILE_STATUS.UPLOADING, progress: Math.min(100, percent) });
+          updateOverallProgress(idx, bytesUploaded, bytesTotal);
+          updateSpeedMeter(bytesUploaded);
+        },
+        onSuccess: ({ file }) => {
+          const idx = findFileIndexById(file?.id);
+          if (idx < 0) return;
+          updateFileItem(idx, { status: FILE_STATUS.SUCCESS, progress: 100 });
+        },
+        onError: ({ file, error }) => {
+          const idx = findFileIndexById(file?.id);
+          if (idx < 0) return;
+          const descriptor = buildErrorDescriptor(error || new Error(t("file.messages.uploadFailed")));
+          updateFileItem(idx, { status: FILE_STATUS.ERROR, message: descriptor.message });
+        },
+        onComplete: (result) => {
+          const failedDescriptors = (result?.failed || []).map((item) => buildErrorDescriptor(item?.error || new Error(t("file.messages.uploadFailed"))));
+          isUploading.value = false;
+          uploadSpeed.value = "";
+          summarizeUploads(failedDescriptors, result?.successful || []);
+          removeSuccessfulItems();
+          disposeShareSession();
+        },
+      },
+    });
+  } catch (error) {
+    setErrorMessage(error.message || t("file.messages.uploadFailed"));
+    return;
   }
 
-  // 全部上传成功后，重置文件输入框
-  if (allSuccess && fileInput.value) {
-    fileInput.value.value = "";
-  }
+  activeShareSession.value = session;
 
+  const ids = session.addFiles(selectedFiles.value, (file, index) => ({ slug: computeFileSlug(index), path: formData.path || "" }));
+  ids.forEach((id, index) => {
+    if (id) uppyIdByIndex.set(index, id);
+    updateFileItem(index, { status: FILE_STATUS.PENDING, progress: 0, message: "" });
+  });
+
+  isUploading.value = true;
+  totalProgress.value = 0;
+  message.value = null;
+  lastLoaded.value = 0;
+  lastTime.value = Date.now();
+  uploadSpeed.value = "";
+
+  try {
+    await session.start();
+  } catch (error) {
+    isUploading.value = false;
+    disposeShareSession();
+    setErrorMessage(error.message || t("file.messages.uploadFailed"));
+  }
+};
+
+const retryUpload = async (index) => {
+  const item = fileItems.value[index];
+  if (!item || !formData.storage_config_id || isUploading.value) return;
+
+  let session;
+  try {
+    const payload = buildPayloadForFile(computeFileSlug(index));
+    session = uploaderClient.createShareUploadSession({
+      payload,
+      events: {
+        onProgress: ({ percent, bytesUploaded }) => {
+          updateFileItem(index, { status: FILE_STATUS.UPLOADING, progress: Math.min(100, percent) });
+          updateSpeedMeter(bytesUploaded);
+        },
+        onError: ({ error }) => {
+          const descriptor = buildErrorDescriptor(error || new Error(t("file.messages.uploadFailed")));
+          updateFileItem(index, { status: FILE_STATUS.ERROR, message: descriptor.message });
+        },
+        onComplete: (result) => {
+          isUploading.value = false;
+          const failedDescriptors = (result?.failed || []).map((item) => buildErrorDescriptor(item?.error || new Error(t("file.messages.uploadFailed"))));
+          if (failedDescriptors.length === 0) {
+            message.value = { type: "success", content: t("file.retrySuccessful") };
+            emit("refresh-files");
+            setTimeout(() => clearSelectedFile(index), 2000);
+          } else {
+            setErrorMessage(failedDescriptors[0].message || t("file.messages.uploadFailed"));
+          }
+          session?.destroy?.();
+        },
+      },
+    });
+    session.addFiles([selectedFiles.value[index]], () => ({ slug: computeFileSlug(index), path: formData.path || "" }));
+    isUploading.value = true;
+    uploadSpeed.value = "";
+    lastLoaded.value = 0;
+    lastTime.value = Date.now();
+    await session.start();
+  } catch (error) {
+    isUploading.value = false;
+    session?.destroy?.();
+    emit("upload-error", error);
+  }
+};
+
+const cancelUpload = () => {
+  if (!isUploading.value && !activeShareSession.value) return;
+  try { activeShareSession.value?.cancel?.(); } catch {}
   isUploading.value = false;
+  totalProgress.value = 0;
+  uploadSpeed.value = "";
+  lastLoaded.value = 0;
+  lastTime.value = 0;
+  fileItems.value.forEach((item, index) => {
+    if (item.status === FILE_STATUS.UPLOADING || item.status === FILE_STATUS.PENDING) {
+      updateFileItem(index, { status: FILE_STATUS.ERROR, message: t("file.messages.uploadCancelled") });
+    }
+  });
+  message.value = { type: "warning", content: t("file.cancelAllMessage") };
+  disposeShareSession();
 };
 
-// 格式化上传速度
-const formatSpeed = (bytesPerSecond) => {
-  if (bytesPerSecond < 1024) {
-    return `${bytesPerSecond.toFixed(0)} B/s`;
-  } else if (bytesPerSecond < 1024 * 1024) {
-    return `${(bytesPerSecond / 1024).toFixed(1)} KB/s`;
-  } else {
-    return `${(bytesPerSecond / (1024 * 1024)).toFixed(1)} MB/s`;
-  }
-};
-
-// 处理存储空间不足的错误消息
 const processInsufficientStorageError = (errorMessage) => {
-  // 检查是否是存储空间不足的错误
   const isInsufficientStorage =
-    errorMessage.includes("存储空间不足") || errorMessage.includes("insufficient storage") || errorMessage.includes("超过剩余空间") || errorMessage.includes("exceeds");
+    errorMessage.includes("存储空间不足") ||
+    errorMessage.includes("insufficient storage") ||
+    errorMessage.includes("超过剩余空间") ||
+    errorMessage.includes("exceeds") ||
+    (errorMessage.includes("storage") && (errorMessage.includes("limit") || errorMessage.includes("full") || errorMessage.includes("quota")));
 
   if (!isInsufficientStorage) {
     return errorMessage;
   }
 
   try {
-    // 使用正则表达式提取文件大小、剩余空间和总容量限制
-    // 匹配中文和英文格式的错误消息
     const fileSizeMatch = errorMessage.match(/文件大小\((.*?)\)|file size\((.*?)\)/i);
     const remainingSpaceMatch = errorMessage.match(/剩余空间\((.*?)\)|remaining space\((.*?)\)/i);
     const totalCapacityMatch = errorMessage.match(/总容量限制为(.*?)。|capacity limit is(.*?)\./i);
@@ -1244,222 +1013,42 @@ const processInsufficientStorageError = (errorMessage) => {
     const totalCapacity = totalCapacityMatch ? totalCapacityMatch[1] || totalCapacityMatch[2] : "";
 
     if (fileSize && remainingSpace && totalCapacity) {
-      // 使用国际化文本构建错误消息
       return t("file.insufficientStorageDetailed", {
-        fileSize: fileSize,
-        remainingSpace: remainingSpace,
-        totalCapacity: totalCapacity,
+        fileSize,
+        remainingSpace,
+        totalCapacity,
       });
     }
-  } catch (e) {
-    console.error("Error processing insufficient storage message:", e);
+  } catch (error) {
+    console.error("解析存储空间不足信息失败", error);
   }
 
-  // 如果提取失败，返回原始错误消息
   return errorMessage;
 };
 
-// 重试上传单个文件
-const retryUpload = async (index) => {
-  if (!selectedFiles.value[index] || !formData.storage_config_id || isUploading.value) return;
-
-  const file = selectedFiles.value[index];
-  const fileItem = fileItems.value[index];
-
-  // 重置文件状态为待上传
-  fileItem.status = "pending";
-  fileItem.progress = 0;
-  fileItem.message = "";
-
-  isUploading.value = true;
-  currentUploadIndex.value = index;
-
-  // 重置上传速度计算相关变量
-  lastLoaded.value = 0;
-  lastTime.value = Date.now();
-
-  try {
-    // 如果有自定义slug，则保持与之前相同的命名逻辑
-    const fileSlug = formData.slug ? (selectedFiles.value.length > 1 ? `${formData.slug}-${index + 1}` : formData.slug) : "";
-
-    // 更新文件状态为上传中
-    fileItem.status = "uploading";
-
-    // 使用现有的上传函数进行上传
-    const response = await api.file.directUploadFile(
-      file,
-      {
-        storage_config_id: formData.storage_config_id,
-        slug: fileSlug,
-        path: formData.path || "",
-        remark: formData.remark || "",
-        password: formData.password || "",
-        expires_in: formData.expires_in || "0",
-        max_views: formData.max_views !== undefined ? Number(formData.max_views) : 0,
-      },
-      // 进度回调函数
-      (progress, loaded, total) => {
-        // 更新当前文件进度
-        fileItem.progress = progress;
-
-        // 计算上传速度
-        const now = Date.now();
-        const timeElapsed = (now - lastTime.value) / 1000; // 转换为秒
-
-        if (timeElapsed > 0.5) {
-          // 每0.5秒更新一次速度
-          const loadedChange = loaded - lastLoaded.value; // 这段时间内上传的字节数
-          const speed = loadedChange / timeElapsed; // 字节/秒
-
-          uploadSpeed.value = formatSpeed(speed);
-
-          // 更新上次加载值和时间
-          lastLoaded.value = loaded;
-          lastTime.value = now;
-        }
-      },
-      // 获取XHR实例的回调
-      (xhr) => {
-        activeXhr.value = xhr;
-        fileItem.xhr = xhr;
-      },
-      // 获取文件ID的回调
-      (fileId) => {
-        currentFileId.value = fileId;
-        fileItem.fileId = fileId;
-      }
-    );
-
-    // 上传成功，更新文件状态
-    fileItem.status = "success";
-    fileItem.progress = 100;
-
-    // 显示成功消息
-    message.value = {
-      type: "success",
-      content: t("file.retrySuccessful"),
-    };
-
-    // 触发刷新文件列表事件
-    emit("refresh-files");
-
-    // 延迟从列表中移除成功上传的文件
-    setTimeout(() => {
-      const index = selectedFiles.value.findIndex((f) => f === file);
-      if (index !== -1) {
-        selectedFiles.value.splice(index, 1);
-        fileItems.value.splice(index, 1);
-      }
-    }, 2000);
-  } catch (error) {
-    console.error(`重试上传文件 ${file.name} 失败:`, error);
-
-    // 检查是否是链接后缀冲突错误
-    const errorMessage = error.message || t("file.messages.unknownError");
-    const isSlugConflict =
-      (errorMessage.includes("slug") &&
-        (errorMessage.includes("already exists") || errorMessage.includes("already taken") || errorMessage.includes("duplicate") || errorMessage.includes("conflict"))) ||
-      errorMessage.includes("链接后缀已被占用") ||
-      errorMessage.includes("已存在");
-
-    // 检查是否是存储空间不足错误
-    const isInsufficientStorage =
-      errorMessage.includes("存储空间不足") ||
-      errorMessage.includes("insufficient storage") ||
-      errorMessage.includes("超过剩余空间") ||
-      errorMessage.includes("exceeds") ||
-      (errorMessage.includes("storage") && (errorMessage.includes("limit") || errorMessage.includes("full") || errorMessage.includes("quota")));
-
-    // 检查是否是权限错误
-    const isPermissionError =
-      errorMessage.includes("没有权限使用此存储配置") ||
-      errorMessage.includes("没有权限") ||
-      errorMessage.includes("权限不足") ||
-      errorMessage.includes("permission denied") ||
-      errorMessage.includes("forbidden") ||
-      errorMessage.includes("unauthorized");
-
-    // 更新文件状态为错误
-    fileItem.status = "error";
-
-    // 设置具体的错误消息
-    if (isSlugConflict) {
-      fileItem.message = t("file.messages.slugConflict");
-    } else if (isInsufficientStorage) {
-      // 处理存储空间不足的错误消息
-      fileItem.message = processInsufficientStorageError(errorMessage);
-    } else if (isPermissionError) {
-      // 处理权限错误
-      fileItem.message = t("file.messages.permissionError");
-    } else {
-      fileItem.message = errorMessage;
-    }
-
-    // 触发错误事件
-    emit("upload-error", error);
-  } finally {
-    // 重试逻辑更简单，总是设置isUploading.value为false
-    // 因为retryUpload通常是单独操作，而不是批量上传的一部分
-    isUploading.value = false;
-    currentUploadIndex.value = -1;
+const formatSpeed = (bytesPerSecond) => {
+  if (bytesPerSecond < 1024) {
+    return `${bytesPerSecond.toFixed(0)} B/s`;
   }
+  if (bytesPerSecond < 1024 * 1024) {
+    return `${(bytesPerSecond / 1024).toFixed(1)} KB/s`;
+  }
+  return `${(bytesPerSecond / (1024 * 1024)).toFixed(1)} MB/s`;
 };
 
-// 取消单个文件上传
 const cancelSingleUpload = (index) => {
-  if (index < 0 || index >= fileItems.value.length) return;
-
-  const fileItem = fileItems.value[index];
-
-  // 只处理"正在上传"或"等待上传"的文件
-  if (fileItem.status !== "uploading" && fileItem.status !== "pending") return;
-
-  // 如果有活动的XHR请求，取消它
-  if (fileItem.xhr) {
-    fileItem.xhr.abort();
-  }
-
-  // 更新文件状态为取消
-  fileItem.status = "error";
-  fileItem.message = t("file.messages.uploadCancelled");
-
-  // 如果已获取了文件ID，则删除相应的文件记录
-  if (fileItem.fileId) {
-    // 使用统一的批量删除API
-  const deleteSettingsStore = useDeleteSettingsStore();
-  api.file
-    .batchDeleteFiles([fileItem.fileId], deleteSettingsStore.getDeleteMode())
-      .then(() => {
-        console.log("已成功删除被取消的文件记录", fileItem.fileId);
-      })
-      .catch((error) => {
-        console.error("删除被取消的文件记录失败:", error);
-      });
-  }
-
-  // 如果这是当前正在上传的文件，且没有其他文件正在上传，则重置上传状态
-  if (currentUploadIndex.value === index) {
-    // 检查是否还有其他正在上传的文件
-    const stillUploading = fileItems.value.some((item, idx) => idx !== index && item.status === "uploading");
-
-    if (!stillUploading) {
-      // 不设置isUploading.value为false，以确保上传循环继续处理队列中的后续文件
-      // 但重置其他状态，以确保UI显示正确
-      uploadProgress.value = 0;
-      totalProgress.value = 0;
-      uploadSpeed.value = "";
-
-      // 不重置currentUploadIndex，让submitUpload函数的循环继续处理
-      // currentUploadIndex.value = -1;
+  const item = fileItems.value[index];
+  if (!item || (item.status !== FILE_STATUS.UPLOADING && item.status !== FILE_STATUS.PENDING)) return;
+  try {
+    const fid = uppyIdByIndex.get(index);
+    if (fid && activeShareSession.value?.uppy?.removeFile) {
+      activeShareSession.value.uppy.removeFile(fid);
     }
-  }
-
-  // 显示提示消息
-  message.value = {
-    type: "warning",
-    content: t("file.singleFileCancelMessage"),
-  };
+  } catch {}
+  updateFileItem(index, { status: FILE_STATUS.ERROR, message: t("file.messages.uploadCancelled") });
+  message.value = { type: "warning", content: t("file.singleFileCancelMessage") };
 };
+
 </script>
 
 <style scoped>

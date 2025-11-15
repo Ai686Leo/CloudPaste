@@ -311,13 +311,13 @@ export async function fetchApi(endpoint, options = {}) {
           else if (authHeader.startsWith("ApiKey ")) {
             // 检查是否是权限不足问题（而非API密钥无效）
             const isPermissionIssue =
-              responseData &&
-              responseData.message &&
-              (responseData.message.includes("未授权访问") ||
-                responseData.message.includes("无权访问") ||
-                responseData.message.includes("需要管理员权限或有效的API密钥") ||
-                responseData.message.includes("权限不足") ||
-                responseData.message.includes("没有权限"));
+                responseData &&
+                responseData.message &&
+                (responseData.message.includes("未授权访问") ||
+                    responseData.message.includes("无权访问") ||
+                    responseData.message.includes("需要管理员权限或有效的API密钥") ||
+                    responseData.message.includes("权限不足") ||
+                    responseData.message.includes("没有权限"));
 
             if (isPermissionIssue) {
               // 权限不足，仅抛出错误，但不清除API密钥
@@ -363,15 +363,12 @@ export async function fetchApi(endpoint, options = {}) {
 
     // 处理新的后端统一响应格式 (code, message, data)
     if (responseData && typeof responseData === "object") {
-      // 如果响应包含code字段
-      if ("code" in responseData) {
-        // 成功响应，code应该是200、201(创建成功)或202(部分成功)
-        if (responseData.code !== ApiStatus.SUCCESS && responseData.code !== ApiStatus.CREATED && responseData.code !== ApiStatus.ACCEPTED) {
+      //success 布尔判断
+      if ("success" in responseData) {
+        if (responseData.success !== true) {
           console.error(`❌ API业务错误(${url}):`, responseData);
           throw new Error(responseData.message || "请求失败");
         }
-
-        // 如果成功，返回完整的responseData
         return responseData;
       }
 

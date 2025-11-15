@@ -4,8 +4,8 @@
  */
 
 import { XMLParser } from "fast-xml-parser";
-import { HTTPException } from "hono/http-exception";
 import { ApiStatus } from "../../constants/index.js";
+import { ValidationError } from "../../http/errors.js";
 
 /**
  * 生成WebDAV锁令牌
@@ -28,7 +28,7 @@ export function generateLockToken(tokenId) {
  */
 export function parseLockXML(xmlBody) {
   if (!xmlBody || typeof xmlBody !== "string") {
-    throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "无效的LOCK请求格式" });
+    throw new ValidationError("无效的LOCK请求格式");
   }
 
   try {
@@ -68,7 +68,7 @@ export function parseLockXML(xmlBody) {
     lockinfo = findElementByLocalName(parsed, "lockinfo");
 
     if (!lockinfo) {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "无效的LOCK请求：缺少lockinfo元素" });
+      throw new ValidationError("无效的LOCK请求：缺少lockinfo元素");
     }
 
     // 解析锁定范围
@@ -114,7 +114,7 @@ export function parseLockXML(xmlBody) {
     };
   } catch (error) {
     console.error("LOCK XML解析错误:", error);
-    throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "无效的LOCK请求格式" });
+    throw new ValidationError("无效的LOCK请求格式");
   }
 }
 
@@ -341,7 +341,7 @@ export function parseIfHeaderRFC4918(ifHeader) {
     return { conditions };
   } catch (error) {
     console.error("If头解析错误:", error);
-    throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "If 头解析失败" });
+    throw new ValidationError("If 头解析失败");
   }
 }
 

@@ -3,8 +3,7 @@
  * 负责单个文件的基础操作：获取信息、下载、上传、删除等
  */
 
-import { HTTPException } from "hono/http-exception";
-import { ApiStatus } from "../../../../constants/index.js";
+import { AppError, NotFoundError, ConflictError, ValidationError, S3DriverError } from "../../../../http/errors.js";
 import { generatePresignedUrl, createS3Client } from "../utils/s3Utils.js";
 import { S3Client, GetObjectCommand, PutObjectCommand, DeleteObjectCommand, ListObjectsV2Command, CopyObjectCommand } from "@aws-sdk/client-s3";
 import { getMimeTypeFromFilename } from "../../../../utils/fileUtils.js";
@@ -117,15 +116,13 @@ export class S3FileOperations {
     } catch (error) {
       console.error("从S3获取文件失败:", error);
 
-      // 如果是HTTPException，直接抛出
-      if (error instanceof HTTPException) {
+      if (error instanceof AppError) {
         throw error;
       }
-
-      // 处理网络错误或其他错误
-      throw new HTTPException(ApiStatus.INTERNAL_ERROR, {
-        message: `获取文件失败: ${error.message}`,
-      });
+      if (error?.$metadata?.httpStatusCode === 404) {
+        throw new NotFoundError("文件不存在");
+      }
+      throw new S3DriverError("获取文件失败", { details: { cause: error?.message } });
     }
   }
 
@@ -157,7 +154,7 @@ export class S3FileOperations {
           const exactMatch = listResponse.Contents?.find((item) => item.Key === s3SubPath);
 
           if (!exactMatch) {
-            throw new HTTPException(ApiStatus.NOT_FOUND, { message: "文件不存在" });
+            throw new NotFoundError("文件不存在");
           }
 
           // 构建文件信息对象
@@ -309,9 +306,9 @@ export class S3FileOperations {
             console.log(`getFileInfo(GET) - 文件[${result.name}], S3 ContentType[${getResponse.ContentType}]`);
             return result;
           } catch (getError) {
-            // 检查是否是NotFound错误，转换为HTTPException
+            // 检查是否是NotFound错误，转换为AppError
             if (getError.$metadata?.httpStatusCode === 404 || getError.name === "NotFound") {
-              throw new HTTPException(ApiStatus.NOT_FOUND, { message: "文件不存在" });
+              throw new NotFoundError("文件不存在");
             }
 
             throw getError;
@@ -417,9 +414,9 @@ export class S3FileOperations {
 
         // 检查内容大小
         if (typeof content === "string" && content.length > MAX_FILE_SIZE) {
-          throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "文件内容过大，超过最大限制(10MB)" });
+          throw new ValidationError("文件内容过大，超过最大限制(10MB)");
         } else if (content instanceof ArrayBuffer && content.byteLength > MAX_FILE_SIZE) {
-          throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "文件内容过大，超过最大限制(10MB)" });
+          throw new ValidationError("文件内容过大，超过最大限制(10MB)");
         }
 
         // 推断MIME类型
@@ -491,13 +488,13 @@ export class S3FileOperations {
         // 检查源文件是否存在
         const sourceExists = await this.exists(oldS3SubPath);
         if (!sourceExists) {
-          throw new HTTPException(ApiStatus.NOT_FOUND, { message: "源文件不存在" });
+          throw new NotFoundError("源文件不存在");
         }
 
         // 检查目标文件是否已存在
         const targetExists = await this.exists(newS3SubPath);
         if (targetExists) {
-          throw new HTTPException(ApiStatus.CONFLICT, { message: "目标文件已存在" });
+          throw new ConflictError("目标文件已存在");
         }
 
         // 复制文件到新位置
@@ -545,7 +542,7 @@ export class S3FileOperations {
       // 检查源文件是否存在
       const sourceExists = await this.exists(sourceS3SubPath);
       if (!sourceExists) {
-        throw new HTTPException(ApiStatus.NOT_FOUND, { message: "源文件不存在" });
+        throw new NotFoundError("源文件不存在");
       }
 
       // 检查目标文件是否已存在
@@ -588,12 +585,10 @@ export class S3FileOperations {
       console.error("复制文件失败:", error);
 
       if (error.$metadata?.httpStatusCode === 404) {
-        throw new HTTPException(ApiStatus.NOT_FOUND, { message: "源文件不存在" });
+        throw new NotFoundError("源文件不存在");
       }
 
-      throw new HTTPException(ApiStatus.INTERNAL_ERROR, {
-        message: `复制文件失败: ${error.message}`,
-      });
+      throw new S3DriverError("复制文件失败", { details: { cause: error?.message, source: sourceS3SubPath, target: targetS3SubPath } });
     }
   }
 }

@@ -10,32 +10,6 @@ import { get, post, put, del } from "../client";
  ******************************************************************************/
 
 /**
- * 获取更准确的文件MIME类型，特别处理Markdown文件
- * @param {File} file - 文件对象
- * @returns {string} MIME类型
- */
-function getAccurateMimeType(file) {
-  // 如果是Markdown文件，强制设置正确的MIME类型
-  if (file.name && /\.(md|markdown|mdown|mkd|mdwn|mdtxt|mdtext|rmd)$/i.test(file.name)) {
-    return "text/markdown";
-  }
-
-  // 使用浏览器提供的类型，如果没有则使用通用二进制类型
-  return file.type || "application/octet-stream";
-}
-
-/**
- * 上传文件（传统方式）
- * @param {File} file - 要上传的文件
- * @param {Object} options - 上传选项
- * @returns {Promise<Object>} 上传响应
- */
-export async function uploadFile(file, options = {}) {
-  // 统一走直传预签名流程，保持对旧API的兼容
-  return directUploadFile(file, options);
-}
-
-/**
  * 获取上传预签名URL
  * @param {Object} options - 上传选项
  * @param {string} options.storage_config_id - 存储配置ID
@@ -92,138 +66,6 @@ export async function completeFileUpload(data) {
   return await post("share/commit", payload);
 }
 
-/**
- * 直接上传文件到对象存储（前端直接上传）
- * @param {File} file - 要上传的文件
- * @param {Object} options - 上传选项
- * @param {Function} onProgress - 上传进度回调函数，参数为0-100的进度百分比、已加载字节数和总字节数
- * @param {Function} onXhrReady - 在XHR实例创建后的回调，用于支持取消上传
- * @param {Function} onFileIdReady - 在获取到文件ID后的回调，用于支持取消上传时清理文件记录
- * @returns {Promise<Object>} 上传响应
- */
-export async function directUploadFile(file, options = {}, onProgress, onXhrReady, onFileIdReady) {
-  try {
-    const accurateMimeType = getAccurateMimeType(file);
-
-    const presignedData = await getUploadPresignedUrl({
-      storage_config_id: options.storage_config_id,
-      filename: file.name,
-      mimetype: accurateMimeType,
-      path: options.path,
-      size: file.size,
-    });
-
-    if (!presignedData?.success || !presignedData?.data) {
-      const message = presignedData?.message || "获取预签名URL失败";
-      throw new Error(message);
-    }
-
-    const presignPayload = presignedData.data;
-    const uploadUrl = presignPayload.uploadUrl || presignPayload.upload_url;
-    const commitKey = presignPayload.key || null;
-    const storageConfigId = presignPayload.storage_config_id || options.storage_config_id || null;
-    const resolvedFilename = presignPayload.filename || presignPayload.fileName || file.name;
-    const providerType = presignPayload.provider_type || presignPayload.providerType;
-    const inferredContentType = presignPayload.contentType || presignPayload.mimetype || accurateMimeType;
-
-    if (!uploadUrl || !commitKey || !storageConfigId) {
-      throw new Error("预签名响应缺少必要的上传信息（key 或 storage_config_id）");
-    }
-
-    const uploadResult = await new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-
-      const cleanup = () => {
-        xhr.upload?.removeEventListener("progress", progressHandler);
-        xhr.removeEventListener("load", loadHandler);
-        xhr.removeEventListener("error", errorHandler);
-        xhr.removeEventListener("abort", abortHandler);
-      };
-
-      if (typeof onXhrReady === "function") {
-        onXhrReady(xhr);
-      }
-
-      const progressHandler = (event) => {
-        if (event.lengthComputable && typeof onProgress === "function") {
-          const progress = Math.round((event.loaded / event.total) * 100);
-          onProgress(progress, event.loaded, event.total);
-        }
-      };
-
-      const loadHandler = () => {
-        cleanup();
-        if (xhr.status >= 200 && xhr.status < 300) {
-          const etag = xhr.getResponseHeader("ETag");
-          resolve({
-            success: true,
-            etag: etag ? etag.replace(/"/g, "") : null,
-          });
-        } else {
-          reject(new Error(`上传失败: ${xhr.status} ${xhr.statusText}`));
-        }
-      };
-
-      const errorHandler = (e) => {
-        cleanup();
-        console.error("上传错误:", e);
-        reject(new Error("上传过程中发生网络错误"));
-      };
-
-      const abortHandler = () => {
-        cleanup();
-        reject(new Error("上传被取消"));
-      };
-
-      xhr.upload.addEventListener("progress", progressHandler);
-      xhr.addEventListener("load", loadHandler);
-      xhr.addEventListener("error", errorHandler);
-      xhr.addEventListener("abort", abortHandler);
-
-      xhr.open("PUT", uploadUrl, true);
-      xhr.setRequestHeader("Content-Type", inferredContentType);
-
-      if (providerType === "Backblaze B2") {
-        xhr.setRequestHeader("X-Bz-Content-Sha1", "do_not_verify");
-        xhr.setRequestHeader("X-Requested-With", "XMLHttpRequest");
-      }
-
-      xhr.send(file);
-    });
-
-    const completeData = await completeFileUpload({
-      key: commitKey,
-      storage_config_id: storageConfigId,
-      filename: resolvedFilename,
-      size: file.size,
-      etag: uploadResult.etag,
-      slug: options.slug,
-      remark: options.remark,
-      password: options.password,
-      expires_in: options.expires_in,
-      max_views: options.max_views,
-      use_proxy: options.use_proxy,
-      original_filename: options.original_filename ?? false,
-    });
-
-    if (typeof onFileIdReady === "function" && completeData?.data?.id) {
-      onFileIdReady(completeData.data.id);
-    }
-
-    console.log("文件上传完成，提交的元数据:", {
-      key: commitKey,
-      storage_config_id: storageConfigId,
-      filename: resolvedFilename,
-      size: file.size,
-      etag: uploadResult.etag,
-    });
-
-    return completeData;
-  } catch (error) {
-    console.error("直接上传文件到存储失败:", error);
-    throw error;
-  }
-}
 
 /******************************************************************************
  * 统一文件管理API
@@ -292,3 +134,4 @@ export async function getPublicFile(slug) {
 export async function verifyFilePassword(slug, password) {
   return await post(`public/files/${slug}/verify`, { password });
 }
+

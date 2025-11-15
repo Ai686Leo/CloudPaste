@@ -10,7 +10,7 @@ import mountRoutes from "./routes/mountRoutes.js";
 import webdavRoutes from "./routes/webdavRoutes.js";
 import fsRoutes from "./routes/fsRoutes.js";
 import { DbTables, ApiStatus, UserType } from "./constants/index.js";
-import { createErrorResponse } from "./utils/common.js";
+import { createErrorResponse, jsonOk } from "./utils/common.js";
 import filesRoutes from "./routes/filesRoutes.js";
 import shareUploadRoutes from "./routes/shareUploadRoutes.js";
 import pastesRoutes from "./routes/pastesRoutes.js";
@@ -184,10 +184,7 @@ app.route("/", fsProxyRoutes);
 
 // 健康检查路由
 app.get("/api/health", (c) => {
-  return c.json({
-    status: "ok",
-    timestamp: new Date().toISOString(),
-  });
+  return jsonOk(c, { status: "ok", timestamp: new Date().toISOString() });
 });
 
 // 全局错误处理
@@ -198,15 +195,26 @@ app.onError((err, c) => {
     reqId: c.get("reqId"),
   });
   console.error(`[错误] ${normalized.publicMessage}`, err);
+  const reqId = c.get("reqId");
+  if (reqId) c.header("X-Request-Id", String(reqId));
   return c.json(
-    createErrorResponse(normalized.status, normalized.expose ? normalized.publicMessage : "服务器内部错误"),
+    createErrorResponse(
+      normalized.status,
+      normalized.expose ? normalized.publicMessage : "服务器内部错误",
+      normalized.code
+    ),
     normalized.status
   );
 });
 
 // 404路由处理
 app.notFound((c) => {
-  return c.json(createErrorResponse(ApiStatus.NOT_FOUND, "未找到请求的资源"), ApiStatus.NOT_FOUND);
+  const reqId = c.get("reqId");
+  if (reqId) c.header("X-Request-Id", String(reqId));
+  return c.json(
+    createErrorResponse(ApiStatus.NOT_FOUND, "未找到请求的资源", "NOT_FOUND"),
+    ApiStatus.NOT_FOUND
+  );
 });
 
 // 将应用导出为默认值

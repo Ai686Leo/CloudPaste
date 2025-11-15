@@ -1,4 +1,4 @@
-import { HTTPException } from "hono/http-exception";
+import { AuthenticationError, AuthorizationError } from "../../http/errors.js";
 import { ApiStatus, UserType } from "../../constants/index.js";
 
 const normalizeType = (t) => (t === "apikey" ? UserType.API_KEY : t);
@@ -8,7 +8,7 @@ export const resolvePrincipal = (c, options = {}) => {
   const principal = c.get("principal");
 
   if ((!principal || principal.type === "guest") && !allowGuest) {
-    throw new HTTPException(ApiStatus.UNAUTHORIZED, { message });
+    throw new AuthenticationError(message);
   }
 
   if (!principal) {
@@ -20,7 +20,7 @@ export const resolvePrincipal = (c, options = {}) => {
 
   const normalizedAllowed = Array.isArray(allowedTypes) ? allowedTypes.map(normalizeType) : [UserType.ADMIN, UserType.API_KEY];
   if (!allowGuest && normalizedAllowed && !normalizedAllowed.includes(type)) {
-    throw new HTTPException(ApiStatus.FORBIDDEN, { message: "不支持的身份类型" });
+    throw new AuthorizationError("不支持的身份类型");
   }
 
   return {

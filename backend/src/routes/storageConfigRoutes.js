@@ -15,8 +15,7 @@ import {
   getStorageConfigsWithUsage,
 } from "../services/storageConfigService.js";
 import { ApiStatus, UserType } from "../constants/index.js";
-import { HTTPException } from "hono/http-exception";
-import { getPagination } from "../utils/common.js";
+import { getPagination, jsonOk, jsonCreated } from "../utils/common.js";
 import { getEncryptionSecret } from "../utils/environmentUtils.js";
 import { usePolicy } from "../security/policies/policies.js";
 import { resolvePrincipal } from "../security/helpers/principal.js";
@@ -41,15 +40,15 @@ storageConfigRoutes.get("/api/storage", requireRead, async (c) => {
     if (hasPageParam || hasLimitParam) {
       const { limit, page } = getPagination(c, { limit: 10, page: 1 });
       const result = await getStorageConfigsByAdmin(db, adminId, { page, limit }, repositoryFactory);
-      return c.json({ code: ApiStatus.SUCCESS, message: "获取存储配置列表成功", data: result.configs, total: result.total, success: true });
+      return jsonOk(c, { items: result.configs, total: result.total }, "获取存储配置列表成功");
     }
 
     const result = await getStorageConfigsByAdmin(db, adminId, {}, repositoryFactory);
-    return c.json({ code: ApiStatus.SUCCESS, message: "获取存储配置列表成功", data: result.configs, total: result.total, success: true });
+    return jsonOk(c, { items: result.configs, total: result.total }, "获取存储配置列表成功");
   }
 
   const configs = await getPublicStorageConfigs(db, repositoryFactory);
-  return c.json({ code: ApiStatus.SUCCESS, message: "获取存储配置列表成功", data: configs, total: configs.length, success: true });
+  return jsonOk(c, { items: configs, total: configs.length }, "获取存储配置列表成功");
 });
 
 // 获取单个存储配置详情
@@ -78,7 +77,7 @@ storageConfigRoutes.get("/api/storage/:id", requireRead, async (c) => {
     config = await getPublicStorageConfigById(db, id, repositoryFactory);
   }
 
-  return c.json({ code: ApiStatus.SUCCESS, message: "获取存储配置成功", data: config, success: true });
+  return jsonOk(c, config, "获取存储配置成功");
 });
 
 // 创建存储配置（管理员）
@@ -89,7 +88,7 @@ storageConfigRoutes.post("/api/storage", requireAdmin, async (c) => {
   const body = await c.req.json();
   const repositoryFactory = useRepositories(c);
   const config = await createStorageConfig(db, body, adminId, encryptionSecret, repositoryFactory);
-  return c.json({ code: ApiStatus.CREATED, message: "存储配置创建成功", data: config, success: true });
+  return jsonCreated(c, config, "存储配置创建成功");
 });
 
 // 更新存储配置（管理员）
@@ -103,7 +102,7 @@ storageConfigRoutes.put("/api/storage/:id", requireAdmin, async (c) => {
   const body = await c.req.json();
   await updateStorageConfig(db, id, body, adminId, encryptionSecret, repositoryFactory);
 
-  return c.json({ code: ApiStatus.SUCCESS, message: "存储配置已更新", success: true });
+  return jsonOk(c, undefined, "存储配置已更新");
 });
 
 // 删除存储配置（管理员）
@@ -114,7 +113,7 @@ storageConfigRoutes.delete("/api/storage/:id", requireAdmin, async (c) => {
   const repositoryFactory = useRepositories(c);
 
   await deleteStorageConfig(db, id, adminId, repositoryFactory);
-  return c.json({ code: ApiStatus.SUCCESS, message: "存储配置删除成功", success: true });
+  return jsonOk(c, undefined, "存储配置删除成功");
 });
 
 // 设置默认存储配置（管理员）
@@ -124,7 +123,7 @@ storageConfigRoutes.put("/api/storage/:id/set-default", requireAdmin, async (c) 
   const { id } = c.req.param();
   const repositoryFactory = useRepositories(c);
   await setDefaultStorageConfig(db, id, adminId, repositoryFactory);
-  return c.json({ code: ApiStatus.SUCCESS, message: "默认存储配置设置成功", success: true });
+  return jsonOk(c, undefined, "默认存储配置设置成功");
 });
 
 // 测试存储配置连接（管理员）
@@ -136,7 +135,7 @@ storageConfigRoutes.post("/api/storage/:id/test", requireAdmin, async (c) => {
   const requestOrigin = c.req.header("origin");
   const repositoryFactory = useRepositories(c);
   const testResult = await testStorageConnection(db, id, adminId, encryptionSecret, requestOrigin, repositoryFactory);
-  return c.json({ code: ApiStatus.SUCCESS, message: testResult.message, data: { success: testResult.success, result: testResult.result }, success: true });
+  return jsonOk(c, { success: testResult.success, result: testResult.result }, testResult.message);
 });
 
 export default storageConfigRoutes;

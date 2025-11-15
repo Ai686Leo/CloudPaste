@@ -2,7 +2,7 @@
  * 通用工具函数
  */
 import { UserType, ApiStatus } from "../constants/index.js";
-import { HTTPException } from "hono/http-exception";
+import { RepositoryError, ValidationError, AuthorizationError, ConflictError } from "../http/errors.js";
 
 /**
  * 生成随机字符串
@@ -24,14 +24,25 @@ export function generateRandomString(length = 8) {
  * @param {string} message - 错误消息
  * @returns {object} 标准错误响应对象
  */
-export function createErrorResponse(statusCode, message) {
+export function createErrorResponse(_statusCode, message, code) {
   return {
-    code: statusCode,
-    message: message,
     success: false,
-    data: null,
+    code,
+    message,
   };
 }
+
+export function createSuccessResponse(data, message = "OK", code = "OK") {
+  return {
+    success: true,
+    code,
+    message,
+    data,
+  };
+}
+
+export const jsonOk = (c, data, message = "OK") => c.json(createSuccessResponse(data, message, "OK"), ApiStatus.SUCCESS);
+export const jsonCreated = (c, data, message = "Created") => c.json(createSuccessResponse(data, message, "CREATED"), ApiStatus.CREATED);
 
 /**
  * 格式化文件大小
@@ -202,7 +213,7 @@ export async function generateUniqueFileSlug(db, customSlug = null, override = f
   if (customSlug) {
     // 验证slug格式：只允许字母、数字、横杠、下划线和点号
     if (!validateSlugFormat(customSlug)) {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "链接后缀格式无效，只能使用字母、数字、下划线、横杠和点号" });
+      throw new ValidationError("链接后缀格式无效，只能使用字母、数字、下划线、横杠和点号");
     }
 
     // 检查slug是否已存在
@@ -210,8 +221,7 @@ export async function generateUniqueFileSlug(db, customSlug = null, override = f
 
     // 如果存在并且不覆盖，抛出错误
     if (existingFile && !override) {
-      // 冲突：暴露 409，便于前端直接提示
-      throw new HTTPException(ApiStatus.CONFLICT, { message: "链接后缀已被占用，请使用其他链接后缀" });
+      throw new ConflictError("链接后缀已被占用，请使用其他链接后缀");
     } else if (existingFile && override) {
       // 处理文件覆盖逻辑
       await handleFileOverride(existingFile, overrideContext);
@@ -236,24 +246,24 @@ export async function generateUniqueFileSlug(db, customSlug = null, override = f
     attempts++;
   }
 
-  throw new Error("无法生成唯一链接后缀，请稍后再试");
+  throw new RepositoryError("无法生成唯一链接后缀，请稍后再试");
 }
 
 async function handleFileOverride(existingFile, overrideContext) {
   if (!overrideContext) {
-    throw new Error("覆盖操作需要 overrideContext 信息");
+    throw new ValidationError("覆盖操作需要 overrideContext 信息");
   }
 
   const { userIdOrInfo, userType, encryptionSecret, repositoryFactory, db } = overrideContext;
   if (!repositoryFactory || !db) {
-    throw new Error("覆盖操作缺少 repositoryFactory 或 db 上下文");
+    throw new ValidationError("覆盖操作缺少 repositoryFactory 或 db 上下文");
   }
 
   const apiKeyIdentifier = typeof userIdOrInfo === "object" ? userIdOrInfo?.id : userIdOrInfo;
   const currentCreator = userType === UserType.ADMIN ? userIdOrInfo : `apikey:${apiKeyIdentifier}`;
 
   if (!currentCreator || existingFile.created_by !== currentCreator) {
-    throw new Error("无权覆盖该链接后缀");
+    throw new AuthorizationError("无权覆盖该链接后缀");
   }
 
   const fileRepository = repositoryFactory.getFileRepository();
@@ -268,7 +278,9 @@ async function handleFileOverride(existingFile, overrideContext) {
         : null;
       if (storageConfig) {
         const { StorageFactory } = await import("../storage/factory/StorageFactory.js");
-        if (!storageConfig.storage_type) throw new Error("存储配置缺少 storage_type");
+        if (!storageConfig.storage_type) {
+          throw new ValidationError("存储配置缺少 storage_type");
+        }
         const driver = await StorageFactory.createDriver(storageConfig.storage_type, storageConfig, encryptionSecret);
         await driver.initialize?.();
         if (typeof driver.deleteObjectByStoragePath === "function") {

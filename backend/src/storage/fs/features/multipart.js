@@ -1,4 +1,4 @@
-import { HTTPException } from "hono/http-exception";
+import { DriverError } from "../../../http/errors.js";
 import { ApiStatus } from "../../../constants/index.js";
 import { CAPABILITIES } from "../../interfaces/capabilities/index.js";
 
@@ -6,8 +6,10 @@ export async function initializeFrontendMultipartUpload(fs, path, fileName, file
   const { driver, mount, subPath } = await fs.mountManager.getDriverByPath(path, userIdOrInfo, userType);
 
   if (!driver.hasCapability(CAPABILITIES.MULTIPART)) {
-    throw new HTTPException(ApiStatus.NOT_IMPLEMENTED, {
-      message: `存储驱动 ${driver.getType()} 不支持分片上传`,
+    throw new DriverError(`存储驱动 ${driver.getType()} 不支持分片上传`, {
+      status: ApiStatus.NOT_IMPLEMENTED,
+      code: "DRIVER_ERROR.NOT_IMPLEMENTED",
+      expose: true,
     });
   }
 
@@ -27,8 +29,10 @@ export async function completeFrontendMultipartUpload(fs, path, uploadId, parts,
   const { driver, mount, subPath } = await fs.mountManager.getDriverByPath(path, userIdOrInfo, userType);
 
   if (!driver.hasCapability(CAPABILITIES.MULTIPART)) {
-    throw new HTTPException(ApiStatus.NOT_IMPLEMENTED, {
-      message: `存储驱动 ${driver.getType()} 不支持分片上传`,
+    throw new DriverError(`存储驱动 ${driver.getType()} 不支持分片上传`, {
+      status: ApiStatus.NOT_IMPLEMENTED,
+      code: "DRIVER_ERROR.NOT_IMPLEMENTED",
+      expose: true,
     });
   }
 
@@ -51,8 +55,10 @@ export async function abortFrontendMultipartUpload(fs, path, uploadId, fileName,
   const { driver, mount, subPath } = await fs.mountManager.getDriverByPath(path, userIdOrInfo, userType);
 
   if (!driver.hasCapability(CAPABILITIES.MULTIPART)) {
-    throw new HTTPException(ApiStatus.NOT_IMPLEMENTED, {
-      message: `存储驱动 ${driver.getType()} 不支持分片上传`,
+    throw new DriverError(`存储驱动 ${driver.getType()} 不支持分片上传`, {
+      status: ApiStatus.NOT_IMPLEMENTED,
+      code: "DRIVER_ERROR.NOT_IMPLEMENTED",
+      expose: true,
     });
   }
 
@@ -73,8 +79,10 @@ export async function listMultipartUploads(fs, path, userIdOrInfo, userType, opt
   const { driver, mount, subPath } = await fs.mountManager.getDriverByPath(path || "/", userIdOrInfo, userType);
 
   if (!driver.hasCapability(CAPABILITIES.MULTIPART)) {
-    throw new HTTPException(ApiStatus.NOT_IMPLEMENTED, {
-      message: `存储驱动 ${driver.getType()} 不支持分片上传`,
+    throw new DriverError(`存储驱动 ${driver.getType()} 不支持分片上传`, {
+      status: ApiStatus.NOT_IMPLEMENTED,
+      code: "DRIVER_ERROR.NOT_IMPLEMENTED",
+      expose: true,
     });
   }
 
@@ -89,8 +97,10 @@ export async function listMultipartParts(fs, path, uploadId, fileName, userIdOrI
   const { driver, mount, subPath } = await fs.mountManager.getDriverByPath(path, userIdOrInfo, userType);
 
   if (!driver.hasCapability(CAPABILITIES.MULTIPART)) {
-    throw new HTTPException(ApiStatus.NOT_IMPLEMENTED, {
-      message: `存储驱动 ${driver.getType()} 不支持分片上传`,
+    throw new DriverError(`存储驱动 ${driver.getType()} 不支持分片上传`, {
+      status: ApiStatus.NOT_IMPLEMENTED,
+      code: "DRIVER_ERROR.NOT_IMPLEMENTED",
+      expose: true,
     });
   }
 
@@ -106,8 +116,10 @@ export async function refreshMultipartUrls(fs, path, uploadId, partNumbers, user
   const { driver, mount, subPath } = await fs.mountManager.getDriverByPath(path, userIdOrInfo, userType);
 
   if (!driver.hasCapability(CAPABILITIES.MULTIPART)) {
-    throw new HTTPException(ApiStatus.NOT_IMPLEMENTED, {
-      message: `存储驱动 ${driver.getType()} 不支持分片上传`,
+    throw new DriverError(`存储驱动 ${driver.getType()} 不支持分片上传`, {
+      status: ApiStatus.NOT_IMPLEMENTED,
+      code: "DRIVER_ERROR.NOT_IMPLEMENTED",
+      expose: true,
     });
   }
 
@@ -122,8 +134,10 @@ export async function abortBackendMultipartUpload(fs, path, userIdOrInfo, userTy
   const { driver, mount, subPath } = await fs.mountManager.getDriverByPath(path, userIdOrInfo, userType);
 
   if (!driver.hasCapability(CAPABILITIES.MULTIPART)) {
-    throw new HTTPException(ApiStatus.NOT_IMPLEMENTED, {
-      message: `存储驱动 ${driver.getType()} 不支持分片上传`,
+    throw new DriverError(`存储驱动 ${driver.getType()} 不支持分片上传`, {
+      status: ApiStatus.NOT_IMPLEMENTED,
+      code: "DRIVER_ERROR.NOT_IMPLEMENTED",
+      expose: true,
     });
   }
 
@@ -138,4 +152,5 @@ export async function abortBackendMultipartUpload(fs, path, userIdOrInfo, userTy
   fs.emitCacheInvalidation({ mount, paths: [path], reason: "abort-backend-multipart" });
   return result;
 }
+
 

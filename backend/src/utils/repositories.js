@@ -1,4 +1,5 @@
 import { RepositoryFactory } from "../repositories/index.js";
+import { RepositoryError } from "../http/errors.js";
 
 export const useRepositories = (c) => {
   let factory = c.get("repos");
@@ -8,7 +9,7 @@ export const useRepositories = (c) => {
 
   const db = c.env?.DB;
   if (!db) {
-    throw new Error("Database connection is not available in context");
+    throw new RepositoryError("Database connection is not available in context");
   }
 
   factory = new RepositoryFactory(db);
@@ -21,7 +22,7 @@ export const ensureRepositoryFactory = (db, repositoryFactory = null) => {
     return repositoryFactory;
   }
   if (!db) {
-    throw new Error("Database connection is required to create RepositoryFactory");
+    throw new RepositoryError("Database connection is required to create RepositoryFactory");
   }
   return new RepositoryFactory(db);
 };

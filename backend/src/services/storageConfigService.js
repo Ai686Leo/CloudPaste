@@ -2,7 +2,7 @@
 import { ensureRepositoryFactory } from "../utils/repositories.js";
 import { StorageFactory } from "../storage/factory/StorageFactory.js";
 import { ApiStatus } from "../constants/index.js";
-import { HTTPException } from "hono/http-exception";
+import { AppError, ValidationError, NotFoundError, DriverError } from "../http/errors.js";
 import { encryptValue, buildSecretView } from "../utils/crypto.js";
 import { generateStorageConfigId } from "../utils/common.js";
 
@@ -27,7 +27,7 @@ export async function getStorageConfigByIdForAdmin(db, id, adminId, repositoryFa
   const factory = ensureRepositoryFactory(db, repositoryFactory);
   const repo = factory.getStorageConfigRepository();
   const cfg = await repo.findByIdAndAdmin(id, adminId);
-  if (!cfg) throw new HTTPException(ApiStatus.NOT_FOUND, { message: "存储配置不存在" });
+  if (!cfg) throw new NotFoundError("存储配置不存在");
   return cfg;
 }
 
@@ -35,7 +35,7 @@ export async function getPublicStorageConfigById(db, id, repositoryFactory = nul
   const factory = ensureRepositoryFactory(db, repositoryFactory);
   const repo = factory.getStorageConfigRepository();
   const cfg = await repo.findPublicById(id);
-  if (!cfg) throw new HTTPException(ApiStatus.NOT_FOUND, { message: "存储配置不存在" });
+  if (!cfg) throw new NotFoundError("存储配置不存在");
   return cfg;
 }
 
@@ -47,7 +47,7 @@ export async function getStorageConfigByIdForAdminReveal(db, id, adminId, encryp
   const factory = ensureRepositoryFactory(db, repositoryFactory);
   const repo = factory.getStorageConfigRepository();
   const cfg = await repo.findByIdAndAdminWithSecrets(id, adminId);
-  if (!cfg) throw new HTTPException(ApiStatus.NOT_FOUND, { message: "存储配置不存在" });
+  if (!cfg) throw new NotFoundError("存储配置不存在");
   // 仅构建展示，不改变存量
   const view = await buildSecretView(cfg, encryptionSecret, { mode });
   return view;
@@ -56,10 +56,10 @@ export async function getStorageConfigByIdForAdminReveal(db, id, adminId, encryp
 // CRUD（使用 config_json 存储驱动私有配置）
 export async function createStorageConfig(db, configData, adminId, encryptionSecret, repositoryFactory = null) {
   if (!configData?.name) {
-    throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "缺少必填字段: name" });
+    throw new ValidationError("缺少必填字段: name");
   }
   if (!configData?.storage_type) {
-    throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "缺少必填字段: storage_type" });
+    throw new ValidationError("缺少必填字段: storage_type");
   }
   const factory = ensureRepositoryFactory(db, repositoryFactory);
   const repo = factory.getStorageConfigRepository();
@@ -69,7 +69,7 @@ export async function createStorageConfig(db, configData, adminId, encryptionSec
   if (configData.storage_type === "S3") {
     const requiredS3 = ["provider_type", "endpoint_url", "bucket_name", "access_key_id", "secret_access_key"];
     for (const f of requiredS3) {
-      if (!configData[f]) throw new HTTPException(ApiStatus.BAD_REQUEST, { message: `缺少必填字段: ${f}` });
+      if (!configData[f]) throw new ValidationError(`缺少必填字段: ${f}`);
     }
     const encryptedAccessKey = await encryptValue(configData.access_key_id, encryptionSecret);
     const encryptedSecretKey = await encryptValue(configData.secret_access_key, encryptionSecret);
@@ -113,7 +113,7 @@ export async function updateStorageConfig(db, id, updateData, adminId, encryptio
   const factory = ensureRepositoryFactory(db, repositoryFactory);
   const repo = factory.getStorageConfigRepository();
   const exists = await repo.findByIdAndAdminWithSecrets(id, adminId);
-  if (!exists) throw new HTTPException(ApiStatus.NOT_FOUND, { message: "存储配置不存在" });
+  if (!exists) throw new NotFoundError("存储配置不存在");
 
   const topPatch = {};
   if (updateData.name) topPatch.name = updateData.name;
@@ -122,9 +122,9 @@ export async function updateStorageConfig(db, id, updateData, adminId, encryptio
   if (updateData.status) topPatch.status = updateData.status;
 
   let cfg = {};
-  try {
-    cfg = exists.config_json ? JSON.parse(exists.config_json) : {};
-  } catch {}
+  if (exists?.__config_json__ && typeof exists.__config_json__ === "object") {
+    cfg = { ...exists.__config_json__ };
+  }
   // 合并驱动 JSON 字段
   const boolKeys = new Set(["path_style"]);
   for (const [k, v] of Object.entries(updateData)) {
@@ -156,7 +156,7 @@ export async function deleteStorageConfig(db, id, adminId, repositoryFactory = n
   const factory = ensureRepositoryFactory(db, repositoryFactory);
   const repo = factory.getStorageConfigRepository();
   const exists = await repo.findByIdAndAdmin(id, adminId);
-  if (!exists) throw new HTTPException(ApiStatus.NOT_FOUND, { message: "存储配置不存在" });
+  if (!exists) throw new NotFoundError("存储配置不存在");
   await repo.deleteConfig(id);
 }
 
@@ -164,7 +164,7 @@ export async function setDefaultStorageConfig(db, id, adminId, repositoryFactory
   const factory = ensureRepositoryFactory(db, repositoryFactory);
   const repo = factory.getStorageConfigRepository();
   const exists = await repo.findByIdAndAdmin(id, adminId);
-  if (!exists) throw new HTTPException(ApiStatus.NOT_FOUND, { message: "存储配置不存在" });
+  if (!exists) throw new NotFoundError("存储配置不存在");
   await repo.setAsDefault(id, adminId);
 }
 
@@ -181,20 +181,28 @@ export async function testStorageConnection(db, id, adminId, encryptionSecret, r
   // 带密钥读取（测试需要）
   const cfg = await repo.findByIdAndAdminWithSecrets(id, adminId);
   if (!cfg) {
-    throw new HTTPException(ApiStatus.NOT_FOUND, { message: "存储配置不存在" });
+    throw new NotFoundError("存储配置不存在");
   }
   const type = cfg.storage_type;
   if (!type) {
-    throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "存储配置缺少 storage_type" });
+    throw new ValidationError("存储配置缺少 storage_type");
   }
   const tester = StorageFactory.getTester(type);
   if (typeof tester === "function") {
-    const res = await tester(cfg, encryptionSecret, requestOrigin);
-    // 标记最后使用时间
     try {
-      await repo.updateLastUsed(id);
-    } catch {}
-    return res;
+      const res = await tester(cfg, encryptionSecret, requestOrigin);
+      // 标记最后使用时间
+      try {
+        await repo.updateLastUsed(id);
+      } catch {}
+      return res;
+    } catch (error) {
+      if (error instanceof AppError) {
+        throw error;
+      }
+      const message = error?.message || "存储连通性测试失败";
+      throw new DriverError(message, { details: { cause: error?.message } });
+    }
   }
-  throw new HTTPException(ApiStatus.NOT_FOUND, { message: `未找到存储类型的测试实现: ${type}` });
+  throw new NotFoundError(`未找到存储类型的测试实现: ${type}`);
 }

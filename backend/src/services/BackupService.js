@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { DbTables } from "../constants/index.js";
+import { ValidationError, RepositoryError } from "../http/errors.js";
 import { StorageConfigUtils } from "../storage/utils/StorageConfigUtils.js";
 
 /**
@@ -58,7 +59,7 @@ export class BackupService {
       // 模块备份 - 根据选中的模块确定表
       tables = this.getTablesFromModules(finalModules);
     } else {
-      throw new Error("不支持的备份类型");
+      throw new ValidationError("不支持的备份类型");
     }
 
     // 导出数据
@@ -239,7 +240,7 @@ export class BackupService {
       };
     } catch (error) {
       console.error("还原备份失败:", error);
-      throw new Error(`还原备份失败: ${error.message}`);
+      throw new RepositoryError(`还原备份失败: ${error.message}`);
     }
   }
 
@@ -582,21 +583,21 @@ export class BackupService {
    */
   validateBackupData(backupData) {
     if (!backupData || typeof backupData !== "object") {
-      throw new Error("无效的备份数据格式");
+      throw new ValidationError("无效的备份数据格式");
     }
 
     if (!backupData.metadata || !backupData.data) {
-      throw new Error("备份数据缺少必要的字段");
+      throw new ValidationError("备份数据缺少必要的字段");
     }
 
     if (!backupData.metadata.version || !backupData.metadata.timestamp) {
-      throw new Error("备份元数据不完整");
+      throw new ValidationError("备份元数据不完整");
     }
 
     // 验证校验和
     const calculatedChecksum = this.generateChecksum(backupData.data);
     if (backupData.metadata.checksum !== calculatedChecksum) {
-      throw new Error("备份数据校验失败，文件可能已损坏");
+      throw new ValidationError("备份数据校验失败，文件可能已损坏");
     }
   }
 
@@ -609,7 +610,7 @@ export class BackupService {
 
     for (const table of tables) {
       if (!validTables.includes(table)) {
-        throw new Error(`不支持的数据表: ${table}`);
+        throw new ValidationError(`不支持的数据表: ${table}`);
       }
     }
   }

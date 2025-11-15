@@ -1,4 +1,5 @@
-import { DEFAULT_MAX_UPLOAD_SIZE_MB } from "../constants/index.js";
+import { DEFAULT_MAX_UPLOAD_SIZE_MB, ApiStatus } from "../constants/index.js";
+import { AuthenticationError, RepositoryError } from "../http/errors.js";
 import { SETTING_GROUPS } from "../constants/settings.js";
 import { getStorageConfigsWithUsage } from "./storageConfigService.js";
 import { ensureRepositoryFactory } from "../utils/repositories.js";
@@ -39,7 +40,7 @@ export async function getMaxUploadSize(db, repositoryFactory) {
 export async function getDashboardStats(db, adminId, repositoryFactory) {
   try {
     if (!adminId) {
-      throw new Error("未授权");
+      throw new AuthenticationError("未授权");
     }
 
     // 使用 SystemRepository
@@ -92,7 +93,8 @@ export async function getDashboardStats(db, adminId, repositoryFactory) {
     };
   } catch (error) {
     console.error("获取仪表盘统计数据失败:", error);
-    throw new Error("获取仪表盘统计数据失败: " + error.message);
+    if (error.status && error.code) throw error;
+    throw new RepositoryError("获取仪表盘统计数据失败", { cause: error?.message });
   }
 }
 
@@ -113,7 +115,8 @@ export async function getSettingsByGroup(db, groupId, includeMetadata = true, re
     return await systemRepository.getSettingsByGroup(groupId, includeMetadata);
   } catch (error) {
     console.error("按分组获取设置错误:", error);
-    throw new Error("按分组获取设置失败: " + error.message);
+    if (error.status && error.code) throw error;
+    throw new RepositoryError("按分组获取设置失败", { cause: error?.message });
   }
 }
 
@@ -131,7 +134,8 @@ export async function getAllSettingsByGroups(db, includeSystemGroup = false, rep
     return await systemRepository.getAllSettingsByGroups(includeSystemGroup);
   } catch (error) {
     console.error("获取分组设置错误:", error);
-    throw new Error("获取分组设置失败: " + error.message);
+    if (error.status && error.code) throw error;
+    throw new RepositoryError("获取分组设置失败", { cause: error?.message });
   }
 }
 
@@ -148,7 +152,8 @@ export async function getGroupsInfo(db, repositoryFactory) {
     return await systemRepository.getGroupsInfo();
   } catch (error) {
     console.error("获取分组信息错误:", error);
-    throw new Error("获取分组信息失败: " + error.message);
+    if (error.status && error.code) throw error;
+    throw new RepositoryError("获取分组信息失败", { cause: error?.message });
   }
 }
 
@@ -181,7 +186,8 @@ export async function updateGroupSettings(db, groupId, settings, options = {}, r
     return result;
   } catch (error) {
     console.error("批量更新分组设置错误:", error);
-    throw new Error("批量更新分组设置失败: " + error.message);
+    if (error.status && error.code) throw error;
+    throw new RepositoryError("批量更新分组设置失败", { cause: error?.message });
   }
 }
 
@@ -199,6 +205,7 @@ export async function getSettingMetadata(db, key, repositoryFactory) {
     return await systemRepository.getSettingMetadata(key);
   } catch (error) {
     console.error("获取设置元数据错误:", error);
-    throw new Error("获取设置元数据失败: " + error.message);
+    if (error.status && error.code) throw error;
+    throw new RepositoryError("获取设置元数据失败", { cause: error?.message });
   }
 }

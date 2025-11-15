@@ -3,7 +3,7 @@
  */
 
 import { stripPrefix } from "../auth/config/WebDAVConfig.js";
-import { HTTPException } from "hono/http-exception";
+import { AppError, ValidationError } from "../../http/errors.js";
 
 /**
  * 统一路径处理函数
@@ -21,7 +21,7 @@ export function processWebDAVPath(rawPath, throwOnError = false) {
       const message = `WebDAV安全警告: 检测到路径遍历攻击尝试: ${decodedPath}`;
       console.warn(message);
       if (throwOnError) {
-        throw new HTTPException(400, { message: "Path traversal detected" });
+        throw new ValidationError("Path traversal detected");
       }
       return null;
     }
@@ -31,7 +31,7 @@ export function processWebDAVPath(rawPath, throwOnError = false) {
       const message = `WebDAV安全警告: 检测到空字节注入尝试: ${decodedPath}`;
       console.warn(message);
       if (throwOnError) {
-        throw new HTTPException(400, { message: "Invalid path characters" });
+        throw new ValidationError("Invalid path characters");
       }
       return null;
     }
@@ -49,13 +49,13 @@ export function processWebDAVPath(rawPath, throwOnError = false) {
 
     return processedPath;
   } catch (error) {
-    if (error instanceof HTTPException) {
+    if (error instanceof AppError) {
       throw error;
     }
     const message = `WebDAV路径解码失败: ${error.message}`;
     console.warn(message);
     if (throwOnError) {
-      throw new HTTPException(400, { message: "Invalid path encoding" });
+      throw new ValidationError("Invalid path encoding");
     }
     return null;
   }

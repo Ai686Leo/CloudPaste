@@ -8,6 +8,7 @@ import { getEffectiveMimeType } from "../../utils/fileUtils.js";
 import { withWebDAVErrorHandling } from "../utils/errorUtils.js";
 import { getStandardWebDAVHeaders } from "../utils/headerUtils.js";
 import { getEncryptionSecret } from "../../utils/environmentUtils.js";
+import { ValidationError } from "../../http/errors.js";
 import { getSettingsByGroup } from "../../services/systemService.js";
 import { lockManager } from "../utils/LockManager.js";
 import { checkLockPermission } from "../utils/lockUtils.js";
@@ -63,7 +64,7 @@ export async function handlePut(c, path, userId, userType, db) {
     // 获取加密密钥
     const encryptionSecret = getEncryptionSecret(c);
     if (!encryptionSecret) {
-      throw new Error("缺少加密密钥配置");
+      throw new ValidationError("缺少加密密钥配置");
     }
 
     // 创建挂载管理器和文件系统
@@ -118,7 +119,7 @@ export async function handlePut(c, path, userId, userType, db) {
     // 获取请求体流
     const bodyStream = c.req.body;
     if (!bodyStream) {
-      throw new Error("请求体为空");
+      throw new ValidationError("请求体为空");
     }
 
     const filename = path.split("/").pop();

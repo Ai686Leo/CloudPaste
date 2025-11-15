@@ -2,7 +2,7 @@
  * WebDAV锁管理器 
  */
 
-import { HTTPException } from "hono/http-exception";
+import { AppError } from "../../http/errors.js";
 import { ApiStatus } from "../../constants/index.js";
 import { generateLockToken } from "./lockUtils.js";
 
@@ -28,10 +28,7 @@ export class LockManager {
     // 检查是否已锁定
     const existingLock = this.locksByPath.get(path);
     if (existingLock && !this.isExpired(existingLock)) {
-      throw new HTTPException(ApiStatus.LOCKED, {
-        message: `资源已被锁定: ${path}`,
-        details: { lockToken: existingLock.token },
-      });
+      throw new AppError(`资源已被锁定: ${path}`, { status: ApiStatus.LOCKED, code: "LOCKED", expose: true, details: { lockToken: existingLock.token } });
     }
 
     // 创建锁信息

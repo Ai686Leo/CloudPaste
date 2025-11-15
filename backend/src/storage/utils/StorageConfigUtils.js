@@ -4,8 +4,8 @@
  * 避免重复代码，保持架构一致性
  */
 
-import { HTTPException } from "hono/http-exception";
 import { ApiStatus } from "../../constants/index.js";
+import { AppError, ValidationError, NotFoundError } from "../../http/errors.js";
 import { ensureRepositoryFactory } from "../../utils/repositories.js";
 
 export class StorageConfigUtils {
@@ -18,11 +18,11 @@ export class StorageConfigUtils {
    */
   static async getStorageConfig(db, storageType, configId) {
     if (!storageType) {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "存储类型不能为空" });
+      throw new ValidationError("存储类型不能为空");
     }
 
     if (!configId) {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "配置ID不能为空" });
+      throw new ValidationError("配置ID不能为空");
     }
 
     switch (storageType) {
@@ -37,9 +37,7 @@ export class StorageConfigUtils {
       //   return await StorageConfigUtils._getLocalConfig(db, configId);
 
       default:
-        throw new HTTPException(ApiStatus.BAD_REQUEST, {
-          message: `不支持的存储类型: ${storageType}`,
-        });
+        throw new ValidationError(`不支持的存储类型: ${storageType}`);
     }
   }
 
@@ -59,7 +57,7 @@ export class StorageConfigUtils {
       : await repo.findById(configId); // 兜底：旧实现不带密钥
 
     if (!config) {
-      throw new HTTPException(ApiStatus.NOT_FOUND, { message: "S3配置不存在" });
+      throw new NotFoundError("S3配置不存在");
     }
 
     return config;
@@ -76,7 +74,7 @@ export class StorageConfigUtils {
   //   const config = await db.prepare("SELECT * FROM webdav_configs WHERE id = ?").bind(configId).first();
   //
   //   if (!config) {
-  //     throw new HTTPException(ApiStatus.NOT_FOUND, { message: "WebDAV配置不存在" });
+  //     throw new NotFoundError("WebDAV配置不存在");
   //   }
   //
   //   return config;
@@ -93,7 +91,7 @@ export class StorageConfigUtils {
   //   const config = await db.prepare("SELECT * FROM local_configs WHERE id = ?").bind(configId).first();
   //
   //   if (!config) {
-  //     throw new HTTPException(ApiStatus.NOT_FOUND, { message: "本地存储配置不存在" });
+  //     throw new NotFoundError("本地存储配置不存在");
   //   }
   //
   //   return config;
@@ -111,7 +109,7 @@ export class StorageConfigUtils {
       await StorageConfigUtils.getStorageConfig(db, storageType, configId);
       return true;
     } catch (error) {
-      if (error instanceof HTTPException && error.status === ApiStatus.NOT_FOUND) {
+      if (error instanceof AppError && error.status === ApiStatus.NOT_FOUND) {
         return false;
       }
       throw error;

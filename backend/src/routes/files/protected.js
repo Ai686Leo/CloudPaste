@@ -1,4 +1,3 @@
-import { HTTPException } from "hono/http-exception";
 import { ApiStatus, UserType } from "../../constants/index.js";
 import {
   getAdminFileList,
@@ -9,8 +8,9 @@ import {
 } from "../../services/fileService.js";
 import { invalidateFsCache } from "../../cache/invalidation.js";
 import { useRepositories } from "../../utils/repositories.js";
+import { ValidationError } from "../../http/errors.js";
 import { getEncryptionSecret } from "../../utils/environmentUtils.js";
-import { getPagination } from "../../utils/common.js";
+import { getPagination, jsonOk } from "../../utils/common.js";
 import { usePolicy } from "../../security/policies/policies.js";
 import { resolvePrincipal } from "../../security/helpers/principal.js";
 
@@ -45,18 +45,8 @@ export const registerFilesProtectedRoutes = (router) => {
       result = await getUserFileList(db, userId, options);
     }
 
-    const response = {
-      code: ApiStatus.SUCCESS,
-      message: "获取文件列表成功",
-      data: result,
-      success: true,
-    };
-
-    if (userType === UserType.API_KEY) {
-      response.key_info = apiKeyInfo;
-    }
-
-    return c.json(response);
+    const data = userType === UserType.API_KEY ? { ...result, key_info: apiKeyInfo } : result;
+    return jsonOk(c, data, "获取文件列表成功");
   });
 
   router.get("/api/files/:id", requireFilesAccess, async (c) => {
@@ -72,12 +62,7 @@ export const registerFilesProtectedRoutes = (router) => {
       result = await getUserFileDetail(db, id, userId, encryptionSecret, c.req.raw);
     }
 
-    return c.json({
-      code: ApiStatus.SUCCESS,
-      message: "获取文件成功",
-      data: result,
-      success: true,
-    });
+    return jsonOk(c, result, "获取文件成功");
   });
 
   router.delete("/api/files/batch-delete", requireFilesAccess, async (c) => {
@@ -88,11 +73,11 @@ export const registerFilesProtectedRoutes = (router) => {
     const deleteMode = body.delete_mode || "both";
 
     if (!ids || !Array.isArray(ids) || ids.length === 0) {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "请提供有效的文件ID数组" });
+      throw new ValidationError("请提供有效的文件ID数组");
     }
 
     if (!["record_only", "both"].includes(deleteMode)) {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "删除模式必须是 'record_only' 或 'both'" });
+      throw new ValidationError("删除模式必须是 'record_only' 或 'both'");
     }
 
     const result = { success: 0, failed: [] };
@@ -148,7 +133,9 @@ export const registerFilesProtectedRoutes = (router) => {
           if (storageConfig) {
             try {
               const { StorageFactory } = await import("../../storage/factory/StorageFactory.js");
-              if (!storageConfig.storage_type) throw new Error("存储配置缺少 storage_type");
+              if (!storageConfig.storage_type) {
+                throw new ValidationError("存储配置缺少 storage_type");
+              }
               const driver = await StorageFactory.createDriver(storageConfig.storage_type, storageConfig, encryptionSecret);
               await driver.initialize?.();
               if (typeof driver.deleteObjectByStoragePath === "function") {
@@ -183,12 +170,7 @@ export const registerFilesProtectedRoutes = (router) => {
     invalidateFsCache({ storageConfigId, reason: "files-batch-delete", db });
   }
 
-  return c.json({
-    code: ApiStatus.SUCCESS,
-    message: `批量删除完成，成功: ${result.success}，失败: ${result.failed.length}`,
-    data: result,
-    success: true,
-  });
+  return jsonOk(c, result, `批量删除完成，成功: ${result.success}，失败: ${result.failed.length}`);
 });
 
   router.put("/api/files/:id", requireFilesAccess, async (c) => {
@@ -198,10 +180,6 @@ export const registerFilesProtectedRoutes = (router) => {
     const body = await c.req.json();
 
     const result = await updateFile(db, id, body, { userType, userId });
-    return c.json({
-      code: ApiStatus.SUCCESS,
-      message: result.message,
-      success: true,
-    });
+    return jsonOk(c, undefined, result.message);
   });
 };

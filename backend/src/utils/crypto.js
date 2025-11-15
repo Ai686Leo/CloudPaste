@@ -3,6 +3,7 @@
  */
 
 import { sha256 } from "hono/utils/crypto";
+import { ValidationError } from "../http/errors.js";
 // 导入Node.js的crypto模块以解决ESM环境中的引用错误
 import crypto from "crypto";
 // 为Node.js环境提供Web Crypto API的兼容层
@@ -80,7 +81,7 @@ export async function decryptValue(encryptedValue, secret) {
   // 从加密格式中提取值
   const parts = encryptedValue.split(":");
   if (parts.length !== 3) {
-    throw new Error("无效的加密格式");
+    throw new ValidationError("无效的加密格式");
   }
 
   try {
@@ -88,7 +89,7 @@ export async function decryptValue(encryptedValue, secret) {
     const originalValue = atob(parts[2]);
     return originalValue;
   } catch (error) {
-    throw new Error("解密失败: " + error.message);
+    throw new ValidationError("解密失败: " + error.message);
   }
 }
 

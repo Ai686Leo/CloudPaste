@@ -10,8 +10,9 @@ import { generateFileDownloadUrl } from "../services/fileService.js";
 import { isOfficeFile } from "../utils/fileUtils.js";
 import { handleFileDownload } from "../services/fileViewService.js";
 import { getFileBySlug, isFileAccessible } from "../services/fileService.js";
-import { HTTPException } from "hono/http-exception";
 import { ApiStatus } from "../constants/index.js";
+import { AppError, NotFoundError, AuthenticationError, AuthorizationError, ValidationError, DriverError } from "../http/errors.js";
+import { jsonOk } from "../utils/common.js";
 
 const app = new Hono();
 
@@ -42,7 +43,7 @@ app.get("/api/office-preview/:slug", async (c) => {
   // 查询文件详情
   const file = await getFileBySlug(db, slug, encryptionSecret);
   if (!file) {
-    throw new HTTPException(ApiStatus.NOT_FOUND, { message: "文件不存在" });
+    throw new NotFoundError("文件不存在");
   }
 
   // 校验密码
@@ -50,48 +51,48 @@ app.get("/api/office-preview/:slug", async (c) => {
     const url = new URL(c.req.url);
     const passwordParam = url.searchParams.get("password");
     if (!passwordParam) {
-      throw new HTTPException(ApiStatus.UNAUTHORIZED, { message: "需要密码访问此文件" });
+      throw new AuthenticationError("需要密码访问此文件");
     }
     const passwordValid = await verifyPassword(passwordParam, file.password);
     if (!passwordValid) {
-      throw new HTTPException(ApiStatus.UNAUTHORIZED, { message: "密码错误" });
+      throw new AuthenticationError("密码错误");
     }
   }
 
   const accessCheck = await isFileAccessible(db, file, encryptionSecret);
   if (!accessCheck.accessible) {
     if (accessCheck.reason === "expired") {
-      throw new HTTPException(ApiStatus.GONE, { message: "文件已过期" });
+      throw new AppError("文件已过期", { status: ApiStatus.GONE, code: "GONE", expose: true });
     }
-    throw new HTTPException(ApiStatus.FORBIDDEN, { message: "文件不可访问" });
+    throw new AuthorizationError("文件不可访问");
   }
 
   if (!isOfficeFile(file.mimetype, file.filename)) {
-    throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "不是Office文件类型" });
+    throw new ValidationError("不是Office文件类型");
   }
 
   if (!file.storage_config_id || !file.storage_path || !file.storage_type) {
-    throw new HTTPException(ApiStatus.NOT_FOUND, { message: "文件存储信息不完整" });
+    throw new NotFoundError("文件存储信息不完整");
   }
 
   // 统一依赖通用 URL 生成逻辑，无存储类型分支
 
   if (file.max_views && file.max_views > 0 && file.views >= file.max_views) {
-    throw new HTTPException(ApiStatus.GONE, { message: "文件已达到最大查看次数" });
+    throw new AppError("文件已达到最大查看次数", { status: ApiStatus.GONE, code: "GONE", expose: true });
   }
 
   const urlsObj = await generateFileDownloadUrl(db, file, encryptionSecret, c.req.raw).catch((error) => {
     console.error("生成Office预览URL失败:", error);
-    throw new HTTPException(ApiStatus.INTERNAL_ERROR, { message: "生成预览URL失败: " + error.message });
+    throw new DriverError("生成预览URL失败", { details: { cause: error?.message } });
   });
   const presignedUrl = urlsObj?.previewUrl;
 
-  return c.json({
+  return jsonOk(c, {
     url: presignedUrl,
     filename: file.filename,
     mimetype: file.mimetype,
     is_temporary: true,
-  });
+  }, "获取预览URL成功");
 });
 
 export default app;

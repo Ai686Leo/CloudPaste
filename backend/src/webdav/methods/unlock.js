@@ -7,8 +7,8 @@ import { lockManager } from "../utils/LockManager.js";
 import { parseLockTokenHeader } from "../utils/lockUtils.js";
 import { withWebDAVErrorHandling } from "../utils/errorUtils.js";
 import { getStandardWebDAVHeaders } from "../utils/headerUtils.js";
-import { HTTPException } from "hono/http-exception";
 import { ApiStatus, UserType } from "../../constants/index.js";
+import { AppError, ValidationError, ConflictError } from "../../http/errors.js";
 
 /**
  * 处理UNLOCK请求
@@ -27,14 +27,14 @@ export async function handleUnlock(c, path, userId, userType, db) {
     const lockTokenHeader = c.req.header("Lock-Token");
     if (!lockTokenHeader) {
       console.log(`UNLOCK失败 - 路径: ${path}, 缺少Lock-Token头`);
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "缺少Lock-Token头" });
+      throw new ValidationError("缺少Lock-Token头");
     }
 
     // 解析锁令牌
     const token = parseLockTokenHeader(lockTokenHeader);
     if (!token) {
       console.log(`UNLOCK失败 - 路径: ${path}, 无效的Lock-Token格式: ${lockTokenHeader}`);
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "无效的Lock-Token格式" });
+      throw new ValidationError("无效的Lock-Token格式");
     }
 
     console.log(`UNLOCK请求 - 路径: ${path}, 令牌: ${token}`);
@@ -43,7 +43,7 @@ export async function handleUnlock(c, path, userId, userType, db) {
     const lockInfo = lockManager.getLockByToken(token);
     if (!lockInfo) {
       console.log(`UNLOCK失败 - 令牌: ${token}, 锁定不存在或已过期`);
-      throw new HTTPException(ApiStatus.CONFLICT, { message: "锁定不存在或已过期" });
+      throw new ConflictError("锁定不存在或已过期");
     }
 
     // 验证路径匹配
@@ -70,7 +70,7 @@ export async function handleUnlock(c, path, userId, userType, db) {
     const unlocked = lockManager.unlock(token);
     if (!unlocked) {
       console.log(`UNLOCK失败 - 路径: ${path}, 删除锁定失败`);
-      throw new HTTPException(ApiStatus.INTERNAL_ERROR, { message: "删除锁定失败" });
+      throw new AppError("删除锁定失败", { status: ApiStatus.INTERNAL_ERROR, code: "INTERNAL_ERROR", expose: true });
     }
 
     console.log(`UNLOCK成功 - 路径: ${path}, 令牌: ${token}`);

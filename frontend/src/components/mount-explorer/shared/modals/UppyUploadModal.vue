@@ -200,6 +200,8 @@
               </svg>
               <span>{{ isUploading ? t("mount.uppy.uploading") : t("mount.uppy.startUpload") }}</span>
             </button>
+
+            <!-- 使用 Dashboard 官方控件（暂停/恢复/取消） -->
           </div>
         </div>
       </div>
@@ -228,8 +230,6 @@ import { useI18n } from "vue-i18n";
 
 import Uppy from "@uppy/core";
 import Dashboard from "@uppy/dashboard";
-import AwsS3 from "@uppy/aws-s3";
-import XHRUpload from "@uppy/xhr-upload";
 
 // 导入Uppy官方locale
 import ChineseLocale from "@uppy/locales/lib/zh_CN";
@@ -245,11 +245,13 @@ import "@uppy/image-editor/dist/style.min.css";
 import "@uppy/url/dist/style.min.css";
 
 // 导入S3适配器和ServerResumePlugin插件
-import { StorageAdapter } from "../../../../composables/uppy/StorageAdapter.js";
+import AwsS3 from "@uppy/aws-s3";
 import ServerResumePlugin from "../../../../composables/uppy/ServerResumePlugin.js";
-
-// 导入API配置
-import { getFullApiUrl } from "../../../../api/config.js";
+import { api } from "@/api";
+import { useStorageConfigsStore } from "@/stores/storageConfigsStore.js";
+import { STORAGE_STRATEGIES } from "@/drivers/storage/types.js";
+import { resolveDriverByConfigId } from "@/drivers/storage/registry.js";
+import { useUploaderClient } from "@/composables/upload/useUploaderClient.js";
 
 // 导入插件管理器
 import { createUppyPluginManager } from "../../../../composables/uppy/UppyPluginManager.js";
@@ -312,9 +314,104 @@ const selectUploadData = ref({
 // 插件管理器实例
 let pluginManager = null;
 
-// Uppy实例和适配器
+// Uppy实例和驱动适配器句柄
 let uppyInstance = null;
-let storageAdapter = null;
+let fsAdapterHandle = null;
+let fsUploadSession = null;
+
+const disposeFsAdapterHandle = () => {
+  if (fsAdapterHandle?.adapter?.destroy) {
+    try {
+      fsAdapterHandle.adapter.destroy();
+    } catch (error) {
+      console.warn("[Uppy] 清理StorageAdapter失败", error);
+    }
+  }
+  fsAdapterHandle = null;
+};
+
+const disposeFsSession = (shouldCancel = false) => {
+  if (shouldCancel) {
+    try {
+      fsUploadSession?.cancel?.();
+    } catch {}
+  }
+  try {
+    fsUploadSession?.destroy?.();
+  } catch {}
+  fsUploadSession = null;
+};
+
+const storageConfigsStore = useStorageConfigsStore();
+const uploaderClient = useUploaderClient();
+const driverStrategy = ref(STORAGE_STRATEGIES.PRESIGNED_SINGLE);
+const mountsCache = ref([]);
+const mountsLoading = ref(false);
+
+const normalizePath = (path) => {
+  if (!path) return "/";
+  return path.startsWith("/") ? path : `/${path}`;
+};
+
+const getMountRootFromPath = (path) => {
+  const normalized = normalizePath(path);
+  const segments = normalized.split("/").filter(Boolean);
+  if (!segments.length) return null;
+  return `/${segments[0]}`;
+};
+
+const ensureMountsLoaded = async () => {
+  if (mountsCache.value.length || mountsLoading.value) return;
+  mountsLoading.value = true;
+  try {
+    const response = await api.mount.getMountsList();
+    if (response?.data) {
+      mountsCache.value = response.data;
+    }
+  } catch (error) {
+    console.error("[Uppy] 加载挂载列表失败", error);
+  } finally {
+    mountsLoading.value = false;
+  }
+};
+
+const getStorageConfigIdForCurrentPath = async () => {
+  await ensureMountsLoaded();
+  const mountRoot = getMountRootFromPath(props.currentPath);
+  if (!mountRoot) return null;
+  const mount = mountsCache.value.find((item) => item.mount_path === mountRoot);
+  return mount?.storage_config_id || null;
+};
+
+// 确保当前路径对应的 storage_config 已在 store 中可用；必要时按 id 拉取单条配置并 upsert
+const ensureStorageConfigForCurrentPath = async () => {
+  const id = await getStorageConfigIdForCurrentPath();
+  if (!id) throw new Error(t("file.messages.noStorageConfig"));
+
+  // 如果 store 未加载或不包含该 id，尝试加载列表
+  try {
+    if (!storageConfigsStore.hasFreshCache.value) {
+      await storageConfigsStore.loadConfigs();
+    }
+  } catch (e) {
+    // 忽略列表加载错误，尝试按 id 精准加载
+  }
+
+  if (storageConfigsStore.getConfigById(id)) return id;
+
+  // 精准补全：直接按 id 请求并写入 store，兼容 UUID/字符串 id
+  try {
+    const resp = await api.storage.getStorageConfig(id);
+    if (resp?.data) {
+      storageConfigsStore.upsertConfig(resp.data);
+      if (storageConfigsStore.getConfigById(id)) return id;
+    }
+  } catch (e) {
+    // 保持原错误处理
+  }
+
+  throw new Error(`${t("file.messages.noStorageConfig")}: ${id}`);
+};
 
 /**
  * 获取Dashboard插件配置
@@ -360,6 +457,10 @@ const getServerResumeConfig = () => ({
   // 用户选择相关配置
   maxSelectionOptions: 5, // 最多显示5个选项
   showMatchScore: true, // 显示匹配分数
+  // 强制按照当前选择的上传方式判定是否走分片
+  shouldUseMultipart: () => uploadMethod.value === 'multipart',
+  // 通过回调解析 driver 所需的 storage_config_id
+  resolveStorageConfigId: async () => await ensureStorageConfigForCurrentPath(),
 });
 
 // 响应式状态：文件数量
@@ -396,9 +497,6 @@ const togglePlugin = (pluginKey) => {
 const setupUppyCore = () => {
   console.log("[Uppy] 开始初始化");
 
-  // 创建S3适配器
-  storageAdapter = new StorageAdapter(props.currentPath);
-
   // 创建Uppy实例
   uppyInstance = new Uppy({
     id: "new-uppy-dashboard",
@@ -407,9 +505,6 @@ const setupUppyCore = () => {
     debug: import.meta.env.DEV,
     locale: getUppyLocale(), // 根据当前语言动态选择locale
   });
-
-  // 设置StorageAdapter的Uppy实例引用
-  storageAdapter.setUppyInstance(uppyInstance);
 
   // 创建插件管理器
   pluginManager = createUppyPluginManager(uppyInstance, locale.value);
@@ -429,60 +524,35 @@ const configureDashboard = () => {
  * 配置ServerResumePlugin插件
  */
 const configureServerResumePlugin = () => {
-  uppyInstance.use(ServerResumePlugin, getServerResumeConfig());
+  // 仅在分片策略下启用断点续传插件
+  if (uploadMethod.value === 'multipart') {
+    uppyInstance.use(ServerResumePlugin, getServerResumeConfig());
+  }
 };
 
 /**
  * 配置上传方式
  */
-const configureUploadMethod = () => {
-  // 根据上传方式选择不同的插件
-  if (uploadMethod.value === "direct") {
-    // 直接上传模式：使用XHR Upload插件
-    // 设置上传metadata
-    uppyInstance.setMeta({
-      path: props.currentPath,
-      use_multipart: "false",
-    });
+const configureUploadMethod = async () => {
+  // 驱动策略解析
+  driverStrategy.value = strategyMap[uploadMethod.value] || STORAGE_STRATEGIES.S3_BACKEND_DIRECT;
 
-    uppyInstance.use(XHRUpload, {
-      id: "XHRUpload",
-      endpoint: getFullApiUrl("/fs/upload"), //TODO: 移到配置层
-      method: "POST",
-      formData: true,
-      fieldName: "file",
-      allowedMetaFields: ["path", "use_multipart"], // 允许这些metadata字段被发送
-      headers: () => storageAdapter?.getAuthHeaders() || {}, // 委托给业务逻辑层
-      limit: 3,
-      getResponseData: (xhr) => {
-        // 遵循项目中原生XMLHttpRequest的一致模式
-        if (xhr.status >= 200 && xhr.status < 300) {
-          const data = JSON.parse(xhr.responseText);
-          return {
-            uploadURL: data.data?.publicUrl || "",
-          };
-        } else {
-          throw new Error(`上传失败: ${xhr.status} ${xhr.statusText}`);
-        }
-      },
-    });
-  } else {
-    // 预签名URL和分片上传模式：使用AWS S3插件
-    uppyInstance.use(AwsS3, {
-      id: "AwsS3",
-      shouldUseMultipart: (_file) => {
-        // 只根据用户选择来判断是否使用分片上传
-        return uploadMethod.value === "multipart";
-      },
-      limit: 3,
-      getUploadParameters: storageAdapter.getUploadParameters.bind(storageAdapter),
-      createMultipartUpload: storageAdapter.createMultipartUpload.bind(storageAdapter),
-      signPart: storageAdapter.signPart.bind(storageAdapter),
-      completeMultipartUpload: storageAdapter.completeMultipartUpload.bind(storageAdapter),
-      abortMultipartUpload: storageAdapter.abortMultipartUpload.bind(storageAdapter),
-      listParts: storageAdapter.listParts.bind(storageAdapter),
-      uploadPartBytes: storageAdapter.uploadPartBytes.bind(storageAdapter),
-    });
+  try {
+    const storageConfigId = await ensureStorageConfigForCurrentPath();
+    const driver = resolveDriverByConfigId(storageConfigId);
+    if (
+      driver?.fs?.applyFsUploader &&
+      (driverStrategy.value === STORAGE_STRATEGIES.PRESIGNED_SINGLE ||
+        driverStrategy.value === STORAGE_STRATEGIES.PRESIGNED_MULTIPART ||
+        driverStrategy.value === STORAGE_STRATEGIES.S3_BACKEND_DIRECT)
+    ) {
+      disposeFsAdapterHandle();
+      const handle = driver.fs.applyFsUploader(uppyInstance, { strategy: driverStrategy.value, path: props.currentPath });
+      fsAdapterHandle = handle ? { ...handle, mode: handle.mode || driverStrategy.value } : null;
+    }
+  } catch (e) {
+    console.warn('[Uppy] configureUploadMethod 解析驱动失败', e);
+    disposeFsAdapterHandle();
   }
 };
 
@@ -523,13 +593,15 @@ const finalizeSetup = () => {
 const initializeUppy = async () => {
   try {
     // 清理旧实例
-    if (uppyInstance) {
-      // 清理粘贴监听器
-      if (uppyInstance._cleanupPaste) {
-        uppyInstance._cleanupPaste();
+      if (uppyInstance) {
+        disposeFsSession(true);
+        // 清理粘贴监听器
+        if (uppyInstance._cleanupPaste) {
+          uppyInstance._cleanupPaste();
+        }
+        uppyInstance.destroy();
       }
-      uppyInstance.destroy();
-    }
+      disposeFsAdapterHandle();
 
     // 设置核心组件
     setupUppyCore();
@@ -537,14 +609,14 @@ const initializeUppy = async () => {
     // 配置Dashboard插件
     configureDashboard();
 
-    // 配置ServerResumePlugin插件
+    // 先按策略安装上传插件
+    await configureUploadMethod();
+
+    // 分片场景启用 ServerResumePlugin + 对话框事件
     configureServerResumePlugin();
-
-    // 立即设置断点续传对话框事件监听器
-    setupResumeDialogEvents();
-
-    // 配置上传方式
-    configureUploadMethod();
+    if (uploadMethod.value === "multipart") {
+      setupResumeDialogEvents();
+    }
 
     // 完成最终设置
     finalizeSetup();
@@ -611,61 +683,6 @@ const setupFileEvents = () => {
 /**
  * 设置上传相关事件监听器
  */
-const setupUploadEvents = (customPausedFiles) => {
-  uppyInstance
-    .on("upload-pause", (fileID) => {
-      if (fileID) {
-        // 单个文件暂停
-        customPausedFiles.add(fileID);
-        // 同步到StorageAdapter
-        if (storageAdapter) {
-          storageAdapter.setFilePaused(fileID, true);
-        }
-        console.log(`[Uppy] ⏸️ 暂停文件: ${fileID}`);
-      } else {
-        // 全部文件暂停
-        const files = uppyInstance.getFiles();
-        files.forEach((file) => {
-          if (file.progress && file.progress.uploadStarted && !file.progress.uploadComplete) {
-            customPausedFiles.add(file.id);
-            // 同步到StorageAdapter
-            if (storageAdapter) {
-              storageAdapter.setFilePaused(file.id, true);
-            }
-          }
-        });
-        console.log(`[Uppy] ⏸️ 暂停所有文件: ${customPausedFiles.size}个`);
-      }
-    })
-    .on("upload-resume", (fileID) => {
-      if (fileID) {
-        // 单个文件恢复
-        customPausedFiles.delete(fileID);
-        // 同步到StorageAdapter
-        if (storageAdapter) {
-          storageAdapter.setFilePaused(fileID, false);
-        }
-        console.log(`[Uppy] ▶️ 恢复文件: ${fileID}`);
-      } else {
-        // 全部文件恢复
-        customPausedFiles.clear();
-        // 同步到StorageAdapter
-        if (storageAdapter) {
-          const files = uppyInstance.getFiles();
-          files.forEach((file) => {
-            storageAdapter.setFilePaused(file.id, false);
-          });
-        }
-        console.log(`[Uppy] ▶️ 恢复所有文件`);
-      }
-    })
-    .on("upload", () => {
-      console.log("[Uppy] 开始上传");
-      isUploading.value = true;
-      errorMessage.value = "";
-    })
-    .on("complete", handleUploadComplete);
-};
 
 /**
  * 设置错误处理事件监听器
@@ -690,20 +707,14 @@ const handleUploadComplete = async (result) => {
   isUploading.value = false;
 
   if (result.successful.length > 0) {
-    // 处理预签名上传的commit阶段 - 委托给业务逻辑层
-    let commitResults = { failures: [] };
-    if (uploadMethod.value === "presigned" && storageAdapter) {
-      commitResults = await storageAdapter.batchCommitPresignedUploads(result.successful);
-    }
-
     // 发送上传成功事件，触发父组件刷新目录
     emit("upload-success", {
       count: result.successful.length,
-      commitFailures: commitResults.failures,
+      commitFailures: [],
       commitStats: {
-        successCount: commitResults.successCount || 0,
-        failureCount: commitResults.failureCount || 0,
-        totalCount: commitResults.totalCount || 0,
+        successCount: result.successful.length,
+        failureCount: 0,
+        totalCount: result.successful.length,
       },
       results: result.successful.map((file) => ({
         name: file.name,
@@ -733,14 +744,8 @@ const handleUploadComplete = async (result) => {
  */
 const setupEventListeners = () => {
   if (!uppyInstance) return;
-
-  // 自定义暂停/恢复逻辑，替换Uppy内置机制
-  let customPausedFiles = new Set(); // 跟踪自定义暂停的文件
-
-  // 设置各类事件监听器
+  // 仅保留文件添加/移除的 UI 状态同步；上传/错误事件由 Uppy 插件处理
   setupFileEvents();
-  setupUploadEvents(customPausedFiles);
-  setupErrorEvents();
 };
 
 /**
@@ -755,25 +760,127 @@ const updateUploadMethod = () => {
 /**
  * 开始上传
  */
-const startUpload = () => {
-  if (uppyInstance && canStartUpload.value) {
-    // 所有模式都使用Uppy的标准上传流程
-    // XHR Upload插件会自动处理直接上传
-    // AWS S3插件会自动处理预签名URL和分片上传
-    uppyInstance.upload();
+const strategyMap = {
+  direct: STORAGE_STRATEGIES.S3_BACKEND_DIRECT,
+  presigned: STORAGE_STRATEGIES.PRESIGNED_SINGLE,
+  multipart: STORAGE_STRATEGIES.PRESIGNED_MULTIPART,
+};
+
+const runServerResumeCheck = async (files = []) => {
+  const plugin = uppyInstance?.getPlugin?.("ServerResumePlugin");
+  if (!plugin?.prepareUpload || !files.length) return;
+  try {
+    await plugin.prepareUpload(files.map((item) => item.id));
+  } catch (error) {
+    console.warn("[ServerResumePlugin] resume 检查失败", error);
   }
 };
 
-/**
- * 关闭弹窗
- */
+const runFsCommitIfNeeded = async (result) => {
+  if (!result) return;
+  result.failed = result.failed || [];
+  result.successful = result.successful || [];
+  if (!fsAdapterHandle?.adapter || fsAdapterHandle.mode !== STORAGE_STRATEGIES.PRESIGNED_SINGLE) {
+    return;
+  }
+  if (!result.successful.length) {
+    return;
+  }
+
+  try {
+    const summary = await fsAdapterHandle.adapter.batchCommitPresignedUploads(result.successful);
+    const failures = summary?.failures || [];
+    if (!failures.length) {
+      return;
+    }
+
+    const failureMap = new Map();
+    failures.forEach((failure) => {
+      const error = new Error(failure.error || "提交预签名上传失败");
+      failureMap.set(failure.fileId, error);
+    });
+
+    const remaining = [];
+    result.successful.forEach((file) => {
+      const failureError = failureMap.get(file.id);
+      if (failureError) {
+        try {
+          uppyInstance?.emit?.("upload-error", file, failureError);
+        } catch {}
+        result.failed.push({ file, error: failureError });
+      } else {
+        remaining.push(file);
+      }
+    });
+
+    result.successful = remaining;
+  } catch (error) {
+    const failureError = error instanceof Error ? error : new Error(String(error));
+    const failedFiles = result.successful.slice();
+    failedFiles.forEach((file) => {
+      try {
+        uppyInstance?.emit?.("upload-error", file, failureError);
+      } catch {}
+      result.failed.push({ file, error: failureError });
+    });
+    result.successful = [];
+  }
+};
+
+const startUpload = async () => {
+  if (!uppyInstance || !canStartUpload.value || isUploading.value) {
+    return;
+  }
+
+  try {
+    errorMessage.value = "";
+    isUploading.value = true;
+    driverStrategy.value = strategyMap[uploadMethod.value] || STORAGE_STRATEGIES.S3_BACKEND_DIRECT;
+
+    const storageConfigId = await ensureStorageConfigForCurrentPath();
+    await runServerResumeCheck(uppyInstance.getFiles());
+
+    disposeFsSession();
+    fsUploadSession = uploaderClient.createFsUploadSession({
+      storageConfigId,
+      fsOptions: { strategy: driverStrategy.value, path: props.currentPath },
+      uppy: uppyInstance,
+      events: {
+        onError: ({ error }) => {
+          errorMessage.value = error?.message || t("file.messages.uploadFailed");
+        },
+        onComplete: async (result) => {
+          try {
+            await runFsCommitIfNeeded(result);
+            await handleUploadComplete(result);
+          } finally {
+            disposeFsSession();
+          }
+        },
+      },
+    });
+
+    await fsUploadSession.start();
+  } catch (error) {
+    console.error("[Uppy] 上传失败", error);
+    errorMessage.value = error.message || t("file.messages.uploadFailed");
+    emit("upload-error", error);
+    disposeFsSession();
+  } finally {
+    isUploading.value = false;
+  }
+};
+
 const closeModal = () => {
   if (uppyInstance) {
+    uppyInstance.cancelAll?.();
     uppyInstance.clear();
   }
   fileCount.value = 0;
   errorMessage.value = "";
   isUploading.value = false;
+  disposeFsSession(true);
+  disposeFsAdapterHandle();
   emit("close");
 };
 
@@ -782,30 +889,39 @@ watch(
   () => props.isOpen,
   async (newValue) => {
     if (newValue) {
+      await ensureMountsLoaded();
+      // 预热存储配置，提升后续驱动解析命中率
+      try {
+        await storageConfigsStore.loadConfigs();
+      } catch (e) {
+        // 忽略预热失败，由 ensureStorageConfigForCurrentPath 兜底
+      }
       await nextTick();
       await initializeUppy();
-    } else {
-      if (uppyInstance) {
-        // 清理粘贴监听器
-        if (uppyInstance._cleanupPaste) {
-          uppyInstance._cleanupPaste();
-        }
-        uppyInstance.clear();
+    } else if (uppyInstance) {
+      uppyInstance.cancelAll?.();
+      if (uppyInstance._cleanupPaste) {
+        uppyInstance._cleanupPaste();
       }
+      uppyInstance.clear();
       fileCount.value = 0;
       errorMessage.value = "";
       isUploading.value = false;
+      disposeFsSession(true);
+      disposeFsAdapterHandle();
     }
   }
 );
 
-// 监听路径变化
+// 监听路径变化，必要时重新初始化以切换目录
 watch(
   () => props.currentPath,
-  (newPath) => {
-    if (storageAdapter) {
-      storageAdapter.updatePath(newPath);
+  async () => {
+    if (!props.isOpen || !uppyInstance || isUploading.value) {
+      return;
     }
+    disposeFsSession(true);
+    await initializeUppy();
   }
 );
 
@@ -814,6 +930,7 @@ watch(
   () => props.darkMode,
   async () => {
     if (props.isOpen && uppyInstance) {
+      disposeFsSession(true);
       await initializeUppy();
     }
   }
@@ -830,17 +947,18 @@ watch(
     }
     // 如果弹窗打开，重新初始化Uppy以应用新语言
     if (props.isOpen && uppyInstance) {
+      disposeFsSession(true);
       initializeUppy();
     }
   }
 );
 
 // 生命周期
-onMounted(() => {
+onMounted(async () => {
   if (props.isOpen) {
-    nextTick(() => {
-      initializeUppy();
-    });
+    await ensureMountsLoaded();
+    await nextTick();
+    await initializeUppy();
   }
 });
 
@@ -852,9 +970,8 @@ onBeforeUnmount(() => {
     }
     uppyInstance.destroy();
   }
-  if (storageAdapter) {
-    storageAdapter.cleanup();
-  }
+  disposeFsSession(true);
+  disposeFsAdapterHandle();
 });
 
 /**

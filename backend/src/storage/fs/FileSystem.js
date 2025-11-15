@@ -4,7 +4,7 @@
  * 内部根据存储能力选择最优实现
  */
 
-import { HTTPException } from "hono/http-exception";
+import { ValidationError, AuthorizationError, DriverError } from "../../http/errors.js";
 import { ApiStatus } from "../../constants/index.js";
 import { CAPABILITIES } from "../interfaces/capabilities/index.js";
 import { listDirectory as featureListDirectory, getFileInfo as featureGetFileInfo, downloadFile as featureDownloadFile, exists as featureExists } from "./features/read.js";
@@ -301,8 +301,9 @@ export class FileSystem {
   //   const { driver, mount, subPath } = await this.mountManager.getDriverByPath(path, userIdOrInfo, userType);
 
   //   if (!driver.hasCapability(CAPABILITIES.MULTIPART)) {
-  //     throw new HTTPException(ApiStatus.NOT_IMPLEMENTED, {
-  //       message: `存储驱动 ${driver.getType()} 不支持分片上传`,
+  //     throw new DriverError(`存储驱动 ${driver.getType()} 不支持分片上传`, {
+  //       status: ApiStatus.NOT_IMPLEMENTED,
+  //       expose: true,
   //     });
   //   }
 
@@ -332,8 +333,9 @@ export class FileSystem {
   //   const { driver, mount, subPath } = await this.mountManager.getDriverByPath(path, userIdOrInfo, userType);
 
   //   if (!driver.hasCapability(CAPABILITIES.MULTIPART)) {
-  //     throw new HTTPException(ApiStatus.NOT_IMPLEMENTED, {
-  //       message: `存储驱动 ${driver.getType()} 不支持分片上传`,
+  //     throw new DriverError(`存储驱动 ${driver.getType()} 不支持分片上传`, {
+  //       status: ApiStatus.NOT_IMPLEMENTED,
+  //       expose: true,
   //     });
   //   }
 
@@ -365,8 +367,9 @@ export class FileSystem {
   //   const { driver, mount, subPath } = await this.mountManager.getDriverByPath(path, userIdOrInfo, userType);
 
   //   if (!driver.hasCapability(CAPABILITIES.MULTIPART)) {
-  //     throw new HTTPException(ApiStatus.NOT_IMPLEMENTED, {
-  //       message: `存储驱动 ${driver.getType()} 不支持分片上传`,
+  //     throw new DriverError(`存储驱动 ${driver.getType()} 不支持分片上传`, {
+  //       status: ApiStatus.NOT_IMPLEMENTED,
+  //       expose: true,
   //     });
   //   }
 
@@ -451,21 +454,21 @@ export class FileSystem {
 
     // 参数验证
     if (!query || query.trim().length < 2) {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "搜索查询至少需要2个字符" });
+      throw new ValidationError("搜索查询至少需要2个字符");
     }
 
     // 验证搜索范围
     if (!["global", "mount", "directory"].includes(scope)) {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "无效的搜索范围" });
+      throw new ValidationError("无效的搜索范围");
     }
 
     // 验证分页参数
     if (limit < 1 || limit > 200) {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "limit参数必须在1-200之间" });
+      throw new ValidationError("limit参数必须在1-200之间");
     }
 
     if (offset < 0) {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "offset参数不能为负数" });
+      throw new ValidationError("offset参数不能为负数");
     }
 
     // 检查搜索缓存
@@ -492,7 +495,7 @@ export class FileSystem {
           resolvedMounts = [];
         }
       } catch (error) {
-        throw new HTTPException(ApiStatus.INTERNAL_ERROR, { message: "获取可访问挂载失败" });
+        throw new DriverError("获取可访问挂载失败");
       }
     }
 
@@ -510,7 +513,7 @@ export class FileSystem {
     if ((scope === "mount" || scope === "directory") && mountId) {
       targetMounts = resolvedMounts.filter((mount) => mount.id === mountId);
       if (targetMounts.length === 0) {
-        throw new HTTPException(ApiStatus.FORBIDDEN, { message: "没有权限访问指定的挂载点" });
+        throw new AuthorizationError("没有权限访问指定的挂载点");
       }
     }
 

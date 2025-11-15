@@ -1,12 +1,12 @@
 import { Hono } from "hono";
-import { HTTPException } from "hono/http-exception";
+import { ValidationError } from "../http/errors.js";
 import { ApiStatus, UserType } from "../constants/index.js";
 import { usePolicy } from "../security/policies/policies.js";
 import { resolvePrincipal } from "../security/helpers/principal.js";
 import { getEncryptionSecret } from "../utils/environmentUtils.js";
 import { FileShareService } from "../services/fileShareService.js";
 import { useRepositories } from "../utils/repositories.js";
-import { getQueryBool, getQueryInt } from "../utils/common.js";
+import { getQueryBool, getQueryInt, jsonOk } from "../utils/common.js";
 
 const requireFilesAccess = usePolicy("files.manage");
 
@@ -21,7 +21,7 @@ router.put("/api/upload-direct/:filename", requireFilesAccess, async (c) => {
 
   const { filename } = c.req.param();
   if (!filename) {
-    throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "缺少 filename 参数" });
+    throw new ValidationError("缺少 filename 参数");
   }
 
   const principalInfo = resolvePrincipal(c, { allowedTypes: [UserType.ADMIN, UserType.API_KEY] });
@@ -30,7 +30,7 @@ router.put("/api/upload-direct/:filename", requireFilesAccess, async (c) => {
 
   const bodyStream = c.req.raw?.body;
   if (!bodyStream) {
-    throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "请求体为空" });
+    throw new ValidationError("请求体为空");
   }
 
   const declaredLengthHeader = c.req.header("content-length");
@@ -65,7 +65,7 @@ router.put("/api/upload-direct/:filename", requireFilesAccess, async (c) => {
     shareParams
   );
 
-  return c.json({ code: ApiStatus.SUCCESS, message: "文件上传成功", data: result, success: true });
+  return jsonOk(c, result, "文件上传成功");
 });
 
 // 预签名上传（上传即分享）的初始化
@@ -81,7 +81,7 @@ router.post("/api/share/presign", requireFilesAccess, async (c) => {
 
   const { filename, fileSize, contentType, path, storage_config_id } = body || {};
   if (!filename) {
-    throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "缺少 filename" });
+    throw new ValidationError("缺少 filename");
   }
 
   const shareService = new FileShareService(db, encryptionSecret, repositoryFactory);
@@ -96,7 +96,7 @@ router.post("/api/share/presign", requireFilesAccess, async (c) => {
     userType,
   });
 
-  return c.json({ code: ApiStatus.SUCCESS, message: "生成预签名成功", data: presign, success: true });
+  return jsonOk(c, presign, "生成预签名成功");
 });
 
 // 预签名提交（创建分享记录）
@@ -112,14 +112,14 @@ router.post("/api/share/commit", requireFilesAccess, async (c) => {
 
   const { key, storage_config_id, filename, size, etag, slug, remark, password, expires_in, max_views, use_proxy, original_filename } = body || {};
   if (!filename) {
-    throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "缺少 filename" });
+    throw new ValidationError("缺少 filename");
   }
 
   // 新协议：必须 key + storage_config_id
   const finalKey = key || null;
   const finalStorageConfigId = storage_config_id || null;
   if (!finalKey || !finalStorageConfigId) {
-    throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "缺少 key 或 storage_config_id" });
+    throw new ValidationError("缺少 key 或 storage_config_id");
   }
 
   const shareService = new FileShareService(db, encryptionSecret, repositoryFactory);
@@ -142,7 +142,7 @@ router.post("/api/share/commit", requireFilesAccess, async (c) => {
     request: c.req.raw,
   });
 
-  return c.json({ code: ApiStatus.SUCCESS, message: "预签名上传提交成功", data: result, success: true });
+  return jsonOk(c, result, "预签名上传提交成功");
 });
 
 // =============== URL 信息/代理（并入分享上传模块） ===============
@@ -157,21 +157,21 @@ router.post("/api/share/url/info", requireFilesAccess, parseJsonBody, async (c) 
   const body = c.get("jsonBody") || {};
 
   if (!body.url) {
-    throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "缺少URL参数" });
+    throw new ValidationError("缺少URL参数");
   }
 
   const encryptionSecret = getEncryptionSecret(c);
   const { FileShareService } = await import("../services/fileShareService.js");
   const shareService = new FileShareService(db, encryptionSecret);
   const metadata = await shareService.validateUrlMetadata(body.url);
-  return c.json({ code: ApiStatus.SUCCESS, message: "URL验证成功", data: metadata, success: true });
+  return jsonOk(c, metadata, "URL验证成功");
 });
 
 router.get("/api/share/url/proxy", requireFilesAccess, async (c) => {
   const db = c.env.DB;
   const url = c.req.query("url");
   if (!url) {
-    throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "缺少URL参数" });
+    throw new ValidationError("缺少URL参数");
   }
 
   const encryptionSecret = getEncryptionSecret(c);
@@ -189,7 +189,7 @@ router.post("/api/share/url/presign", requireFilesAccess, parseJsonBody, async (
   const body = c.get("jsonBody") || {};
   const { url, path = null, storage_config_id = null } = body;
   if (!url) {
-    throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "缺少URL参数" });
+    throw new ValidationError("缺少URL参数");
   }
 
   const principalInfo = resolvePrincipal(c, { allowedTypes: [UserType.ADMIN, UserType.API_KEY] });
@@ -224,12 +224,7 @@ router.post("/api/share/url/presign", requireFilesAccess, parseJsonBody, async (
     etag: null, // 客户端 PUT 完成后从响应头获取
   };
 
-  return c.json({
-    code: ApiStatus.SUCCESS,
-    message: "URL 预签名生成成功",
-    data: { presign, metadata: meta, commit_suggestion: commitSuggestion },
-    success: true,
-  });
+  return jsonOk(c, { presign, metadata: meta, commit_suggestion: commitSuggestion }, "URL 预签名生成成功");
 });
 
 export default router;

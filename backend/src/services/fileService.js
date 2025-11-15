@@ -10,8 +10,8 @@ import { StorageFactory } from "../storage/factory/StorageFactory.js";
 import { GetFileType, getFileTypeName } from "../utils/fileTypeDetector.js";
 import { validateSlugFormat } from "../utils/common.js";
 import { hashPassword } from "../utils/crypto.js";
-import { HTTPException } from "hono/http-exception";
 import { ApiStatus, DbTables, UserType } from "../constants/index.js";
+import { ValidationError, NotFoundError, AuthorizationError, ConflictError } from "../http/errors.js";
 
 export class FileService {
   /**
@@ -73,17 +73,17 @@ export class FileService {
    * 根据slug获取文件完整信息
    * @param {string} slug - 文件slug
    * @returns {Promise<Object>} 文件对象
-   * @throws {Error} 如果文件不存在
+   * @throws {ValidationError|NotFoundError}
    */
   async getFileBySlug(slug) {
     if (!slug) {
-      throw new Error("缺少文件slug参数");
+      throw new ValidationError("缺少文件slug参数");
     }
 
     const file = await this.fileRepository.findBySlugWithStorageConfig(slug);
 
     if (!file) {
-      throw new Error("文件不存在");
+      throw new NotFoundError("文件不存在");
     }
 
     return file;
@@ -292,7 +292,7 @@ export class FileService {
       // 管理员：可以更新任何文件
       existingFile = await this.fileRepository.findById(fileId);
       if (!existingFile) {
-        throw new HTTPException(ApiStatus.NOT_FOUND, { message: "文件不存在" });
+        throw new NotFoundError("文件不存在");
       }
     } else {
       // API密钥用户：只能更新自己的文件
@@ -301,7 +301,7 @@ export class FileService {
         created_by: `apikey:${userId}`,
       });
       if (!existingFile) {
-        throw new HTTPException(ApiStatus.NOT_FOUND, { message: "文件不存在或无权更新" });
+        throw new NotFoundError("文件不存在或无权更新");
       }
     }
 
@@ -342,7 +342,7 @@ export class FileService {
 
     // 如果没有要更新的字段（API密钥用户需要检查）
     if (userType === UserType.API_KEY && Object.keys(finalUpdateData).length === 0) {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "没有提供有效的更新字段" });
+      throw new ValidationError("没有提供有效的更新字段");
     }
 
     // 添加更新时间
@@ -367,9 +367,7 @@ export class FileService {
   async _validateAndProcessSlug(slug, fileId, userType) {
     // 格式校验：只允许字母、数字、连字符、下划线、点号
     if (slug && !validateSlugFormat(slug)) {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, {
-        message: "链接后缀格式无效，只能使用字母、数字、下划线、横杠和点号",
-      });
+      throw new ValidationError("链接后缀格式无效，只能使用字母、数字、下划线、横杠和点号");
     }
 
     // 检查slug是否可用 (不与其他文件冲突)
@@ -377,16 +375,12 @@ export class FileService {
     if (userType === UserType.ADMIN) {
       slugExistsCheck = await this.fileRepository.findBySlug(slug);
       if (slugExistsCheck && slugExistsCheck.id !== fileId) {
-        throw new HTTPException(ApiStatus.CONFLICT, {
-          message: "此链接后缀已被其他文件使用",
-        });
+        throw new ConflictError("此链接后缀已被其他文件使用");
       }
     } else {
       slugExistsCheck = await this.fileRepository.findBySlugExcludingId(slug, fileId);
       if (slugExistsCheck) {
-        throw new HTTPException(ApiStatus.CONFLICT, {
-          message: "此链接后缀已被其他文件使用",
-        });
+        throw new ConflictError("此链接后缀已被其他文件使用");
       }
     }
   }
@@ -481,7 +475,7 @@ export class FileService {
     // 获取文件详情
     const file = await this.fileRepository.findByIdWithStorageConfig(fileId);
     if (!file) {
-      throw new Error("文件不存在");
+      throw new NotFoundError("文件不存在");
     }
 
     // 生成文件下载URL
@@ -647,12 +641,12 @@ export class FileService {
     // 获取文件详情
     const file = await this.fileRepository.findByIdWithStorageConfig(fileId);
     if (!file) {
-      throw new Error("文件不存在");
+      throw new NotFoundError("文件不存在");
     }
 
     // 检查权限：确保文件属于该API密钥用户
     if (file.created_by !== `apikey:${apiKeyId}`) {
-      throw new Error("没有权限查看此文件");
+      throw new AuthorizationError("没有权限查看此文件");
     }
 
     // 生成文件下载URL

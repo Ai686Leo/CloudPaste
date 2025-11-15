@@ -37,6 +37,84 @@ export class ValidationError extends AppError {
   }
 }
 
+// 认证失败
+export class AuthenticationError extends AppError {
+  constructor(message = "未授权", details = null) {
+    super(message, { status: ApiStatus.UNAUTHORIZED, code: "UNAUTHORIZED", expose: true, details });
+    this.name = "AuthenticationError";
+  }
+}
+
+// 权限不足
+export class AuthorizationError extends AppError {
+  constructor(message = "权限不足", details = null) {
+    super(message, { status: ApiStatus.FORBIDDEN, code: "FORBIDDEN", expose: true, details });
+    this.name = "AuthorizationError";
+  }
+}
+
+// 资源不存在
+export class NotFoundError extends AppError {
+  constructor(message = "资源不存在", details = null) {
+    super(message, { status: ApiStatus.NOT_FOUND, code: "NOT_FOUND", expose: true, details });
+    this.name = "NotFoundError";
+  }
+}
+
+// 资源冲突
+export class ConflictError extends AppError {
+  constructor(message = "资源冲突", details = null) {
+    super(message, { status: ApiStatus.CONFLICT, code: "CONFLICT", expose: true, details });
+    this.name = "ConflictError";
+  }
+}
+
+// 仓储/数据访问层错误
+export class RepositoryError extends AppError {
+  constructor(message = "数据访问错误", details = null) {
+    super(message, { status: ApiStatus.INTERNAL_ERROR, code: "REPOSITORY_ERROR", expose: false, details });
+    this.name = "RepositoryError";
+  }
+}
+
+// 外部驱动/上游服务错误
+export class DriverError extends AppError {
+  /**
+   * @param {string} message
+   * @param {object|any} optionsOrDetails - 可传 { status?, code?, expose?, details? } 或直接 details 对象
+   */
+  constructor(message = "外部服务错误", optionsOrDetails = null) {
+    let status = ApiStatus.INTERNAL_ERROR;
+    let code = "DRIVER_ERROR";
+    let expose = false;
+    let details = null;
+    if (optionsOrDetails && typeof optionsOrDetails === "object" && ("status" in optionsOrDetails || "code" in optionsOrDetails || "expose" in optionsOrDetails || "details" in optionsOrDetails)) {
+      status = optionsOrDetails.status ?? status;
+      code = optionsOrDetails.code ?? code;
+      expose = optionsOrDetails.expose ?? expose;
+      details = optionsOrDetails.details ?? null;
+    } else {
+      details = optionsOrDetails;
+    }
+    super(message, { status, code, expose, details });
+    this.name = "DriverError";
+  }
+}
+
+export class S3DriverError extends DriverError {
+  /**
+   * @param {string} message
+   * @param {object|any} optionsOrDetails - 同 DriverError，可覆盖 code/status 等
+   */
+  constructor(message = "外部服务错误", optionsOrDetails = null) {
+    const opts = (optionsOrDetails && typeof optionsOrDetails === "object" && ("status" in optionsOrDetails || "code" in optionsOrDetails || "expose" in optionsOrDetails || "details" in optionsOrDetails))
+      ? { ...optionsOrDetails, code: optionsOrDetails.code ?? "DRIVER_ERROR.S3" }
+      : { details: optionsOrDetails, code: "DRIVER_ERROR.S3" };
+    super(message, opts);
+    this.name = "S3DriverError";
+  }
+}
+
 //  maskSensitiveValue 用于 mask 敏感信息
 export const maskSensitiveValue = (value) => {
   if (!value || typeof value !== "string") {
@@ -94,4 +172,18 @@ export const normalizeError = (error, context = {}) => {
     originalError: error,
     context,
   };
+};
+
+// 断言辅助：条件不满足即抛出给定 AppError 实例
+export const assert = (condition, errorInstance) => {
+  if (!condition) throw errorInstance;
+};
+
+// 包装外部异步调用为统一的 DriverError（或其子类）
+export const wrapAsync = async (fn, details = {}) => {
+  try {
+    return await fn();
+  } catch (e) {
+    throw new DriverError("外部服务调用失败", { cause: e?.message, ...details });
+  }
 };

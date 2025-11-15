@@ -2,7 +2,7 @@
  * 存储挂载配置服务
  */
 import { ApiStatus } from "../constants/index.js";
-import { HTTPException } from "hono/http-exception";
+import { ValidationError, ConflictError, NotFoundError, AuthorizationError } from "../http/errors.js";
 import { generateUUID } from "../utils/common.js";
 import { MountRepository, StorageConfigRepository } from "../repositories/index.js";
 import { invalidateFsCache } from "../cache/invalidation.js";
@@ -52,14 +52,14 @@ class MountService {
    * 验证挂载点数据
    * @param {Object} mountData - 挂载点数据
    * @param {string} creatorId - 创建者ID
-   * @throws {HTTPException} 400 - 参数错误
+   * @throws {ValidationError} 参数错误
    */
   async validateMountData(mountData, creatorId) {
     // 验证必填字段
     const requiredFields = ["name", "storage_type", "mount_path"];
     for (const field of requiredFields) {
       if (!mountData[field]) {
-        throw new HTTPException(ApiStatus.BAD_REQUEST, { message: `缺少必填字段: ${field}` });
+        throw new ValidationError(`缺少必填字段: ${field}`);
       }
     }
 
@@ -69,14 +69,14 @@ class MountService {
     // 检查挂载路径是否已存在
     const existingMount = await this.mountRepository.findByMountPath(mountData.mount_path);
     if (existingMount) {
-      throw new HTTPException(ApiStatus.CONFLICT, { message: "挂载路径已被使用" });
+      throw new ConflictError("挂载路径已被使用");
     }
 
     // 如绑定了存储配置，验证配置是否存在（通用存储）
     if (mountData.storage_config_id) {
       const cfg = await this.storageConfigRepository.findById(mountData.storage_config_id);
       if (!cfg) {
-        throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "指定的存储配置不存在" });
+        throw new ValidationError("指定的存储配置不存在");
       }
       console.log(`创建挂载点: ${mountData.name}, 类型: ${mountData.storage_type}, 使用存储配置ID: ${mountData.storage_config_id}`);
     } else {
@@ -87,25 +87,25 @@ class MountService {
   /**
    * 验证挂载路径格式
    * @param {string} mountPath - 挂载路径
-   * @throws {HTTPException} 400 - 路径格式错误
+   * @throws {ValidationError} 路径格式错误
    */
   validateMountPath(mountPath) {
     if (!mountPath.startsWith("/")) {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "挂载路径必须以 / 开头" });
+      throw new ValidationError("挂载路径必须以 / 开头");
     }
 
     if (mountPath.includes("//")) {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "挂载路径不能包含连续的 /" });
+      throw new ValidationError("挂载路径不能包含连续的 /");
     }
 
     if (mountPath.length > 1 && mountPath.endsWith("/")) {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "挂载路径不能以 / 结尾（根路径除外）" });
+      throw new ValidationError("挂载路径不能以 / 结尾（根路径除外）");
     }
 
     // 检查是否包含非法字符
     const invalidChars = /[<>:"|?*\x00-\x1f]/;
     if (invalidChars.test(mountPath)) {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "挂载路径包含非法字符" });
+      throw new ValidationError("挂载路径包含非法字符");
     }
   }
 
@@ -114,7 +114,7 @@ class MountService {
    * @param {Object} mountData - 挂载点数据
    * @param {string} creatorId - 创建者ID
    * @returns {Promise<Object>} 创建的挂载点完整信息
-   * @throws {HTTPException} 400/409 - 参数错误或冲突
+   * @throws {ValidationError|ConflictError} 参数错误或冲突
    */
   async createMount(mountData, creatorId) {
     // 验证挂载点数据
@@ -166,18 +166,18 @@ class MountService {
    * @param {string} updaterId - 更新者ID
    * @param {boolean} isAdmin - 是否为管理员操作
    * @returns {Promise<Object>} 更新后的挂载点信息
-   * @throws {HTTPException} 404/400/409 - 不存在、参数错误或冲突
+   * @throws {NotFoundError|ValidationError|ConflictError} 不存在、参数错误或冲突
    */
   async updateMount(mountId, updateData, updaterId, isAdmin = false) {
     // 检查挂载点是否存在
     const existingMount = await this.mountRepository.findById(mountId);
     if (!existingMount) {
-      throw new HTTPException(ApiStatus.NOT_FOUND, { message: "挂载点不存在" });
+      throw new NotFoundError("挂载点不存在");
     }
 
     // 权限检查：非管理员只能修改自己创建的挂载点
     if (!isAdmin && existingMount.created_by !== updaterId) {
-      throw new HTTPException(ApiStatus.FORBIDDEN, { message: "没有权限修改此挂载点" });
+      throw new AuthorizationError("没有权限修改此挂载点");
     }
 
     // 如果更新挂载路径，需要验证
@@ -187,7 +187,7 @@ class MountService {
       // 检查新路径是否已被其他挂载点使用
       const pathExists = await this.mountRepository.existsByMountPath(updateData.mount_path, mountId);
       if (pathExists) {
-        throw new HTTPException(ApiStatus.CONFLICT, { message: "挂载路径已被使用" });
+        throw new ConflictError("挂载路径已被使用");
       }
     }
 
@@ -195,7 +195,7 @@ class MountService {
     if (updateData.storage_config_id && updateData.storage_config_id !== existingMount.storage_config_id) {
       const cfg = await this.storageConfigRepository.findById(updateData.storage_config_id);
       if (!cfg) {
-        throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "指定的存储配置不存在" });
+        throw new ValidationError("指定的存储配置不存在");
       }
     }
 
@@ -215,18 +215,18 @@ class MountService {
    * @param {string} deleterId - 删除者ID
    * @param {boolean} isAdmin - 是否为管理员操作
    * @returns {Promise<Object>} 删除结果
-   * @throws {HTTPException} 404 - 挂载点不存在
+   * @throws {NotFoundError} 挂载点不存在
    */
   async deleteMount(mountId, deleterId, isAdmin = false) {
     // 检查挂载点是否存在
     const existingMount = await this.mountRepository.findById(mountId);
     if (!existingMount) {
-      throw new HTTPException(ApiStatus.NOT_FOUND, { message: "挂载点不存在" });
+      throw new NotFoundError("挂载点不存在");
     }
 
     // 权限检查：非管理员只能删除自己创建的挂载点
     if (!isAdmin && existingMount.created_by !== deleterId) {
-      throw new HTTPException(ApiStatus.FORBIDDEN, { message: "没有权限删除此挂载点" });
+      throw new AuthorizationError("没有权限删除此挂载点");
     }
 
     // 删除挂载点
@@ -294,8 +294,8 @@ export async function getAllMounts(db, includeInactive = true) {
  * @param {number|null} [mountData.sign_expires=null] - 签名过期时间（秒），null表示使用全局设置
  * @param {string} creatorId - 创建者ID
  * @returns {Promise<Object>} 创建的挂载点完整信息
- * @throws {HTTPException} 400 - 参数错误，包括缺少必填字段、路径格式错误等
- * @throws {HTTPException} 409 - 挂载路径已存在冲突
+ * @throws {ValidationError} 参数错误，包括缺少必填字段、路径格式错误等
+ * @throws {ConflictError} 挂载路径已存在冲突
  * @throws {Error} 数据库操作错误
  */
 export async function createMount(db, mountData, creatorId) {
@@ -323,9 +323,9 @@ export async function createMount(db, mountData, creatorId) {
  * @param {string} creatorId - 创建者ID或管理员ID
  * @param {boolean} isAdmin - 是否为管理员操作，为true时不检查创建者
  * @returns {Promise<void>}
- * @throws {HTTPException} 400 - 参数错误，包括路径格式错误、S3配置不存在等
- * @throws {HTTPException} 404 - 挂载点不存在或无权限修改
- * @throws {HTTPException} 409 - 挂载路径已存在冲突
+ * @throws {ValidationError} 参数错误，包括路径格式错误、S3配置不存在等
+ * @throws {NotFoundError|AuthorizationError} 挂载点不存在或无权限修改
+ * @throws {ConflictError} 挂载路径已存在冲突
  * @throws {Error} 数据库操作错误
  */
 export async function updateMount(db, id, updateData, creatorId, isAdmin = false) {
@@ -340,7 +340,7 @@ export async function updateMount(db, id, updateData, creatorId, isAdmin = false
  * @param {string} creatorId - 创建者ID或管理员ID
  * @param {boolean} isAdmin - 是否为管理员操作，为true时不检查创建者
  * @returns {Promise<void>}
- * @throws {HTTPException} 404 - 挂载点不存在或无权限删除
+ * @throws {NotFoundError|AuthorizationError} 挂载点不存在或无权限删除
  * @throws {Error} 数据库操作错误
  */
 export async function deleteMount(db, id, creatorId, isAdmin = false) {

@@ -1,4 +1,4 @@
-import { HTTPException } from "hono/http-exception";
+import { DriverError } from "../../../http/errors.js";
 import { ApiStatus } from "../../../constants/index.js";
 import { CAPABILITIES } from "../../interfaces/capabilities/index.js";
 
@@ -6,8 +6,10 @@ export async function uploadFile(fs, path, file, userIdOrInfo, userType, options
   const { driver, mount, subPath } = await fs.mountManager.getDriverByPath(path, userIdOrInfo, userType);
 
   if (!driver.hasCapability(CAPABILITIES.WRITER)) {
-    throw new HTTPException(ApiStatus.NOT_IMPLEMENTED, {
-      message: `存储驱动 ${driver.getType()} 不支持写入操作`,
+    throw new DriverError(`存储驱动 ${driver.getType()} 不支持写入操作`, {
+      status: ApiStatus.NOT_IMPLEMENTED,
+      code: "DRIVER_ERROR.NOT_IMPLEMENTED",
+      expose: true,
     });
   }
 
@@ -28,14 +30,18 @@ export async function uploadStream(fs, path, stream, userIdOrInfo, userType, opt
   const { driver, mount, subPath } = await fs.mountManager.getDriverByPath(path, userIdOrInfo, userType);
 
   if (!driver.hasCapability(CAPABILITIES.WRITER)) {
-    throw new HTTPException(ApiStatus.NOT_IMPLEMENTED, {
-      message: `存储驱动 ${driver.getType()} 不支持写入操作`,
+    throw new DriverError(`存储驱动 ${driver.getType()} 不支持写入操作`, {
+      status: ApiStatus.NOT_IMPLEMENTED,
+      code: "DRIVER_ERROR.NOT_IMPLEMENTED",
+      expose: true,
     });
   }
 
   if (!driver.uploadStream) {
-    throw new HTTPException(ApiStatus.NOT_IMPLEMENTED, {
-      message: `存储驱动 ${driver.getType()} 不支持流式上传`,
+    throw new DriverError(`存储驱动 ${driver.getType()} 不支持流式上传`, {
+      status: ApiStatus.NOT_IMPLEMENTED,
+      code: "DRIVER_ERROR.NOT_IMPLEMENTED",
+      expose: true,
     });
   }
 
@@ -66,8 +72,10 @@ export async function createDirectory(fs, path, userIdOrInfo, userType) {
   const { driver, mount, subPath } = await fs.mountManager.getDriverByPath(path, userIdOrInfo, userType);
 
   if (!driver.hasCapability(CAPABILITIES.WRITER)) {
-    throw new HTTPException(ApiStatus.NOT_IMPLEMENTED, {
-      message: `存储驱动 ${driver.getType()} 不支持写入操作`,
+    throw new DriverError(`存储驱动 ${driver.getType()} 不支持写入操作`, {
+      status: ApiStatus.NOT_IMPLEMENTED,
+      code: "DRIVER_ERROR.NOT_IMPLEMENTED",
+      expose: true,
     });
   }
 
@@ -85,8 +93,10 @@ export async function updateFile(fs, path, content, userIdOrInfo, userType) {
   const { driver, mount, subPath } = await fs.mountManager.getDriverByPath(path, userIdOrInfo, userType);
 
   if (!driver.hasCapability(CAPABILITIES.WRITER)) {
-    throw new HTTPException(ApiStatus.NOT_IMPLEMENTED, {
-      message: `存储驱动 ${driver.getType()} 不支持写入操作`,
+    throw new DriverError(`存储驱动 ${driver.getType()} 不支持写入操作`, {
+      status: ApiStatus.NOT_IMPLEMENTED,
+      code: "DRIVER_ERROR.NOT_IMPLEMENTED",
+      expose: true,
     });
   }
 
@@ -101,4 +111,5 @@ export async function updateFile(fs, path, content, userIdOrInfo, userType) {
   fs.emitCacheInvalidation({ mount, paths: [path], reason: "update-file" });
   return result;
 }
+
 

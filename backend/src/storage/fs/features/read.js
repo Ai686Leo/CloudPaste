@@ -1,4 +1,4 @@
-import { HTTPException } from "hono/http-exception";
+import { DriverError } from "../../../http/errors.js";
 import { ApiStatus } from "../../../constants/index.js";
 import { CAPABILITIES } from "../../interfaces/capabilities/index.js";
 
@@ -6,7 +6,11 @@ export async function listDirectory(fs, path, userIdOrInfo, userType, options = 
   const { driver, mount, subPath } = await fs.mountManager.getDriverByPath(path, userIdOrInfo, userType);
 
   if (!driver.hasCapability(CAPABILITIES.READER)) {
-    throw new HTTPException(ApiStatus.NOT_IMPLEMENTED, { message: `存储驱动 ${driver.getType()} 不支持读取操作` });
+    throw new DriverError(`存储驱动 ${driver.getType()} 不支持读取操作`, {
+      status: ApiStatus.NOT_IMPLEMENTED,
+      code: "DRIVER_ERROR.NOT_IMPLEMENTED",
+      expose: true,
+    });
   }
 
   return await driver.listDirectory(path, {
@@ -21,7 +25,11 @@ export async function getFileInfo(fs, path, userIdOrInfo, userType, request = nu
   const { driver, mount, subPath } = await fs.mountManager.getDriverByPath(path, userIdOrInfo, userType);
 
   if (!driver.hasCapability(CAPABILITIES.READER)) {
-    throw new HTTPException(ApiStatus.NOT_IMPLEMENTED, { message: `存储驱动 ${driver.getType()} 不支持读取操作` });
+    throw new DriverError(`存储驱动 ${driver.getType()} 不支持读取操作`, {
+      status: ApiStatus.NOT_IMPLEMENTED,
+      code: "DRIVER_ERROR.NOT_IMPLEMENTED",
+      expose: true,
+    });
   }
 
   return await driver.getFileInfo(path, {
@@ -38,7 +46,11 @@ export async function downloadFile(fs, path, fileName, request, userIdOrInfo, us
   const { driver, mount, subPath } = await fs.mountManager.getDriverByPath(path, userIdOrInfo, userType);
 
   if (!driver.hasCapability(CAPABILITIES.READER)) {
-    throw new HTTPException(ApiStatus.NOT_IMPLEMENTED, { message: `存储驱动 ${driver.getType()} 不支持读取操作` });
+    throw new DriverError(`存储驱动 ${driver.getType()} 不支持读取操作`, {
+      status: ApiStatus.NOT_IMPLEMENTED,
+      code: "DRIVER_ERROR.NOT_IMPLEMENTED",
+      expose: true,
+    });
   }
 
   return await driver.downloadFile(path, {
@@ -61,4 +73,5 @@ export async function exists(fs, path, userIdOrInfo, userType) {
     userType,
   });
 }
+
 

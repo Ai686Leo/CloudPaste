@@ -24,6 +24,9 @@ import { useSelection } from "./ui-interaction/useSelection.js";
 import { useUIState } from "./ui-interaction/useUIState.js";
 import { useGalleryView } from "./ui-interaction/useGalleryView.js";
 import { usePhotoSwipe } from "./ui-interaction/usePhotoSwipe.js";
+import { useShareSettingsForm } from "./upload/useShareSettingsForm.js";
+import { useUploadQueue } from "./upload/useUploadQueue.js";
+import { useUploaderClient } from "./upload/useUploaderClient.js";
 
 // 重新导出所有功能
 export {
@@ -40,6 +43,9 @@ export {
   useUIState,
   useGalleryView,
   usePhotoSwipe,
+  useShareSettingsForm,
+  useUploadQueue,
+  useUploaderClient,
 };
 
 // ===== 便捷的聚合导出 =====
@@ -160,6 +166,9 @@ export default {
   useUIState,
   useGalleryView,
   usePhotoSwipe,
+  useShareSettingsForm,
+  useUploadQueue,
+  useUploaderClient,
 
   // 聚合对象
   FilePreviewComposables,

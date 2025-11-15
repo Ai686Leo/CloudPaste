@@ -2,6 +2,7 @@
  * 通用预签名/公共URL缓存管理器
  */
 import { BaseCache } from "./BaseCache.js";
+import { ValidationError } from "../http/errors.js";
 
 class UrlCacheManager extends BaseCache {
   constructor(options = {}) {
@@ -19,7 +20,7 @@ class UrlCacheManager extends BaseCache {
 
   generateKey(storageConfigId, storagePath, forceDownload, userType, userId) {
     if (!storageConfigId || !storagePath || !userType || !userId) {
-      throw new Error(`缓存键生成失败：缺少必要参数 storageConfigId=${storageConfigId}, storagePath=${storagePath}, userType=${userType}, userId=${userId}`);
+      throw new ValidationError(`缓存键生成失败：缺少必要参数 storageConfigId=${storageConfigId}, storagePath=${storagePath}, userType=${userType}, userId=${userId}`);
     }
     const userScope = `${userType}:${userId}`;
     const downloadFlag = forceDownload ? "dl" : "pv";
@@ -122,4 +123,3 @@ export async function clearUrlCache(options = {}) {
 }
 
 export { urlCacheManager, UrlCacheManager };
-

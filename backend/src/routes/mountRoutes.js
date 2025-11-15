@@ -4,6 +4,7 @@
 import { Hono } from "hono";
 import { createMount, updateMount, deleteMount, getAllMounts } from "../services/storageMountService.js";
 import { ApiStatus, UserType } from "../constants/index.js";
+import { jsonOk, jsonCreated } from "../utils/common.js";
 import { usePolicy } from "../security/policies/policies.js";
 import { resolvePrincipal } from "../security/helpers/principal.js";
 import { getAccessibleMountsForUser } from "../security/helpers/access.js";
@@ -26,22 +27,12 @@ mountRoutes.get("/api/mount/list", requireMountView, async (c) => {
   if (identity.isAdmin) {
     const mounts = await getAllMounts(db, true);
 
-    return c.json({
-      code: ApiStatus.SUCCESS,
-      message: "获取挂载点列表成功",
-      data: mounts,
-      success: true,
-    });
+    return jsonOk(c, mounts, "获取挂载点列表成功");
   }
 
   const mounts = await getAccessibleMountsForUser(db, identity.apiKeyInfo, UserType.API_KEY);
 
-  return c.json({
-    code: ApiStatus.SUCCESS,
-    message: "获取挂载点列表成功",
-    data: mounts,
-    success: true,
-  });
+  return jsonOk(c, mounts, "获取挂载点列表成功");
 });
 
 /**
@@ -54,12 +45,7 @@ mountRoutes.post("/api/mount/create", requireAdmin, async (c) => {
   const body = await c.req.json();
   const mount = await createMount(db, body, adminId);
 
-  return c.json({
-    code: ApiStatus.CREATED,
-    message: "挂载点创建成功",
-    data: mount,
-    success: true,
-  });
+  return jsonCreated(c, mount, "挂载点创建成功");
 });
 
 /**
@@ -73,11 +59,7 @@ mountRoutes.put("/api/mount/:id", requireAdmin, async (c) => {
   const body = await c.req.json();
   await updateMount(db, id, body, adminId, true);
 
-  return c.json({
-    code: ApiStatus.SUCCESS,
-    message: "挂载点已更新",
-    success: true,
-  });
+  return jsonOk(c, undefined, "挂载点已更新");
 });
 
 /**
@@ -90,11 +72,7 @@ mountRoutes.delete("/api/mount/:id", requireAdmin, async (c) => {
 
   await deleteMount(db, id, adminId, true);
 
-  return c.json({
-    code: ApiStatus.SUCCESS,
-    message: "挂载点删除成功",
-    success: true,
-  });
+  return jsonOk(c, undefined, "挂载点删除成功");
 });
 
 export default mountRoutes;

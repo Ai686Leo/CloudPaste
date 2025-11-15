@@ -3,8 +3,8 @@
  * 负责批量操作：批量删除、批量复制、批量移动等
  */
 
-import { HTTPException } from "hono/http-exception";
 import { ApiStatus } from "../../../../constants/index.js";
+import { AppError, ValidationError, NotFoundError, ConflictError, AuthenticationError, AuthorizationError, S3DriverError } from "../../../../http/errors.js";
 import { S3Client, DeleteObjectCommand, CopyObjectCommand, ListObjectsV2Command, HeadObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { normalizeS3SubPath } from "../utils/S3PathUtils.js";
 import { updateMountLastUsed } from "../../../fs/utils/MountResolver.js";
@@ -36,6 +36,23 @@ export class S3BatchOperations {
     this.config = config;
     this.encryptionSecret = encryptionSecret;
     this.db = db;
+  }
+
+  _errorFromStatus(status, message) {
+    switch (status) {
+      case ApiStatus.BAD_REQUEST:
+        return new ValidationError(message);
+      case ApiStatus.UNAUTHORIZED:
+        return new AuthenticationError(message);
+      case ApiStatus.FORBIDDEN:
+        return new AuthorizationError(message);
+      case ApiStatus.NOT_FOUND:
+        return new NotFoundError(message);
+      case ApiStatus.CONFLICT:
+        return new ConflictError(message);
+      default:
+        return new S3DriverError(message);
+    }
   }
 
   /**
@@ -215,19 +232,19 @@ export class S3BatchOperations {
 
         // 对于文件复制，确保目标路径也是文件路径格式
         if (!sourceIsDirectory && targetIsDirectory) {
-          throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "复制文件时，目标路径不能是目录格式" });
+          throw new ValidationError("复制文件时，目标路径不能是目录格式");
         }
 
         // 查找源路径挂载点
         const sourceMountResult = await findMountPointByPath(db, sourcePath, userIdOrInfo, userType);
         if (sourceMountResult.error) {
-          throw new HTTPException(sourceMountResult.error.status, { message: sourceMountResult.error.message });
+          throw this._errorFromStatus(sourceMountResult.error.status, sourceMountResult.error.message);
         }
 
         // 查找目标路径挂载点
         const targetMountResult = await findMountPointByPath(db, targetPath, userIdOrInfo, userType);
         if (targetMountResult.error) {
-          throw new HTTPException(targetMountResult.error.status, { message: targetMountResult.error.message });
+          throw this._errorFromStatus(targetMountResult.error.status, targetMountResult.error.message);
         }
 
         const { mount: sourceMount, subPath: sourceSubPath } = sourceMountResult;
@@ -371,17 +388,17 @@ export class S3BatchOperations {
 
           // 如果没有内容，说明目录不存在或为空
           if (!listResponse.Contents || listResponse.Contents.length === 0) {
-            throw new HTTPException(ApiStatus.NOT_FOUND, { message: "源路径不存在或为空目录" });
+            throw new NotFoundError("源路径不存在或为空目录");
           }
         } else {
-          throw new HTTPException(ApiStatus.NOT_FOUND, { message: "源文件不存在" });
+          throw new NotFoundError("源文件不存在");
         }
       }
     } catch (error) {
-      if (error instanceof HTTPException) {
+      if (error instanceof AppError) {
         throw error;
       }
-      throw new HTTPException(ApiStatus.INTERNAL_ERROR, { message: "检查源路径存在性失败: " + error.message });
+      throw new S3DriverError("检查源路径存在性失败", { details: { cause: error?.message } });
     }
 
     if (isDirectory) {
@@ -437,7 +454,7 @@ export class S3BatchOperations {
           } catch (dirError) {
             console.error(`复制操作: 创建目标父目录 "${parentPath}" 失败:`, dirError);
             // 如果创建目录失败，才抛出错误
-            throw new HTTPException(ApiStatus.CONFLICT, { message: `无法创建目标父目录: ${dirError.message}` });
+          throw new ConflictError(`无法创建目标父目录: ${dirError.message}`);
           }
         }
       }
@@ -689,19 +706,19 @@ export class S3BatchOperations {
 
         // 对于文件复制，确保目标路径也是文件路径格式
         if (!sourceIsDirectory && targetIsDirectory) {
-          throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "复制文件时，目标路径不能是目录格式" });
+          throw new ValidationError("复制文件时，目标路径不能是目录格式");
         }
 
         // 查找源路径挂载点
         const sourceMountResult = await findMountPointByPath(db, sourcePath, userIdOrInfo, userType);
         if (sourceMountResult.error) {
-          throw new HTTPException(sourceMountResult.error.status, { message: sourceMountResult.error.message });
+          throw this._errorFromStatus(sourceMountResult.error.status, sourceMountResult.error.message);
         }
 
         // 查找目标路径挂载点
         const targetMountResult = await findMountPointByPath(db, targetPath, userIdOrInfo, userType);
         if (targetMountResult.error) {
-          throw new HTTPException(targetMountResult.error.status, { message: targetMountResult.error.message });
+          throw this._errorFromStatus(targetMountResult.error.status, targetMountResult.error.message);
         }
 
         const { mount: sourceMount, subPath: sourceSubPath } = sourceMountResult;
@@ -731,17 +748,17 @@ export class S3BatchOperations {
 
               // 如果没有内容，说明目录不存在或为空
               if (!listResponse.Contents || listResponse.Contents.length === 0) {
-                throw new HTTPException(ApiStatus.NOT_FOUND, { message: "源路径不存在或为空目录" });
+                throw new NotFoundError("源路径不存在或为空目录");
               }
             } else {
-              throw new HTTPException(ApiStatus.NOT_FOUND, { message: "源文件不存在" });
+              throw new NotFoundError("源文件不存在");
             }
           }
         } catch (error) {
-          if (error instanceof HTTPException) {
+          if (error instanceof AppError) {
             throw error;
           }
-          throw new HTTPException(ApiStatus.INTERNAL_ERROR, { message: "检查源路径存在性失败: " + error.message });
+          throw new S3DriverError("检查源路径存在性失败", { details: { cause: error?.message } });
         }
 
         if (isDirectory) {
@@ -931,13 +948,13 @@ export class S3BatchOperations {
         const newIsDirectory = newPath.endsWith("/");
 
         if (oldIsDirectory !== newIsDirectory) {
-          throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "源路径和目标路径类型必须一致（文件或目录）" });
+          throw new ValidationError("源路径和目标路径类型必须一致（文件或目录）");
         }
 
         // 查找挂载点
         const mountResult = await findMountPointByPath(db, oldPath, userIdOrInfo, userType);
         if (mountResult.error) {
-          throw new HTTPException(mountResult.error.status, { message: mountResult.error.message });
+          throw this._errorFromStatus(mountResult.error.status, mountResult.error.message);
         }
 
         const { mount, subPath: oldSubPath } = mountResult;
@@ -945,7 +962,7 @@ export class S3BatchOperations {
         // 检查新路径是否在同一挂载点
         const newMountResult = await findMountPointByPath(db, newPath, userIdOrInfo, userType);
         if (newMountResult.error || newMountResult.mount.id !== mount.id) {
-          throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "重命名操作必须在同一挂载点内进行" });
+          throw new ValidationError("重命名操作必须在同一挂载点内进行");
         }
 
         const { subPath: newSubPath } = newMountResult;
@@ -965,7 +982,7 @@ export class S3BatchOperations {
           : await this._checkItemExists(s3Config.bucket_name, fullOldS3Path);
 
         if (!sourceExists) {
-          throw new HTTPException(ApiStatus.NOT_FOUND, { message: "源文件或目录不存在" });
+          throw new NotFoundError("源文件或目录不存在");
         }
 
         // 检查目标是否已存在
@@ -974,7 +991,7 @@ export class S3BatchOperations {
           : await this._checkItemExists(s3Config.bucket_name, fullNewS3Path);
 
         if (targetExists) {
-          throw new HTTPException(ApiStatus.CONFLICT, { message: "目标路径已存在" });
+          throw new ConflictError("目标路径已存在");
         }
 
         if (oldIsDirectory) {

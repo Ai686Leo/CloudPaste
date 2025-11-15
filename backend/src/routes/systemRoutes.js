@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { HTTPException } from "hono/http-exception";
+import { ValidationError, NotFoundError } from "../http/errors.js";
 import {
   getMaxUploadSize,
   getDashboardStats,
@@ -10,7 +10,7 @@ import {
   getSettingMetadata,
 } from "../services/systemService.js";
 import { ApiStatus, UserType } from "../constants/index.js";
-import { getQueryBool } from "../utils/common.js";
+import { getQueryBool, jsonOk } from "../utils/common.js";
 import { usePolicy } from "../security/policies/policies.js";
 import { resolvePrincipal } from "../security/helpers/principal.js";
 
@@ -24,12 +24,7 @@ systemRoutes.get("/api/system/max-upload-size", async (c) => {
 
   const size = await getMaxUploadSize(db, repositoryFactory);
 
-  return c.json({
-    code: ApiStatus.SUCCESS,
-    message: "获取最大上传大小成功",
-    data: { max_upload_size: size },
-    success: true,
-  });
+  return jsonOk(c, { max_upload_size: size }, "获取最大上传大小成功");
 });
 
 // 仪表盘统计数据API
@@ -39,12 +34,7 @@ systemRoutes.get("/api/admin/dashboard/stats", requireAdmin, async (c) => {
   const repositoryFactory = c.get("repos");
   const stats = await getDashboardStats(db, adminId, repositoryFactory);
 
-  return c.json({
-    code: ApiStatus.SUCCESS,
-    message: "获取仪表盘统计数据成功",
-    data: stats,
-    success: true,
-  });
+  return jsonOk(c, stats, "获取仪表盘统计数据成功");
 });
 
 // 获取系统版本信息（公共API）
@@ -54,7 +44,7 @@ systemRoutes.get("/api/version", async (c) => {
   const isDocker = runtimeEnv === "docker";
 
   // 统一的默认版本配置
-  const DEFAULT_VERSION = "0.8.5";
+  const DEFAULT_VERSION = "0.8.6";
   const DEFAULT_NAME = "cloudpaste-api";
 
   let version = DEFAULT_VERSION;
@@ -92,12 +82,7 @@ systemRoutes.get("/api/version", async (c) => {
     uptime: Math.round(process.uptime()),
   };
 
-  return c.json({
-    code: ApiStatus.SUCCESS,
-    message: "获取版本信息成功",
-    data: versionInfo,
-    success: true,
-  });
+  return jsonOk(c, versionInfo, "获取版本信息成功");
 });
 
 // ==================== 新增：分组设置管理API接口 ====================
@@ -112,27 +97,17 @@ systemRoutes.get("/api/admin/settings", async (c) => {
   if (groupId) {
     const groupIdNum = parseInt(groupId, 10);
     if (Number.isNaN(groupIdNum)) {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "分组ID必须是数字" });
+      throw new ValidationError("分组ID必须是数字");
     }
 
     const settings = await getSettingsByGroup(db, groupIdNum, includeMetadata, repositoryFactory);
-    return c.json({
-      code: ApiStatus.SUCCESS,
-      message: "获取分组设置成功",
-      data: settings,
-      success: true,
-    });
+    return jsonOk(c, settings, "获取分组设置成功");
   }
 
   const includeSystemGroup = getQueryBool(c, "includeSystem", false);
   const groupedSettings = await getAllSettingsByGroups(db, includeSystemGroup, repositoryFactory);
 
-  return c.json({
-    code: ApiStatus.SUCCESS,
-    message: "获取所有分组设置成功",
-    data: groupedSettings,
-    success: true,
-  });
+  return jsonOk(c, groupedSettings, "获取所有分组设置成功");
 });
 
 // 获取分组列表和统计信息
@@ -141,12 +116,7 @@ systemRoutes.get("/api/admin/settings/groups", requireAdmin, async (c) => {
   const repositoryFactory = c.get("repos");
   const groupsInfo = await getGroupsInfo(db, repositoryFactory);
 
-  return c.json({
-    code: ApiStatus.SUCCESS,
-    message: "获取分组信息成功",
-    data: { groups: groupsInfo },
-    success: true,
-  });
+  return jsonOk(c, { groups: groupsInfo }, "获取分组信息成功");
 });
 
 // 获取设置项元数据
@@ -155,20 +125,15 @@ systemRoutes.get("/api/admin/settings/metadata", requireAdmin, async (c) => {
   const repositoryFactory = c.get("repos");
   const key = c.req.query("key");
   if (!key) {
-    throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "缺少设置键名参数" });
+    throw new ValidationError("缺少设置键名参数");
   }
 
   const metadata = await getSettingMetadata(db, key, repositoryFactory);
   if (!metadata) {
-    throw new HTTPException(ApiStatus.NOT_FOUND, { message: "设置项不存在" });
+    throw new NotFoundError("设置项不存在");
   }
 
-  return c.json({
-    code: ApiStatus.SUCCESS,
-    message: "获取设置元数据成功",
-    data: metadata,
-    success: true,
-  });
+  return jsonOk(c, metadata, "获取设置元数据成功");
 });
 
 // 按分组批量更新设置
@@ -177,23 +142,18 @@ systemRoutes.put("/api/admin/settings/group/:groupId", requireAdmin, async (c) =
   const repositoryFactory = c.get("repos");
   const groupId = parseInt(c.req.param("groupId"), 10);
   if (Number.isNaN(groupId)) {
-    throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "分组ID必须是数字" });
+    throw new ValidationError("分组ID必须是数字");
   }
 
   const body = await c.req.json();
   if (!body || typeof body !== "object") {
-    throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "请求参数无效" });
+    throw new ValidationError("请求参数无效");
   }
 
   const validateType = getQueryBool(c, "validate", true);
   const result = await updateGroupSettings(db, groupId, body, { validateType }, repositoryFactory);
 
-  return c.json({
-    code: result.success ? ApiStatus.SUCCESS : ApiStatus.ACCEPTED,
-    message: result.message,
-    data: result,
-    success: result.success,
-  });
+  return jsonOk(c, result, result.message);
 });
 
 export default systemRoutes;

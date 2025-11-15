@@ -1,9 +1,8 @@
-import { HTTPException } from "hono/http-exception";
-import { ApiStatus } from "../../constants/index.js";
+import { ValidationError } from "../../http/errors.js";
 import { MountManager } from "../../storage/managers/MountManager.js";
 import { FileSystem } from "../../storage/fs/FileSystem.js";
 import { getEncryptionSecret } from "../../utils/environmentUtils.js";
-import { getQueryBool, getQueryInt } from "../../utils/common.js";
+import { getQueryBool, getQueryInt, jsonOk } from "../../utils/common.js";
 import { usePolicy } from "../../security/policies/policies.js";
 
 const parseJsonBody = async (c, next) => {
@@ -35,18 +34,14 @@ export const registerWriteRoutes = (router, helpers) => {
     const path = body.path;
 
     if (!path) {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "请提供目录路径" });
+      throw new ValidationError("请提供目录路径");
     }
 
     const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
     const fileSystem = new FileSystem(mountManager);
     await fileSystem.createDirectory(path, userIdOrInfo, userType);
 
-    return c.json({
-      code: ApiStatus.SUCCESS,
-      message: "目录创建成功",
-      success: true,
-    });
+    return jsonOk(c, undefined, "目录创建成功");
   });
 
   router.post("/api/fs/upload", parseFormData, usePolicy("fs.upload", { pathResolver: formPathResolver() }), async (c) => {
@@ -61,7 +56,7 @@ export const registerWriteRoutes = (router, helpers) => {
     const useMultipart = formData.get("use_multipart") === "true";
 
     if (!file || !path) {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "请提供文件和路径" });
+      throw new ValidationError("请提供文件和路径");
     }
 
     const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
@@ -69,20 +64,10 @@ export const registerWriteRoutes = (router, helpers) => {
     const result = await fileSystem.uploadFile(path, file, userIdOrInfo, userType, { useMultipart });
 
     if (result.useMultipart) {
-      return c.json({
-        code: ApiStatus.SUCCESS,
-        message: "需要使用分片上传",
-        data: result,
-        success: true,
-      });
+      return jsonOk(c, result, "需要使用分片上传");
     }
 
-    return c.json({
-      code: ApiStatus.SUCCESS,
-      message: "文件上传成功",
-      data: result,
-      success: true,
-    });
+    return jsonOk(c, result, "文件上传成功");
   });
 
   router.post("/api/fs/update", parseJsonBody, usePolicy("fs.upload", { pathResolver: jsonPathResolver() }), async (c) => {
@@ -96,18 +81,13 @@ export const registerWriteRoutes = (router, helpers) => {
     const content = body.content;
 
     if (!path || content === undefined) {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "请提供文件路径和内容" });
+      throw new ValidationError("请提供文件路径和内容");
     }
 
     const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
     const fileSystem = new FileSystem(mountManager);
     const result = await fileSystem.updateFile(path, content, userIdOrInfo, userType);
 
-    return c.json({
-      code: ApiStatus.SUCCESS,
-      message: "文件更新成功",
-      data: result,
-      success: true,
-    });
+    return jsonOk(c, result, "文件更新成功");
   });
 };

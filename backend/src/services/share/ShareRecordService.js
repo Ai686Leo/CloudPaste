@@ -1,4 +1,4 @@
-import { HTTPException } from "hono/http-exception";
+import { ValidationError } from "../../http/errors.js";
 import { ApiStatus, UserType } from "../../constants/index.js";
 import { generateFileId, generateUniqueFileSlug } from "../../utils/common.js";
 import { hashPassword } from "../../utils/crypto.js";
@@ -45,7 +45,7 @@ export class ShareRecordService {
     updateIfExists = false,
   }) {
     if (!mount?.storage_config_id && !storageConfig) {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "缺少挂载或存储配置，无法创建分享" });
+      throw new ValidationError("缺少挂载或存储配置，无法创建分享");
     }
 
     const createdBy = this.resolveCreatedBy(userIdOrInfo, userType);
@@ -72,7 +72,7 @@ export class ShareRecordService {
     const storagePath = mount?.storage_config_id ? relativePath : (uploadResult?.storagePath || fsPath || filename);
     const storageType = mount?.storage_type || storageConfig?.storage_type;
     if (!storageType) {
-      throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "存储配置缺少 storage_type" });
+      throw new ValidationError("存储配置缺少 storage_type");
     }
     const storageConfigId = mount?.storage_config_id || storageConfig?.id;
 

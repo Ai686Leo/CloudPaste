@@ -160,74 +160,6 @@ export async function getUrlUploadPresignedUrl(options) {
 }
 
 /**
- * 使用预签名URL从原始URL上传文件到指定存储
- * @param {Object} options - 上传选项
- * @param {string} options.url - 源URL
- * @param {string} options.uploadUrl - 预签名上传URL
- * @param {Function} [options.onProgress] - 上传进度回调
- * @param {Function} [options.setXhr] - 设置xhr引用的回调函数，用于取消上传
- * @returns {Promise<Object>} 上传结果
- */
-export async function uploadUrlContentToStorage(options) {
-  return new Promise(async (resolve, reject) => {
-    try {
-      // 首先从源URL获取内容，使用通用的URL内容获取函数
-      const blob = await fetchUrlContent({
-        url: options.url,
-        onProgress: options.onProgress,
-        setXhr: options.setXhr,
-      });
-
-      // 现在将获取的内容上传到目标存储
-      const uploadXhr = new XMLHttpRequest();
-      uploadXhr.open("PUT", options.uploadUrl);
-
-      // 如果提供了setXhr回调，则更新xhr引用
-      if (options.setXhr) {
-        options.setXhr(uploadXhr);
-      }
-
-      // 上传进度事件
-      uploadXhr.upload.onprogress = (event) => {
-        if (event.lengthComputable && options.onProgress) {
-          // 上传占总进度的49%，从50%开始计算到99%，保留最后1%给完成阶段
-          const progress = 50 + Math.round((event.loaded / event.total) * 49);
-          options.onProgress(progress, event.loaded, event.total, "uploading");
-        }
-      };
-
-      uploadXhr.onerror = () => {
-        reject(new Error("上传到存储失败"));
-      };
-
-      uploadXhr.onload = () => {
-        if (uploadXhr.status >= 200 && uploadXhr.status < 300) {
-          // 获取ETag
-          const etag = uploadXhr.getResponseHeader("ETag");
-          const cleanEtag = etag ? etag.replace(/"/g, "") : null;
-
-          if (!etag) {
-            console.warn("URL上传成功但未返回ETag，可能是CORS限制导致");
-          }
-
-          resolve({
-            success: true,
-            etag: cleanEtag,
-            size: blob.size,
-          });
-        } else {
-          reject(new Error(`上传到存储失败: HTTP ${uploadXhr.status}`));
-        }
-      };
-
-      uploadXhr.send(blob);
-    } catch (error) {
-      reject(new Error(`URL上传失败: ${error.message}`));
-    }
-  });
-}
-
-/**
  * 提交URL上传完成信息
  * @param {Object} data - 上传完成数据
  * @param {string} data.file_id - 文件ID
@@ -261,8 +193,4 @@ export async function commitUrlUpload(data) {
     throw new Error(`提交URL上传完成信息失败: ${error.message}`);
   }
 }
-
-/******************************************************************************
- * 高级功能API函数
- ******************************************************************************/
 

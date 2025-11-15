@@ -11,6 +11,7 @@ import { parseDestinationPath } from "../utils/webdavUtils.js";
 import { invalidateFsCache } from "../../cache/invalidation.js";
 import { lockManager } from "../utils/LockManager.js";
 import { checkLockPermission } from "../utils/lockUtils.js";
+import { DriverError } from "../../http/errors.js";
 
 /**
  * 执行同步跨存储传输
@@ -151,7 +152,7 @@ async function performFileCrossStorageTransfer(fileItem) {
     console.log(`下载文件: ${downloadUrl}`);
     const downloadResponse = await fetch(downloadUrl);
     if (!downloadResponse.ok) {
-      throw new Error(`下载失败: ${downloadResponse.status} ${downloadResponse.statusText}`);
+      throw new DriverError(`下载失败: ${downloadResponse.status} ${downloadResponse.statusText}`);
     }
 
     // 2. 获取文件内容长度
@@ -176,7 +177,7 @@ async function performFileCrossStorageTransfer(fileItem) {
     });
 
     if (!uploadResponse.ok) {
-      throw new Error(`上传失败: ${uploadResponse.status} ${uploadResponse.statusText}`);
+      throw new DriverError(`上传失败: ${uploadResponse.status} ${uploadResponse.statusText}`);
     }
 
     console.log(`文件跨存储传输成功: ${fileName}`);

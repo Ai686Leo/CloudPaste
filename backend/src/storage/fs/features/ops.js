@@ -1,5 +1,5 @@
-import { HTTPException } from "hono/http-exception";
 import { ApiStatus } from "../../../constants/index.js";
+import { AppError, DriverError } from "../../../http/errors.js";
 import { CAPABILITIES } from "../../interfaces/capabilities/index.js";
 import { findMountPointByPath } from "../utils/MountResolver.js";
 
@@ -7,8 +7,10 @@ export async function renameItem(fs, oldPath, newPath, userIdOrInfo, userType) {
   const { driver, mount, subPath } = await fs.mountManager.getDriverByPath(oldPath, userIdOrInfo, userType);
 
   if (!driver.hasCapability(CAPABILITIES.ATOMIC)) {
-    throw new HTTPException(ApiStatus.NOT_IMPLEMENTED, {
-      message: `存储驱动 ${driver.getType()} 不支持原子操作`,
+    throw new DriverError(`存储驱动 ${driver.getType()} 不支持原子操作`, {
+      status: ApiStatus.NOT_IMPLEMENTED,
+      code: "DRIVER_ERROR.NOT_IMPLEMENTED",
+      expose: true,
     });
   }
 
@@ -28,8 +30,10 @@ export async function copyItem(fs, sourcePath, targetPath, userIdOrInfo, userTyp
   const { driver, mount, subPath } = await fs.mountManager.getDriverByPath(sourcePath, userIdOrInfo, userType);
 
   if (!driver.hasCapability(CAPABILITIES.ATOMIC)) {
-    throw new HTTPException(ApiStatus.NOT_IMPLEMENTED, {
-      message: `存储驱动 ${driver.getType()} 不支持原子操作`,
+    throw new DriverError(`存储驱动 ${driver.getType()} 不支持原子操作`, {
+      status: ApiStatus.NOT_IMPLEMENTED,
+      code: "DRIVER_ERROR.NOT_IMPLEMENTED",
+      expose: true,
     });
   }
 
@@ -56,8 +60,10 @@ export async function batchRemoveItems(fs, paths, userIdOrInfo, userType) {
   const { driver, mount, subPath } = await fs.mountManager.getDriverByPath(paths[0], userIdOrInfo, userType);
 
   if (!driver.hasCapability(CAPABILITIES.WRITER)) {
-    throw new HTTPException(ApiStatus.NOT_IMPLEMENTED, {
-      message: `存储驱动 ${driver.getType()} 不支持写入操作`,
+    throw new DriverError(`存储驱动 ${driver.getType()} 不支持写入操作`, {
+      status: ApiStatus.NOT_IMPLEMENTED,
+      code: "DRIVER_ERROR.NOT_IMPLEMENTED",
+      expose: true,
     });
   }
 
@@ -170,7 +176,7 @@ export async function batchCopyItems(fs, items, userIdOrInfo, userType) {
         });
       }
     } catch (error) {
-      const errorMessage = error instanceof HTTPException ? error.message : error.message || "未知错误";
+      const errorMessage = error instanceof AppError ? error.message : error.message || "未知错误";
       console.error(`复制失败: ${item.sourcePath} -> ${item.targetPath}, 错误: ${errorMessage}`, error);
       result.failed.push({
         sourcePath: item.sourcePath,
@@ -191,8 +197,10 @@ export async function handleCrossStorageCopy(fs, sourcePath, targetPath, userIdO
   const { driver } = await fs.mountManager.getDriverByPath(sourcePath, userIdOrInfo, userType);
 
   if (!driver.hasCapability(CAPABILITIES.ATOMIC)) {
-    throw new HTTPException(ApiStatus.NOT_IMPLEMENTED, {
-      message: `存储驱动 ${driver.getType()} 不支持原子操作`,
+    throw new DriverError(`存储驱动 ${driver.getType()} 不支持原子操作`, {
+      status: ApiStatus.NOT_IMPLEMENTED,
+      code: "DRIVER_ERROR.NOT_IMPLEMENTED",
+      expose: true,
     });
   }
 

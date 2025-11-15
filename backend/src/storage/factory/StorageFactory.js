@@ -7,6 +7,7 @@
 
 import { S3StorageDriver } from "../drivers/s3/S3StorageDriver.js";
 import { CAPABILITIES } from "../interfaces/capabilities/index.js";
+import { ValidationError, NotFoundError } from "../../http/errors.js";
 
 const registry = new Map();
 
@@ -20,7 +21,7 @@ export class StorageFactory {
 
   // 注册驱动
   static registerDriver(type, { ctor, tester = null, displayName = null, validate = null, capabilities = [] } = {}) {
-    if (!type || !ctor) throw new Error("registerDriver 需要提供 type 和 ctor");
+    if (!type || !ctor) throw new ValidationError("registerDriver 需要提供 type 和 ctor");
     registry.set(type, { ctor, tester, displayName: displayName || type, validate, capabilities: Array.isArray(capabilities) ? capabilities : [] });
   }
 
@@ -44,8 +45,8 @@ export class StorageFactory {
 
   // 创建驱动
   static async createDriver(storageType, config, encryptionSecret) {
-    if (!storageType) throw new Error("存储类型不能为空");
-    if (!config) throw new Error("存储配置不能为空");
+    if (!storageType) throw new ValidationError("存储类型不能为空");
+    if (!config) throw new ValidationError("存储配置不能为空");
 
     const entry = registry.get(storageType);
     if (entry) {
@@ -54,7 +55,7 @@ export class StorageFactory {
       return instance;
     }
 
-    throw new Error(`不支持的存储类型: ${storageType}`);
+    throw new NotFoundError(`不支持的存储类型: ${storageType}`);
   }
 
   static getSupportedTypes() {

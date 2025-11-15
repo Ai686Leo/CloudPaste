@@ -46,8 +46,14 @@ export const errorBoundary = () => {
       console.error(JSON.stringify(logPayload), normalized.originalError);
 
       const responseMessage = normalized.expose ? normalized.publicMessage : "服务器内部错误";
-      return c.json(createErrorResponse(normalized.status, responseMessage), normalized.status);
+      if (context.reqId) {
+        // 将请求ID下发到响应头用于前后端排错关联
+        c.header("X-Request-Id", String(context.reqId));
+      }
+      return c.json(
+        createErrorResponse(normalized.status, responseMessage, normalized.code),
+        normalized.status
+      );
     }
   };
 };
-

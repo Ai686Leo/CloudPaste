@@ -5,6 +5,7 @@
 
 import { BaseRepository } from "./BaseRepository.js";
 import { DbTables } from "../constants/index.js";
+import { ValidationError } from "../http/errors.js";
 
 export class FileRepository extends BaseRepository {
   /**
@@ -202,7 +203,7 @@ export class FileRepository extends BaseRepository {
    */
   async findByStorageConfigId(storageConfigId, storageType, options = {}) {
     if (!storageType) {
-      throw new Error("存储类型参数是必需的");
+      throw new ValidationError("存储类型参数是必需的");
     }
     return await this.findMany(
       DbTables.FILES,
@@ -265,7 +266,7 @@ export class FileRepository extends BaseRepository {
    */
   async getTotalSizeByStorageConfigExcludingFile(storageConfigId, excludeFileId, storageType) {
     if (!storageType) {
-      throw new Error("存储类型参数是必需的");
+      throw new ValidationError("存储类型参数是必需的");
     }
     const result = await this.queryFirst(`SELECT COALESCE(SUM(size), 0) as total_used FROM ${DbTables.FILES} WHERE storage_type = ? AND storage_config_id = ? AND id != ?`, [
       storageType,
@@ -322,7 +323,7 @@ export class FileRepository extends BaseRepository {
    */
   async existsByStoragePath(storageConfigId, storagePath, storageType) {
     if (!storageType) {
-      throw new Error("存储类型参数是必需的");
+      throw new ValidationError("存储类型参数是必需的");
     }
     return await this.exists(DbTables.FILES, {
       storage_config_id: storageConfigId,
@@ -340,7 +341,7 @@ export class FileRepository extends BaseRepository {
    */
   async findByStoragePath(storageConfigId, storagePath, storageType) {
     if (!storageType) {
-      throw new Error("存储类型参数是必需的");
+      throw new ValidationError("存储类型参数是必需的");
     }
     return await this.findOne(DbTables.FILES, {
       storage_config_id: storageConfigId,
@@ -357,7 +358,7 @@ export class FileRepository extends BaseRepository {
    */
   async countByStorageConfigId(storageConfigId, storageType) {
     if (!storageType) {
-      throw new Error("存储类型参数是必需的");
+      throw new ValidationError("存储类型参数是必需的");
     }
     return await super.count(DbTables.FILES, {
       storage_config_id: storageConfigId,

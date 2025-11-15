@@ -1,5 +1,4 @@
-import { HTTPException } from "hono/http-exception";
-import { ApiStatus } from "../../constants/index.js";
+import { ValidationError } from "../../http/errors.js";
 
 export class TargetResolver {
   constructor(db, encryptionSecret, repositoryFactory) {
@@ -18,7 +17,7 @@ export class TargetResolver {
   async resolveForPresign({ path, storage_config_id }, userIdOrInfo, userType) {
     if (path) {
       const { mount } = await this.getMountAndSubPath(path, userIdOrInfo, userType);
-      if (!mount) throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "目标路径未绑定挂载" });
+      if (!mount) throw new ValidationError("目标路径未绑定挂载");
       return { mount, resolvedPath: path };
     }
     if (storage_config_id) {
@@ -26,7 +25,7 @@ export class TargetResolver {
       const sRepo = this.repositoryFactory.getStorageConfigRepository?.();
       const scfg = await sRepo.findById(storage_config_id);
       if (!scfg?.storage_type) {
-        throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "存储配置缺少 storage_type" });
+        throw new ValidationError("存储配置缺少 storage_type");
       }
       const mounts = await mountRepo.findByStorageConfig(storage_config_id, scfg.storage_type);
       if (Array.isArray(mounts) && mounts.length > 0) {
@@ -34,7 +33,7 @@ export class TargetResolver {
         return { mount: chosen, resolvedPath: chosen.mount_path };
       }
     }
-    throw new HTTPException(ApiStatus.BAD_REQUEST, { message: "该存储未配置挂载，不支持预签名上传，请提供 path 或配置挂载" });
+    throw new ValidationError("该存储未配置挂载，不支持预签名上传，请提供 path 或配置挂载");
   }
 
   async resolveForDirect({ path, storage_config_id }, userIdOrInfo, userType) {
