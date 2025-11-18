@@ -5,6 +5,8 @@ import { ApiStatus } from "../constants/index.js";
 import { jsonOk, jsonCreated } from "../utils/common.js";
 import { usePolicy } from "../security/policies/policies.js";
 import { resolvePrincipal } from "../security/helpers/principal.js";
+import { ValidationError } from "../http/errors.js";
+import { ensureRepositoryFactory } from "../utils/repositories.js";
 
 const apiKeyRoutes = new Hono();
 const requireAdmin = usePolicy("admin.all");
@@ -49,8 +51,10 @@ apiKeyRoutes.get("/api/test/api-key", requireAuth, async (c) => {
       name: apiKeyInfo?.name || "未知",
       basic_path: apiKeyInfo?.basicPath || "/",
       permissions: {
-        text: PermissionChecker.hasPermission(permissions, Permission.TEXT),
-        file: PermissionChecker.hasPermission(permissions, Permission.FILE_SHARE),
+        text_share: PermissionChecker.hasPermission(permissions, Permission.TEXT_SHARE),
+        text_manage: PermissionChecker.hasPermission(permissions, Permission.TEXT_MANAGE),
+        file_share: PermissionChecker.hasPermission(permissions, Permission.FILE_SHARE),
+        file_manage: PermissionChecker.hasPermission(permissions, Permission.FILE_MANAGE),
         mount_view: PermissionChecker.hasPermission(permissions, Permission.MOUNT_VIEW),
         mount_upload: PermissionChecker.hasPermission(permissions, Permission.MOUNT_UPLOAD),
         mount_copy: PermissionChecker.hasPermission(permissions, Permission.MOUNT_COPY),
@@ -65,6 +69,64 @@ apiKeyRoutes.get("/api/test/api-key", requireAuth, async (c) => {
         basic_path: apiKeyInfo?.basicPath || "/",
       },
     }, "API密钥验证成功");
+});
+
+// 公共游客配置接口（基于 API Key 表中的 GUEST 角色）
+apiKeyRoutes.get("/api/public/guest-config", async (c) => {
+  const db = c.env.DB;
+  const factory = ensureRepositoryFactory(db, c.get("repos"));
+  const apiKeyRepository = factory.getApiKeyRepository();
+
+  const allKeys = await apiKeyRepository.findAll({});
+  const guestKeys = allKeys.filter((k) => (k.role || "GENERAL") === "GUEST");
+
+  if (!guestKeys.length) {
+    return jsonOk(
+      c,
+      {
+        enabled: false,
+        key: null,
+      },
+      "未配置游客 API 密钥"
+    );
+  }
+
+  const guestKey = guestKeys[0];
+  const now = new Date();
+  const expiresAt = guestKey.expires_at ? new Date(guestKey.expires_at) : null;
+  const isExpired = expiresAt && expiresAt < now;
+  const isEnabled = typeof guestKey.is_enable === "number" ? guestKey.is_enable === 1 : Boolean(guestKey.is_enable);
+
+  const enabled = isEnabled && !isExpired;
+  const permissions = guestKey.permissions || 0;
+
+  const permissionsDetail = {
+    text_share: PermissionChecker.hasPermission(permissions, Permission.TEXT_SHARE),
+    text_manage: PermissionChecker.hasPermission(permissions, Permission.TEXT_MANAGE),
+    file_share: PermissionChecker.hasPermission(permissions, Permission.FILE_SHARE),
+    file_manage: PermissionChecker.hasPermission(permissions, Permission.FILE_MANAGE),
+    mount_view: PermissionChecker.hasPermission(permissions, Permission.MOUNT_VIEW),
+    mount_upload: PermissionChecker.hasPermission(permissions, Permission.MOUNT_UPLOAD),
+    mount_copy: PermissionChecker.hasPermission(permissions, Permission.MOUNT_COPY),
+    mount_rename: PermissionChecker.hasPermission(permissions, Permission.MOUNT_RENAME),
+    mount_delete: PermissionChecker.hasPermission(permissions, Permission.MOUNT_DELETE),
+    webdav_read: PermissionChecker.hasPermission(permissions, Permission.WEBDAV_READ),
+    webdav_manage: PermissionChecker.hasPermission(permissions, Permission.WEBDAV_MANAGE),
+  };
+
+  return jsonOk(
+    c,
+    {
+      enabled,
+      key: enabled ? guestKey.key : null,
+      name: guestKey.name || "GUEST",
+      permissions,
+      permissions_detail: permissionsDetail,
+      basic_path: guestKey.basic_path || "/",
+      expires_at: guestKey.expires_at,
+    },
+    "游客配置获取成功"
+  );
 });
 
 // 获取所有API密钥列表
@@ -105,6 +167,59 @@ apiKeyRoutes.delete("/api/admin/api-keys/:id", requireAdmin, async (c) => {
   await deleteApiKey(db, id, repositoryFactory);
 
   return jsonOk(c, undefined, "密钥已删除");
+});
+
+// 获取指定 API 密钥的存储 ACL（可访问的 storage_config_id 白名单）
+apiKeyRoutes.get("/api/admin/api-keys/:id/storage-acl", requireAdmin, async (c) => {
+  const db = c.env.DB;
+  const id = c.req.param("id");
+  const repositoryFactory = c.get("repos");
+
+  const aclRepo = repositoryFactory.getPrincipalStorageAclRepository();
+  const storageConfigIds = await aclRepo.findConfigIdsBySubject("API_KEY", id);
+
+  return jsonOk(
+    c,
+    {
+      subject_type: "API_KEY",
+      subject_id: id,
+      storage_config_ids: storageConfigIds,
+    },
+    "获取存储 ACL 成功"
+  );
+});
+
+// 更新指定 API 密钥的存储 ACL（整体替换）
+apiKeyRoutes.put("/api/admin/api-keys/:id/storage-acl", requireAdmin, async (c) => {
+  const db = c.env.DB;
+  const id = c.req.param("id");
+  const repositoryFactory = c.get("repos");
+
+  const body = await c.req.json().catch(() => ({}));
+  let storageConfigIds = body.storage_config_ids ?? body.storageConfigIds ?? [];
+
+  if (!Array.isArray(storageConfigIds)) {
+    throw new ValidationError("storage_config_ids 必须是数组");
+  }
+
+  // 过滤无效值并去除空字符串
+  storageConfigIds = storageConfigIds
+    .filter((v) => typeof v === "string")
+    .map((v) => v.trim())
+    .filter((v) => v.length > 0);
+
+  const aclRepo = repositoryFactory.getPrincipalStorageAclRepository();
+  await aclRepo.replaceBindings("API_KEY", id, storageConfigIds);
+
+  return jsonOk(
+    c,
+    {
+      subject_type: "API_KEY",
+      subject_id: id,
+      storage_config_ids: storageConfigIds,
+    },
+    "存储 ACL 已更新"
+  );
 });
 
 export default apiKeyRoutes;

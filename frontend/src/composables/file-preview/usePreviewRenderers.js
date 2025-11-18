@@ -4,7 +4,7 @@
  */
 
 import { ref, computed, watch, onMounted, onUnmounted } from "vue";
-import { createAuthenticatedPreviewUrl } from "@/utils/fileUtils.js";
+import { createAuthenticatedPreviewUrl } from "@/api/services/fileDownloadService.js";
 import { formatDateTime } from "@/utils/timeUtils.js";
 import { formatFileSize as formatFileSizeUtil, FileType, isArchiveFile } from "@/utils/fileTypes.js";
 

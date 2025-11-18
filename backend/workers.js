@@ -10,10 +10,14 @@ export default {
   async fetch(request, env, ctx) {
     try {
       // 创建一个新的环境对象，将D1数据库连接和加密密钥添加到环境中
+      if (!env.ENCRYPTION_SECRET) {
+        throw new Error("ENCRYPTION_SECRET 未配置，请在Cloudflare绑定中设置安全密钥");
+      }
+
       const bindings = {
         ...env,
-        DB: env.DB, // D1数据库
-        ENCRYPTION_SECRET: env.ENCRYPTION_SECRET || "default-encryption-key", // 加密密钥
+        DB: env.DB,
+        ENCRYPTION_SECRET: env.ENCRYPTION_SECRET,
       };
 
       // 只在第一次请求时检查并初始化数据库
@@ -44,17 +48,17 @@ export default {
 
       // 兼容前端期望的错误格式
       return new Response(
-        JSON.stringify({
-          code: ApiStatus.INTERNAL_ERROR,
-          message: "服务器内部错误",
-          error: error.message,
-          success: false,
-          data: null,
-        }),
-        {
-          status: ApiStatus.INTERNAL_ERROR,
-          headers: { "Content-Type": "application/json" },
-        }
+          JSON.stringify({
+            code: ApiStatus.INTERNAL_ERROR,
+            message: "服务器内部错误",
+            error: error.message,
+            success: false,
+            data: null,
+          }),
+          {
+            status: ApiStatus.INTERNAL_ERROR,
+            headers: { "Content-Type": "application/json" },
+          }
       );
     }
   },

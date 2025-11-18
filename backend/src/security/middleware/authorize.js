@@ -73,7 +73,7 @@ const emitAuditEvent = (c, principal, { decision, policyName, reason = null, sta
     method: c.req?.method ?? null,
     path: c.req?.path ?? null,
     policy: policyName ?? "inline",
-    principalType: principal?.type ?? "guest",
+    principalType: principal?.type ?? "anonymous",
     principalId: principal?.id ?? null,
     decision,
     reason,
@@ -164,7 +164,7 @@ export const authorize = (options = {}) => {
   return async (c, next) => {
     const principal = c.get("principal") ?? createGuestPrincipal();
 
-    if (requireAuth && (!principal || principal.type === "guest")) {
+    if (requireAuth && (!principal || principal.type === "anonymous")) {
       raiseAuthError(c, principal, {
         status: ApiStatus.UNAUTHORIZED,
         message: "需要认证访问",

@@ -139,6 +139,7 @@
 <script setup>
 import { ref, watch, onMounted, onUnmounted } from "vue";
 import { useI18n } from "vue-i18n";
+import { formatDateTimeWithSeconds } from "@/utils/timeUtils.js";
 
 // 国际化
 const { t } = useI18n();
@@ -190,20 +191,8 @@ watch(
 
 // 格式化日期
 const formatDate = (dateString) => {
-  try {
-    return new Date(dateString).toLocaleString("zh-CN", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    });
-  } catch (error) {
-    return dateString;
-  }
+  return formatDateTimeWithSeconds(dateString);
 };
-
 // 获取匹配分数显示
 const getMatchScoreDisplay = (upload, index) => {
   //使用 ServerResumePlugin 计算的真实匹配分数

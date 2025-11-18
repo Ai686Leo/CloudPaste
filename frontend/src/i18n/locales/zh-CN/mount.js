@@ -109,6 +109,7 @@ export default {
       previewLoadFailed: "预览加载失败",
       fileSaveSuccess: "文件 {name} 保存成功",
       fileSaveFailed: "文件保存失败",
+      linkCopiedSuccess: "文件直链已复制到剪贴板",
     },
     filePreview: {
       downloadFile: "下载文件",

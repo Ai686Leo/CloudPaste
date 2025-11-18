@@ -14,6 +14,11 @@ export default {
       disabled: "已禁用",
       proxy: "代理",
       signature: "签名",
+      proxySign: "代理/签名",
+    },
+    viewMode: {
+      grid: "网格视图",
+      list: "列表视图",
     },
     info: {
       name: "挂载点名称",

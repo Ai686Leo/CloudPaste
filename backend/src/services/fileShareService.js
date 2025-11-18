@@ -12,31 +12,98 @@ export class FileShareService {
     this.records = new ShareRecordService(db, encryptionSecret, repositoryFactory);
   }
 
-  async resolveStorageConfig({ storageConfigId = null, userType = UserType.ADMIN, withSecrets = false } = {}) {
+  _resolveAclSubject(userType, userIdOrInfo) {
+    if (userType !== UserType.API_KEY) {
+      return { subjectType: null, subjectId: null };
+    }
+
+    const subjectId =
+      typeof userIdOrInfo === "string"
+        ? userIdOrInfo
+        : userIdOrInfo?.id ?? null;
+
+    if (!subjectId) {
+      return { subjectType: null, subjectId: null };
+    }
+
+    return { subjectType: "API_KEY", subjectId };
+  }
+
+  async resolveStorageConfig({
+    storageConfigId = null,
+    userType = UserType.ADMIN,
+    withSecrets = false,
+    subjectType = null,
+    subjectId = null,
+  } = {}) {
     const repo = this.repositoryFactory.getStorageConfigRepository();
     if (!repo) {
       return null;
     }
     const requirePublic = userType === UserType.API_KEY;
-    const findByIdFn = withSecrets && typeof repo.findByIdWithSecrets === "function" ? repo.findByIdWithSecrets.bind(repo) : repo.findById.bind(repo);
+    const findByIdFn =
+      withSecrets && typeof repo.findByIdWithSecrets === "function"
+        ? repo.findByIdWithSecrets.bind(repo)
+        : repo.findById.bind(repo);
 
+    let allowedConfigIdsSet = null;
+
+    if (
+      requirePublic &&
+      subjectType &&
+      subjectId &&
+      this.repositoryFactory?.getPrincipalStorageAclRepository
+    ) {
+      try {
+        const aclRepo = this.repositoryFactory.getPrincipalStorageAclRepository();
+        const allowedIds = await aclRepo.findConfigIdsBySubject(subjectType, subjectId);
+        if (Array.isArray(allowedIds) && allowedIds.length > 0) {
+          allowedConfigIdsSet = new Set(allowedIds);
+        }
+      } catch (error) {
+        console.warn("加载存储 ACL 失败，将回退到仅基于 is_public 的存储配置选择：", error);
+      }
+    }
+
+    const isAllowed = (cfg) => {
+      if (!cfg) return false;
+      if (requirePublic && cfg.is_public !== 1) return false;
+      if (allowedConfigIdsSet && !allowedConfigIdsSet.has(cfg.id)) return false;
+      return true;
+    };
+
+    // 显式指定 ID 时优先使用该配置
     if (storageConfigId) {
-      const existing = await findByIdFn(storageConfigId).catch(() => null);
-      if (existing) {
+      let existing = null;
+      if (requirePublic && typeof repo.findPublicById === "function") {
+        existing = await repo.findPublicById(storageConfigId).catch(() => null);
+      } else {
+        existing = await findByIdFn(storageConfigId).catch(() => null);
+      }
+
+      if (isAllowed(existing)) {
         return existing;
       }
     }
 
+    // 其次尝试默认配置
     let config = await repo.findDefault({ requirePublic, withSecrets }).catch(() => null);
-    if (config) {
+    if (isAllowed(config)) {
       return config;
     }
 
+    // 最后尝试公开/全部列表中的第一个允许项
     const fallbackList = requirePublic ? await repo.findPublic().catch(() => []) : await repo.findAll().catch(() => []);
-    if (Array.isArray(fallbackList) && fallbackList.length > 0) {
+    if (!Array.isArray(fallbackList) || fallbackList.length === 0) {
+      return null;
+    }
+
+    if (!allowedConfigIdsSet) {
       return fallbackList[0];
     }
-    return null;
+
+    const firstAllowed = fallbackList.find((cfg) => isAllowed(cfg));
+    return firstAllowed || null;
   }
 
   // 预签名初始化
@@ -45,7 +112,13 @@ export class FileShareService {
     await this.limit.check(fileSize);
 
     const { ObjectStore } = await import("../storage/object/ObjectStore.js");
-    const cfg = await this.resolveStorageConfig({ storageConfigId: storage_config_id, userType });
+    const { subjectType, subjectId } = this._resolveAclSubject(userType, userIdOrInfo);
+    const cfg = await this.resolveStorageConfig({
+      storageConfigId: storage_config_id,
+      userType,
+      subjectType,
+      subjectId,
+    });
     if (!cfg) throw new ValidationError("未找到可用的存储配置，无法生成预签名URL");
 
     const store = new ObjectStore(this.db, this.encryptionSecret, this.repositoryFactory);
@@ -69,7 +142,6 @@ export class FileShareService {
   // 预签名提交
   async commitPresignedShareUpload({ key, storage_config_id, filename, size, etag, slug, remark, password, expiresIn, maxViews, useProxy, originalFilename, userIdOrInfo, userType, request }) {
     await this.limit.check(Number(size));
-    await this.limit.checkStorageQuota(storage_config_id, Number(size) || 0);
     // 必须包含 key + storage_config_id
     const finalKey = key;
     const finalStorageConfigId = storage_config_id;
@@ -77,14 +149,22 @@ export class FileShareService {
       throw new ValidationError("缺少 key 或 storage_config_id");
     }
 
-    const { ObjectStore } = await import("../storage/object/ObjectStore.js");
-    const store = new ObjectStore(this.db, this.encryptionSecret, this.repositoryFactory);
-    const commit = await store.commitUpload({ storage_config_id: finalStorageConfigId, key: finalKey, filename, size, etag });
-
-    const storageConfig = await this.resolveStorageConfig({ storageConfigId: finalStorageConfigId, userType });
+    const { subjectType, subjectId } = this._resolveAclSubject(userType, userIdOrInfo);
+    const storageConfig = await this.resolveStorageConfig({
+      storageConfigId: finalStorageConfigId,
+      userType,
+      subjectType,
+      subjectId,
+    });
     if (!storageConfig) {
       throw new NotFoundError("存储配置不存在");
     }
+
+    await this.limit.checkStorageQuota(storageConfig.id, Number(size) || 0);
+
+    const { ObjectStore } = await import("../storage/object/ObjectStore.js");
+    const store = new ObjectStore(this.db, this.encryptionSecret, this.repositoryFactory);
+    const commit = await store.commitUpload({ storage_config_id: storageConfig.id, key: finalKey, filename, size, etag });
     const { getEffectiveMimeType } = await import("../utils/fileUtils.js");
     const mimeType = getEffectiveMimeType(undefined, filename);
 
@@ -126,8 +206,14 @@ export class FileShareService {
     const { getEffectiveMimeType } = await import("../utils/fileUtils.js");
     const mimeType = getEffectiveMimeType(options.contentType, storedFilename);
 
-    // 选择 storage_config：显式优先，否则选默认（API Key 需公开）
-    const cfg = await this.resolveStorageConfig({ storageConfigId: options.storage_config_id, userType });
+    // 选择 storage_config：显式优先，否则选默认（API Key 需公开 + ACL 白名单）
+    const { subjectType, subjectId } = this._resolveAclSubject(userType, userIdOrInfo);
+    const cfg = await this.resolveStorageConfig({
+      storageConfigId: options.storage_config_id,
+      userType,
+      subjectType,
+      subjectId,
+    });
     if (!cfg) throw new ValidationError("未找到可用的存储配置，无法上传");
 
     const store = new ObjectStore(this.db, this.encryptionSecret, this.repositoryFactory);

@@ -6,11 +6,17 @@
 /**
  * 权限位标志常量
  * 使用位移操作定义权限，支持高效的位运算检查
+ *
+ * 约定（基础区 0-7 位）：
+ * - *_SHARE：创建/发起分享等“写入新记录”的能力
+ * - *_MANAGE：对既有分享的列表/查看/修改/删除能力
  */
 export const Permission = {
   // 基础权限 (0-7位)
-  TEXT: 1 << 0, // 0x0001 - 文本权限
-  FILE_SHARE: 1 << 1, // 0x0002 - 文件分享权限
+  TEXT_SHARE: 1 << 0, // 0x0001 - 文本分享创建
+  FILE_SHARE: 1 << 1, // 0x0002 - 文件分享创建
+  TEXT_MANAGE: 1 << 2, // 0x0004 - 文本分享管理（列表/修改/删除）
+  FILE_MANAGE: 1 << 3, // 0x0008 - 文件分享管理（列表/修改/删除）
 
   // 挂载页权限 (8-15位)
   MOUNT_VIEW: 1 << 8, // 0x0100 - 挂载页查看
@@ -30,8 +36,8 @@ export const Permission = {
  */
 export const PermissionGroup = {
   // 基础权限组合
-  BASIC_TEXT: Permission.TEXT,
-  BASIC_FILE: Permission.FILE_SHARE,
+  BASIC_TEXT: Permission.TEXT_SHARE | Permission.TEXT_MANAGE,
+  BASIC_FILE: Permission.FILE_SHARE | Permission.FILE_MANAGE,
 
   // 挂载页权限组合
   MOUNT_READ_ONLY: Permission.MOUNT_VIEW,
@@ -44,8 +50,10 @@ export const PermissionGroup = {
 
   // 完整权限组合
   ALL_PERMISSIONS:
-    Permission.TEXT |
+    Permission.TEXT_SHARE |
     Permission.FILE_SHARE |
+    Permission.TEXT_MANAGE |
+    Permission.FILE_MANAGE |
     Permission.MOUNT_VIEW |
     Permission.MOUNT_UPLOAD |
     Permission.MOUNT_COPY |
@@ -72,8 +80,15 @@ export const Role = {
   GENERAL: {
     name: "GENERAL",
     displayName: "普通用户",
-    permissions: Permission.TEXT | Permission.FILE_SHARE | PermissionGroup.MOUNT_BASIC | Permission.WEBDAV_READ,
-    description: "可以使用文本分享、文件分享、基础挂载页操作和WebDAV读取功能",
+    // 默认同时具备创建和管理文本/文件分享的能力
+    permissions:
+      Permission.TEXT_SHARE |
+      Permission.TEXT_MANAGE |
+      Permission.FILE_SHARE |
+      Permission.FILE_MANAGE |
+      PermissionGroup.MOUNT_BASIC |
+      Permission.WEBDAV_READ,
+    description: "可以使用文本分享、文件分享（含管理）、基础挂载页操作和WebDAV读取功能",
   },
 
   // 管理员角色 - 所有权限
@@ -102,16 +117,27 @@ export const PermissionTemplate = {
   BASIC: {
     name: "BASIC",
     displayName: "基础权限",
-    permissions: Permission.TEXT | Permission.FILE_SHARE | PermissionGroup.MOUNT_BASIC,
-    description: "可以使用文本分享、文件分享和基础挂载页操作",
+    permissions:
+      Permission.TEXT_SHARE |
+      Permission.TEXT_MANAGE |
+      Permission.FILE_SHARE |
+      Permission.FILE_MANAGE |
+      PermissionGroup.MOUNT_BASIC,
+    description: "可以使用文本分享、文件分享（含管理）和基础挂载页操作",
   },
 
   // 完整模板 - 除管理外的所有功能
   FULL: {
     name: "FULL",
     displayName: "完整权限",
-    permissions: Permission.TEXT | Permission.FILE_SHARE | PermissionGroup.MOUNT_FULL | PermissionGroup.WEBDAV_FULL,
-    description: "可以使用所有功能，包括文件管理和WebDAV访问",
+    permissions:
+      Permission.TEXT_SHARE |
+      Permission.TEXT_MANAGE |
+      Permission.FILE_SHARE |
+      Permission.FILE_MANAGE |
+      PermissionGroup.MOUNT_FULL |
+      PermissionGroup.WEBDAV_FULL,
+    description: "可以使用所有功能，包括文本/文件管理、文件系统管理和WebDAV访问",
   },
 };
 
@@ -177,11 +203,17 @@ export class PermissionChecker {
   static getPermissionDescriptions(permissions) {
     const descriptions = [];
 
-    if (this.hasPermission(permissions, Permission.TEXT)) {
-      descriptions.push("文本分享");
+    if (this.hasPermission(permissions, Permission.TEXT_SHARE)) {
+      descriptions.push("文本分享（创建）");
+    }
+    if (this.hasPermission(permissions, Permission.TEXT_MANAGE)) {
+      descriptions.push("文本分享管理");
     }
     if (this.hasPermission(permissions, Permission.FILE_SHARE)) {
-      descriptions.push("文件分享");
+      descriptions.push("文件分享（创建）");
+    }
+    if (this.hasPermission(permissions, Permission.FILE_MANAGE)) {
+      descriptions.push("文件分享管理");
     }
     if (this.hasPermission(permissions, Permission.MOUNT_VIEW)) {
       descriptions.push("挂载页查看");

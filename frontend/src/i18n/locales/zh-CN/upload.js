@@ -198,5 +198,13 @@ export default {
       completing: "完成中...",
       completed: "上传完成",
     },
+    shareResultsTitle: "分享链接",
+    shareResultsSubtitle: "复制链接或直接打开以分享给他人",
+    sharePrimaryLinkLabel: "分享链接",
+    shareDownloadLinkLabel: "直链下载",
+    sharePasswordLabel: "访问密码",
+    shareExpiresAtLabel: "到期时间",
+    shareExpiresNever: "永不过期",
+    clearShareResults: "清除记录",
   },
 };

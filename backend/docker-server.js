@@ -344,31 +344,31 @@ server.use((req, res, next) => {
 
 // 处理原始请求体（XML、二进制等）
 server.use(
-  express.raw({
-    type: ["application/xml", "text/xml", "application/octet-stream"],
-    limit: "5gb",
-    verify: (req, res, buf, encoding) => {
-      // 对于WebDAV方法，特别是MKCOL，记录详细信息以便调试
-      if ((req.method === "MKCOL" || req.method === "PUT") && buf && buf.length > 10 * 1024 * 1024) {
-        logMessage("debug", `大型WebDAV ${req.method} 请求体:`, {
-          contentType: req.headers["content-type"],
-          size: buf ? buf.length : 0,
-        });
-      }
-
-      // 安全检查：检测潜在的异常XML或二进制内容
-      if (buf && req.path.startsWith("/dav") && (req.headers["content-type"] || "").includes("xml") && buf.length > 0) {
-        // 检查是否为有效的XML开头标记，简单验证
-        const xmlStart = buf.slice(0, Math.min(50, buf.length)).toString();
-        if (!xmlStart.trim().startsWith("<?xml") && !xmlStart.trim().startsWith("<")) {
-          logMessage("warn", `可疑的XML请求体: ${req.method} ${req.path} - 内容不以XML标记开头`, {
+    express.raw({
+      type: ["application/xml", "text/xml", "application/octet-stream"],
+      limit: "5gb",
+      verify: (req, res, buf, encoding) => {
+        // 对于WebDAV方法，特别是MKCOL，记录详细信息以便调试
+        if ((req.method === "MKCOL" || req.method === "PUT") && buf && buf.length > 10 * 1024 * 1024) {
+          logMessage("debug", `大型WebDAV ${req.method} 请求体:`, {
             contentType: req.headers["content-type"],
-            bodyPreview: xmlStart.replace(/[\x00-\x1F\x7F-\xFF]/g, ".").substring(0, 30),
+            size: buf ? buf.length : 0,
           });
         }
-      }
-    },
-  })
+
+        // 安全检查：检测潜在的异常XML或二进制内容
+        if (buf && req.path.startsWith("/dav") && (req.headers["content-type"] || "").includes("xml") && buf.length > 0) {
+          // 检查是否为有效的XML开头标记，简单验证
+          const xmlStart = buf.slice(0, Math.min(50, buf.length)).toString();
+          if (!xmlStart.trim().startsWith("<?xml") && !xmlStart.trim().startsWith("<")) {
+            logMessage("warn", `可疑的XML请求体: ${req.method} ${req.path} - 内容不以XML标记开头`, {
+              contentType: req.headers["content-type"],
+              bodyPreview: xmlStart.replace(/[\x00-\x1F\x7F-\xFF]/g, ".").substring(0, 30),
+            });
+          }
+        }
+      },
+    })
 );
 
 // 处理请求体大小限制错误
@@ -389,8 +389,8 @@ server.use((err, req, res, next) => {
 
   // 处理multipart/form-data解析错误
   if (
-    err.message &&
-    (err.message.includes("Unexpected end of form") || err.message.includes("Unexpected end of multipart data") || err.message.includes("Multipart: Boundary not found"))
+      err.message &&
+      (err.message.includes("Unexpected end of form") || err.message.includes("Unexpected end of multipart data") || err.message.includes("Multipart: Boundary not found"))
   ) {
     logMessage("error", `Multipart解析错误:`, {
       method: req.method,
@@ -423,18 +423,18 @@ server.use((err, req, res, next) => {
 
 // 处理表单数据
 server.use(
-  express.urlencoded({
-    extended: true,
-    limit: "5gb",
-  })
+    express.urlencoded({
+      extended: true,
+      limit: "5gb",
+    })
 );
 
 // 处理JSON请求体
 server.use(
-  express.json({
-    type: ["application/json", "application/json; charset=utf-8", "+json", "*/json"],
-    limit: "5gb",
-  })
+    express.json({
+      type: ["application/json", "application/json; charset=utf-8", "+json", "*/json"],
+      limit: "5gb",
+    })
 );
 
 // 3. WebDAV专用中间件
@@ -479,10 +479,13 @@ server.use(async (req, res, next) => {
       }
     }
 
-    // 注入环境变量
+    if (!process.env.ENCRYPTION_SECRET) {
+      throw new Error("ENCRYPTION_SECRET 未设置，请在Docker环境变量中配置安全密钥");
+    }
+
     req.env = {
       DB: sqliteAdapter,
-      ENCRYPTION_SECRET: process.env.ENCRYPTION_SECRET || "default-encryption-key",
+      ENCRYPTION_SECRET: process.env.ENCRYPTION_SECRET,
     };
 
     next();
@@ -581,8 +584,8 @@ function createAdaptedRequest(expressReq) {
       }
       // 如果是XML或二进制数据，使用Buffer
       else if (
-        (contentType.includes("application/xml") || contentType.includes("text/xml") || contentType.includes("application/octet-stream")) &&
-        Buffer.isBuffer(expressReq.body)
+          (contentType.includes("application/xml") || contentType.includes("text/xml") || contentType.includes("application/octet-stream")) &&
+          Buffer.isBuffer(expressReq.body)
       ) {
         body = expressReq.body;
       }
@@ -723,7 +726,7 @@ function startMemoryMonitoring(interval = 1200000) {
       const fs = require("fs");
       // 尝试读取cgroup内存使用（优先v2，回退v1）
       let usage = null,
-        limit = null;
+          limit = null;
 
       // cgroup v2
       if (fs.existsSync("/sys/fs/cgroup/memory.current")) {

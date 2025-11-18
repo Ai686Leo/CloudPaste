@@ -1,4 +1,6 @@
 import { ref, reactive } from "vue";
+import { useGlobalMessage } from "@/composables/core/useGlobalMessage.js";
+import { formatCurrentTime } from "@/utils/timeUtils.js";
 
 /**
  * 管理功能基础composable
@@ -6,6 +8,8 @@ import { ref, reactive } from "vue";
  * @param {string} pageKey - 页面标识符，用于区分不同页面的分页设置
  */
 export function useAdminBase(pageKey = "default") {
+  const globalMessage = useGlobalMessage();
+
   // 基础状态管理
   const loading = ref(false);
   const error = ref("");
@@ -18,15 +22,16 @@ export function useAdminBase(pageKey = "default") {
 
   // 从localStorage获取用户偏好的每页数量，按页面区分，默认为20
   const getDefaultPageSize = () => {
+    let saved = null;
     try {
-      const saved = localStorage.getItem("admin-page-size");
+      saved = localStorage.getItem("admin-page-size");
       if (saved) {
         const pageSizes = JSON.parse(saved);
         return pageSizes[pageKey] || 20;
       }
     } catch (error) {
       // 可能是旧格式（直接存储数字），尝试迁移
-      const oldValue = parseInt(saved) || 20;
+      const oldValue = parseInt(saved, 10) || 20;
       console.log(`迁移旧的分页设置: ${saved} -> {default: ${oldValue}}`);
 
       // 迁移到新格式
@@ -172,6 +177,8 @@ export function useAdminBase(pageKey = "default") {
     setTimeout(() => {
       successMessage.value = "";
     }, duration);
+    // 同步到全局消息系统
+    globalMessage.showSuccess(message, duration);
   };
 
   /**
@@ -180,6 +187,8 @@ export function useAdminBase(pageKey = "default") {
    */
   const showError = (message) => {
     error.value = message;
+    // 同步到全局消息系统
+    globalMessage.showError(message);
   };
 
   /**
@@ -191,17 +200,10 @@ export function useAdminBase(pageKey = "default") {
   };
 
   /**
-   * 更新最后刷新时间
+   * 更新最后刷新时间（仅返回时间，不包含标签文本）
    */
   const updateLastRefreshTime = () => {
-    const now = new Date();
-    const timeString = now.toLocaleTimeString("zh-CN", {
-      hour12: false,
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    });
-    lastRefreshTime.value = `最后刷新: ${timeString}`;
+    lastRefreshTime.value = formatCurrentTime();
   };
 
   /**

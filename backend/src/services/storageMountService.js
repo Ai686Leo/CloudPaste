@@ -16,7 +16,7 @@ const emitMountCacheInvalidation = ({ mountId, storageConfigId = null, reason, d
 
 /**
  * 挂载点服务类
- * 职责：纯粹的挂载点业务逻辑，通过Repository访问数据
+ * 纯粹的挂载点业务逻辑，通过Repository访问数据
  */
 class MountService {
   /**

@@ -5,7 +5,7 @@ import { normalizeError } from "../errors.js";
 const buildContext = (c) => {
   const principal = c.get("principal");
   const userInfo = c.get("userInfo");
-  const userType = userInfo?.type || (principal?.isAdmin ? "admin" : principal?.type) || "guest";
+  const userType = userInfo?.type || (principal?.isAdmin ? "admin" : principal?.type) || "anonymous";
   const userId = userInfo?.id ?? principal?.id ?? null;
 
   return {

@@ -1,12 +1,14 @@
 <script setup>
-import { ref, watchEffect, onMounted, onBeforeUnmount, computed } from "vue";
+import { ref, onMounted, onBeforeUnmount, computed } from "vue";
 import { useRoute } from "vue-router";
 import EnvSwitcher from "./components/EnvSwitcher.vue";
 import LanguageSwitcher from "./components/LanguageSwitcher.vue";
 import PWAInstallPrompt from "./components/PWAInstallPrompt.vue";
 import { useAuthStore } from "./stores/authStore.js";
 import { useSiteConfigStore } from "./stores/siteConfigStore.js";
-import FooterMarkdownRenderer from "./components/admin/FooterMarkdownRenderer.vue";
+import FooterMarkdownRenderer from "./modules/admin/components/FooterMarkdownRenderer.vue";
+import { useGlobalMessage } from "@/composables/core/useGlobalMessage.js";
+import { useThemeMode } from "@/composables/core/useThemeMode.js";
 
 const route = useRoute();
 
@@ -14,14 +16,11 @@ const route = useRoute();
 const authStore = useAuthStore();
 const siteConfigStore = useSiteConfigStore();
 
-// 初始化主题模式状态
-const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-const savedThemeMode = localStorage.getItem("themeMode");
+// 主题模式: 由全局 composable 统一管理
+const { themeMode, isDarkMode, toggleThemeMode } = useThemeMode();
 
-// 主题模式: "auto", "light", "dark"
-const themeMode = ref(savedThemeMode || "auto");
-// 实际的暗色模式状态
-const isDarkMode = ref(themeMode.value === "auto" ? prefersDark : themeMode.value === "dark");
+// 全局消息
+const { hasMessage, messageType, messageContent, clearMessage, showMessage } = useGlobalMessage();
 
 // 计算当前页面 - 基于路由
 const activePage = computed(() => {
@@ -43,113 +42,65 @@ const githubUrl = "https://github.com/ling-drag0n/CloudPaste";
 // 检查是否为开发环境
 const isDev = import.meta.env.DEV;
 
-// 计算是否显示页脚
-const shouldShowFooter = computed(() => {
-  // 管理面板页面不显示页脚
-  if (activePage.value === "admin") {
-    return false;
-  }
-
-  const footerMarkdown = siteConfigStore.siteFooterMarkdown;
-  return footerMarkdown && footerMarkdown.trim();
-});
-
-// 系统主题媒体查询
-let darkModeMediaQuery;
-// 系统主题变化的处理函数
-const darkModeHandler = (e) => {
-  if (themeMode.value === "auto") {
-    isDarkMode.value = e.matches;
-    updateTheme();
-  }
-};
-
-// 切换移动端菜单状态
-const toggleMobileMenu = () => {
-  isMobileMenuOpen.value = !isMobileMenuOpen.value;
-};
-
-// 切换主题模式
-const toggleThemeMode = () => {
-  const modes = ["auto", "light", "dark"];
-  const currentIndex = modes.indexOf(themeMode.value);
-  const nextIndex = (currentIndex + 1) % modes.length;
-  themeMode.value = modes[nextIndex];
-
-  // 保存到本地存储
-  localStorage.setItem("themeMode", themeMode.value);
-
-  // 更新主题
-  updateTheme();
-};
-
-// 更新主题函数
-const updateTheme = () => {
-  if (themeMode.value === "auto") {
-    isDarkMode.value = window.matchMedia("(prefers-color-scheme: dark)").matches;
-  } else {
-    isDarkMode.value = themeMode.value === "dark";
-  }
-
-  // 更新 DOM 类
-  if (isDarkMode.value) {
-    document.documentElement.classList.add("dark");
-    document.body.classList.add("bg-custom-bg-900", "text-custom-text-dark");
-    document.body.classList.remove("bg-custom-bg-50", "text-custom-text");
-  } else {
-    document.documentElement.classList.remove("dark");
-    document.body.classList.add("bg-custom-bg-50", "text-custom-text");
-    document.body.classList.remove("bg-custom-bg-900", "text-custom-text-dark");
-  }
-
-  // 保存主题模式到本地存储
-  localStorage.setItem("themeMode", themeMode.value);
-};
-
-// 监听并更新 DOM 的主题类
-watchEffect(() => {
-  updateTheme();
-});
-
-// 组件挂载时初始化
-onMounted(() => {
-  // 初始化系统主题媒体查询
-  darkModeMediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-
-  // 为媒体查询添加监听器
-  darkModeMediaQuery.addEventListener("change", darkModeHandler);
-
-  // 初始化主题
-  updateTheme();
-
-  // 在开发环境中始终显示环境切换器
-  if (isDev) {
-    showEnvSwitcher.value = true;
-  } else {
-    // 在生产环境中，只有在明确的条件下才显示：
-    // 1. 存在管理员token
-    // 2. URL中有特定的参数 (showEnvSwitcher) 如："https://域名.com?showEnvSwitcher"
-    const hasAdminToken = authStore.isAdmin;
-    const urlParams = new URLSearchParams(window.location.search);
-    const hasEnvParam = urlParams.has("showEnvSwitcher");
-
-    // 确保在生产环境中默认不显示
-    showEnvSwitcher.value = hasAdminToken && hasEnvParam;
-  }
-
-  console.log("应用初始化完成");
-});
-
-// 组件卸载时移除事件监听
-onBeforeUnmount(() => {
-  if (darkModeMediaQuery) {
-    if (darkModeMediaQuery.removeEventListener) {
-      darkModeMediaQuery.removeEventListener("change", darkModeHandler);
-    } else {
-      darkModeMediaQuery.removeListener(darkModeHandler);
+  // 计算是否显示页脚
+  const shouldShowFooter = computed(() => {
+    // 管理面板页面不显示页脚
+    if (activePage.value === "admin") {
+      return false;
     }
-  }
-});
+
+    const footerMarkdown = siteConfigStore.siteFooterMarkdown;
+    return footerMarkdown && footerMarkdown.trim();
+  });
+
+  // 切换移动端菜单状态
+  const toggleMobileMenu = () => {
+    isMobileMenuOpen.value = !isMobileMenuOpen.value;
+  };
+
+  const handleGlobalMessageEvent = (event) => {
+    const detail = event.detail || {};
+    const type = detail.type || "info";
+    const content = detail.content || detail.message || "";
+    const duration = typeof detail.duration === "number" ? detail.duration : undefined;
+
+    if (!content) return;
+
+    showMessage(type, content, duration);
+  };
+
+  const handleGlobalMessageClearEvent = () => {
+    clearMessage();
+  };
+
+  // 组件挂载时初始化
+  onMounted(() => {
+    // 在开发环境中始终显示环境切换器
+    if (isDev) {
+      showEnvSwitcher.value = true;
+    } else {
+      // 在生产环境中，只有在明确的条件下才显示：
+      // 1. 存在管理员token
+      // 2. URL中有特定的参数 (showEnvSwitcher) 如："https://域名.com?showEnvSwitcher"
+      const hasAdminToken = authStore.isAdmin;
+      const urlParams = new URLSearchParams(window.location.search);
+      const hasEnvParam = urlParams.has("showEnvSwitcher");
+
+      // 确保在生产环境中默认不显示
+      showEnvSwitcher.value = hasAdminToken && hasEnvParam;
+    }
+
+    console.log("应用初始化完成");
+
+    window.addEventListener("global-message", handleGlobalMessageEvent);
+    window.addEventListener("global-message-clear", handleGlobalMessageClearEvent);
+  });
+
+  // 组件卸载时不再需要额外清理主题监听（由 useThemeMode 管理）
+  onBeforeUnmount(() => {
+    window.removeEventListener("global-message", handleGlobalMessageEvent);
+    window.removeEventListener("global-message-clear", handleGlobalMessageClearEvent);
+  });
 </script>
 
 <template>
@@ -429,6 +380,46 @@ onBeforeUnmount(() => {
 
     <!-- PWA 安装提示组件 -->
     <PWAInstallPrompt :dark-mode="isDarkMode" />
+
+    <!-- 全局消息提示 -->
+    <div
+      v-if="hasMessage"
+      class="fixed bottom-4 right-4 z-50 max-w-sm w-full px-4"
+      :role="messageType === 'error' || messageType === 'warning' ? 'alert' : 'status'"
+      :aria-live="messageType === 'error' || messageType === 'warning' ? 'assertive' : 'polite'"
+    >
+      <div
+        :class="[
+          'flex items-start justify-between px-4 py-3 rounded shadow-lg border text-sm',
+          messageType === 'success'
+            ? isDarkMode
+              ? 'bg-green-900 text-green-100 border-green-700'
+              : 'bg-green-50 text-green-800 border-green-200'
+            : messageType === 'error'
+            ? isDarkMode
+              ? 'bg-red-900 text-red-100 border-red-700'
+              : 'bg-red-50 text-red-800 border-red-200'
+            : messageType === 'warning'
+            ? isDarkMode
+              ? 'bg-yellow-900 text-yellow-100 border-yellow-700'
+              : 'bg-yellow-50 text-yellow-800 border-yellow-200'
+            : isDarkMode
+            ? 'bg-gray-800 text-gray-100 border-gray-700'
+            : 'bg-white text-gray-800 border-gray-200',
+        ]"
+      >
+        <div class="pr-3 break-words">
+          {{ messageContent }}
+        </div>
+        <button
+          type="button"
+          class="ml-2 text-xs opacity-70 hover:opacity-100"
+          @click="clearMessage"
+        >
+          ✕
+        </button>
+      </div>
+    </div>
   </div>
 </template>
 

@@ -8,13 +8,13 @@ import { FileShareService } from "../services/fileShareService.js";
 import { useRepositories } from "../utils/repositories.js";
 import { getQueryBool, getQueryInt, jsonOk } from "../utils/common.js";
 
-const requireFilesAccess = usePolicy("files.manage");
+const requireFilesCreate = usePolicy("files.create");
 
 const router = new Hono();
 
 
 // “直传即分享”
-router.put("/api/upload-direct/:filename", requireFilesAccess, async (c) => {
+router.put("/api/upload-direct/:filename", requireFilesCreate, async (c) => {
   const db = c.env.DB;
   const encryptionSecret = getEncryptionSecret(c);
   const repositoryFactory = useRepositories(c);
@@ -69,7 +69,7 @@ router.put("/api/upload-direct/:filename", requireFilesAccess, async (c) => {
 });
 
 // 预签名上传（上传即分享）的初始化
-router.post("/api/share/presign", requireFilesAccess, async (c) => {
+router.post("/api/share/presign", requireFilesCreate, async (c) => {
   const db = c.env.DB;
   const encryptionSecret = getEncryptionSecret(c);
   const repositoryFactory = useRepositories(c);
@@ -100,7 +100,7 @@ router.post("/api/share/presign", requireFilesAccess, async (c) => {
 });
 
 // 预签名提交（创建分享记录）
-router.post("/api/share/commit", requireFilesAccess, async (c) => {
+router.post("/api/share/commit", requireFilesCreate, async (c) => {
   const db = c.env.DB;
   const encryptionSecret = getEncryptionSecret(c);
   const repositoryFactory = useRepositories(c);
@@ -152,7 +152,7 @@ const parseJsonBody = async (c, next) => {
   await next();
 };
 
-router.post("/api/share/url/info", requireFilesAccess, parseJsonBody, async (c) => {
+router.post("/api/share/url/info", requireFilesCreate, parseJsonBody, async (c) => {
   const db = c.env.DB;
   const body = c.get("jsonBody") || {};
 
@@ -167,7 +167,7 @@ router.post("/api/share/url/info", requireFilesAccess, parseJsonBody, async (c) 
   return jsonOk(c, metadata, "URL验证成功");
 });
 
-router.get("/api/share/url/proxy", requireFilesAccess, async (c) => {
+router.get("/api/share/url/proxy", requireFilesCreate, async (c) => {
   const db = c.env.DB;
   const url = c.req.query("url");
   if (!url) {
@@ -181,7 +181,7 @@ router.get("/api/share/url/proxy", requireFilesAccess, async (c) => {
 });
 
 // URL → 预签名：根据URL元信息生成上传预签名
-router.post("/api/share/url/presign", requireFilesAccess, parseJsonBody, async (c) => {
+router.post("/api/share/url/presign", requireFilesCreate, parseJsonBody, async (c) => {
   const db = c.env.DB;
   const encryptionSecret = getEncryptionSecret(c);
   const repositoryFactory = useRepositories(c);

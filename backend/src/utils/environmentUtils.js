@@ -77,7 +77,11 @@ export function getRecommendedConcurrency() {
  * @returns {string}
  */
 export function getEncryptionSecret(c) {
-  return (c && c.env && c.env.ENCRYPTION_SECRET) || "default-encryption-key";
+  const secret = (c && c.env && c.env.ENCRYPTION_SECRET) || (typeof process !== "undefined" ? process.env?.ENCRYPTION_SECRET : null);
+  if (!secret) {
+    throw new Error("ENCRYPTION_SECRET 未配置，请在环境变量中设置一个安全的随机密钥");
+  }
+  return secret;
 }
 
 /**

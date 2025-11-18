@@ -30,6 +30,7 @@
 import { ref, onMounted, onBeforeUnmount, watch, nextTick } from "vue";
 import { useI18n } from "vue-i18n";
 import loader from "@monaco-editor/loader";
+import { formatLocalDateTimeWithSeconds } from "@/utils/timeUtils.js";
 
 const { t } = useI18n();
 
@@ -118,7 +119,7 @@ const addEditorActions = (editor, monaco) => {
     contextMenuGroupId: "modification",
     contextMenuOrder: 1,
     run: function (ed) {
-      const timestamp = new Date().toLocaleString("zh-CN");
+      const timestamp = formatLocalDateTimeWithSeconds(new Date());
       const selection = ed.getSelection();
       ed.executeEdits("", [
         {
@@ -141,13 +142,7 @@ const addEditorActions = (editor, monaco) => {
       const chars = content.length;
       const words = content.trim() ? content.trim().split(/\s+/).length : 0;
 
-      // 使用更友好的提示方式
-      const message = `行数: ${lines}\n字符数: ${chars}\n单词数: ${words}`;
-      if (window.confirm) {
-        alert(message);
-      } else {
-        console.log("文本统计:", { lines, chars, words });
-      }
+      console.log("文本统计:", { lines, chars, words });
     },
   });
 

@@ -25,6 +25,7 @@ export default {
     createFolder: {
       enterName: "Please enter folder name",
       folderName: "Folder Name",
+      placeholder: "New folder",
       create: "Create",
       cancel: "Cancel",
       creating: "Creating...",
@@ -106,6 +107,7 @@ export default {
       previewLoadFailed: "Preview load failed",
       fileSaveSuccess: "File {name} saved successfully",
       fileSaveFailed: "Failed to save file",
+      linkCopiedSuccess: "File direct link copied to clipboard",
     },
     filePreview: {
       downloadFile: "Download File",

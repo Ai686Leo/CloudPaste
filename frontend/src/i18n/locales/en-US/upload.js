@@ -198,5 +198,13 @@ export default {
       completing: "Completing...",
       completed: "Upload completed",
     },
+    shareResultsTitle: "Share Links",
+    shareResultsSubtitle: "Copy or open links to share with others",
+    sharePrimaryLinkLabel: "Share link",
+    shareDownloadLinkLabel: "Direct download",
+    sharePasswordLabel: "Password",
+    shareExpiresAtLabel: "Expires at",
+    shareExpiresNever: "Never",
+    clearShareResults: "Clear records",
   },
 };

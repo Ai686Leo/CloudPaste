@@ -10,16 +10,26 @@ const isAdminType = (userType) => normalizeUserType(userType) === UserType.ADMIN
 
 export const getAccessibleMountsForUser = async (db, userIdOrInfo, userType, repositoryFactory = null) => {
   const normalizedType = normalizeUserType(userType);
+
+  // 管理员：直接返回所有活跃挂载点
   if (isAdminType(normalizedType)) {
     const factory = ensureRepositoryFactory(db, repositoryFactory);
     const mountRepository = factory.getMountRepository();
     return await mountRepository.findAll(false);
   }
 
-  if (normalizedType === UserType.API_KEY && userIdOrInfo?.basicPath) {
-    return await getAccessibleMountsByBasicPath(db, userIdOrInfo.basicPath, repositoryFactory);
+  // API Key 用户：使用 basicPath + 存储 ACL 计算可访问挂载
+  if (normalizedType === UserType.API_KEY) {
+    const basicPath =
+      typeof userIdOrInfo === "string" ? "/" : userIdOrInfo?.basicPath ?? "/";
+
+    const subjectId =
+      typeof userIdOrInfo === "string" ? userIdOrInfo : userIdOrInfo?.id ?? null;
+
+    return await getAccessibleMountsByBasicPath(db, basicPath, "API_KEY", subjectId, repositoryFactory);
   }
 
+  // 其他用户类型暂不支持挂载访问
   return [];
 };
 
@@ -29,7 +39,18 @@ export const getAccessibleMountsForPrincipal = async (db, principal, repositoryF
   }
 
   const userType = principal.isAdmin ? UserType.ADMIN : normalizeUserType(principal.type);
-  const userIdOrInfo = userType === UserType.ADMIN ? principal.id : { basicPath: principal.attributes?.basicPath ?? "/" };
+
+  if (userType === UserType.ADMIN) {
+    return getAccessibleMountsForUser(db, principal.id, userType, repositoryFactory);
+  }
+
+  // API Key：保留 basicPath，并传入主体 ID，便于应用存储 ACL
+  const basicPath = principal.attributes?.basicPath ?? principal.attributes?.keyInfo?.basicPath ?? "/";
+  const userIdOrInfo = {
+    id: principal.id ?? principal.attributes?.keyInfo?.id ?? null,
+    basicPath,
+  };
+
   return getAccessibleMountsForUser(db, userIdOrInfo, userType, repositoryFactory);
 };
 

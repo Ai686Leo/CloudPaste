@@ -1,11 +1,17 @@
 /**
  * 前端权限系统常量定义
+ *
+ * 与后端 Permission 常量保持位级对齐：
+ * - *_SHARE：创建/发起分享
+ * - *_MANAGE：管理既有分享（列表/修改/删除）
  */
 
 export const Permission = {
   // 基础权限 (0-7位)
-  TEXT: 1 << 0, // 0x0001 - 文本权限
-  FILE_SHARE: 1 << 1, // 0x0002 - 文件分享权限
+  TEXT_SHARE: 1 << 0, // 0x0001 - 文本分享创建
+  FILE_SHARE: 1 << 1, // 0x0002 - 文件分享创建
+  TEXT_MANAGE: 1 << 2, // 0x0004 - 文本分享管理
+  FILE_MANAGE: 1 << 3, // 0x0008 - 文件分享管理
 
   // 挂载页权限 (8-15位)
   MOUNT_VIEW: 1 << 8, // 0x0100 - 挂载页查看
@@ -83,11 +89,17 @@ export class PermissionChecker {
   static getPermissionDescriptions(permissions, t = null) {
     const descriptions = [];
 
-    if (this.hasPermission(permissions, Permission.TEXT)) {
-      descriptions.push(t ? t("permissions.text") : "文本分享");
+    if (this.hasPermission(permissions, Permission.TEXT_SHARE)) {
+      descriptions.push(t ? t("permissions.textShare") : "文本分享（创建）");
+    }
+    if (this.hasPermission(permissions, Permission.TEXT_MANAGE)) {
+      descriptions.push(t ? t("permissions.textManage") : "文本分享管理");
     }
     if (this.hasPermission(permissions, Permission.FILE_SHARE)) {
-      descriptions.push(t ? t("permissions.fileShare") : "文件分享");
+      descriptions.push(t ? t("permissions.fileShare") : "文件分享（创建）");
+    }
+    if (this.hasPermission(permissions, Permission.FILE_MANAGE)) {
+      descriptions.push(t ? t("permissions.fileManage") : "文件分享管理");
     }
     if (this.hasPermission(permissions, Permission.MOUNT_VIEW)) {
       descriptions.push(t ? t("permissions.mountView") : "挂载页查看");
@@ -121,8 +133,10 @@ export class PermissionChecker {
    */
   static convertFromBitFlag(bitFlag) {
     return {
-      text: this.hasPermission(bitFlag, Permission.TEXT),
+      text: this.hasPermission(bitFlag, Permission.TEXT_SHARE),
+      text_manage: this.hasPermission(bitFlag, Permission.TEXT_MANAGE),
       file_share: this.hasPermission(bitFlag, Permission.FILE_SHARE),
+      file_manage: this.hasPermission(bitFlag, Permission.FILE_MANAGE),
       mount_view: this.hasPermission(bitFlag, Permission.MOUNT_VIEW),
       mount_upload: this.hasPermission(bitFlag, Permission.MOUNT_UPLOAD),
       mount_copy: this.hasPermission(bitFlag, Permission.MOUNT_COPY),
@@ -140,8 +154,10 @@ export class PermissionChecker {
    */
   static convertToBitFlag(permissions) {
     let bitFlag = 0;
-    if (permissions.text) bitFlag |= Permission.TEXT;
+    if (permissions.text) bitFlag |= Permission.TEXT_SHARE;
+    if (permissions.text_manage) bitFlag |= Permission.TEXT_MANAGE;
     if (permissions.file_share) bitFlag |= Permission.FILE_SHARE;
+    if (permissions.file_manage) bitFlag |= Permission.FILE_MANAGE;
     if (permissions.mount_view) bitFlag |= Permission.MOUNT_VIEW;
     if (permissions.mount_upload) bitFlag |= Permission.MOUNT_UPLOAD;
     if (permissions.mount_copy) bitFlag |= Permission.MOUNT_COPY;

@@ -1,3 +1,5 @@
+import { formatNowForFilename, formatLocalDateTimeWithSeconds } from "@/utils/timeUtils.js";
+
 /**
  * 文件篮工具函数
  * 提供文件篮相关的纯函数工具
@@ -144,7 +146,7 @@ export function groupFilesByDirectory(files) {
 export function generateZipFileName(options = {}) {
   const { fileCount = 0, directoryCount = 0, prefix = "CloudPaste" } = options;
 
-  const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, "-");
+  const timestamp = formatNowForFilename();
 
   if (directoryCount > 1) {
     return `${prefix}_CrossDirectory_${fileCount}files_${directoryCount}dirs_${timestamp}.zip`;
@@ -190,7 +192,7 @@ export function createErrorReport(failedFiles, options = {}) {
   const lines = [title];
 
   if (includeTimestamp) {
-    lines.push(`生成时间: ${new Date().toLocaleString()}`);
+    lines.push(`生成时间: ${formatLocalDateTimeWithSeconds(new Date())}`);
   }
 
   lines.push("");
@@ -330,7 +332,7 @@ export function createTaskSummary(taskResult) {
   }
 
   lines.push("");
-  lines.push(`完成时间: ${new Date().toLocaleString()}`);
+  lines.push(`完成时间: ${formatLocalDateTimeWithSeconds(new Date())}`);
 
   return lines.join("\n");
 }

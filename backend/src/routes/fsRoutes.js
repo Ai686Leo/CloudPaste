@@ -4,6 +4,7 @@ import { AuthenticationError, AuthorizationError } from "../http/errors.js";
 import { usePolicy } from "../security/policies/policies.js";
 import { getStorageConfigByIdForAdmin, getPublicStorageConfigById } from "../services/storageConfigService.js";
 import { getAccessibleMountsForUser } from "../security/helpers/access.js";
+import { ensureRepositoryFactory } from "../utils/repositories.js";
 import { registerBrowseRoutes } from "./fs/browse.js";
 import { registerWriteRoutes } from "./fs/write.js";
 import { registerMultipartRoutes } from "./fs/multipart.js";
@@ -16,7 +17,7 @@ const fsRoutes = new Hono();
 const unifiedFsAuthMiddleware = async (c, next) => {
   const principal = c.get("principal");
 
-  if (!principal || principal.type === "guest") {
+  if (!principal || principal.type === "anonymous") {
     throw new AuthenticationError("需要认证访问");
   }
 
@@ -63,12 +64,44 @@ const getServiceParams = (userInfo) => {
   return { userIdOrInfo: userInfo.info, userType: UserType.API_KEY };
 };
 
-// 统一命名：根据用户类型获取“存储配置”（保持实现不变）
+// 统一命名：根据用户类型获取“存储配置”
 const getStorageConfigByUserType = async (db, configId, userIdOrInfo, userType, encryptionSecret) => {
   if (userType === UserType.ADMIN) {
     return await getStorageConfigByIdForAdmin(db, configId, userIdOrInfo);
   }
-  return await getPublicStorageConfigById(db, configId);
+
+  // 当前仅支持 API Key 用户访问公共存储配置
+  if (userType === UserType.API_KEY) {
+    const factory = ensureRepositoryFactory(db);
+    const principalStorageAclRepository = factory.getPrincipalStorageAclRepository();
+
+    // 解析主体信息用于存储 ACL：subjectType + subjectId
+    const subjectType = "API_KEY";
+    const subjectId = typeof userIdOrInfo === "string" ? userIdOrInfo : userIdOrInfo?.id ?? null;
+
+    let allowed = true;
+
+    if (principalStorageAclRepository && subjectId) {
+      try {
+        const allowedConfigIds = await principalStorageAclRepository.findConfigIdsBySubject(subjectType, subjectId);
+        if (Array.isArray(allowedConfigIds) && allowedConfigIds.length > 0) {
+          // 当存在显式 ACL 记录时，启用白名单模式
+          allowed = allowedConfigIds.includes(configId);
+        }
+      } catch (error) {
+        console.warn("加载存储 ACL 失败，将回退到仅基于 is_public 的访问控制：", error);
+      }
+    }
+
+    if (!allowed) {
+      return null;
+    }
+
+    return await getPublicStorageConfigById(db, configId);
+  }
+
+  // 其他用户类型目前不允许直接访问存储配置
+  return null;
 };
 
 const sharedContext = {

@@ -952,37 +952,57 @@ location /dav {
 
 ```
 CloudPaste/
-├── frontend/                    # 前端 Vue.js 应用
+├── frontend/                         # 前端 Vite + Vue 3 SPA
 │   ├── src/
-│   │   ├── api/                 # API 客户端和服务层
-│   │   ├── components/          # Vue 组件
-│   │   ├── composables/         # Vue 3 组合式 API
-│   │   ├── stores/              # Pinia 状态管理
-│   │   ├── views/               # 页面视图
-│   │   ├── router/              # Vue Router 配置
-│   │   ├── i18n/                # 国际化资源文件
-│   │   ├── utils/               # 工具函数
-│   │   └── assets/              # 静态资源
+│   │   ├── api/                      # HTTP 客户端与 API service（无领域语义）
+│   │   ├── modules/                  # 领域模块层（按业务拆分）
+│   │   │   ├── paste/                # 文本分享（编辑器 / 公共查看 / 管理）
+│   │   │   ├── fileshare/            # 文件分享（公共页 / 管理）
+│   │   │   ├── fs/                   # 挂载文件系统浏览器（MountExplorer）
+│   │   │   ├── upload/               # 上传控制器与上传视图
+│   │   │   ├── storage-core/         # 存储驱动与 Uppy 集成（底层抽象）
+│   │   │   ├── security/             # 前端认证桥接 / 请求头构造
+│   │   │   ├── pwa-offline/          # PWA 离线与队列
+│   │   │   └── admin/                # 管理后台（仪表盘 / 设置 / 密钥管理等）
+│   │   ├── components/               # 可复用通用组件（对模块无依赖）
+│   │   ├── composables/              # 共享组合式 API（file-system / preview 等）
+│   │   ├── stores/                   # Pinia Store（auth / fileSystem / siteConfig 等）
+│   │   ├── router/                   # Vue Router 配置（所有页面路由入口）
+│   │   ├── pwa/                      # PWA 状态与安装提示
+│   │   ├── utils/                    # 通用工具函数（clipboard / time / icons 等）
+│   │   ├── styles/                   # 全局样式与 Tailwind 配置入口
+│   │   └── assets/                   # 静态资源
+│   ├── eslint.config.cjs             # 前端 ESLint 配置（含 import 限制）
+│   ├── vite.config.js                # Vite 构建配置
 │   └── package.json
-├── backend/                     # Cloudflare Workers 后端
+├── backend/                          # 后端（Cloudflare Workers / Docker 双运行模式）
 │   ├── src/
-│   │   ├── routes/              # API 路由层
-│   │   ├── services/            # 业务逻辑层
-│   │   ├── storage/             # 存储抽象层（S3 驱动、挂载点管理）
-│   │   ├── middlewares/         # 中间件层
-│   │   ├── webdav/              # WebDAV 协议实现
-│   │   ├── repositories/        # 数据访问层
-│   │   ├── cache/               # 缓存管理系统
-│   │   ├── constants/           # 常量定义
-│   │   └── utils/               # 工具函数
-│   ├── workers.js                # Cloudflare Workers 入口文件
-│   ├── schema.sql               # D1 数据库架构定义
-│   ├── wrangler.toml            # Cloudflare Workers 配置
+│   │   ├── routes/                   # HTTP 路由层（fs / files / pastes / admin / system 等）
+│   │   │   ├── fs/                   # 挂载文件系统 API（list / read / write / search / share）
+│   │   │   ├── files/                # 文件分享 API（公开 / 管理）
+│   │   │   ├── pastes/               # 文本分享 API（公开 / 管理）
+│   │   │   ├── adminRoutes.js        # 管理端通用路由
+│   │   │   ├── apiKeyRoutes.js       # API 密钥管理路由
+│   │   │   ├── mountRoutes.js        # 挂载点配置路由
+│   │   │   ├── systemRoutes.js       # 系统设置与仪表盘统计
+│   │   │   └── fsRoutes.js           # 统一 FS 入口聚合
+│   │   ├── services/                 # 领域服务（pastes / files / system / apiKey 等）
+│   │   ├── security/                 # 认证 + 授权层（AuthService / securityContext / authorize / policies）
+│   │   ├── webdav/                   # WebDAV 协议实现与路径处理
+│   │   ├── storage/                  # 存储抽象（S3 驱动、挂载管理、文件系统操作）
+│   │   ├── repositories/             # 数据访问层（D1 + SQLite Repository）
+│   │   ├── cache/                    # 缓存与失效（主要用于 FS）
+│   │   ├── constants/                # 常量定义（ApiStatus / Permission / DbTables / UserType 等）
+│   │   ├── http/                     # 统一错误类型与响应封装
+│   │   └── utils/                    # 通用工具（common / crypto / environment 等）
+│   ├── schema.sql                    # D1 / SQLite 数据库初始化脚本
+│   ├── wrangler.toml                 # Cloudflare Workers / D1 配置
 │   └── package.json
-├── docker/                      # Docker 部署配置
-├── Api-doc.md                   # 完整 API 文档
-├── Api-s3_direct.md             # S3 直传 API 文档
-└── README.md                    # 项目说明文档
+├── docker/                           # Docker 与 Compose 部署配置
+├── images/                           # README 中使用的截图资源
+├── Api-doc.md                        # API 总览文档
+├── Api-s3_direct.md                  # S3 直传相关 API 文档
+└── README.md                         # 当前项目说明文档
 ```
 
 ### 自定义 Docker 构建

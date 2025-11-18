@@ -82,10 +82,9 @@ export function getAllApiKeys() {
  * @param {string} [role="GENERAL"] - 用户角色
  * @param {string} [customKey] - 自定义密钥（可选，仅限字母、数字、横杠和下划线）
  * @param {string} [basicPath="/"] - 基本路径（可选，默认为根路径'/'）
- * @param {boolean} [isGuest=false] - 是否为访客
  * @returns {Promise<Object>} 新创建的API密钥信息
  */
-export function createApiKey(name, expiresAt, permissions = 0, role = "GENERAL", customKey = null, basicPath = "/", isGuest = false) {
+export function createApiKey(name, expiresAt, permissions = 0, role = "GENERAL", customKey = null, basicPath = "/") {
   return post("/admin/api-keys", {
     name,
     expires_at: expiresAt,
@@ -93,7 +92,6 @@ export function createApiKey(name, expiresAt, permissions = 0, role = "GENERAL",
     role,
     custom_key: customKey,
     basic_path: basicPath,
-    is_guest: isGuest ? 1 : 0,
   });
 }
 
@@ -114,12 +112,33 @@ export function deleteApiKey(keyId) {
  * @param {number} [updateData.permissions] - 位标志权限值
  * @param {string} [updateData.role] - 用户角色
  * @param {string} [updateData.basic_path] - 基本路径
- * @param {boolean} [updateData.is_guest] - 是否为访客
+ * @param {boolean} [updateData.is_enable] - 是否启用
  * @param {string} [updateData.expires_at] - 新的过期时间，ISO格式字符串
  * @returns {Promise<Object>} 更新结果
  */
 export function updateApiKey(keyId, updateData) {
   return put(`/admin/api-keys/${keyId}`, updateData);
+}
+
+/**
+ * 获取指定 API 密钥的存储 ACL（可访问的 storage_config_id 白名单）
+ * @param {string} keyId - API 密钥 ID
+ * @returns {Promise<Object>} 存储 ACL 信息
+ */
+export function getApiKeyStorageAcl(keyId) {
+  return get(`/admin/api-keys/${keyId}/storage-acl`);
+}
+
+/**
+ * 更新指定 API 密钥的存储 ACL（整体替换）
+ * @param {string} keyId - API 密钥 ID
+ * @param {string[]} storageConfigIds - 允许访问的 storage_config_id 列表
+ * @returns {Promise<Object>} 更新后的 ACL 信息
+ */
+export function updateApiKeyStorageAcl(keyId, storageConfigIds) {
+  return put(`/admin/api-keys/${keyId}/storage-acl`, {
+    storage_config_ids: Array.isArray(storageConfigIds) ? storageConfigIds : [],
+  });
 }
 
 // 兼容性导出 - 保持向后兼容

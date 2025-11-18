@@ -25,7 +25,7 @@ const getPrincipalContext = (c) => {
 };
 
 export const registerPastesProtectedRoutes = (router) => {
-  router.post("/api/paste", usePolicy("pastes.manage"), async (c) => {
+  router.post("/api/paste", usePolicy("pastes.create"), async (c) => {
     const db = c.env.DB;
     const body = await c.req.json();
     const { userType, userId } = getPrincipalContext(c);
@@ -41,28 +41,39 @@ export const registerPastesProtectedRoutes = (router) => {
     const db = c.env.DB;
     const { userType, userId, apiKeyInfo } = getPrincipalContext(c);
 
-    let result;
-
     if (userType === UserType.ADMIN) {
       const { limit, page, offset } = getPagination(c, { limit: 10, page: 1 });
       const search = c.req.query("search");
       const created_by = c.req.query("created_by");
-      result = await getAllPastes(db, page, limit, created_by, search, offset);
-    } else {
-      const { limit, offset } = getPagination(c, { limit: 30 });
-      const search = c.req.query("search");
-      result = await getUserPastes(db, userId, limit, offset, search);
+      const result = await getAllPastes(db, page, limit, created_by, search, offset);
+
+      const results = Array.isArray(result.results) ? result.results : [];
+      return jsonOk(
+        c,
+        {
+          results,
+          pagination: result.pagination,
+        },
+        "获取成功",
+      );
     }
 
-    const responseData = result.results || result;
+    // API Key 用户：只返回当前密钥创建的文本列表，并附带 key_info
+    const { limit, offset } = getPagination(c, { limit: 30 });
+    const search = c.req.query("search");
+    const result = await getUserPastes(db, userId, limit, offset, search);
 
-    if (result.pagination) {
-      // 追加分页信息到数据体（不再拼到顶层）
-      responseData.pagination = result.pagination;
-    }
+    const results = Array.isArray(result.results) ? result.results : [];
 
-    const data = userType === UserType.API_KEY ? { ...responseData, key_info: apiKeyInfo } : responseData;
-    return jsonOk(c, data, "获取成功");
+    return jsonOk(
+      c,
+      {
+        results,
+        pagination: result.pagination,
+        key_info: apiKeyInfo,
+      },
+      "获取成功",
+    );
   });
 
   router.get("/api/pastes/:id", usePolicy("pastes.manage"), async (c) => {

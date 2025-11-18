@@ -156,3 +156,15 @@ export function healthCheck() {
 export function getVersionInfo() {
   return get("/version");
 }
+
+/******************************************************************************
+ * 游客模式相关 API
+ ******************************************************************************/
+
+/**
+ * 获取游客模式配置（Guest API Key）
+ * @returns {Promise<Object>} 游客配置，包含 enabled/key/permissions/basic_path 等
+ */
+export function getGuestConfig() {
+  return get("/public/guest-config");
+}

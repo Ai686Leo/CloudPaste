@@ -19,7 +19,7 @@ export class ShareRecordService {
       if (typeof userIdOrInfo === "object" && userIdOrInfo?.id) return `apikey:${userIdOrInfo.id}`;
       return `apikey:${userIdOrInfo}`;
     }
-    return "guest";
+    return "anonymous";
   }
 
   async createShareRecord({

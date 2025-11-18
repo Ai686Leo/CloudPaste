@@ -1,6 +1,6 @@
 /**
  * 统一认证服务
- * 职责：具体的认证逻辑、身份识别、权限检查
+ * 具体的认证逻辑、身份识别、权限检查
  */
 
 import { Permission, PermissionChecker } from "../../constants/permissions.js";
@@ -243,6 +243,11 @@ export class AuthService {
   }
 
   buildApiKeyAuthResult(keyRecord) {
+    const isEnabled = typeof keyRecord.is_enable === "number" ? keyRecord.is_enable === 1 : Boolean(keyRecord.is_enable);
+    if (!isEnabled) {
+      return new AuthResult();
+    }
+
     return new AuthResult({
       isAuthenticated: true,
       userId: keyRecord.id,
@@ -255,7 +260,8 @@ export class AuthService {
         basicPath: keyRecord.basic_path || "/",
         permissions: keyRecord.permissions || 0,
         role: keyRecord.role || "GENERAL",
-        isGuest: keyRecord.is_guest === 1,
+        isGuest: (keyRecord.role || "GENERAL") === "GUEST",
+        isEnabled,
       },
     });
   }

@@ -1,7 +1,7 @@
 /**
  * 基础Repository类
  * 提供通用的数据访问方法，所有具体Repository继承此类
- * 职责：纯粹的数据访问，不包含业务逻辑
+ * 纯粹的数据访问，不包含业务逻辑
  */
 
 import { ValidationError } from "../http/errors.js";

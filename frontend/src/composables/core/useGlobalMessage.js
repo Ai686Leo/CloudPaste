@@ -33,30 +33,55 @@ function createMessageState() {
   let currentTimeoutId = null; // 用于管理自动清除的定时器
 
   /**
+   * 根据消息类型和自定义 duration 计算最终展示时长
+   * - 不传 duration 时使用推荐默认值
+   * - 传入 duration 时优先使用调用方指定值
+   */
+  const resolveDurationByType = (type, duration) => {
+    if (typeof duration === "number") {
+      return duration;
+    }
+
+    switch (type) {
+      case "success":
+      case "info":
+        return 4000; // 成功 / 信息 提示较短
+      case "warning":
+        return 5500; // 警告略长
+      case "error":
+        return 6000; // 错误提示再长一些，便于阅读
+      default:
+        return 5000;
+    }
+  };
+
+  /**
    * 显示消息
    * @param {string} type - 消息类型 ('success', 'error', 'warning', 'info')
    * @param {string} content - 消息内容
-   * @param {number} duration - 显示时长（毫秒），默认4000ms
+   * @param {number} [duration] - 显示时长（毫秒），不传则按类型使用推荐默认值
    */
-  const showMessage = (type, content, duration = 4000) => {
-    // 清除之前的定时器
+  const showMessage = (type, content, duration) => {
+    const finalDuration = resolveDurationByType(type, duration);
+
+    // 清除之前的定时器，确保新消息优先展示
     if (currentTimeoutId) {
       clearTimeout(currentTimeoutId);
       currentTimeoutId = null;
     }
 
-    // 设置新消息
+    // 设置当前要展示的消息
     message.value = {
       type,
       content,
       timestamp: Date.now(),
     };
 
-    // 自动清除消息
-    if (duration > 0) {
+    // 自动清除消息（duration <= 0 时不自动清除，例如离线场景）
+    if (finalDuration > 0) {
       currentTimeoutId = setTimeout(() => {
         clearMessage();
-      }, duration);
+      }, finalDuration);
     }
 
     console.log(`[GlobalMessage] 显示消息: ${type} - ${content}`);
@@ -79,28 +104,28 @@ function createMessageState() {
   /**
    * 显示成功消息
    */
-  const showSuccess = (content, duration = 3000) => {
+  const showSuccess = (content, duration) => {
     showMessage("success", content, duration);
   };
 
   /**
    * 显示错误消息
    */
-  const showError = (content, duration = 5000) => {
+  const showError = (content, duration) => {
     showMessage("error", content, duration);
   };
 
   /**
    * 显示警告消息
    */
-  const showWarning = (content, duration = 4000) => {
+  const showWarning = (content, duration) => {
     showMessage("warning", content, duration);
   };
 
   /**
    * 显示信息消息
    */
-  const showInfo = (content, duration = 4000) => {
+  const showInfo = (content, duration) => {
     showMessage("info", content, duration);
   };
 

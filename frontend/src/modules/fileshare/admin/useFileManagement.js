@@ -1,0 +1,431 @@
+import { ref, reactive, computed } from "vue";
+import { copyToClipboard } from "@/utils/clipboard.js";
+import { useDeleteSettingsStore } from "@/stores/deleteSettingsStore.js";
+import { useAdminBase } from "@/modules/admin";
+import { generateQRCode as createQRCodeImage } from "@/utils/qrcodeUtils.js";
+import { useFileshareService } from "@/modules/fileshare/fileshareService.js";
+import { useFileShareStore } from "@/modules/fileshare/fileShareStore.js";
+
+/**
+ * 文件管理专用composable
+ * 基于useAdminBase，添加文件管理特有的逻辑
+ */
+export function useFileManagement(userType = "admin") {
+  // 继承基础管理功能
+  const base = useAdminBase();
+  const fileshareService = useFileshareService();
+  const fileShareStore = useFileShareStore();
+  // 文件管理特有状态（列表统一由 fileshare store 提供）
+  const files = computed(() => fileShareStore.items);
+  const editingFile = ref(null);
+  const previewFile = ref(null);
+  const showEdit = ref(false);
+  const showPreview = ref(false);
+  const showQRCodeModal = ref(false);
+  const qrCodeDataURL = ref("");
+  const qrCodeSlug = ref("");
+
+  // 删除设置store
+  const deleteSettingsStore = useDeleteSettingsStore();
+
+  // 复制状态跟踪
+  const copiedFiles = reactive({});
+  const copiedPermanentFiles = reactive({});
+
+  // 用户类型判断
+  const isAdmin = () => userType === "admin";
+  const isApiKeyUser = () => userType === "apikey";
+
+
+
+
+  /**
+   * 加载文件列表
+   */
+  const loadFiles = async () => {
+    return await base.withLoading(async () => {
+      try {
+        const { pagination } = await fileShareStore.loadList({
+          limit: base.pagination.limit,
+          offset: base.pagination.offset,
+        });
+        base.updatePagination(pagination, "offset");
+        base.updateLastRefreshTime();
+      } catch (error) {
+        console.error("加载文件列表失败:", error);
+        base.showError(error.message || "加载数据失败");
+        fileShareStore.resetState();
+      }
+    });
+  };
+
+  /**
+   * 处理分页变化
+   */
+  const handleOffsetChange = (newOffset) => {
+    base.handlePaginationChange(newOffset, "offset");
+    loadFiles();
+  };
+
+  /**
+   * 删除单个文件
+   */
+  const handleFileDelete = async (file) => {
+    if (!confirm("确定要删除此文件吗？此操作不可恢复。")) {
+      return;
+    }
+
+    return await base.withLoading(async () => {
+      await fileshareService.deleteFiles([file.id], deleteSettingsStore.getDeleteMode());
+      base.showSuccess("删除成功");
+      fileShareStore.removeFromStore(file.id);
+      await loadFiles();
+    });
+  };
+
+  /**
+   * 批量删除文件
+   */
+  const handleBatchDelete = async () => {
+    const selectedCount = base.selectedItems.value.length;
+    if (selectedCount === 0) {
+      base.showError("请先选择要删除的文件");
+      return;
+    }
+
+    if (!confirm(`确定要删除选中的 ${selectedCount} 个文件吗？此操作不可恢复。`)) {
+      return;
+    }
+
+    return await base.withLoading(async () => {
+      try {
+        const result = await fileshareService.deleteFiles(base.selectedItems.value, deleteSettingsStore.getDeleteMode());
+
+        if (result?.data && Array.isArray(result.data.failed) && result.data.failed.length > 0) {
+          const { success: successCount, failed } = result.data;
+          const failedCount = failed.length;
+          base.showSuccess(`批量删除完成：成功 ${successCount} 个，失败 ${failedCount} 个`);
+
+          const failedDetails = failed.map((item) => `ID: ${item.id} - ${item.error}`).join("\n");
+          console.warn("部分文件删除失败:", failedDetails);
+        } else if (result?.data && typeof result.data.success === "number") {
+          base.showSuccess(`成功删除 ${result.data.success} 个文件`);
+        } else {
+          base.showSuccess(`成功删除 ${selectedCount} 个文件`);
+        }
+      } finally {
+        base.clearSelection();
+        await loadFiles();
+      }
+    });
+  };
+
+  /**
+   * 打开编辑弹窗
+   */
+  const openEditModal = async (file) => {
+    try {
+      const detail = await fileShareStore.fetchById(file.id, { useCache: true });
+      editingFile.value = detail;
+      showEdit.value = true;
+    } catch (err) {
+      console.error("获取文件详情失败:", err);
+      base.showError(err.message || "获取文件详情失败，请稍后重试");
+    }
+  };
+
+/**
+   * 更新文件元数据
+   */
+  const updateFileMetadata = async (updatedFile) => {
+    return await base.withLoading(async () => {
+      try {
+        await fileshareService.updateFileMetadata(updatedFile.id, updatedFile);
+        base.showSuccess("文件信息更新成功");
+        showEdit.value = false;
+        editingFile.value = null;
+        await loadFiles();
+      } catch (err) {
+        console.error("更新文件信息失败:", err);
+        base.showError(err.message || "更新失败");
+      }
+    });
+  };
+
+  /**
+   * 打开预览弹窗
+   */
+  const openPreviewModal = async (file) => {
+    try {
+      const detail = await fileShareStore.fetchById(file.id, { useCache: true });
+      previewFile.value = detail;
+      showPreview.value = true;
+    } catch (err) {
+      console.error("获取文件详情失败:", err);
+      base.showError(err.message || "获取文件详情失败，请稍后重试");
+    }
+  };
+
+  /**
+   * 生成QR码
+   */
+  const generateQRCode = async (file, darkMode = false) => {
+    try {
+      const fileUrl = fileshareService.buildShareUrl(file, window.location.origin);
+
+      qrCodeDataURL.value = await createQRCodeImage(fileUrl, { darkMode });
+
+      qrCodeSlug.value = file.slug;
+      showQRCodeModal.value = true;
+    } catch (err) {
+      console.error("生成二维码失败:", err);
+      base.showError("生成二维码失败");
+    }
+  };
+
+  /**
+   * 切换全选状态（文件管理专用）
+   */
+  const toggleSelectAll = () => {
+    base.toggleSelectAll(files.value, "id");
+  };
+
+  /**
+   * 复制文件分享链接
+   */
+  const copyFileLink = async (file) => {
+    if (!file || !file.slug) {
+      base.showError("该文件没有有效的分享链接");
+      return;
+    }
+
+    try {
+      const fileUrl = fileshareService.buildShareUrl(file, window.location.origin);
+
+      await copyToClipboard(fileUrl);
+
+      // 设置复制状态
+      copiedFiles[file.id] = true;
+      setTimeout(() => {
+        copiedFiles[file.id] = false;
+      }, 2000);
+    } catch (err) {
+      console.error("复制链接失败:", err);
+      // 只在失败时显示错误提示，成功时不显示顶部提示
+      base.showError("复制链接失败，请手动复制");
+    }
+  };
+
+  /**
+   * 复制文件永久下载链接
+   */
+  const copyPermanentLink = async (file) => {
+    if (!file || !file.slug) {
+      base.showError("该文件没有有效的分享链接");
+      return;
+    }
+
+    try {
+      let fileWithUrls = file;
+      if (!fileWithUrls.urls || !fileWithUrls.urls.proxyDownloadUrl) {
+        fileWithUrls = await fileshareService.fetchById(file.id);
+      }
+
+      const permanentDownloadUrl = fileshareService.getPermanentDownloadUrl(fileWithUrls);
+      if (!permanentDownloadUrl) {
+        throw new Error("无法获取文件的下载链接");
+      }
+
+      await copyToClipboard(permanentDownloadUrl);
+      copiedPermanentFiles[file.id] = true;
+      setTimeout(() => {
+        copiedPermanentFiles[file.id] = false;
+      }, 2000);
+    } catch (err) {
+      console.error("复制永久链接失败:", err);
+      base.showError(err.message || "复制永久链接失败，请稍后重试");
+    }
+  };
+
+/**
+   * 获取Office文件预览URL
+   */
+  const getOfficePreviewUrl = async (file) => {
+    if (!file?.slug) return null;
+
+    try {
+      return await fileshareService.getOfficePreviewUrl(file);
+    } catch (error) {
+      console.error("获取Office预览URL失败:", error);
+      base.showError(`预览失败: ${error.message}`);
+      return null;
+    }
+  };
+
+/**
+   * 预览文件
+   */
+  const previewFileInNewWindow = async (file) => {
+    if (!file.slug) {
+      base.showError("无法预览：文件没有设置短链接");
+      return;
+    }
+
+    try {
+      // 检查是否为Office文件
+      const { FileType } = await import("@/utils/fileTypes.js");
+      if (file.type === FileType.OFFICE) {
+        console.log("检测到Office文件，使用专用预览", {
+          filename: file.filename,
+          mimetype: file.mimetype,
+        });
+
+        // 获取Office预览URL
+        const officePreviewUrl = await getOfficePreviewUrl(file);
+        if (officePreviewUrl) {
+          window.open(officePreviewUrl, "_blank");
+        }
+        return;
+      }
+
+      // 非Office文件使用普通预览方式
+      const previewUrl = getPermanentViewUrl(file);
+      window.open(previewUrl, "_blank");
+    } catch (err) {
+      console.error("预览文件失败:", err);
+      base.showError("预览文件失败，请稍后重试");
+    }
+  };
+
+  /**
+   * 下载文件
+   */
+  const downloadFileDirectly = (file) => {
+    try {
+      // 检查是否有永久下载链接
+      if (!file.slug) {
+        base.showError("无法下载：文件没有设置短链接");
+        return;
+      }
+
+      // 提取文件名，用于下载时的文件命名
+      const fileName = file.filename || "下载文件";
+
+      // 创建一个隐藏的a标签
+      const link = document.createElement("a");
+      link.href = getPermanentDownloadUrl(file);
+      link.download = fileName; // 设置下载文件名
+      link.setAttribute("target", "_blank"); // 在新窗口打开
+      document.body.appendChild(link);
+
+      // 模拟点击下载
+      link.click();
+
+      // 移除临时创建的元素
+      setTimeout(() => {
+        document.body.removeChild(link);
+      }, 100);
+    } catch (err) {
+      console.error("下载文件失败:", err);
+      // 如果直接下载失败，尝试在新窗口打开下载链接
+      if (file.slug) {
+        window.open(getPermanentDownloadUrl(file), "_blank");
+      } else {
+        window.open(file.publicUrl || "", "_blank");
+      }
+    }
+  };
+
+  /**
+   * 获取文件的永久下载链接
+   */
+  const getPermanentDownloadUrl = (file) => {
+    return fileshareService.getPermanentDownloadUrl(file);
+  };
+
+/**
+   * 获取文件的永久预览链接
+   */
+  const getPermanentViewUrl = (file) => {
+    return fileshareService.getPermanentPreviewUrl(file);
+  };
+
+/**
+   * 搜索文件
+   * @param {string} searchTerm - 搜索关键词
+   * @param {number} offset - 偏移量，默认为当前分页的offset
+   * @returns {Promise<Object>} 搜索结果
+   */
+  const searchFiles = async (searchTerm, offset = null) => {
+    if (!searchTerm || searchTerm.trim().length < 2) {
+      return { files: [], pagination: { total: 0, limit: base.pagination.limit, offset: 0 } };
+    }
+
+    const searchOffset = offset !== null ? offset : base.pagination.offset;
+
+    return await base.withLoading(async () => {
+      try {
+        const { files: results, pagination } = await fileShareStore.loadList({
+          limit: base.pagination.limit,
+          offset: searchOffset,
+          search: searchTerm.trim(),
+        });
+        return { files: results, pagination };
+      } catch (error) {
+        console.error("搜索文件失败:", error);
+        base.showError(error.message || "搜索失败");
+        return { files: [], pagination: { total: 0, limit: base.pagination.limit, offset: searchOffset } };
+      }
+    });
+  };
+
+/**
+   * 关闭所有弹窗
+   */
+  const closeAllModals = () => {
+    showEdit.value = false;
+    showPreview.value = false;
+    showQRCodeModal.value = false;
+    editingFile.value = null;
+    previewFile.value = null;
+    qrCodeDataURL.value = "";
+    qrCodeSlug.value = "";
+  };
+
+  return {
+    // 继承基础功能
+    ...base,
+
+    // 文件管理特有状态
+    files,
+    editingFile,
+    previewFile,
+    showEdit,
+    showPreview,
+    showQRCodeModal,
+    qrCodeDataURL,
+    qrCodeSlug,
+    copiedFiles,
+    copiedPermanentFiles,
+
+    // 文件管理方法
+    loadFiles,
+    searchFiles,
+    handleOffsetChange,
+    handleFileDelete,
+    handleBatchDelete,
+    openEditModal,
+    updateFileMetadata,
+    openPreviewModal,
+    generateQRCode,
+    copyFileLink,
+    copyPermanentLink,
+    getOfficePreviewUrl,
+    previewFileInNewWindow,
+    downloadFileDirectly,
+    getPermanentDownloadUrl,
+    getPermanentViewUrl,
+    toggleSelectAll,
+    closeAllModals,
+  };
+}

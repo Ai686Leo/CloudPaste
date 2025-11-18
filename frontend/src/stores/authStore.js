@@ -7,6 +7,7 @@ import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import { api } from "@/api";
 import { Permission, PermissionChecker } from "@/constants/permissions.js";
+import { registerAuthBridge } from "./authBridge.js";
 
 // 配置常量
 const REVALIDATION_INTERVAL = 5 * 60 * 1000; // 5分钟
@@ -22,9 +23,11 @@ export const useAuthStore = defineStore("auth", () => {
 
   // 认证状态
   const isAuthenticated = ref(false);
-  const authType = ref("none"); // 'admin', 'apikey', 'none'
+  const authType = ref("none"); // 'none' | 'admin' | 'apikey'
   const isLoading = ref(false);
+  const guestAutoTried = ref(false);
   const lastValidated = ref(null);
+  const initialized = ref(false);
 
   // 管理员相关状态
   const adminToken = ref(null);
@@ -35,8 +38,10 @@ export const useAuthStore = defineStore("auth", () => {
   // 使用位标志权限系统
   const apiKeyPermissions = ref(0); // 位标志权限值
   const apiKeyPermissionDetails = ref({
-    text: false,
-    file: false,
+    text_share: false,
+    text_manage: false,
+    file_share: false,
+    file_manage: false,
     mount_view: false,
     mount_upload: false,
     mount_copy: false,
@@ -55,18 +60,35 @@ export const useAuthStore = defineStore("auth", () => {
 
   // ===== 计算属性 =====
 
-  // 是否为管理员（从 authType 推导，消除冗余状态）
+  // 是否为管理员 / Key 用户（从 authType 推导，消除冗余状态）
   const isAdmin = computed(() => authType.value === "admin");
-
-  // 是否有文本权限
-  const hasTextPermission = computed(() => {
-    return isAdmin.value || PermissionChecker.hasPermission(apiKeyPermissions.value, Permission.TEXT);
+  const isKeyUser = computed(() => authType.value === "apikey");
+  const isGuest = computed(() => {
+    if (!isKeyUser.value) return false;
+    const role = apiKeyInfo.value?.role || apiKeyInfo.value?.Role;
+    return role === "GUEST";
   });
 
-  // 是否有文件权限
-  const hasFilePermission = computed(() => {
+  // 文本/文件分享权限（创建 vs 管理）
+  const hasTextSharePermission = computed(() => {
+    return isAdmin.value || PermissionChecker.hasPermission(apiKeyPermissions.value, Permission.TEXT_SHARE);
+  });
+
+  const hasTextManagePermission = computed(() => {
+    return isAdmin.value || PermissionChecker.hasPermission(apiKeyPermissions.value, Permission.TEXT_MANAGE);
+  });
+
+  const hasFileSharePermission = computed(() => {
     return isAdmin.value || PermissionChecker.hasPermission(apiKeyPermissions.value, Permission.FILE_SHARE);
   });
+
+  const hasFileManagePermission = computed(() => {
+    return isAdmin.value || PermissionChecker.hasPermission(apiKeyPermissions.value, Permission.FILE_MANAGE);
+  });
+
+  // 兼容旧命名：hasTextPermission / hasFilePermission 代表“具备对应分享能力（通常用于创建）”
+  const hasTextPermission = hasTextSharePermission;
+  const hasFilePermission = hasFileSharePermission;
 
   // 是否有挂载权限（任一挂载权限）
   const hasMountPermission = computed(() => {
@@ -118,6 +140,36 @@ export const useAuthStore = defineStore("auth", () => {
     return Date.now() - lastValidated.value > REVALIDATION_INTERVAL;
   });
 
+  const convertPermissionsToBitFlag = (permissions) => {
+    if (typeof permissions === "number") {
+      return permissions;
+    }
+
+    if (permissions && typeof permissions === "object") {
+      let bitFlag = 0;
+      // 兼容新旧字段命名（text/text_share, file/file_share 等）
+      const textShare = permissions.text_share ?? permissions.text ?? false;
+      const textManage = permissions.text_manage ?? false;
+      const fileShare = permissions.file_share ?? permissions.file ?? false;
+      const fileManage = permissions.file_manage ?? false;
+
+      if (textShare) bitFlag |= Permission.TEXT_SHARE;
+      if (textManage) bitFlag |= Permission.TEXT_MANAGE;
+      if (fileShare) bitFlag |= Permission.FILE_SHARE;
+      if (fileManage) bitFlag |= Permission.FILE_MANAGE;
+      if (permissions.mount_view) bitFlag |= Permission.MOUNT_VIEW;
+      if (permissions.mount_upload) bitFlag |= Permission.MOUNT_UPLOAD;
+      if (permissions.mount_copy) bitFlag |= Permission.MOUNT_COPY;
+      if (permissions.mount_rename) bitFlag |= Permission.MOUNT_RENAME;
+      if (permissions.mount_delete) bitFlag |= Permission.MOUNT_DELETE;
+      if (permissions.webdav_read) bitFlag |= Permission.WEBDAV_READ;
+      if (permissions.webdav_manage) bitFlag |= Permission.WEBDAV_MANAGE;
+      return bitFlag;
+    }
+
+    return 0;
+  };
+
   // ===== 私有方法 =====
 
   /**
@@ -157,30 +209,7 @@ export const useAuthStore = defineStore("auth", () => {
         try {
           const storedPermissions = localStorage.getItem(STORAGE_KEYS.API_KEY_PERMISSIONS);
           if (storedPermissions) {
-            const permissions = JSON.parse(storedPermissions);
-            // 支持新旧权限格式
-            if (typeof permissions === "number") {
-              // 新的位标志权限格式
-              apiKeyPermissions.value = permissions;
-            } else {
-              // 布尔权限格式，转换为位标志
-              let bitFlag = 0;
-              if (permissions.text) bitFlag |= Permission.TEXT;
-              if (permissions.file) bitFlag |= Permission.FILE_SHARE;
-
-              // 处理详细的挂载权限
-              if (permissions.mount_view) bitFlag |= Permission.MOUNT_VIEW;
-              if (permissions.mount_upload) bitFlag |= Permission.MOUNT_UPLOAD;
-              if (permissions.mount_copy) bitFlag |= Permission.MOUNT_COPY;
-              if (permissions.mount_rename) bitFlag |= Permission.MOUNT_RENAME;
-              if (permissions.mount_delete) bitFlag |= Permission.MOUNT_DELETE;
-
-              // 处理WebDAV权限
-              if (permissions.webdav_read) bitFlag |= Permission.WEBDAV_READ;
-              if (permissions.webdav_manage) bitFlag |= Permission.WEBDAV_MANAGE;
-
-              apiKeyPermissions.value = bitFlag;
-            }
+            apiKeyPermissions.value = convertPermissionsToBitFlag(JSON.parse(storedPermissions));
           }
         } catch (permError) {
           console.warn("加载API密钥权限失败:", permError);
@@ -264,13 +293,18 @@ export const useAuthStore = defineStore("auth", () => {
    * 初始化认证状态
    */
   const initialize = async () => {
+    if (initialized.value) {
+      return;
+    }
+
     console.log("初始化认证状态...");
     loadFromStorage();
 
-    // 如果有认证信息，验证其有效性
     if (isAuthenticated.value) {
       await validateAuth();
     }
+
+    initialized.value = true;
   };
 
   /**
@@ -296,31 +330,9 @@ export const useAuthStore = defineStore("auth", () => {
         const response = await api.test.verifyApiKey();
         if (response.success && response.data) {
           // 更新权限信息
-          if (response.data.permissions) {
-            // 支持新旧权限格式
-            if (typeof response.data.permissions === "object" && response.data.permissions.text !== undefined) {
-              // 布尔权限格式，转换为位标志
-              let bitFlag = 0;
-              if (response.data.permissions.text) bitFlag |= Permission.TEXT;
-              if (response.data.permissions.file) bitFlag |= Permission.FILE_SHARE;
-
-              // 处理详细的挂载权限
-              if (response.data.permissions.mount_view) bitFlag |= Permission.MOUNT_VIEW;
-              if (response.data.permissions.mount_upload) bitFlag |= Permission.MOUNT_UPLOAD;
-              if (response.data.permissions.mount_copy) bitFlag |= Permission.MOUNT_COPY;
-              if (response.data.permissions.mount_rename) bitFlag |= Permission.MOUNT_RENAME;
-              if (response.data.permissions.mount_delete) bitFlag |= Permission.MOUNT_DELETE;
-
-              // 处理WebDAV权限
-              if (response.data.permissions.webdav_read) bitFlag |= Permission.WEBDAV_READ;
-              if (response.data.permissions.webdav_manage) bitFlag |= Permission.WEBDAV_MANAGE;
-
-              apiKeyPermissions.value = bitFlag;
-            } else {
-              // 新的位标志权限格式或直接的数字
-              apiKeyPermissions.value = response.data.permissions;
-            }
-          }
+        if (response.data.permissions) {
+          apiKeyPermissions.value = convertPermissionsToBitFlag(response.data.permissions);
+        }
 
           // 更新API密钥信息（包括基础路径）
           if (response.data.key_info) {
@@ -428,29 +440,7 @@ export const useAuthStore = defineStore("auth", () => {
 
       // 设置权限
       if (response.data.permissions) {
-        // 支持新旧权限格式
-        if (typeof response.data.permissions === "object" && response.data.permissions.text !== undefined) {
-          // 布尔权限格式，转换为位标志
-          let bitFlag = 0;
-          if (response.data.permissions.text) bitFlag |= Permission.TEXT;
-          if (response.data.permissions.file) bitFlag |= Permission.FILE_SHARE;
-
-          // 处理详细的挂载权限
-          if (response.data.permissions.mount_view) bitFlag |= Permission.MOUNT_VIEW;
-          if (response.data.permissions.mount_upload) bitFlag |= Permission.MOUNT_UPLOAD;
-          if (response.data.permissions.mount_copy) bitFlag |= Permission.MOUNT_COPY;
-          if (response.data.permissions.mount_rename) bitFlag |= Permission.MOUNT_RENAME;
-          if (response.data.permissions.mount_delete) bitFlag |= Permission.MOUNT_DELETE;
-
-          // 处理WebDAV权限
-          if (response.data.permissions.webdav_read) bitFlag |= Permission.WEBDAV_READ;
-          if (response.data.permissions.webdav_manage) bitFlag |= Permission.WEBDAV_MANAGE;
-
-          apiKeyPermissions.value = bitFlag;
-        } else {
-          // 新的位标志权限格式或直接的数字
-          apiKeyPermissions.value = response.data.permissions;
-        }
+        apiKeyPermissions.value = convertPermissionsToBitFlag(response.data.permissions);
       }
 
       // 设置密钥信息
@@ -491,6 +481,86 @@ export const useAuthStore = defineStore("auth", () => {
   };
 
   /**
+   * 游客登录（基于 Guest API Key）
+   */
+  const guestLogin = async () => {
+    isLoading.value = true;
+
+    try {
+      const guestConfigResp = await api.system.getGuestConfig?.();
+      const guestData = guestConfigResp?.data ?? guestConfigResp;
+
+      if (!guestData || !guestData.enabled || !guestData.key) {
+        throw new Error("游客模式未启用或未正确配置");
+      }
+
+      apiKey.value = guestData.key;
+      authType.value = "apikey";
+
+      const response = await api.test.verifyApiKey();
+      if (!response.success || !response.data) {
+        apiKey.value = originalApiKey;
+        authType.value = originalAuthType;
+        throw new Error("游客 API 密钥验证失败");
+      }
+
+      isAuthenticated.value = true;
+
+      if (response.data.permissions) {
+        apiKeyPermissions.value = convertPermissionsToBitFlag(response.data.permissions);
+      }
+
+      if (response.data.key_info) {
+        apiKeyInfo.value = response.data.key_info;
+        userInfo.value = {
+          id: response.data.key_info.id,
+          name: response.data.key_info.name,
+          basicPath: response.data.key_info.basic_path || "/",
+        };
+      }
+
+      lastValidated.value = Date.now();
+
+      try {
+        window.dispatchEvent(
+          new CustomEvent("auth-state-changed", {
+            detail: { type: "guest-login", isAuthenticated: true },
+          })
+        );
+      } catch {
+        // 忽略事件触发异常
+      }
+
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error("游客登录失败:", error);
+      await logout();
+      throw error;
+    } finally {
+      isLoading.value = false;
+    }
+  };
+
+  /**
+   * 自动尝试游客登录（仅在匿名且未尝试过时调用）
+   */
+  const maybeAutoGuestLogin = async () => {
+    if (guestAutoTried.value) return;
+    if (isAuthenticated.value || authType.value !== "none") {
+      guestAutoTried.value = true;
+      return;
+    }
+
+    guestAutoTried.value = true;
+
+    try {
+      await guestLogin();
+    } catch (error) {
+      console.warn("自动游客登录失败，将保持匿名状态:", error);
+    }
+  };
+
+  /**
    * 登出
    */
   const logout = async () => {
@@ -520,10 +590,14 @@ export const useAuthStore = defineStore("auth", () => {
         );
 
         // 触发特定的登出事件
+        const wasGuest = currentAuthType === "apikey" && isGuest.value;
         if (currentAuthType === "admin") {
           window.dispatchEvent(new CustomEvent("admin-token-expired"));
         } else if (currentAuthType === "apikey") {
           window.dispatchEvent(new CustomEvent("api-key-invalid"));
+          if (wasGuest) {
+            window.dispatchEvent(new CustomEvent("guest-session-ended"));
+          }
         }
       } catch (eventError) {
         console.warn("触发登出事件失败:", eventError);
@@ -587,8 +661,8 @@ export const useAuthStore = defineStore("auth", () => {
       return true;
     }
 
-    // 如果不是API密钥用户，返回false
-    if (authType.value !== "apikey" || !apiKeyInfo.value || !apiKeyInfo.value.id) {
+    // 如果不是API密钥用户（包括游客API Key），返回false
+    if (!isKeyUser.value || !apiKeyInfo.value || !apiKeyInfo.value.id) {
       return false;
     }
 
@@ -605,6 +679,16 @@ export const useAuthStore = defineStore("auth", () => {
     return apiKeyInfo.value.id === createdBy;
   };
 
+  registerAuthBridge({
+    getSnapshot: () => ({
+      authType: authType.value,
+      adminToken: adminToken.value,
+      apiKey: apiKey.value,
+      isAuthenticated: isAuthenticated.value,
+    }),
+    logout,
+  });
+
   // 返回store的状态和方法
   return {
     // 状态
@@ -612,16 +696,23 @@ export const useAuthStore = defineStore("auth", () => {
     authType,
     isLoading,
     isAdmin,
+    isGuest,
+    isKeyUser,
     adminToken,
     apiKey,
     apiKeyInfo,
     apiKeyPermissions,
     userInfo,
     lastValidated,
+    initialized,
 
     // 计算属性
     hasTextPermission,
+    hasTextSharePermission,
+    hasTextManagePermission,
     hasFilePermission,
+    hasFileSharePermission,
+    hasFileManagePermission,
     hasMountPermission,
     hasMountViewPermission,
     hasMountUploadPermission,
@@ -637,6 +728,8 @@ export const useAuthStore = defineStore("auth", () => {
     validateAuth,
     adminLogin,
     apiKeyLogin,
+    guestLogin,
+    maybeAutoGuestLogin,
     logout,
     hasPermission,
     hasPathPermission,

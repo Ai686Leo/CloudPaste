@@ -10,6 +10,7 @@ export default {
     noPermission: "No permission for this feature, please contact administrator",
     contactAdmin: "Contact Administrator",
     permissionDenied: "Permission Denied",
+    actions: "Actions",
     pagination: {
       previousPage: "Previous",
       nextPage: "Next",

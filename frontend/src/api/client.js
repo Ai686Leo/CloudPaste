@@ -5,49 +5,9 @@
 
 import { getFullApiUrl } from "./config";
 import { ApiStatus } from "./ApiStatus"; // 导入API状态码常量
+import { logoutViaBridge, buildAuthHeaders } from "@/modules/security/index.js";
+import { enqueueOfflineOperation } from "@/modules/pwa-offline/index.js";
 
-/**
- * 获取离线操作类型
- * @param {string} endpoint - API端点
- * @param {string} method - HTTP方法
- * @returns {Object|null} 操作类型信息或null（如果不支持离线）
- */
-function getOfflineOperationType(endpoint, method) {
-  // 文本分享操作
-  if (endpoint.includes("/paste") && method === "POST") {
-    return { type: "createPaste", description: "离线创建文本分享已加入队列" };
-  }
-
-  // 统一文本分享操作
-  if (endpoint.includes("/pastes/")) {
-    if (method === "PUT") return { type: "updatePaste", description: "离线更新文本分享已加入队列" };
-  }
-
-  if (endpoint.includes("/pastes/batch-delete") && method === "DELETE") {
-    return { type: "batchDeletePastes", description: "离线批量删除文本分享已加入队列" };
-  }
-
-  if (endpoint.includes("/pastes/clear-expired") && method === "POST") {
-    return { type: "clearExpiredPastes", description: "离线清理过期文本分享已加入队列" };
-  }
-
-  // 系统管理操作
-  if (endpoint.includes("/admin/settings/group/") && method === "PUT") {
-    return { type: "updateGroupSettings", description: "离线分组设置更新已加入队列" };
-  }
-
-  if (endpoint.includes("/admin/cache/clear") && method === "POST") {
-    return { type: "clearCache", description: "离线缓存清理已加入队列" };
-  }
-
-  // 文件密码验证
-  if (endpoint.includes("/public/files/") && endpoint.includes("/verify") && method === "POST") {
-    return { type: "verifyFilePassword", description: "离线文件密码验证已加入队列" };
-  }
-
-  // 不支持的操作类型
-  return null;
-}
 
 /**
  * 检查是否为密码相关的请求
@@ -81,42 +41,19 @@ function checkPasswordRelatedRequest(endpoint, options) {
  * @returns {Promise<Object>} 添加了令牌的请求头
  */
 async function addAuthToken(headers) {
-  // 如果请求头中已有Authorization，优先使用传入的值
+  const merged = buildAuthHeaders(headers);
+
   if (headers.Authorization) {
     console.log("使用传入的Authorization头:", headers.Authorization);
-    return headers;
+  } else if (merged.Authorization) {
+    console.log("ͨ通过authBridge添加Authorization头");
+  } else {
+    console.log("未找到认证凭据，请求将不包含Authorization头");
   }
 
-  try {
-    // 尝试从认证Store获取认证信息
-    // 注意：这里需要动态导入，因为可能存在循环依赖
-    const { useAuthStore } = await import("@/stores/authStore.js");
-    const authStore = useAuthStore();
-
-    // 检查管理员认证
-    if (authStore.authType === "admin" && authStore.adminToken) {
-      console.log("从认证Store获取admin_token，长度:", authStore.adminToken.length);
-      return {
-        ...headers,
-        Authorization: `Bearer ${authStore.adminToken}`,
-      };
-    }
-
-    // 检查API密钥认证（即使isAuthenticated还未设置为true）
-    if (authStore.authType === "apikey" && authStore.apiKey) {
-      console.log("从认证Store获取API密钥，长度:", authStore.apiKey.length);
-      return {
-        ...headers,
-        Authorization: `ApiKey ${authStore.apiKey}`,
-      };
-    }
-  } catch (error) {
-    console.error("无法从认证Store获取认证信息:", error);
-  }
-
-  console.log("未找到认证凭据，请求将不包含Authorization头");
-  return headers;
+  return merged;
 }
+
 
 /**
  * 通用API请求方法
@@ -171,9 +108,8 @@ export async function fetchApi(endpoint, options = {}) {
   // 🎯 PWA网络状态检测 - 符合最佳实践
   if (!navigator.onLine) {
     console.warn(`🔌 离线状态，API请求可能失败: ${url}`);
-    // Service Worker Cache API会处理HTTP缓存，这里处理离线操作队列
     if (options.method && options.method !== "GET") {
-      await handleOfflineOperation(endpoint, options);
+      await enqueueOfflineOperation(endpoint, options);
     }
   }
 
@@ -282,7 +218,9 @@ export async function fetchApi(endpoint, options = {}) {
           // 确保返回后端提供的具体错误信息
           const errorMessage = responseData && responseData.message ? responseData.message : "密码错误";
 
-          throw new Error(errorMessage);
+          const error = new Error(errorMessage);
+          error.__logged = true;
+          throw error;
         }
 
         // 如果是修改密码请求，可能是当前密码验证失败
@@ -290,52 +228,51 @@ export async function fetchApi(endpoint, options = {}) {
           // 返回具体的错误信息，通常是"当前密码错误"
           const errorMessage = responseData && responseData.message ? responseData.message : "验证失败";
 
-          throw new Error(errorMessage);
+          const error = new Error(errorMessage);
+          error.__logged = true;
+          throw error;
         }
 
         // 判断使用的是哪种认证方式
         const authHeader = requestOptions.headers.Authorization || "";
 
-        // 使用认证Store处理认证失败
-        try {
-          const { useAuthStore } = await import("@/stores/authStore.js");
-          const authStore = useAuthStore();
-
-          // 管理员令牌过期
-          if (authHeader.startsWith("Bearer ")) {
-            console.log("管理员令牌验证失败，执行登出");
-            await authStore.logout();
-            throw new Error("管理员会话已过期，请重新登录");
-          }
-          // API密钥处理
-          else if (authHeader.startsWith("ApiKey ")) {
-            // 检查是否是权限不足问题（而非API密钥无效）
-            const isPermissionIssue =
-                responseData &&
-                responseData.message &&
-                (responseData.message.includes("未授权访问") ||
-                    responseData.message.includes("无权访问") ||
-                    responseData.message.includes("需要管理员权限或有效的API密钥") ||
-                    responseData.message.includes("权限不足") ||
-                    responseData.message.includes("没有权限"));
-
-            if (isPermissionIssue) {
-              // 权限不足，仅抛出错误，但不清除API密钥
-              console.log("API密钥权限不足，不执行登出");
-              throw new Error(responseData.message || "访问被拒绝，您可能无权执行此操作");
-            } else {
-              // 其他情况（如密钥真的无效）时，执行登出
-              console.log("API密钥验证失败，执行登出");
-              await authStore.logout();
-              throw new Error("API密钥无效或已过期");
-            }
-          } else {
-            throw new Error("未授权访问，请登录后重试");
-          }
-        } catch (storeError) {
-          console.error("无法使用认证Store处理认证失败:", storeError);
-          throw new Error("认证失败，请重新登录");
+        // 管理员令牌过期
+        if (authHeader.startsWith("Bearer ")) {
+          console.log("管理员令牌验证失败，执行登出");
+          await logoutViaBridge();
+          const error = new Error("管理员会话已过期，请重新登录");
+          error.__logged = true;
+          throw error;
         }
+
+        // API密钥处理
+        if (authHeader.startsWith("ApiKey ")) {
+          const isPermissionIssue =
+            responseData &&
+            responseData.message &&
+            (responseData.message.includes("未授权访问") ||
+              responseData.message.includes("无权访问") ||
+              responseData.message.includes("需要管理员权限或有效的API密钥") ||
+              responseData.message.includes("权限不足") ||
+              responseData.message.includes("没有权限"));
+
+          if (isPermissionIssue) {
+            console.log("API密钥权限不足，不执行登出");
+            const error = new Error(responseData.message || "访问被拒绝，您可能无权执行此操作");
+            error.__logged = true;
+            throw error;
+          }
+
+          console.log("API密钥验证失败，执行登出");
+          await logoutViaBridge();
+          const apiKeyError = new Error("API密钥无效或已过期");
+          apiKeyError.__logged = true;
+          throw apiKeyError;
+        }
+
+        const unauthorizedError = new Error("未授权访问，请登录后重试");
+        unauthorizedError.__logged = true;
+        throw unauthorizedError;
       }
 
       // 对409状态码做特殊处理（链接后缀冲突或其他冲突）
@@ -343,31 +280,43 @@ export async function fetchApi(endpoint, options = {}) {
         console.error(`❌ 资源冲突错误(${url}):`, responseData);
         // 使用后端返回的具体错误信息，无论是字符串形式还是对象形式
         if (typeof responseData === "string") {
-          throw new Error(responseData);
+          const error = new Error(responseData);
+          error.__logged = true;
+          throw error;
         } else if (responseData && typeof responseData === "object" && responseData.message) {
-          throw new Error(responseData.message);
+          const error = new Error(responseData.message);
+          error.__logged = true;
+          throw error;
         } else {
-          throw new Error("链接后缀已被占用，请尝试其他后缀");
+          const error = new Error("链接后缀已被占用，请尝试其他后缀");
+          error.__logged = true;
+          throw error;
         }
       }
 
       // 处理新的后端错误格式 (code, message)
       if (responseData && typeof responseData === "object") {
         console.error(`❌ API错误(${url}):`, responseData);
-        throw new Error(responseData.message || `HTTP错误 ${response.status}: ${response.statusText}`);
+        const error = new Error(responseData.message || `HTTP错误 ${response.status}: ${response.statusText}`);
+        error.__logged = true;
+        throw error;
       }
 
       console.error(`❌ HTTP错误(${url}): ${response.status}`, responseData);
-      throw new Error(`HTTP错误 ${response.status}: ${response.statusText}`);
+      const error = new Error(`HTTP错误 ${response.status}: ${response.statusText}`);
+      error.__logged = true;
+      throw error;
     }
 
     // 处理新的后端统一响应格式 (code, message, data)
     if (responseData && typeof responseData === "object") {
-      //success 布尔判断
+      // success 布尔判断
       if ("success" in responseData) {
         if (responseData.success !== true) {
           console.error(`❌ API业务错误(${url}):`, responseData);
-          throw new Error(responseData.message || "请求失败");
+          const error = new Error(responseData.message || "请求失败");
+          error.__logged = true;
+          throw error;
         }
         return responseData;
       }
@@ -393,7 +342,10 @@ export async function fetchApi(endpoint, options = {}) {
       console.error(`🌐 网络错误(${url}):`, error.message);
       throw new Error("网络连接失败，请检查网络设置");
     } else {
-      console.error(`❌ API请求失败(${url}):`, error);
+      // 避免对已经在上层记录过的业务错误重复打印日志
+      if (!error.__logged) {
+        console.error(`❌ API请求失败(${url}):`, error);
+      }
       throw error;
     }
   }
@@ -403,81 +355,6 @@ export async function fetchApi(endpoint, options = {}) {
 let offlineOperationLock = false;
 
 // 处理离线操作（PWA
-async function handleOfflineOperation(endpoint, options) {
-  if (offlineOperationLock) {
-    console.log("[PWA] 离线操作正在处理中，跳过重复操作");
-    return;
-  }
-
-  console.log(`[PWA] 处理离线操作: ${options.method} ${endpoint}`);
-  try {
-    offlineOperationLock = true;
-
-    const { pwaUtils } = await import("../pwa/pwaManager.js");
-    if (!pwaUtils || !pwaUtils.storage) {
-      console.warn("[PWA] pwaUtils或storage不可用");
-      return;
-    }
-
-    // 获取当前认证信息
-    let authToken = null;
-    let authType = null;
-
-    try {
-      const { useAuthStore } = await import("@/stores/authStore.js");
-      const authStore = useAuthStore();
-
-      if (authStore.authType === "admin" && authStore.adminToken) {
-        authToken = authStore.adminToken;
-        authType = "admin";
-        console.log(`[PWA] 获取管理员认证信息，token长度: ${authToken.length}`);
-      } else if (authStore.authType === "apikey" && authStore.apiKey) {
-        authToken = authStore.apiKey;
-        authType = "apikey";
-        console.log(`[PWA] 获取API密钥认证信息，token长度: ${authToken.length}`);
-      }
-    } catch (error) {
-      console.error("[PWA] 获取认证信息失败:", error);
-    }
-
-    const operation = {
-      endpoint,
-      method: options.method,
-      data: options.body,
-      authToken, // 保存认证token
-      authType, // 保存认证类型
-      timestamp: new Date().toISOString(),
-      status: "pending",
-    };
-
-    // 根据端点和方法确定操作类型
-    const operationType = getOfflineOperationType(endpoint, options.method);
-    if (!operationType) {
-      console.log(`[PWA] 跳过离线操作（不适合离线处理）: ${options.method} ${endpoint}`);
-      return;
-    }
-
-    operation.type = operationType.type;
-    await pwaUtils.storage.addToOfflineQueue(operation);
-    console.log(`[PWA] ${operationType.description}`);
-
-    // 尝试注册Background Sync以确保可靠同步
-    if (pwaUtils.isBackgroundSyncSupported()) {
-      try {
-        await pwaUtils.registerBackgroundSync("sync-offline-queue");
-        console.log("[PWA] Background Sync 已注册，操作将在网络恢复时自动同步");
-      } catch (error) {
-        console.warn("[PWA] Background Sync 注册失败:", error);
-      }
-    }
-  } catch (error) {
-    console.warn("[PWA] 离线操作处理失败:", error);
-  } finally {
-    // 确保锁被释放
-    offlineOperationLock = false;
-  }
-}
-
 // 处理成功响应的业务数据存储（PWA离线）
 async function handleSuccessfulResponse(endpoint, options, responseData) {
   try {

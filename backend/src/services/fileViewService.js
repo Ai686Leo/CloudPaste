@@ -243,9 +243,9 @@ export class FileViewService {
 }
 
 // 导出便捷函数供路由使用
-export async function handleFileDownload(slug, env, request, forceDownload = false, repositoryFactory = null) {
-  const service = new FileViewService(env.DB, env.ENCRYPTION_SECRET || "default-encryption-key", repositoryFactory);
-  return await service.handleFileDownload(slug, request, forceDownload);
+export async function handleFileDownload(slug, db, encryptionSecret, request, forceDownload = false, repositoryFactory = null) {
+  const service = new FileViewService(db, encryptionSecret, repositoryFactory);
+  return service.handleFileDownload(slug, request, forceDownload);
 }
 
 export async function checkAndDeleteExpiredFile(db, file, encryptionSecret, repositoryFactory = null) {

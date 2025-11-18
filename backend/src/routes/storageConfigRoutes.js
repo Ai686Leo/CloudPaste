@@ -20,6 +20,7 @@ import { getEncryptionSecret } from "../utils/environmentUtils.js";
 import { usePolicy } from "../security/policies/policies.js";
 import { resolvePrincipal } from "../security/helpers/principal.js";
 import { useRepositories } from "../utils/repositories.js";
+import { NotFoundError } from "../http/errors.js";
 
 const storageConfigRoutes = new Hono();
 const requireRead = usePolicy("s3.config.read");
@@ -47,8 +48,28 @@ storageConfigRoutes.get("/api/storage", requireRead, async (c) => {
     return jsonOk(c, { items: result.configs, total: result.total }, "获取存储配置列表成功");
   }
 
+  // API 密钥用户：仅能看到“公开 + ACL 白名单”内的存储配置
   const configs = await getPublicStorageConfigs(db, repositoryFactory);
-  return jsonOk(c, { items: configs, total: configs.length }, "获取存储配置列表成功");
+
+  const repoFactory = repositoryFactory;
+  const aclRepo = repoFactory.getPrincipalStorageAclRepository
+    ? repoFactory.getPrincipalStorageAclRepository()
+    : null;
+
+  let filteredConfigs = configs;
+  if (aclRepo && identity.userId) {
+    try {
+      const allowedIds = await aclRepo.findConfigIdsBySubject("API_KEY", identity.userId);
+      if (Array.isArray(allowedIds) && allowedIds.length > 0) {
+        const allowedSet = new Set(allowedIds);
+        filteredConfigs = configs.filter((cfg) => allowedSet.has(cfg.id));
+      }
+    } catch (error) {
+      console.warn("加载存储 ACL 失败，将回退到仅基于 is_public 的存储配置列表：", error);
+    }
+  }
+
+  return jsonOk(c, { items: filteredConfigs, total: filteredConfigs.length }, "获取存储配置列表成功");
 });
 
 // 获取单个存储配置详情
@@ -74,7 +95,29 @@ storageConfigRoutes.get("/api/storage/:id", requireRead, async (c) => {
       config = await getStorageConfigByIdForAdmin(db, id, adminId, repositoryFactory);
     }
   } else {
-    config = await getPublicStorageConfigById(db, id, repositoryFactory);
+    // API 密钥用户：仅允许访问“公开 + ACL 白名单”内的存储配置
+    const repoFactory = repositoryFactory;
+    const aclRepo = repoFactory.getPrincipalStorageAclRepository
+      ? repoFactory.getPrincipalStorageAclRepository()
+      : null;
+
+    const cfg = await getPublicStorageConfigById(db, id, repositoryFactory);
+
+    if (aclRepo && identity.userId) {
+      try {
+        const allowedIds = await aclRepo.findConfigIdsBySubject("API_KEY", identity.userId);
+        if (Array.isArray(allowedIds) && allowedIds.length > 0 && !allowedIds.includes(cfg.id)) {
+          throw new NotFoundError("存储配置不存在");
+        }
+      } catch (error) {
+        if (error instanceof NotFoundError) {
+          throw error;
+        }
+        console.warn("加载存储 ACL 失败，将回退到仅基于 is_public 的访问控制：", error);
+      }
+    }
+
+    config = cfg;
   }
 
   return jsonOk(c, config, "获取存储配置成功");

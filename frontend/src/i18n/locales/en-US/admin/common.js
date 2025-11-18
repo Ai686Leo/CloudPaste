@@ -1,6 +1,6 @@
 export default {
   login: {
-    adminLogin: "Admin Login",
+    adminLogin: "CloudPaste Login",
     apiKeyAuth: "API Key Authentication",
     username: "Username",
     password: "Password",
@@ -9,6 +9,9 @@ export default {
     loggingIn: "Logging in...",
     useApiKey: "Use API Key Login",
     useAdminAccount: "Use Admin Account Login",
+    orLoginWith: "Or",
+    useGuest: "Sign in as Guest",
+    rememberMe: "Remember this login",
     inputRequired: {
       usernamePassword: "Please enter username and password",
       apiKey: "Please enter API key",
@@ -23,6 +26,7 @@ export default {
       permissionInfo: "Unable to get permission information",
       invalidApiKey: "Invalid or unauthorized API key",
       insufficientPermissions: "Insufficient API key permissions",
+      guestLoginFailed: "Guest login failed",
     },
   },
   permissionDenied: {

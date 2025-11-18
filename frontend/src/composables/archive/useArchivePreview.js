@@ -263,7 +263,7 @@ export function useArchivePreview() {
       console.log("文件预览成功:", entry.name);
     } catch (error) {
       console.error("预览文件失败:", error);
-      alert(`预览失败: ${error.message}`);
+      extractError.value = error.message || "预览失败";
     } finally {
       isPreviewing.value = false;
       currentPreviewFile.value = null;
@@ -308,7 +308,7 @@ export function useArchivePreview() {
       console.log("文件下载成功:", entry.name);
     } catch (error) {
       console.error("下载文件失败:", error);
-      alert(`下载失败: ${error.message}`);
+      extractError.value = error.message || "下载失败";
     }
   };
 

@@ -60,7 +60,7 @@ CREATE TABLE api_keys (
   permissions INTEGER DEFAULT 0,        -- 位标志权限（替代布尔字段）
   role TEXT DEFAULT 'GENERAL',          -- 用户角色：GUEST/GENERAL/ADMIN
   basic_path TEXT DEFAULT '/',
-  is_guest BOOLEAN DEFAULT 0,           -- 是否为访客（免密访问）
+  is_enable BOOLEAN DEFAULT 0,         -- 启用状态：0=禁用，1=启用（所有密钥默认禁用，需手动开启）
   last_used DATETIME,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   expires_at DATETIME NOT NULL
@@ -86,6 +86,16 @@ CREATE INDEX idx_storage_admin ON storage_configs(admin_id);
 CREATE INDEX idx_storage_type ON storage_configs(storage_type);
 CREATE INDEX idx_storage_public ON storage_configs(is_public);
 CREATE UNIQUE INDEX idx_default_per_admin ON storage_configs(admin_id) WHERE is_default = 1;
+
+-- 存储 ACL 表：主体 -> 存储配置访问白名单
+CREATE TABLE principal_storage_acl (
+  subject_type TEXT NOT NULL,           -- 主体类型：API_KEY/USER/ROLE 等
+  subject_id TEXT NOT NULL,             -- 主体ID：api_keys.id / users.id 等
+  storage_config_id TEXT NOT NULL,      -- 被允许访问的 storage_configs.id
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (subject_type, subject_id, storage_config_id)
+);
+CREATE INDEX idx_psa_storage_config_id ON principal_storage_acl(storage_config_id);
 
 -- 创建files表 - 存储已上传文件的元数据（支持多存储类型）
 CREATE TABLE files (

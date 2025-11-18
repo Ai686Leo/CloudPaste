@@ -14,6 +14,11 @@ export default {
       disabled: "Disabled",
       proxy: "Proxy",
       signature: "Signature",
+      proxySign: "Proxy/Sign",
+    },
+    viewMode: {
+      grid: "Grid View",
+      list: "List View",
     },
     info: {
       name: "Mount Name",

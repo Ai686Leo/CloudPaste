@@ -41,6 +41,7 @@ export default {
     actions: {
       download: "Download File",
       downloadFile: "Download File",
+      updateSuccess: "File information updated successfully",
       downloadFailed: "Download failed",
       downloadExpired: "Download link may have expired, please try refreshing to get a new download link",
       share: "Share Link",

@@ -40,7 +40,7 @@ const generateRequestId = () => {
 const getAuthSnapshot = (c) => {
   const authResult = c.get("authResult");
   if (!authResult) {
-    return { userType: UserType.GUEST, userId: null };
+    return { userType: UserType.ANONYMOUS, userId: null };
   }
   if (authResult.isAdmin && authResult.isAdmin()) {
     return { userType: UserType.ADMIN, userId: authResult.getUserId?.() || null };
@@ -48,7 +48,7 @@ const getAuthSnapshot = (c) => {
   if (authResult.keyInfo) {
     return { userType: UserType.API_KEY, userId: authResult.keyInfo.id || authResult.keyInfo.name || null };
   }
-  return { userType: UserType.GUEST, userId: authResult.getUserId?.() || null };
+  return { userType: UserType.ANONYMOUS, userId: authResult.getUserId?.() || null };
 };
 
 const structuredLogger = async (c, next) => {

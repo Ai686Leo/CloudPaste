@@ -7,7 +7,7 @@ export const resolvePrincipal = (c, options = {}) => {
   const { allowedTypes = [UserType.ADMIN, UserType.API_KEY], allowGuest = false, message = "需要认证访问" } = options;
   const principal = c.get("principal");
 
-  if ((!principal || principal.type === "guest") && !allowGuest) {
+  if ((!principal || principal.type === "anonymous") && !allowGuest) {
     throw new AuthenticationError(message);
   }
 

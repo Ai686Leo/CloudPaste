@@ -81,6 +81,8 @@ export const api = {
     createApiKey: authService.createApiKey,
     deleteApiKey: authService.deleteApiKey,
     updateApiKey: authService.updateApiKey,
+    getApiKeyStorageAcl: authService.getApiKeyStorageAcl,
+    updateApiKeyStorageAcl: authService.updateApiKeyStorageAcl,
 
     // 文本分享管理（统一接口）
     getPastes: pasteService.getPastes,

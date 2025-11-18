@@ -9,6 +9,7 @@ export const DbTables = {
   PASTES: "pastes", // 文本表
   API_KEYS: "api_keys", // API密钥表
   STORAGE_CONFIGS: "storage_configs", // 通用“存储配置表”
+  PRINCIPAL_STORAGE_ACL: "principal_storage_acl", // 主体 -> 存储配置 ACL 表
   FILES: "files", // 文件表
   FILE_PASSWORDS: "file_passwords", // 文件明文密码表
   SYSTEM_SETTINGS: "system_settings", // 系统设置表
@@ -70,5 +71,5 @@ export const S3ProviderTypes = {
 export const UserType = {
   ADMIN: "admin",
   API_KEY: "apiKey",
-  GUEST: "guest",
+  ANONYMOUS: "anonymous",
 };

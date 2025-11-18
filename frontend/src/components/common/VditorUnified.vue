@@ -426,15 +426,13 @@ const getValue = () => {
 
 // 设置编辑器内容
 const setValue = (content) => {
+  // 始终先同步内部的纯文本状态
   plainTextContent.value = content;
   originalPlainTextContent.value = content;
 
-  if (!props.isPlainTextMode && editor && editor.setValue && typeof editor.setValue === "function") {
-    try {
-      editor.setValue(content);
-    } catch (error) {
-      console.error("设置编辑器内容时出错:", error);
-    }
+  // 在 Markdown 模式下，通过 safeSetValue 进行延迟、容错的写入
+  if (!props.isPlainTextMode) {
+    safeSetValue(content);
   }
 };
 
@@ -453,12 +451,9 @@ const getHTML = () => {
 
 // 清空内容
 const clearContent = () => {
-  if (editor && editor.setValue && typeof editor.setValue === "function") {
-    try {
-      editor.setValue("");
-    } catch (error) {
-      console.error("清空编辑器内容时出错:", error);
-    }
+  // Markdown 模式下，同样通过 safeSetValue 清空，避免在销毁/重建期间直接访问实例内部状态
+  if (!props.isPlainTextMode) {
+    safeSetValue("");
   }
   plainTextContent.value = "";
   originalPlainTextContent.value = "";

@@ -124,7 +124,10 @@ export function useFilePreviewExtensions(
       throw new Error("文件信息中缺少preview_url字段");
     } catch (error) {
       console.error("S3直链预览失败:", error);
-      alert(t("mount.filePreview.s3PreviewError", { message: error.message }));
+      emit("show-message", {
+        type: "error",
+        message: t("mount.filePreview.s3PreviewError", { message: error.message }),
+      });
     } finally {
       isGeneratingPreview.value = false;
     }

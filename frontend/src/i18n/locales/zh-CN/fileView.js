@@ -41,6 +41,7 @@ export default {
     actions: {
       download: "下载文件",
       downloadFile: "下载文件",
+      updateSuccess: "文件信息更新成功",
       downloadFailed: "下载失败",
       downloadExpired: "下载链接可能已过期，请尝试刷新获取新的下载链接",
       share: "分享链接",

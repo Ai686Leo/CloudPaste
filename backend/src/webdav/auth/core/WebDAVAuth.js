@@ -175,7 +175,7 @@ export class WebDAVAuth {
   async performUnifiedAuth(c, requestPath) {
     try {
       const principal = c.get("principal");
-      if (!principal || principal.type === "guest") {
+      if (!principal || principal.type === "anonymous") {
         return this.generateAuthChallenge();
       }
 

@@ -8,7 +8,7 @@ import { FileRepository } from "../repositories/index.js";
 import { StorageConfigUtils } from "../storage/utils/StorageConfigUtils.js";
 import { StorageFactory } from "../storage/factory/StorageFactory.js";
 import { GetFileType, getFileTypeName } from "../utils/fileTypeDetector.js";
-import { validateSlugFormat } from "../utils/common.js";
+import { generateUniqueFileSlug, validateSlugFormat } from "../utils/common.js";
 import { hashPassword } from "../utils/crypto.js";
 import { ApiStatus, DbTables, UserType } from "../constants/index.js";
 import { ValidationError, NotFoundError, AuthorizationError, ConflictError } from "../http/errors.js";
@@ -315,8 +315,12 @@ export class FileService {
 
     // 处理 slug 更新（包含格式校验和冲突检查）
     if (updateData.slug !== undefined) {
-      await this._validateAndProcessSlug(updateData.slug, fileId, userType);
-      finalUpdateData.slug = updateData.slug;
+      if (!updateData.slug) {
+        finalUpdateData.slug = await generateUniqueFileSlug(this.db, null, false, null);
+      } else {
+        await this._validateAndProcessSlug(updateData.slug, fileId, userType);
+        finalUpdateData.slug = updateData.slug;
+      }
     }
 
     // 处理过期时间
@@ -354,6 +358,7 @@ export class FileService {
     return {
       success: true,
       message: "文件元数据更新成功",
+      slug: finalUpdateData.slug ?? existingFile.slug,
     };
   }
 

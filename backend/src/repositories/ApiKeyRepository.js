@@ -183,11 +183,11 @@ export class ApiKeyRepository extends BaseRepository {
     allKeys.forEach((key) => {
       const permissions = key.permissions || 0;
 
-      // 基础权限统计
-      if (PermissionChecker.hasPermission(permissions, Permission.TEXT)) {
+      // 基础权限统计（任一相关位即可视为具备该能力族）
+      if (PermissionChecker.hasAnyPermission(permissions, [Permission.TEXT_SHARE, Permission.TEXT_MANAGE])) {
         permissionStats.text++;
       }
-      if (PermissionChecker.hasPermission(permissions, Permission.FILE_SHARE)) {
+      if (PermissionChecker.hasAnyPermission(permissions, [Permission.FILE_SHARE, Permission.FILE_MANAGE])) {
         permissionStats.file_share++;
       }
 

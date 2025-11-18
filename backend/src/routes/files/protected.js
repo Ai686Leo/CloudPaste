@@ -180,6 +180,6 @@ export const registerFilesProtectedRoutes = (router) => {
     const body = await c.req.json();
 
     const result = await updateFile(db, id, body, { userType, userId });
-    return jsonOk(c, undefined, result.message);
+    return jsonOk(c, result, result.message);
   });
 };

@@ -155,8 +155,22 @@ export async function updateStorageConfig(db, id, updateData, adminId, encryptio
 export async function deleteStorageConfig(db, id, adminId, repositoryFactory = null) {
   const factory = ensureRepositoryFactory(db, repositoryFactory);
   const repo = factory.getStorageConfigRepository();
+  const aclRepo = factory.getPrincipalStorageAclRepository
+    ? factory.getPrincipalStorageAclRepository()
+    : null;
+
   const exists = await repo.findByIdAndAdmin(id, adminId);
   if (!exists) throw new NotFoundError("存储配置不存在");
+
+  // 先清理与该存储配置相关的 ACL 绑定
+  if (aclRepo) {
+    try {
+      await aclRepo.deleteByStorageConfigId(id);
+    } catch (error) {
+      console.warn("删除存储配置关联的存储 ACL 失败，将继续删除存储配置本身：", error);
+    }
+  }
+
   await repo.deleteConfig(id);
 }
 

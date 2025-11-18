@@ -23,15 +23,19 @@ const app = new Hono();
 // 处理API路径下的文件下载请求 /api/file-download/:slug
 app.get("/api/file-download/:slug", async (c) => {
   const slug = c.req.param("slug");
+  const db = c.env.DB;
+  const encryptionSecret = getEncryptionSecret(c);
   const repositoryFactory = useRepositories(c);
-  return await handleFileDownload(slug, c.env, c.req.raw, true, repositoryFactory); // 强制下载
+  return handleFileDownload(slug, db, encryptionSecret, c.req.raw, true, repositoryFactory); // 强制下载
 });
 
 // 处理API路径下的文件预览请求 /api/file-view/:slug
 app.get("/api/file-view/:slug", async (c) => {
   const slug = c.req.param("slug");
+  const db = c.env.DB;
+  const encryptionSecret = getEncryptionSecret(c);
   const repositoryFactory = useRepositories(c);
-  return await handleFileDownload(slug, c.env, c.req.raw, false, repositoryFactory); // 预览
+  return handleFileDownload(slug, db, encryptionSecret, c.req.raw, false, repositoryFactory); // 预览
 });
 
 // 处理Office文件直接预览URL请求 /api/office-preview/:slug

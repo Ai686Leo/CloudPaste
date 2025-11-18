@@ -6,10 +6,11 @@
 import { computed, onUnmounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { storeToRefs } from "pinia";
-import { useFileBasketStore } from "../../stores/fileBasketStore.js";
+import { useFileBasketStore } from "@/stores/fileBasketStore.js";
 import { useAuthStore } from "@/stores/authStore.js";
-import { useTaskManager } from "../../utils/taskManager.js";
+import { useTaskManager } from "@/utils/taskManager.js";
 import { api } from "@/api";
+import { formatNowForFilename } from "@/utils/timeUtils.js";
 
 export function useFileBasket() {
   const { t } = useI18n();
@@ -454,7 +455,7 @@ export function useFileBasket() {
       const zipBlob = await zipWriter.close();
 
       // 下载ZIP文件
-      const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, "-");
+      const timestamp = formatNowForFilename();
       const zipFileName = `CloudPaste_${timestamp}.zip`;
       saveAs(zipBlob, zipFileName);
 

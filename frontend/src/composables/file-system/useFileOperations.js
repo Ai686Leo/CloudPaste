@@ -1,31 +1,42 @@
 /**
  * 文件操作 Composable
- * 处理文件操作相关的UI逻辑，使用统一的文件系统API
+ * 基于 FS service 提供统一的下载、重命名、建目录、批量删除、获取直链等 UI 逻辑
  */
 
 import { ref } from "vue";
 import { useI18n } from "vue-i18n";
-import { api } from "@/api";
-import { downloadFileWithAuth } from "@/utils/fileUtils.js";
 import { copyToClipboard } from "@/utils/clipboard.js";
+import { useFsService } from "@/modules/fs";
+
+/** @typedef {import("@/types/fs").FsDirectoryItem} FsDirectoryItem */
+
+/**
+ * @typedef {Object} FileOperationResult
+ * @property {boolean} success
+ * @property {string} message
+ * @property {string} [url]
+ */
 
 export function useFileOperations() {
   const { t } = useI18n();
+  const fsService = useFsService();
 
-  // 操作状态
   const loading = ref(false);
-  const error = ref(null);
-  const showLinkCopiedNotification = ref(false);
+  const error = ref(/** @type {string | null} */ (null));
 
-  // ===== 核心文件操作方法 =====
+  // ===== 下载文件 =====
 
   /**
    * 下载文件
-   * @param {string|Object} pathOrItem - 文件路径或文件项对象
-   * @returns {Promise<Object>} 操作结果
+   * @param {string | (FsDirectoryItem & { download_url?: string })} pathOrItem - 文件路径或文件对象
+   * @returns {Promise<FileOperationResult>}
    */
   const downloadFile = async (pathOrItem) => {
-    const item = typeof pathOrItem === "string" ? { path: pathOrItem, name: pathOrItem.split("/").pop() } : pathOrItem;
+    /** @type {FsDirectoryItem & { download_url?: string }} */
+    const item =
+      typeof pathOrItem === "string"
+        ? { path: pathOrItem, name: pathOrItem.split("/").pop() || pathOrItem, isDirectory: false }
+        : pathOrItem;
 
     if (!item || item.isDirectory) {
       return { success: false, message: t("mount.messages.cannotDownloadDirectory") };
@@ -35,16 +46,10 @@ export function useFileOperations() {
       loading.value = true;
       error.value = null;
 
-      // 注释掉权限检查，保持与原版本兼容
-      // if (!auth.hasFileOperationPermission("read", item.path)) {
-      //   throw new Error(t("mount.messages.noDownloadPermission"));
-      // }
-
-      // 优先使用文件信息中的download_url字段（S3直链）
+      // 如果有已有的 download_url（例如前端缓存的 S3 直链），直接使用
       if (item.download_url) {
-        console.log("下载使用文件信息中的download_url:", item.download_url);
+        console.log("使用已有 download_url:", item.download_url);
 
-        // 创建隐藏的下载链接
         const link = document.createElement("a");
         link.href = item.download_url;
         link.download = item.name;
@@ -56,13 +61,12 @@ export function useFileOperations() {
         return { success: true, message: t("mount.messages.downloadStarted", { name: item.name }) };
       }
 
-      // 如果没有download_url，尝试通过API获取下载链接
-      const getFileInfo = api.fs.getFileInfo;
-      const response = await getFileInfo(item.path);
+      // 否则通过 FS service 获取文件信息，从中取 download_url
+      const info = await fsService.getFileInfo(item.path);
 
-      if (response.success && response.data?.download_url) {
+      if (info?.download_url) {
         const link = document.createElement("a");
-        link.href = response.data.download_url;
+        link.href = info.download_url;
         link.download = item.name;
         link.style.display = "none";
         document.body.appendChild(link);
@@ -72,93 +76,81 @@ export function useFileOperations() {
         return { success: true, message: t("mount.messages.downloadStarted", { name: item.name }) };
       }
 
-      // 如果都没有，说明后端有问题
-      console.error("下载：文件信息中没有download_url字段，请检查后端getFileInfo实现");
-      throw new Error("文件信息中缺少download_url字段");
+      console.error("下载失败：文件信息中没有 download_url 字段");
+      throw new Error("文件信息缺少 download_url 字段");
     } catch (err) {
       console.error("下载文件失败:", err);
-      error.value = err.message;
-      return { success: false, message: t("mount.messages.downloadFailed", { name: item.name, message: err.message }) };
+      error.value = /** @type {any} */ (err)?.message;
+      return { success: false, message: t("mount.messages.downloadFailed", { name: item.name, message: error.value }) };
     } finally {
       loading.value = false;
     }
   };
 
+  // ===== 重命名 =====
+
   /**
-   * 重命名文件或文件夹
-   * @param {string} oldPath - 原路径
-   * @param {string} newPath - 新路径（完整路径）
-   * @returns {Promise<Object>} 操作结果
+   * 重命名文件或目录
+   * @param {string} oldPath
+   * @param {string} newPath
+   * @returns {Promise<FileOperationResult>}
    */
   const renameItem = async (oldPath, newPath) => {
     try {
       loading.value = true;
       error.value = null;
 
-      const renameItemApi = api.fs.renameItem;
-      const response = await renameItemApi(oldPath, newPath);
-
-      if (response.success) {
-        return { success: true, message: t("mount.messages.renameSuccess") };
-      } else {
-        throw new Error(response.message || t("mount.messages.renameFailed"));
-      }
+      await fsService.renameItem(oldPath, newPath);
+      return { success: true, message: t("mount.messages.renameSuccess") };
     } catch (err) {
       console.error("重命名失败:", err);
-      error.value = err.message;
-      return { success: false, message: err.message };
+      error.value = /** @type {any} */ (err)?.message;
+      return { success: false, message: error.value || "重命名失败" };
     } finally {
       loading.value = false;
     }
   };
 
+  // ===== 创建目录 =====
+
   /**
-   * 创建文件夹
-   * @param {string} parentPath - 父目录路径
-   * @param {string} folderName - 文件夹名称
-   * @returns {Promise<Object>} 操作结果
+   * 创建目录
+   * @param {string} parentPath
+   * @param {string} folderName
+   * @returns {Promise<FileOperationResult>}
    */
   const createFolder = async (parentPath, folderName) => {
     try {
       loading.value = true;
       error.value = null;
 
-      // 构造完整路径，确保目录路径以 / 结尾
       const fullPath = parentPath.endsWith("/") ? `${parentPath}${folderName}/` : `${parentPath}/${folderName}/`;
 
-      const createFolderApi = api.fs.createDirectory;
-      const response = await createFolderApi(fullPath);
-
-      if (response.success) {
-        return { success: true, message: t("mount.messages.createFolderSuccess") };
-      } else {
-        throw new Error(response.message || t("mount.messages.createFolderFailed"));
-      }
+      await fsService.createDirectory(fullPath);
+      return { success: true, message: t("mount.messages.createFolderSuccess") };
     } catch (err) {
       console.error("创建文件夹失败:", err);
-      error.value = err.message;
-      return { success: false, message: err.message };
+      error.value = /** @type {any} */ (err)?.message;
+      return { success: false, message: error.value || "创建文件夹失败" };
     } finally {
       loading.value = false;
     }
   };
 
+  // ===== 批量删除 =====
+
   /**
-   * 批量删除项目（统一删除接口）
-   * 支持单个项目或项目数组，文件直接删除，目录递归删除
-   * @param {Object|Array|string} itemsOrItem - 要删除的项目、项目数组或路径字符串
-   * @returns {Promise<Object>} 操作结果
+   * 批量删除文件/目录
+   * @param {FsDirectoryItem | FsDirectoryItem[] | string} itemsOrItem
+   * @returns {Promise<FileOperationResult>}
    */
   const batchDeleteItems = async (itemsOrItem) => {
-    // 统一处理不同的输入格式
     let items;
     if (typeof itemsOrItem === "string") {
-      // 如果是字符串路径，转换为项目对象
-      items = [{ path: itemsOrItem }];
+      items = [{ path: itemsOrItem, name: itemsOrItem.split("/").pop() || itemsOrItem, isDirectory: false }];
     } else if (Array.isArray(itemsOrItem)) {
       items = itemsOrItem;
     } else {
-      // 如果是单个项目对象
       items = [itemsOrItem];
     }
 
@@ -170,16 +162,8 @@ export function useFileOperations() {
       loading.value = true;
       error.value = null;
 
-      // 提取路径数组
       const paths = items.map((item) => item.path);
-
-      // 使用统一的批量删除接口
-      const result = await api.fs.batchDeleteItems(paths);
-
-      // 简化的结果处理
-      if (result.failed && result.failed.length > 0) {
-        throw new Error(result.failed[0].error);
-      }
+      await fsService.batchDeleteItems(paths);
 
       return {
         success: true,
@@ -187,22 +171,24 @@ export function useFileOperations() {
       };
     } catch (err) {
       console.error("批量删除失败:", err);
-      error.value = err.message;
+      error.value = /** @type {any} */ (err)?.message;
       return {
         success: false,
-        message: t("mount.messages.batchDeleteFailed", { message: err.message }),
+        message: t("mount.messages.batchDeleteFailed", { message: error.value }),
       };
     } finally {
       loading.value = false;
     }
   };
 
+  // ===== 获取直链并复制到剪贴板 =====
+
   /**
    * 获取文件直链并复制到剪贴板
-   * @param {Object} item - 文件项
-   * @param {number|null} expiresIn - 链接过期时间（秒），null使用默认值
-   * @param {boolean} forceDownload - 是否强制下载
-   * @returns {Promise<Object>} 操作结果
+   * @param {FsDirectoryItem} item
+   * @param {number|null} [expiresIn]
+   * @param {boolean} [forceDownload=true]
+   * @returns {Promise<FileOperationResult>}
    */
   const getFileLink = async (item, expiresIn = null, forceDownload = true) => {
     if (item.isDirectory) {
@@ -216,40 +202,25 @@ export function useFileOperations() {
       loading.value = true;
       error.value = null;
 
-      // 使用统一API函数
-      const getFileLinkApi = api.fs.getFileLink;
+      const presignedUrl = await fsService.getFileLink(item.path, expiresIn, forceDownload);
 
-      // 调用API获取直链
-      const response = await getFileLinkApi(item.path, expiresIn, forceDownload);
+      const copySuccess = await copyToClipboard(presignedUrl);
 
-      if (response.success && response.data?.presignedUrl) {
-        // 复制链接到剪贴板
-        const copySuccess = await copyToClipboard(response.data.presignedUrl);
-
-        if (copySuccess) {
-          // 显示成功通知
-          showLinkCopiedNotification.value = true;
-          setTimeout(() => {
-            showLinkCopiedNotification.value = false;
-          }, 3000);
-
-          return {
-            success: true,
-            message: t("mount.messages.linkCopiedSuccess"),
-            url: response.data.presignedUrl,
-          };
-        } else {
-          throw new Error(t("mount.messages.copyFailed"));
-        }
+      if (copySuccess) {
+        return {
+          success: true,
+          message: t("mount.messages.linkCopiedSuccess"),
+          url: presignedUrl,
+        };
       } else {
-        throw new Error(response.message || t("mount.messages.getFileLinkFailed"));
+        throw new Error(t("mount.messages.copyFailed"));
       }
     } catch (err) {
-      console.error("获取文件直链错误:", err);
-      error.value = err.message;
+      console.error("获取文件直链失败:", err);
+      error.value = /** @type {any} */ (err)?.message;
       return {
         success: false,
-        message: err.message || t("mount.messages.getFileLinkError"),
+        message: error.value || t("mount.messages.getFileLinkError"),
       };
     } finally {
       loading.value = false;
@@ -257,7 +228,7 @@ export function useFileOperations() {
   };
 
   /**
-   * 清除错误状态
+   * 清理错误状态
    */
   const clearError = () => {
     error.value = null;
@@ -267,9 +238,8 @@ export function useFileOperations() {
     // 状态
     loading,
     error,
-    showLinkCopiedNotification,
 
-    // 方法
+    // 操作
     downloadFile,
     renameItem,
     createFolder,

@@ -66,7 +66,7 @@ const authStore = useAuthStore();
 
 // 从Store获取权限状态的计算属性
 const isAdmin = computed(() => authStore.isAdmin);
-const hasApiKey = computed(() => authStore.authType === "apikey" && !!authStore.apiKey);
+const hasApiKey = computed(() => authStore.isKeyUser && !!authStore.apiKey);
 const hasTextPermission = computed(() => authStore.hasTextPermission);
 const hasFilePermission = computed(() => authStore.hasFilePermission);
 const hasMountPermission = computed(() => authStore.hasMountPermission);
@@ -86,7 +86,7 @@ const hasPermission = computed(() => {
 
 // 判断是否为已登录但无权限的API密钥用户
 const isApiKeyUserWithoutPermission = computed(() => {
-  return authStore.isAuthenticated && authStore.authType === "apikey" && !hasPermission.value;
+  return authStore.isAuthenticated && authStore.isKeyUser && !hasPermission.value;
 });
 
 // 检查用户权限状态（简化版，主要用于触发事件）

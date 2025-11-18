@@ -72,8 +72,12 @@ const Policies = {
     message: "缺少文件搜索权限",
   },
   "files.manage": {
-    permissions: [Permission.FILE_SHARE],
+    permissions: [Permission.FILE_MANAGE],
     message: "缺少文件分享管理权限",
+  },
+  "files.create": {
+    permissions: [Permission.FILE_SHARE],
+    message: "缺少文件分享创建权限",
   },
   "urlupload.manage": {
     permissions: [Permission.FILE_SHARE],
@@ -100,8 +104,12 @@ const Policies = {
     message: "缺少 WebDAV 管理权限",
   },
   "pastes.manage": {
-    permissions: [Permission.TEXT],
-    message: "缺少文本分享权限",
+    permissions: [Permission.TEXT_MANAGE],
+    message: "缺少文本分享管理权限",
+  },
+  "pastes.create": {
+    permissions: [Permission.TEXT_SHARE],
+    message: "缺少文本分享创建权限",
   },
   "pastes.admin": {
     permissions: [],
