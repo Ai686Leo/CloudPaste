@@ -4,6 +4,7 @@ import mount from "./mount.js";
 import key from "./key.js";
 import settings from "./settings.js";
 import backup from "./backup.js";
+import fsMeta from "./fsMeta.js";
 
 export default {
   ...common,
@@ -12,4 +13,5 @@ export default {
   ...key,
   ...settings,
   ...backup,
+  ...fsMeta,
 };

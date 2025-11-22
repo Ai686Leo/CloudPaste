@@ -6,6 +6,8 @@ export default {
     permissionRequired: "需要管理员权限或有效的API密钥才能创建分享，请",
     loginOrAuth: "登录管理后台或配置API密钥",
     form: {
+      title: "标题",
+      titlePlaceholder: "为这个分享添加标题（可选）",
       remark: "备注",
       remarkPlaceholder: "为这个分享添加备注（可选）",
       customLink: "自定义链接后缀",
@@ -20,6 +22,9 @@ export default {
       expiryMonth: "月后过期",
       maxViews: "最大查看次数",
       maxViewsPlaceholder: "限制查看次数（0为不限制）",
+      visibility: "可见性",
+      publicAccess: "公开",
+      publicAccessHelper: "关闭时仅管理员和创建者可访问",
       createShare: "创建分享",
       creating: "创建中...",
     },

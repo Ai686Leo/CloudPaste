@@ -7,6 +7,7 @@
 
 <script setup>
 import { ref, watch, onMounted, onBeforeUnmount, nextTick } from "vue";
+import { loadVditor, VDITOR_ASSETS_BASE } from "@/utils/vditorLoader.js";
 
 // Props
 const props = defineProps({
@@ -26,25 +27,11 @@ const contentRef = ref(null);
 // 组件销毁状态
 const isDestroyed = ref(false);
 
-// 加载 Vditor CSS
-const loadVditorCSS = async () => {
-  const existingLink = document.querySelector('link[href="/assets/vditor/dist/index.css"]');
-  if (!existingLink) {
-    const link = document.createElement("link");
-    link.rel = "stylesheet";
-    link.href = "/assets/vditor/dist/index.css";
-    document.head.appendChild(link);
-  }
-};
-
 // 使用 Vditor 渲染 Markdown 内容
 const renderContent = async () => {
   if (!contentRef.value || !props.content || isDestroyed.value) return;
 
   try {
-    // 加载 CSS
-    await loadVditorCSS();
-
     // 确保DOM更新后再渲染
     await nextTick();
 
@@ -56,24 +43,8 @@ const renderContent = async () => {
     // 清空之前的内容
     contentRef.value.innerHTML = "";
 
-    // 动态导入 Vditor
-    let Vditor;
-    if (window.Vditor) {
-      Vditor = window.Vditor;
-    } else {
-      // 如果Vditor还没加载，动态加载
-      const script = document.createElement("script");
-      script.src = "/assets/vditor/dist/index.min.js";
-      
-      await new Promise((resolve, reject) => {
-        script.onload = () => {
-          Vditor = window.Vditor;
-          resolve();
-        };
-        script.onerror = reject;
-        document.head.appendChild(script);
-      });
-    }
+    // 通过统一 loader 获取 Vditor 构造函数
+    const Vditor = await loadVditor();
 
     // 再次检查组件状态
     if (isDestroyed.value || !contentRef.value) {
@@ -82,10 +53,10 @@ const renderContent = async () => {
 
     // 使用 Vditor 的预览功能渲染 Markdown
     Vditor.preview(contentRef.value, props.content, {
-      cdn: "/assets/vditor",
+      cdn: VDITOR_ASSETS_BASE,
       theme: {
         current: props.darkMode ? "dark" : "light",
-        path: "/assets/vditor/dist/css/content-theme",
+        path: `${VDITOR_ASSETS_BASE}/dist/css/content-theme`,
       },
       hljs: {
         lineNumber: false, // 页脚不需要行号

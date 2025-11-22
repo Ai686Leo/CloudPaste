@@ -81,7 +81,7 @@
           <div>
             <div class="text-xs font-medium uppercase" :class="darkMode ? 'text-gray-500' : 'text-gray-500'">剩余次数</div>
             <div :class="getRemainingViewsClass(file)">
-              {{ getRemainingViews(file) === "无限制" ? "无限制" : getRemainingViews(file) === "已用完" ? "已用完" : `${getRemainingViews(file)} 次` }}
+              {{ getRemainingViewsLabel(file) }}
             </div>
             <div v-if="file.views && file.max_views" class="text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">已用: {{ file.views || 0 }}/{{ file.max_views }}</div>
             <div v-if="file.expires_at" class="text-xs" :class="expiresClass(file.expires_at)">
@@ -202,8 +202,8 @@ import { defineProps, defineEmits, computed, h } from "vue";
 import AdminTable from "@/components/common/AdminTable.vue";
 import { getDisplayName } from "@/utils/fileTypes.js";
 
-// 导入统一的工具函数
-import { getRemainingViews as getRemainingViewsUtil, getRemainingViewsClass as getRemainingViewsClassUtil, formatFileSize } from "@/utils/fileUtils.js";
+// 导入统一的工具函数（数值模型）
+import { getRemainingViews as getRemainingViewsUtil, formatFileSize } from "@/utils/fileUtils.js";
 import { getFileIcon } from "@/utils/fileTypeIcons.js";
 import { formatDateTime, formatExpiry as formatExpiryUtil, parseUTCDate } from "@/utils/timeUtils.js";
 import { useFileshareService } from "@/modules/fileshare/fileshareService.js";
@@ -324,18 +324,7 @@ const fileColumns = computed(() => [
     header: "剩余次数",
     sortable: false,
     render: (file) => {
-      const remaining = getRemainingViews(file);
-
-      // 确定显示文本
-      let displayText;
-      if (remaining === "无限制") {
-        displayText = "无限制";
-      } else if (remaining === "已用完") {
-        displayText = "已用完";
-      } else {
-        displayText = `${remaining} 次`;
-      }
-
+      const displayText = getRemainingViewsLabel(file);
       const children = [h("span", { class: getRemainingViewsClass(file) }, displayText)];
 
       // 只有当文件有访问次数限制时才显示已用次数
@@ -658,13 +647,31 @@ const handleMobileSelect = (fileId) => {
   emit("toggle-select", fileId);
 };
 
-// 工具函数 - 从原FileTable.vue复制
+// 工具函数 - 剩余访问次数（数值+文案+样式）
 const getRemainingViews = (file) => {
   return getRemainingViewsUtil(file);
 };
 
+const getRemainingViewsLabel = (file) => {
+  const remaining = getRemainingViews(file);
+  if (remaining === Infinity) {
+    return "无限制";
+  }
+  if (remaining === 0) {
+    return "已用完";
+  }
+  return `${remaining} 次`;
+};
+
 const getRemainingViewsClass = (file) => {
-  return getRemainingViewsClassUtil(file, props.darkMode);
+  const remaining = getRemainingViews(file);
+  if (remaining === 0) {
+    return props.darkMode ? "text-red-400" : "text-red-600";
+  }
+  if (remaining !== Infinity && remaining < 10) {
+    return props.darkMode ? "text-yellow-400" : "text-yellow-600";
+  }
+  return props.darkMode ? "text-gray-300" : "text-gray-700";
 };
 
 const getSimpleMimeType = (mimeType, filename, file) => {

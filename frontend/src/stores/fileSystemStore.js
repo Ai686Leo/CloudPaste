@@ -10,6 +10,7 @@ import { useFsService } from "@/modules/fs";
 
 /** @typedef {import("@/types/fs").FsDirectoryResponse} FsDirectoryResponse */
 /** @typedef {import("@/types/fs").FsDirectoryItem} FsDirectoryItem */
+/** @typedef {import("@/types/fs").FsResolvedMeta} FsResolvedMeta */
 
 export const useFileSystemStore = defineStore("fileSystem", () => {
   const fsService = useFsService();
@@ -43,6 +44,12 @@ export const useFileSystemStore = defineStore("fileSystem", () => {
    */
   const isVirtualDirectory = computed(() => directoryData.value?.isVirtual || false);
 
+  /**
+   * 当前目录 Meta 信息
+   * @type {import("vue").ComputedRef<FsResolvedMeta | null>}
+   */
+  const directoryMeta = computed(() => directoryData.value?.meta || null);
+
   // ===== Actions =====
 
   /**
@@ -75,8 +82,14 @@ export const useFileSystemStore = defineStore("fileSystem", () => {
       currentPath.value = normalizedPath;
     } catch (err) {
       console.error("加载目录失败:", err);
-      error.value = /** @type {any} */ (err)?.message || "加载目录失败";
-      directoryData.value = null;
+      // 针对路径密码校验失败的场景，不将其视为“普通错误”，交给路径密码弹窗处理
+      if (/** @type {any} */ (err)?.code === "FS_PATH_PASSWORD_REQUIRED") {
+        directoryData.value = null;
+        error.value = null;
+      } else {
+        error.value = /** @type {any} */ (err)?.message || "加载目录失败";
+        directoryData.value = null;
+      }
     } finally {
       loading.value = false;
       currentLoadingPath.value = null;
@@ -114,6 +127,7 @@ export const useFileSystemStore = defineStore("fileSystem", () => {
     hasPermissionForCurrentPath,
     directoryItems,
     isVirtualDirectory,
+    directoryMeta,
 
     // Actions
     loadDirectory,
@@ -121,4 +135,3 @@ export const useFileSystemStore = defineStore("fileSystem", () => {
     resetState,
   };
 });
-

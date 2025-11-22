@@ -1,7 +1,49 @@
-import { ApiStatus } from "../../constants/index.js";
-import { AppError, ValidationError, AuthenticationError } from "../../http/errors.js";
+import { ApiStatus, UserType } from "../../constants/index.js";
+import { AppError, ValidationError, AuthenticationError, NotFoundError } from "../../http/errors.js";
 import { jsonOk } from "../../utils/common.js";
 import { getPasteBySlug, verifyPastePassword, incrementAndCheckPasteViews, isPasteAccessible } from "../../services/pasteService.js";
+import { resolvePrincipal } from "../../security/helpers/principal.js";
+
+// 可选解析当前访问者身份（管理员 / API Key 用户），匿名时返回 null
+const resolveOptionalPrincipal = (c) => {
+  try {
+    const identity = resolvePrincipal(c, { allowedTypes: [UserType.ADMIN, UserType.API_KEY], allowGuest: true });
+    return identity;
+  } catch (e) {
+    return null;
+  }
+};
+
+// 检查当前访问者是否有权访问指定文本（用于 is_public 控制）
+const ensurePasteVisibility = (c, paste) => {
+  if (!paste) return;
+
+  // 公开文本：任何持有链接的人都可以访问
+  if (paste.is_public === 1 || paste.is_public === true || paste.is_public === null || paste.is_public === undefined) {
+    return;
+  }
+
+  // 非公开文本：仅管理员和创建者可访问
+  const identity = resolveOptionalPrincipal(c);
+  if (!identity) {
+    // 匿名或无法识别身份时直接隐藏资源存在性
+    throw new NotFoundError("文本分享不存在或已被删除");
+  }
+
+  if (identity.isAdmin) {
+    return;
+  }
+
+  const createdBy = paste.created_by;
+  const userId = identity.userId;
+
+  // 对于 API Key 用户，created_by 形如 "apikey:<id>"
+  const isApiKeyOwner = identity.type === UserType.API_KEY && typeof createdBy === "string" && createdBy === `apikey:${userId}`;
+
+  if (!isApiKeyOwner) {
+    throw new NotFoundError("文本分享不存在或已被删除");
+  }
+};
 
 export const registerPastesPublicRoutes = (router) => {
   router.get("/api/paste/:slug", async (c) => {
@@ -10,18 +52,20 @@ export const registerPastesPublicRoutes = (router) => {
 
     const paste = await getPasteBySlug(db, slug);
 
+    // 先根据 is_public 与当前访客身份控制访问
+    ensurePasteVisibility(c, paste);
+
     if (paste.has_password) {
-      return jsonOk(c, {
-        slug: paste.slug,
-        hasPassword: true,
-        remark: paste.remark,
-        expires_at: paste.expires_at,
-        max_views: paste.max_views,
-        views: paste.views,
-        created_at: paste.created_at,
-        created_by: paste.created_by,
-        requiresPassword: true,
-      }, "获取文本信息成功");
+      // 加密文本在验证密码前不应泄露标题、备注等敏感信息
+      return jsonOk(
+        c,
+        {
+          slug: paste.slug,
+          hasPassword: true,
+          requiresPassword: true,
+        },
+        "需要密码验证"
+      );
     }
 
     if (!isPasteAccessible(paste)) {
@@ -33,6 +77,7 @@ export const registerPastesPublicRoutes = (router) => {
     if (result.isLastNormalAccess) {
       return jsonOk(c, {
         slug: paste.slug,
+        title: paste.title,
         content: paste.content,
         remark: paste.remark,
         expires_at: paste.expires_at,
@@ -40,6 +85,7 @@ export const registerPastesPublicRoutes = (router) => {
         views: result.paste.views,
         created_at: paste.created_at,
         created_by: paste.created_by,
+        is_public: paste.is_public,
         hasPassword: false,
         isLastView: true,
       }, "获取文本内容成功");
@@ -51,6 +97,7 @@ export const registerPastesPublicRoutes = (router) => {
 
     return jsonOk(c, {
       slug: paste.slug,
+      title: paste.title,
       content: paste.content,
       remark: paste.remark,
       expires_at: paste.expires_at,
@@ -58,6 +105,7 @@ export const registerPastesPublicRoutes = (router) => {
       views: result.paste.views,
       created_at: paste.created_at,
       created_by: paste.created_by,
+      is_public: paste.is_public,
       hasPassword: false,
       isLastView: result.isLastView,
     }, "获取文本内容成功");
@@ -73,11 +121,15 @@ export const registerPastesPublicRoutes = (router) => {
     }
 
     const paste = await verifyPastePassword(db, slug, password, false);
+
+    // 再次根据 is_public 与当前访客身份控制访问
+    ensurePasteVisibility(c, paste);
     const result = await incrementAndCheckPasteViews(db, paste.id, paste.max_views);
 
     if (result.isLastNormalAccess) {
       return jsonOk(c, {
         slug: paste.slug,
+        title: paste.title,
         content: paste.content,
         remark: paste.remark,
         hasPassword: true,
@@ -88,6 +140,7 @@ export const registerPastesPublicRoutes = (router) => {
         created_at: paste.created_at,
         updated_at: paste.updated_at,
         created_by: paste.created_by,
+        is_public: paste.is_public,
         isLastView: true,
       }, "密码验证成功");
     }
@@ -98,6 +151,7 @@ export const registerPastesPublicRoutes = (router) => {
 
     return jsonOk(c, {
       slug: paste.slug,
+      title: paste.title,
       content: paste.content,
       remark: paste.remark,
       hasPassword: true,
@@ -108,6 +162,7 @@ export const registerPastesPublicRoutes = (router) => {
       created_at: paste.created_at,
       updated_at: paste.updated_at,
       created_by: paste.created_by,
+      is_public: paste.is_public,
       isLastView: result.isLastView,
     }, "获取文本内容成功");
   });
@@ -119,6 +174,9 @@ export const registerPastesPublicRoutes = (router) => {
 
     const run = async () => {
       const paste = await getPasteBySlug(db, slug);
+
+      // 原始内容同样受 is_public 控制
+      ensurePasteVisibility(c, paste);
 
       if (paste.has_password) {
         if (!password) {

@@ -1,6 +1,18 @@
 <template>
   <div class="editor-form mt-4 border-t pt-3 w-full overflow-hidden" :class="darkMode ? 'border-gray-700' : 'border-gray-200'">
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-x-4 gap-y-2">
+      <div class="form-group">
+        <label class="form-label" :class="darkMode ? 'text-gray-300' : 'text-gray-700'">{{ $t("markdown.form.title") }}</label>
+        <input
+          type="text"
+          class="form-input"
+          :class="getInputClasses()"
+          :placeholder="$t('markdown.form.titlePlaceholder')"
+          v-model="formData.title"
+          :disabled="!hasPermission"
+        />
+      </div>
+
       <div class="form-group">
         <label class="form-label" :class="darkMode ? 'text-gray-300' : 'text-gray-700'">{{ $t("markdown.form.remark") }}</label>
         <input
@@ -66,6 +78,33 @@
           :disabled="!hasPermission"
         />
       </div>
+
+      <div class="form-group">
+        <label class="form-label" :class="darkMode ? 'text-gray-300' : 'text-gray-700'">{{ $t("markdown.form.visibility") }}</label>
+        <div class="flex items-center mt-2">
+          <button
+            type="button"
+            @click="formData.is_public = !formData.is_public"
+            :disabled="!hasPermission"
+            class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+            :class="[
+              formData.is_public
+                ? 'bg-primary-600'
+                : (darkMode ? 'bg-gray-700' : 'bg-gray-200'),
+              !hasPermission ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+            ]"
+          >
+            <span
+              class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform"
+              :class="formData.is_public ? 'translate-x-6' : 'translate-x-1'"
+            ></span>
+          </button>
+          <span class="ml-3 text-sm" :class="darkMode ? 'text-gray-300' : 'text-gray-700'">
+            {{ formData.is_public ? $t("markdown.form.publicAccess") : '私密' }}
+          </span>
+        </div>
+        <p class="mt-1 text-xs" :class="darkMode ? 'text-gray-500' : 'text-gray-400'">{{ $t("markdown.form.publicAccessHelper") }}</p>
+      </div>
     </div>
 
     <div class="submit-section mt-4 flex flex-row items-center gap-4">
@@ -111,11 +150,13 @@ const emit = defineEmits(["submit", "form-change"]);
 
 // 表单数据
 const formData = reactive({
+  title: "",
   remark: "",
   customLink: "",
   password: "",
   expiry_time: "0",
   max_views: 0,
+  is_public: true,
 });
 
 // 验证错误
@@ -197,11 +238,13 @@ const handleSubmit = () => {
 
 // 重置表单
 const resetForm = () => {
+  formData.title = "";
   formData.remark = "";
   formData.customLink = "";
   formData.password = "";
   formData.expiry_time = "0";
   formData.max_views = 0;
+  formData.is_public = true;
   slugError.value = "";
 };
 
@@ -240,7 +283,7 @@ defineExpose({
 }
 
 .form-group {
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.5rem;
 }
 
 .btn-primary {

@@ -1,13 +1,13 @@
 import { ValidationError } from "../../http/errors.js";
-import { UserType } from "../../constants/index.js";
+import { ApiStatus, UserType } from "../../constants/index.js";
 import { MountManager } from "../../storage/managers/MountManager.js";
 import { FileSystem } from "../../storage/fs/FileSystem.js";
 import { getVirtualDirectoryListing, isVirtualPath } from "../../storage/fs/utils/VirtualDirectory.js";
-import { getQueryBool, jsonOk } from "../../utils/common.js";
+import { createErrorResponse, getQueryBool, jsonOk } from "../../utils/common.js";
 import { getEncryptionSecret } from "../../utils/environmentUtils.js";
 
 export const registerBrowseRoutes = (router, helpers) => {
-  const { getAccessibleMounts, getServiceParams } = helpers;
+  const { getAccessibleMounts, getServiceParams, verifyPathPasswordToken } = helpers;
 
   router.get("/api/fs/list", async (c) => {
     const db = c.env.DB;
@@ -20,6 +20,31 @@ export const registerBrowseRoutes = (router, helpers) => {
 
     if (refresh) {
       console.log("[后端路由] 收到强制刷新请求:", { path, refresh });
+    }
+
+    // 管理员不受路径密码限制；仅对非管理员用户应用路径密码控制
+    if (userType !== UserType.ADMIN && typeof verifyPathPasswordToken === "function") {
+      const pathToken = c.req.header("x-fs-path-token") || null;
+      const verification = await verifyPathPasswordToken(db, path, pathToken, encryptionSecret);
+
+      if (verification.requiresPassword && !verification.verified) {
+        return c.json(
+          {
+            ...createErrorResponse(
+              ApiStatus.FORBIDDEN,
+              verification.error === "PASSWORD_CHANGED"
+                ? "目录路径密码已更新，请重新输入"
+                : "该目录需要密码访问",
+              "FS_PATH_PASSWORD_REQUIRED",
+            ),
+            data: {
+              path,
+              requiresPassword: true,
+            },
+          },
+          ApiStatus.FORBIDDEN,
+        );
+      }
     }
 
     const mounts = await getAccessibleMounts(db, userIdOrInfo, userType);

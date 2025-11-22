@@ -29,7 +29,7 @@
                 @click="emit('view', paste.slug)"
                 :class="isExpired(paste) ? 'text-red-600 dark:text-red-400' : 'text-primary-600 dark:text-primary-400'"
               >
-                {{ paste.slug }}
+                {{ paste.title || paste.remark || paste.slug }}
               </span>
               <button @click="emit('copy-link', paste.slug)" class="ml-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 relative" title="复制链接">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -86,7 +86,7 @@
               </button>
 
               <!-- 复制原始文本直链按钮 -->
-              <button class="text-purple-600 hover:text-purple-900 dark:text-purple-400 dark:hover:text-purple-300 p-1 relative" @click="emit('copy-raw-link', paste)">
+              <button class="text-purple-600 hover:text-purple-900 dark:text-purple-400 dark:hover:text-purple-300 p-1 relative" @click="emit('copy-raw-link', paste.slug)">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101" />
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.172 13.828a4 4 0 015.656 0l4 4a4 4 0 01-5.656 5.656l-1.102-1.101" />
@@ -134,6 +134,30 @@
               <span class="text-gray-500 dark:text-gray-400 w-16 flex-shrink-0">创建:</span>
               <span :class="darkMode ? 'text-gray-300' : 'text-gray-700'">{{ formatDate(paste.created_at) }}</span>
             </div>
+
+            <!-- 可见性 -->
+            <div class="flex">
+              <span class="text-gray-500 dark:text-gray-400 w-16 flex-shrink-0">可见性:</span>
+              <span
+                v-if="paste.is_public === false"
+                class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 mr-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11c1.657 0 3-1.343 3-3S13.657 5 12 5s-3 1.343-3 3 1.343 3 3 3z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.5 20a8.38 8.38 0 017.5-4.5 8.38 8.38 0 017.5 4.5" />
+                </svg>
+                仅内部
+              </span>
+              <span
+                v-else
+                class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 dark:bg-green-800 dark:text-green-100"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 mr-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                公开
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -146,7 +170,7 @@ import { computed, h } from "vue";
 import AdminTable from "@/components/common/AdminTable.vue";
 
 // 导入统一的时间处理工具
-import { formatDateTime, formatExpiry as formatExpiryUtil, isExpired as isExpiredUtil } from "@/utils/timeUtils.js";
+import { formatDateTime, formatExpiry as formatExpiryUtil, formatRelativeTime, parseUTCDate, isExpired as isExpiredUtil } from "@/utils/timeUtils.js";
 
 const props = defineProps({
   darkMode: {
@@ -175,7 +199,7 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(["toggle-select-all", "toggle-select-item", "view", "copy-link", "copy-raw-link", "preview", "edit", "delete", "show-qrcode"]);
+const emit = defineEmits(["toggle-select-all", "toggle-select-item", "view", "copy-link", "copy-raw-link", "preview", "edit", "delete", "show-qrcode", "toggle-visibility"]);
 
 // 工具函数
 const truncateText = (text, length = 10) => {
@@ -229,25 +253,88 @@ const handleSelectionChange = (event) => {
   }
 };
 
+// 加密徽章样式（参考文件管理）
+const passwordBadgeClass = computed(
+  () =>
+    `inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${
+      props.darkMode ? "bg-amber-500/15 text-amber-100 border-amber-400/30" : "bg-amber-50 text-amber-700 border-amber-200"
+    }`
+);
+
+const passwordIconClass = computed(() => (props.darkMode ? "text-amber-200" : "text-amber-600"));
+
+// 渲染加密徽章
+const renderPasswordBadge = () =>
+  h(
+    "span",
+    {
+      class: `${passwordBadgeClass.value} ml-2`,
+      title: "密码保护",
+    },
+    [
+      h(
+        "svg",
+        {
+          xmlns: "http://www.w3.org/2000/svg",
+          class: `h-3 w-3 ${passwordIconClass.value}`,
+          fill: "none",
+          viewBox: "0 0 24 24",
+          stroke: "currentColor",
+        },
+        [
+          h("path", {
+            "stroke-linecap": "round",
+            "stroke-linejoin": "round",
+            "stroke-width": "2",
+            d: "M7 11V7a5 5 0 0110 0v4",
+          }),
+          h("rect", {
+            "stroke-linecap": "round",
+            "stroke-linejoin": "round",
+            "stroke-width": "2",
+            x: "6",
+            y: "11",
+            width: "12",
+            height: "9",
+            rx: "2",
+          }),
+        ]
+      ),
+      h(
+        "span",
+        {
+          class: "leading-none",
+        },
+        "加密"
+      ),
+    ]
+  );
+
 // 创建columns配置
 const pasteColumns = computed(() => [
   {
     key: "slug",
     type: "accessor",
-    header: "链接",
+    header: "标题",
     sortable: true,
     render: (_, paste) => {
       if (!paste) return h("span", "无数据");
+      const displayTitle = paste.title || paste.slug || paste.remark;
       return h("div", { class: "flex items-center space-x-2" }, [
-        h(
-          "span",
-          {
-            class: ["cursor-pointer hover:underline truncate max-w-[120px]", isExpired(paste) ? "text-red-600 dark:text-red-400" : "text-primary-600 dark:text-primary-400"],
-            title: paste.slug,
-            onClick: () => emit("view", paste.slug),
-          },
-          paste.slug
-        ),
+        // 标题和加密徽章容器
+        h("div", { class: "flex items-center" }, [
+          h(
+            "span",
+            {
+              class: ["cursor-pointer hover:underline truncate max-w-[120px]", isExpired(paste) ? "text-red-600 dark:text-red-400" : "text-primary-600 dark:text-primary-400"],
+              title: displayTitle,
+              onClick: () => emit("view", paste.slug),
+            },
+            displayTitle
+          ),
+          // 加密徽章（仅在有密码时显示）
+          paste.has_password ? renderPasswordBadge() : null,
+        ]),
         // 复制链接按钮
         h(
           "button",
@@ -378,84 +465,44 @@ const pasteColumns = computed(() => [
     },
     render: (_, paste) => {
       if (!paste) return h("span", "无数据");
-      return h(
-        "span",
-        {
-          class: [props.darkMode ? "text-gray-300" : "text-gray-500", isExpired(paste) ? "text-red-600 dark:text-red-400" : ""],
-        },
-        paste.expires_at ? formatExpiry(paste.expires_at) : "永不过期"
-      );
-    },
-  },
-  {
-    key: "password",
-    type: "display",
-    header: "密码",
-    sortable: false,
-    render: (paste) => {
-      if (!paste) return h("span", "无数据");
-      return h("div", { class: "flex items-center" }, [
-        paste.has_password
-          ? h(
-              "span",
-              {
-                class: [
-                  "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium",
-                  isExpired(paste) ? "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300" : "bg-yellow-100 text-yellow-800 dark:bg-yellow-800 dark:text-yellow-100",
-                ],
-              },
-              [
-                h(
-                  "svg",
-                  {
-                    xmlns: "http://www.w3.org/2000/svg",
-                    class: "h-3 w-3 mr-1",
-                    fill: "none",
-                    viewBox: "0 0 24 24",
-                    stroke: "currentColor",
-                  },
-                  [
-                    h("path", {
-                      "stroke-linecap": "round",
-                      "stroke-linejoin": "round",
-                      "stroke-width": "2",
-                      d: "M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z",
-                    }),
-                  ]
-                ),
-                "已加密",
-              ]
-            )
-          : h(
-              "span",
-              {
-                class: [
-                  "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium",
-                  isExpired(paste) ? "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300" : "bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100",
-                ],
-              },
-              [
-                h(
-                  "svg",
-                  {
-                    xmlns: "http://www.w3.org/2000/svg",
-                    class: "h-3 w-3 mr-1",
-                    fill: "none",
-                    viewBox: "0 0 24 24",
-                    stroke: "currentColor",
-                  },
-                  [
-                    h("path", {
-                      "stroke-linecap": "round",
-                      "stroke-linejoin": "round",
-                      "stroke-width": "2",
-                      d: "M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z",
-                    }),
-                  ]
-                ),
-                "公开",
-              ]
-            ),
+
+      if (!paste.expires_at) {
+        return h("span", {
+          class: props.darkMode ? "text-gray-300" : "text-gray-500"
+        }, "永不过期");
+      }
+
+      // 直接使用现有工具函数
+      const date = formatDateTime(paste.expires_at);
+      const relative = formatRelativeTime(paste.expires_at);
+
+      // 计算颜色（组件内逻辑，不污染工具类）
+      const expiryDate = parseUTCDate(paste.expires_at);
+      const now = new Date();
+      let colorClass;
+
+      if (expiryDate < now) {
+        colorClass = "text-red-600 dark:text-red-400";
+      } else {
+        const daysDiff = (expiryDate.getTime() - now.getTime()) / (1000 * 3600 * 24);
+        if (daysDiff <= 1) {
+          colorClass = "text-orange-600 dark:text-orange-400";
+        } else if (daysDiff <= 7) {
+          colorClass = "text-yellow-600 dark:text-yellow-400";
+        } else {
+          colorClass = "text-green-600 dark:text-green-400";
+        }
+      }
+
+      return h("div", { class: "flex flex-col" }, [
+        // 第一行：日期
+        h("span", {
+          class: props.darkMode ? "text-gray-300" : "text-gray-700"
+        }, date),
+        // 第二行：相对时间（小字+颜色）
+        relative ? h("span", {
+          class: ["text-xs", colorClass]
+        }, relative) : null
       ]);
     },
   },
@@ -478,7 +525,7 @@ const pasteColumns = computed(() => [
         if (remaining <= 0) {
           remainingText = "已用完";
           remainingClass = "text-red-500";
-        } else if (remaining < 3) {
+        } else if (remaining < 10) {
           remainingText = `${remaining} 次`;
           remainingClass = "text-yellow-500";
         } else {
@@ -527,6 +574,44 @@ const pasteColumns = computed(() => [
               },
               paste.created_by || "未知来源"
             ),
+      ]);
+    },
+  },
+  {
+    key: "is_public",
+    type: "display",
+    header: "可见性",
+    sortable: true,
+    render: (paste) => {
+      if (!paste) return h("span", "无数据");
+
+      return h("div", { class: "flex items-center justify-center space-x-2" }, [
+        // 滑块按钮
+        h("button", {
+          type: "button",
+          onClick: (e) => {
+            e.stopPropagation();
+            emit("toggle-visibility", paste);
+          },
+          class: [
+            "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 cursor-pointer",
+            paste.is_public
+              ? "bg-primary-600"
+              : (props.darkMode ? "bg-gray-700" : "bg-gray-200")
+          ]
+        }, [
+          // 滑块圆点
+          h("span", {
+            class: [
+              "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
+              paste.is_public ? "translate-x-6" : "translate-x-1"
+            ]
+          })
+        ]),
+        // 状态文字
+        h("span", {
+          class: ["text-xs", props.darkMode ? "text-gray-300" : "text-gray-700"]
+        }, paste.is_public ? "公开" : "私密")
       ]);
     },
   },
@@ -682,7 +767,7 @@ const pasteColumnClasses = computed(() => ({
   remark: "hidden sm:table-cell",
   created_at: "hidden md:table-cell",
   expires_at: "hidden lg:table-cell",
-  password: "hidden sm:table-cell",
+  is_public: "hidden sm:table-cell",
   remaining_views: "",
   created_by: "hidden lg:table-cell",
   actions: "",

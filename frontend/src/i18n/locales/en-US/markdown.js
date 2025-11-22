@@ -6,6 +6,8 @@ export default {
     permissionRequired: "Admin privileges or a valid API key are required to create shares, please",
     loginOrAuth: "login to admin panel or configure API key",
     form: {
+      title: "Title",
+      titlePlaceholder: "Add a title for this share (optional)",
       remark: "Remark",
       remarkPlaceholder: "Add a remark for this share (optional)",
       customLink: "Custom Link Suffix",
@@ -20,6 +22,9 @@ export default {
       expiryMonth: "months",
       maxViews: "Max Views",
       maxViewsPlaceholder: "Limit view count (0 for unlimited)",
+      visibility: "Visibility",
+      publicAccess: "Public",
+      publicAccessHelper: "When disabled, only admins and creators can access",
       createShare: "Create Share",
       creating: "Creating...",
     },

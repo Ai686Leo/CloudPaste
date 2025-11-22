@@ -12,6 +12,7 @@ const { changePassword } = useAdminAccountService();
 // 检测用户类型
 const isAdmin = computed(() => authStore.isAdmin);
 const isApiKeyUser = computed(() => authStore.authType === "apikey");
+const isGuest = computed(() => authStore.isGuest);
 
 // 定义props，接收父组件传递的darkMode
 const props = defineProps({
@@ -137,6 +138,38 @@ const handleChangePassword = async (event) => {
       <p class="text-base" :class="darkMode ? 'text-gray-300' : 'text-gray-600'">
         {{ isAdmin ? t("admin.account.description") : t("admin.account.apiKeyDescription") }}
       </p>
+
+      <!-- 游客 API Key 会话提示 -->
+      <div
+        v-if="isApiKeyUser && isGuest"
+        class="mt-4 p-4 rounded-md border"
+        :class="darkMode ? 'bg-blue-900/20 border-blue-800/40' : 'bg-blue-50 border-blue-200'"
+      >
+        <div class="flex items-start">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            class="h-5 w-5 mr-2 mt-0.5 text-blue-500"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+            />
+          </svg>
+          <div class="text-sm" :class="darkMode ? 'text-blue-100' : 'text-blue-800'">
+            <p class="font-medium">
+              {{ t("admin.account.apiKeyInfo.guestBannerTitle") }}
+            </p>
+            <p class="mt-1">
+              {{ t("admin.account.apiKeyInfo.guestBannerDescription") }}
+            </p>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- 状态消息 -->

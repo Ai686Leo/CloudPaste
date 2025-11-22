@@ -63,7 +63,7 @@ const truncateText = (text, length = 10) => {
 };
 
 // 导入统一的时间处理工具
-import { formatDateTime, formatRelativeTime as formatRelativeTimeUtil, formatExpiry as formatExpiryUtil, isExpired as isExpiredUtil } from "@/utils/timeUtils.js";
+import { formatDateTime, formatExpiry as formatExpiryUtil, isExpired as isExpiredUtil } from "@/utils/timeUtils.js";
 
 /**
  * 格式化日期为本地日期时间字符串
@@ -83,27 +83,7 @@ const formatExpiry = (expiryDate) => {
   return formatExpiryUtil(expiryDate);
 };
 
-/**
- * 格式化相对时间（如：3天后过期）
- * @param {string} dateString - UTC 时间字符串
- * @returns {string} 相对时间描述
- */
-const formatRelativeTime = (dateString) => {
-  if (!dateString) return "";
-
-  const relativeTime = formatRelativeTimeUtil(dateString);
-
-  // 为过期场景添加特殊处理
-  if (relativeTime.includes("前")) {
-    return "已过期";
-  } else if (relativeTime === "即将") {
-    return "即将过期";
-  } else if (relativeTime.includes("后")) {
-    return relativeTime.replace("后", "后过期");
-  }
-
-  return relativeTime;
-};
+ 
 
 /**
  * 检查文本分享是否设置了密码
@@ -118,12 +98,28 @@ const hasPassword = (paste) => {
 import { getRemainingViews as getRemainingViewsUtil } from "@/utils/fileUtils.js";
 
 /**
- * 计算剩余可访问次数
+ * 计算剩余可访问次数（数值）
  * @param {Object} paste - 文本分享对象
- * @returns {string|number} 剩余访问次数或状态描述
+ * @returns {number} Infinity 表示无限制，0 表示已用完，正数表示剩余次数
  */
 const getRemainingViews = (paste) => {
-  return getRemainingViewsUtil(paste); // 不传t函数，使用中文
+  return getRemainingViewsUtil(paste);
+};
+
+/**
+ * 格式化剩余访问次数为展示文案
+ * @param {Object} paste - 文本分享对象
+ * @returns {string}
+ */
+const getRemainingViewsLabel = (paste) => {
+  const remaining = getRemainingViews(paste);
+  if (remaining === Infinity) {
+    return "无限制";
+  }
+  if (remaining === 0) {
+    return "已用完";
+  }
+  return `${remaining}`;
 };
 
 /**
@@ -205,7 +201,7 @@ const formatCreator = (paste) => {
             @click="$emit('view', paste.slug)"
             :class="isExpired(paste) ? 'text-red-600 dark:text-red-400' : 'text-primary-600 dark:text-primary-400'"
           >
-            {{ paste.slug }}
+            {{ paste.title || paste.remark || paste.slug }}
           </span>
           <button @click="$emit('copy-link', paste.slug)" class="ml-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 relative" title="复制链接">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -262,7 +258,7 @@ const formatCreator = (paste) => {
           </button>
 
           <!-- 复制原始文本直链按钮 -->
-          <button class="text-purple-600 hover:text-purple-900 dark:text-purple-400 dark:hover:text-purple-300 p-1 relative" @click="$emit('copy-raw-link', paste)">
+          <button class="text-purple-600 hover:text-purple-900 dark:text-purple-400 dark:hover:text-purple-300 p-1 relative" @click="$emit('copy-raw-link', paste.slug)">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101" />
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.172 13.828a4 4 0 015.656 0l4 4a4 4 0 01-5.656 5.656l-1.102-1.101" />
@@ -340,10 +336,22 @@ const formatCreator = (paste) => {
           </div>
         </div>
 
-        <!-- 状态信息 - 包含密码保护和剩余次数 -->
+        <!-- 状态信息 - 包含密码保护、可见性和剩余次数 -->
         <div class="col-span-2">
           <div class="text-gray-500 dark:text-gray-400 text-xs mb-1">状态信息</div>
           <div class="flex items-center flex-wrap gap-2">
+            <!-- 可见性标签 -->
+            <span
+              v-if="paste.is_public === false"
+              class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11c1.657 0 3-1.343 3-3S13.657 5 12 5s-3 1.343-3 3 1.343 3 3 3z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.5 20a8.38 8.38 0 017.5-4.5 8.38 8.38 0 017.5 4.5" />
+              </svg>
+              仅内部
+            </span>
+
             <!-- 密码状态标签 - 已加密 -->
             <span
               v-if="hasPassword(paste)"
@@ -384,7 +392,7 @@ const formatCreator = (paste) => {
               :class="[
                 isExpired(paste)
                   ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300'
-                  : getRemainingViews(paste) === '已用完'
+                  : getRemainingViews(paste) === 0
                   ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300'
                   : 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300',
               ]"
@@ -398,7 +406,7 @@ const formatCreator = (paste) => {
                   d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
                 />
               </svg>
-              剩余 {{ getRemainingViews(paste) }}
+              剩余 {{ getRemainingViewsLabel(paste) }}
             </span>
           </div>
         </div>

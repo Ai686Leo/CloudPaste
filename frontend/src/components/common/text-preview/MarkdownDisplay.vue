@@ -5,7 +5,20 @@
 
     <!-- 加载状态覆盖层 -->
     <div v-if="loading" class="loading-overlay">
-      <div class="loading-spinner"></div>
+      <svg
+        class="animate-spin h-8 w-8 mb-4"
+        :class="darkMode ? 'text-primary-500' : 'text-primary-600'"
+        xmlns="http://www.w3.org/2000/svg"
+        fill="none"
+        viewBox="0 0 24 24"
+      >
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path
+          class="opacity-75"
+          fill="currentColor"
+          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+        ></path>
+      </svg>
       <p class="loading-text">{{ $t("textPreview.loadingMarkdown") }}</p>
     </div>
 
@@ -20,13 +33,9 @@
 <script setup>
 import { ref, watch, onMounted, onBeforeUnmount, nextTick } from "vue";
 import { useI18n } from "vue-i18n";
+import { loadVditor, VDITOR_ASSETS_BASE } from "@/utils/vditorLoader.js";
 
 const { t } = useI18n();
-
-// 懒加载Vditor和CSS
-let VditorClass = null;
-let vditorCSSLoaded = false;
-let vditorLoading = false; // 状态锁
 
 // Props
 const props = defineProps({
@@ -49,92 +58,6 @@ const error = ref(null);
 const rendered = ref(false);
 const markdownContainer = ref(null);
 const isDestroyed = ref(false);
-
-/**
- * 懒加载 VditorJS
- */
-const loadVditor = async () => {
-  // 等待逻辑
-  if (vditorLoading) {
-    // 等待加载完成
-    while (vditorLoading) {
-      await new Promise((resolve) => setTimeout(resolve, 30));
-    }
-    return VditorClass;
-  }
-
-  if (!VditorClass) {
-    vditorLoading = true;
-
-    try {
-      await loadVditorCSS();
-
-      // 从本地vditor目录加载Vditor
-      const script = document.createElement("script");
-      script.src = "/assets/vditor/dist/index.min.js";
-
-      await new Promise((resolve, reject) => {
-        script.onload = async () => {
-          //  Vditor 初始化检查
-          let retryCount = 0;
-          const maxRetries = 3;
-          const checkInterval = 30;
-
-          const checkVditorReady = () => {
-            if (window.Vditor && typeof window.Vditor.preview === "function") {
-              VditorClass = window.Vditor;
-              resolve(VditorClass);
-              return;
-            }
-
-            retryCount++;
-            if (retryCount >= maxRetries) {
-              reject(new Error("Vditor API 不可用"));
-              return;
-            }
-
-            setTimeout(checkVditorReady, checkInterval);
-          };
-
-          checkVditorReady();
-        };
-
-        script.onerror = () => {
-          reject(new Error("Vditor 脚本加载失败"));
-        };
-
-        document.head.appendChild(script);
-      });
-
-      vditorLoading = false;
-    } catch (error) {
-      vditorLoading = false;
-      throw error;
-    }
-  }
-
-  // 即使已加载也要验证可用性
-  if (VditorClass && typeof VditorClass === "function" && typeof VditorClass.preview === "function") {
-    return VditorClass;
-  } else {
-    // 重置并重新加载
-    VditorClass = null;
-    return loadVditor();
-  }
-};
-
-/**
- * 加载 VditorJS CSS
- */
-const loadVditorCSS = async () => {
-  if (!vditorCSSLoaded) {
-    const link = document.createElement("link");
-    link.rel = "stylesheet";
-    link.href = "/assets/vditor/dist/index.css";
-    document.head.appendChild(link);
-    vditorCSSLoaded = true;
-  }
-};
 
 /**
  * 渲染Markdown内容
@@ -181,9 +104,9 @@ const renderMarkdown = async () => {
         mode: "dark-light", // 支持明暗主题
         theme: {
           current: props.darkMode ? "dark" : "light", // 根据darkMode设置主题
-          path: "/assets/vditor/dist/css/content-theme",
+          path: `${VDITOR_ASSETS_BASE}/dist/css/content-theme`,
         },
-        cdn: "/assets/vditor",
+        cdn: VDITOR_ASSETS_BASE,
         hljs: {
           lineNumber: true, // 代码块显示行号
           style: props.darkMode ? "vs2015" : "github", // 代码高亮样式
@@ -301,24 +224,9 @@ onBeforeUnmount(() => {
   z-index: 10;
 }
 
-.loading-spinner {
-  width: 2rem;
-  height: 2rem;
-  border: 2px solid #e5e7eb;
-  border-top: 2px solid #3b82f6;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-  margin-bottom: 1rem;
-}
-
 .loading-text {
   color: #6b7280;
   font-size: 0.875rem;
-}
-
-.markdown-display-dark .loading-spinner {
-  border-color: #4b5563;
-  border-top-color: #60a5fa;
 }
 
 .markdown-display-dark .loading-overlay {
@@ -375,21 +283,11 @@ onBeforeUnmount(() => {
   border-color: #4b5563;
 }
 
-/* 动画 */
-@keyframes spin {
-  0% {
-    transform: rotate(0deg);
-  }
-  100% {
-    transform: rotate(360deg);
-  }
-}
-
 /* VditorJS相关样式 */
 :deep(.vditor-reset) {
   font-size: 1rem !important;
   line-height: 1.7 !important;
-  padding: 1.5rem !important;
+  padding: 0.5rem 1rem !important;
   transition: all 0.3s ease;
   color: v-bind('props.darkMode ? "#d4d4d4" : "#374151"') !important;
   background-color: transparent !important;

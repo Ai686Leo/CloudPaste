@@ -17,11 +17,13 @@ CREATE TABLE pastes (
   id TEXT PRIMARY KEY,
   slug TEXT UNIQUE NOT NULL,
   content TEXT NOT NULL,
+  title TEXT,
   remark TEXT,
   password TEXT,
   expires_at DATETIME,
   max_views INTEGER,
   views INTEGER DEFAULT 0,  
+  is_public BOOLEAN NOT NULL DEFAULT 1,
   created_by TEXT,                     -- 创建者标识（管理员ID或API密钥ID）
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -31,6 +33,7 @@ CREATE TABLE pastes (
 CREATE INDEX idx_pastes_slug ON pastes(slug);
 CREATE INDEX idx_pastes_created_at ON pastes(created_at DESC);
 CREATE INDEX idx_pastes_created_by ON pastes(created_by);    -- 添加创建者索引
+CREATE INDEX idx_pastes_is_public ON pastes(is_public);
 
 
 
@@ -135,6 +138,30 @@ CREATE INDEX idx_files_storage_type ON files(storage_type);
 CREATE INDEX idx_files_file_path ON files(file_path);
 CREATE INDEX idx_files_created_at ON files(created_at);
 CREATE INDEX idx_files_expires_at ON files(expires_at);
+
+CREATE TABLE fs_meta (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  path TEXT NOT NULL,                  -- 虚拟路径，如 "/", "/public", "/private/docs"
+
+  header_markdown TEXT NULL,           -- 顶部 README markdown 内容（inline）
+  header_inherit BOOLEAN NOT NULL DEFAULT 0,
+
+  footer_markdown TEXT NULL,           -- 底部 README markdown 内容（inline）
+  footer_inherit BOOLEAN NOT NULL DEFAULT 0,
+
+  hide_patterns TEXT NULL,             -- JSON 数组字符串，如 ["^README\\.md$", "^top\\.md$"]
+  hide_inherit BOOLEAN NOT NULL DEFAULT 0,
+
+  password TEXT NULL,                  -- 目录访问密码（明文，为空表示未设置）
+  password_inherit BOOLEAN NOT NULL DEFAULT 0,
+
+  extra JSON NULL,                     -- 预留扩展字段
+
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_fs_meta_path ON fs_meta(path);
 
 -- 创建file_passwords表 - 存储文件密码
 CREATE TABLE file_passwords (

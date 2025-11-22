@@ -53,7 +53,25 @@
 
       <!-- 元数据编辑表单 - 允许编辑备注、过期时间等 -->
       <div class="mt-6 border-t pt-4" :class="darkMode ? 'border-gray-700' : 'border-gray-200'">
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-x-4 gap-y-2">
+          <!-- 标题 -->
+          <div class="form-group">
+            <label class="form-label block mb-1 text-sm font-medium" :class="darkMode ? 'text-gray-300' : 'text-gray-700'">标题</label>
+            <input
+              type="text"
+              class="form-input w-full rounded-md shadow-sm"
+              :class="getInputClasses(darkMode)"
+              placeholder="为文本分享添加一个标题（可选）"
+              v-model="editForm.title"
+            />
+          </div>
+
+          <!-- 备注信息 -->
+          <div class="form-group">
+            <label class="form-label block mb-1 text-sm font-medium" :class="darkMode ? 'text-gray-300' : 'text-gray-700'">备注(可选)</label>
+            <input type="text" class="form-input w-full rounded-md shadow-sm" :class="getInputClasses(darkMode)" placeholder="添加备注信息..." v-model="editForm.remark" />
+          </div>
+
           <!-- 链接后缀 -->
           <div class="form-group">
             <label class="form-label block mb-1 text-sm font-medium" :class="darkMode ? 'text-gray-300' : 'text-gray-700'">链接后缀</label>
@@ -71,10 +89,33 @@
             <p v-else class="mt-1 text-xs" :class="darkMode ? 'text-gray-500' : 'text-gray-400'">仅限字母、数字、-、_、.，留空自动生成</p>
           </div>
 
-          <!-- 备注信息 -->
+          <!-- 密码设置 -->
           <div class="form-group">
-            <label class="form-label block mb-1 text-sm font-medium" :class="darkMode ? 'text-gray-300' : 'text-gray-700'">备注(可选)</label>
-            <input type="text" class="form-input w-full rounded-md shadow-sm" :class="getInputClasses(darkMode)" placeholder="添加备注信息..." v-model="editForm.remark" />
+            <label class="form-label block mb-1 text-sm font-medium" :class="darkMode ? 'text-gray-300' : 'text-gray-700'">访问密码</label>
+            <div class="flex items-center space-x-2">
+              <input
+                :type="showPassword ? 'text' : 'password'"
+                autocomplete="new-password"
+                class="form-input w-full rounded-md shadow-sm"
+                :class="getInputClasses(darkMode)"
+                placeholder="设置访问密码..."
+                v-model="editForm.password"
+                :disabled="editForm.clearPassword"
+              />
+            </div>
+            <div class="mt-2 flex items-center">
+              <input
+                type="checkbox"
+                id="clear-password"
+                class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                :class="darkMode ? 'bg-gray-700 border-gray-600' : ''"
+                v-model="editForm.clearPassword"
+              />
+              <label for="clear-password" class="ml-2 text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-600'"> 清除访问密码 </label>
+            </div>
+            <p class="mt-1 text-xs" :class="darkMode ? 'text-gray-500' : 'text-gray-400'">
+              {{ editForm.clearPassword ? "将移除密码保护" : props.paste?.hasPassword ? "留空表示保持原密码不变" : "设置密码后，他人访问需要输入密码" }}
+            </p>
           </div>
 
           <!-- 过期时间选择 -->
@@ -105,33 +146,26 @@
             />
           </div>
 
-          <!-- 密码设置 -->
+          <!-- 可见性设置 -->
           <div class="form-group">
-            <label class="form-label block mb-1 text-sm font-medium" :class="darkMode ? 'text-gray-300' : 'text-gray-700'">访问密码</label>
-            <div class="flex items-center space-x-2">
-              <input
-                :type="showPassword ? 'text' : 'password'"
-                autocomplete="new-password"
-                class="form-input w-full rounded-md shadow-sm"
-                :class="getInputClasses(darkMode)"
-                placeholder="设置访问密码..."
-                v-model="editForm.password"
-                :disabled="editForm.clearPassword"
-              />
+            <label class="form-label block mb-1 text-sm font-medium" :class="darkMode ? 'text-gray-300' : 'text-gray-700'">可见性</label>
+            <div class="flex items-center mt-2">
+              <button
+                type="button"
+                @click="editForm.is_public = !editForm.is_public"
+                class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 cursor-pointer"
+                :class="editForm.is_public ? 'bg-primary-600' : (darkMode ? 'bg-gray-700' : 'bg-gray-200')"
+              >
+                <span
+                  class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform"
+                  :class="editForm.is_public ? 'translate-x-6' : 'translate-x-1'"
+                ></span>
+              </button>
+              <span class="ml-3 text-sm" :class="darkMode ? 'text-gray-300' : 'text-gray-700'">
+                {{ editForm.is_public ? '公开' : '私密' }}
+              </span>
             </div>
-            <div class="mt-2 flex items-center">
-              <input
-                type="checkbox"
-                id="clear-password"
-                class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                :class="darkMode ? 'bg-gray-700 border-gray-600' : ''"
-                v-model="editForm.clearPassword"
-              />
-              <label for="clear-password" class="ml-2 text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-600'"> 清除访问密码 </label>
-            </div>
-            <p class="mt-1 text-xs" :class="darkMode ? 'text-gray-500' : 'text-gray-400'">
-              {{ editForm.clearPassword ? "将移除密码保护" : props.paste?.hasPassword ? "留空表示保持原密码不变" : "设置密码后，他人访问需要输入密码" }}
-            </p>
+            <p class="mt-1 text-xs" :class="darkMode ? 'text-gray-500' : 'text-gray-400'">关闭时仅管理员和创建者可访问</p>
           </div>
         </div>
 
@@ -174,7 +208,7 @@
       :dark-mode="darkMode"
       :is-plain-text-mode="isPlainTextMode"
       :plain-text-content="plainTextContent"
-      :document-title="editForm.remark || 'CloudPaste文档'"
+      :document-title="editForm.title || editForm.remark || 'CloudPaste文档'"
       @close="closeCopyFormatMenu"
       @status-message="handleStatusMessage"
     />
@@ -246,12 +280,14 @@ const getInitialExpiryTime = (expiresAt) => {
 
 // 编辑表单数据
 const editForm = ref({
+  title: props.paste?.title || "",
   remark: props.paste?.remark || "",
   customLink: props.paste?.slug || "",
   expiryTime: getInitialExpiryTime(props.paste?.expires_at),
   maxViews: props.paste?.max_views || 0,
   password: "",
-  clearPassword: false, // 新增是否清除密码的标志
+  clearPassword: false,
+  is_public: Boolean(props.paste?.is_public ?? true),
 });
 
 const slugError = ref("");
@@ -442,14 +478,14 @@ watch(
   () => props.paste,
   (newPaste) => {
     if (newPaste) {
+      editForm.value.title = newPaste.title || "";
       editForm.value.remark = newPaste.remark || "";
       editForm.value.customLink = newPaste.slug || "";
       editForm.value.maxViews = newPaste.max_views || 0;
       editForm.value.password = "";
       slugError.value = "";
-
-      // 处理过期时间
       editForm.value.expiryTime = getInitialExpiryTime(newPaste.expires_at);
+      editForm.value.is_public = Boolean(newPaste.is_public);
     }
   }
 );
@@ -484,8 +520,10 @@ const saveEdit = async () => {
   // 准备更新数据对象，包含内容和元数据
   const updateData = {
     content: newContent,
+    title: editForm.value.title || null,
     remark: editForm.value.remark || null,
     max_views: editForm.value.maxViews === 0 ? null : parseInt(editForm.value.maxViews),
+    is_public: editForm.value.is_public,
   };
 
   const normalizedSlug = editForm.value.customLink ? editForm.value.customLink.trim() : "";
@@ -610,5 +648,4 @@ onMounted(() => {
   width: 100%;
   margin-bottom: 1rem;
 }
-
 </style>

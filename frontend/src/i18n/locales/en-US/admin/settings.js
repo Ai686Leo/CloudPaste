@@ -47,6 +47,9 @@ export default {
       title: "Account Information",
       keyName: "Key Name",
       basicPath: "Basic Path",
+      guestBannerTitle: "You are using a Guest API Key session",
+      guestBannerDescription:
+        "This visitor key is shared among multiple users and has limited permissions. To obtain additional permissions, please contact the administrator to apply for a dedicated API key/permission configuration.",
     },
     adminInfo: {
       title: "Administrator Information Modification",

@@ -295,11 +295,13 @@ X-Custom-Auth-Key: <api_key>
     ```json
     {
       "content": "要分享的文本内容", // 必填
-      "remark": "备注信息", // 可选
+      "title": "文本标题", // 可选，用于在列表和前台展示中区分不同文本
+      "remark": "备注信息", // 可选，用于管理和搜索
       "expires_at": "2023-12-31T23:59:59Z", // 可选，过期时间
       "max_views": 100, // 可选，最大查看次数
       "password": "访问密码", // 可选
-      "slug": "custom-slug" // 可选，自定义短链接
+      "slug": "custom-slug", // 可选，自定义短链接
+      "is_public": true // 可选，是否公开访问，默认 true；false 时仅管理员和创建者可访问
     }
     ```
   - 响应：创建的文本分享信息，包含访问链接
@@ -310,11 +312,13 @@ X-Custom-Auth-Key: <api_key>
       "data": {
         "id": "123",
         "slug": "abc123",
-        "url": "https://example.com/p/abc123",
+        "title": "文本标题",
+        "remark": "备注信息",
         "expires_at": "2023-12-31T23:59:59Z",
         "max_views": 100,
-        "views": 0,
-        "has_password": true
+        "is_public": true,
+        "hasPassword": true,
+        "created_at": "2023-05-01T12:00:00Z"
       },
       "success": true
     }
@@ -324,7 +328,53 @@ X-Custom-Auth-Key: <api_key>
 
   - 描述：获取文本分享内容
   - 参数：slug - 文本短链接
-  - 响应：文本分享内容，如果需要密码则返回密码提示
+  - 访问控制：
+    - 当 `is_public = true` 时，任何持有链接的用户都可以访问（仍受过期时间、最大查看次数和密码保护限制）。
+    - 当 `is_public = false` 时，仅管理员和创建者可以访问；其他用户（包括匿名和其他 API 密钥）将收到“不存在或已被删除”的响应（HTTP 404）。
+  - 响应：
+    - 如果文本未设置密码且可访问，将直接返回内容：
+      ```json
+      {
+        "code": 200,
+        "message": "获取文本内容成功",
+        "data": {
+          "slug": "abc123",
+          "title": "文本标题",
+          "content": "要分享的文本内容",
+          "remark": "备注信息",
+          "expires_at": "2023-12-31T23:59:59Z",
+          "max_views": 100,
+          "views": 1,
+          "created_at": "2023-05-01T12:00:00Z",
+          "created_by": "admin",
+          "is_public": true,
+          "hasPassword": false,
+          "isLastView": false
+        },
+        "success": true
+      }
+      ```
+    - 如果文本已设置密码，则只返回元信息并提示需要密码：
+      ```json
+      {
+        "code": 200,
+        "message": "获取文本信息成功",
+        "data": {
+          "slug": "abc123",
+          "title": "文本标题",
+          "remark": "备注信息",
+          "expires_at": "2023-12-31T23:59:59Z",
+          "max_views": 100,
+          "views": 0,
+          "created_at": "2023-05-01T12:00:00Z",
+          "created_by": "admin",
+          "is_public": true,
+          "hasPassword": true,
+          "requiresPassword": true
+        },
+        "success": true
+      }
+      ```
 
 - `POST /api/paste/:slug`
 
@@ -336,7 +386,7 @@ X-Custom-Auth-Key: <api_key>
       "password": "访问密码" // 必填
     }
     ```
-  - 响应：验证成功后返回文本分享内容
+  - 响应：验证成功后返回文本分享内容，字段与未加密的 `GET /api/paste/:slug` 响应相同，另外会包含 `plain_password`（仅在需要时返回）
 
 - `GET /api/raw/:slug`
 
@@ -344,6 +394,7 @@ X-Custom-Auth-Key: <api_key>
   - 参数：slug - 文本短链接
   - 查询参数：
     - `password` - 如果文本受密码保护，需提供密码
+  - 访问控制：与 `GET /api/paste/:slug` 相同，受 `is_public`、过期时间、最大查看次数及密码保护限制
   - 响应：纯文本格式的内容，Content-Type 为 text/plain
 
 #### 统一文本管理接口
@@ -361,13 +412,51 @@ X-Custom-Auth-Key: <api_key>
       - `limit` - 每页数量，默认为 30
       - `offset` - 偏移量，默认为 0
   - 响应：文本分享列表和分页信息，API 密钥用户只能看到自己创建的文本
+    ```json
+    {
+      "code": 200,
+      "message": "获取成功",
+      "data": {
+        "results": [
+          {
+            "id": "123",
+            "slug": "abc123",
+            "title": "文本标题",
+            "remark": "备注信息",
+            "expires_at": "2023-12-31T23:59:59Z",
+            "max_views": 100,
+            "view_count": 5,
+            "is_public": true,
+            "created_by": "admin",
+            "created_at": "2023-05-01T12:00:00Z",
+            "updated_at": "2023-05-02T08:00:00Z",
+            "has_password": false,
+            "content": "完整内容..."
+          }
+        ],
+        "pagination": {
+          "total": 1,
+          "limit": 10,
+          "offset": 0,
+          "hasMore": false,
+          "page": 1,
+          "totalPages": 1
+        }
+      },
+      "success": true
+    }
+    ```
 
 - `GET /api/pastes/:id`
 
   - 描述：获取单个文本详情（统一接口）
   - 授权：需要管理员令牌或有文本权限的 API 密钥
   - 参数：id - 文本 ID
-  - 响应：文本分享详细信息，API 密钥用户只能访问自己创建的文本
+  - 响应：文本分享详细信息，API 密钥用户只能访问自己创建的文本。返回字段包含：
+    - `id`, `slug`, `title`, `content`, `remark`
+    - `expires_at`, `max_views`, `views`, `is_public`
+    - `created_by`, `created_at`, `updated_at`
+    - `has_password`, `plain_password`（仅在有密码时，并且当前调用者有权限查看明文密码）
 
 - `DELETE /api/pastes/batch-delete`
 
@@ -385,7 +474,20 @@ X-Custom-Auth-Key: <api_key>
   - 描述：更新文本信息（统一接口）
   - 授权：需要管理员令牌或有文本权限的 API 密钥
   - 参数：slug - 文本短链接
-  - 请求体：可包含 remark, expires_at, max_views, password 等字段
+  - 请求体：可包含以下字段（至少需要 content）：
+    ```json
+    {
+      "content": "更新后的文本内容", // 必填
+      "title": "更新后的标题", // 可选
+      "remark": "更新后的备注信息", // 可选
+      "expires_at": "2024-01-31T23:59:59Z", // 可选
+      "max_views": 50, // 可选
+      "password": "新密码", // 可选
+      "clearPassword": true, // 可选，true 时清除密码
+      "newSlug": "new-slug", // 可选，更新短链接
+      "is_public": false // 可选，是否公开访问，false 表示仅管理员和创建者可访问
+    }
+    ```
   - 响应：更新后的文本信息，API 密钥用户只能更新自己创建的文本
 
 #### 管理员专用接口
@@ -1080,6 +1182,22 @@ X-Custom-Auth-Key: <api_key>
     - `path` - 要列出内容的目录路径，默认为根目录("/")
   - 响应：目录内容列表，包含文件和子目录信息
   - 权限：API 密钥用户只能访问其 basic_path 权限范围内的目录
+  - 路径密码行为（如启用目录密码）：
+    - 额外请求头（可选）：
+      ```http
+      X-FS-Path-Token: encrypted:...
+      ```
+      - 该 token 由 `POST /api/fs/meta/password/verify` 接口返回；
+      - 用于访问设置了路径密码的目录及其子目录。
+    - 当目标路径未配置路径密码时：
+      - 与原行为完全一致，不需要该头。
+    - 当目标路径配置了路径密码时：
+      - 管理员用户：
+        - 不检查路径密码，直接放行（只要管理员登录有效）。
+      - 非管理员用户（API Key 等）：
+        - 未提供 token 或 token 无效 / 过期时：
+          - 返回 `403`，`code = "FS_PATH_PASSWORD_REQUIRED"`；
+          - 前端应据此弹出路径密码输入框，重新验证密码。
 
 - `GET /api/fs/get`
 
@@ -1629,3 +1747,96 @@ X-Custom-Auth-Key: <api_key>
 - 文件操作（上传、删除、重命名等）会自动清理相关的搜索缓存
 - 搜索缓存支持按挂载点和用户维度进行清理
 - 管理员可以通过 `/api/admin/cache/stats` 查看搜索缓存统计信息
+
+---
+
+## 目录 Meta 管理 API（FS Meta）
+
+> 用于在管理后台配置目录级元信息：顶部/底部 README、隐藏文件规则、路径密码等。  
+> 所有接口均 **仅限管理员** 使用。
+
+- `GET /api/fs-meta/list`
+
+  - 描述：获取所有目录元信息配置列表
+  - 授权：需要管理员令牌
+  - 查询参数：无
+  - 响应：
+    ```json
+    {
+      "code": 200,
+      "message": "获取元信息列表成功",
+      "success": true,
+      "data": [
+        {
+          "id": 1,
+          "path": "/claw",
+          "headerMarkdown": "# 说明",
+          "headerInherit": true,
+          "footerMarkdown": null,
+          "footerInherit": false,
+          "hidePatterns": ["^README\\.md$"],
+          "hideInherit": true,
+          "password": "1234",
+          "hasPassword": true,
+          "passwordInherit": true,
+          "createdAt": "2025-11-19T10:00:00.000Z",
+          "updatedAt": "2025-11-19T10:10:00.000Z"
+        }
+      ]
+    }
+    ```
+
+- `GET /api/fs-meta/:id`
+
+  - 描述：获取单条目录元信息配置
+  - 授权：需要管理员令牌
+  - 路径参数：
+    - `id` - 元信息记录 ID
+  - 响应：结构与列表中的单条记录相同
+
+- `POST /api/fs-meta/create`
+
+  - 描述：为指定路径创建新的目录元信息配置
+  - 授权：需要管理员令牌
+  - 请求体示例：
+    ```json
+    {
+      "path": "/claw",
+      "headerMarkdown": "# 目录说明",
+      "headerInherit": true,
+      "footerMarkdown": "",
+      "footerInherit": false,
+      "hidePatterns": ["^README\\.md$", "^top\\.md$"],
+      "hideInherit": true,
+      "password": "1234",
+      "passwordInherit": true
+    }
+    ```
+
+- `PUT /api/fs-meta/:id`
+
+  - 描述：更新指定 ID 的目录元信息配置
+  - 授权：需要管理员令牌
+  - 路径参数：
+    - `id` - 元信息记录 ID
+  - 请求体：与 `create` 基本一致，所有字段均为可选，未提供的字段保持不变
+    ```json
+    {
+      "path": "/claw/image",
+      "headerMarkdown": "子目录说明",
+      "headerInherit": false,
+      "footerMarkdown": null,
+      "footerInherit": false,
+      "hidePatterns": [],
+      "hideInherit": false,
+      "password": "9999",
+      "passwordInherit": true
+    }
+    ```
+
+- `DELETE /api/fs-meta/:id`
+
+  - 描述：删除指定 ID 的目录元信息记录
+  - 授权：需要管理员令牌
+  - 路径参数：
+    - `id` - 元信息记录 ID

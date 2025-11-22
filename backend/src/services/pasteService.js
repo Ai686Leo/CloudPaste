@@ -188,15 +188,20 @@ export async function createPaste(db, pasteData, created_by, repositoryFactory =
   const now = new Date();
   const createdAt = now.toISOString();
 
+  // 如果没有提供标题，使用slug作为标题
+  const title = pasteData.title || slug;
+
   // 准备文本分享数据
   const pasteDataForRepo = {
     id: pasteId,
     slug,
     content: pasteData.content,
+    title: title,
     remark: pasteData.remark || null,
     password: passwordHash,
     expires_at: pasteData.expires_at || null,
     max_views: pasteData.max_views || null,
+    is_public: typeof pasteData.is_public === "boolean" ? (pasteData.is_public ? 1 : 0) : 1,
     created_by: created_by,
     created_at: createdAt,
     updated_at: createdAt,
@@ -209,9 +214,11 @@ export async function createPaste(db, pasteData, created_by, repositoryFactory =
   return {
     id: pasteId,
     slug,
+    title: title,
     remark: pasteData.remark,
     expires_at: pasteData.expires_at,
     max_views: pasteData.max_views,
+    is_public: typeof pasteData.is_public === "boolean" ? pasteData.is_public : true,
     hasPassword: !!passwordHash,
     created_at: createdAt,
   };
@@ -622,12 +629,17 @@ export async function updatePaste(db, slug, updateData, created_by = null, repos
   let newViewsValue = 0;
   console.log(`文本分享(${paste.id})已更新，重置访问次数为0`);
 
+  // 如果标题为空，使用新slug作为标题
+  const finalTitle = updateData.title || newSlug;
+
   // 准备更新数据
   const updateDataForRepo = {
+    title: finalTitle,
     content: updateData.content,
     remark: updateData.remark,
     expires_at: updateData.expires_at,
     max_views: updateData.max_views,
+    is_public: updateData.is_public,
   };
 
   // 准备更新选项

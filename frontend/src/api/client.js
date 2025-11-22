@@ -19,18 +19,20 @@ function checkPasswordRelatedRequest(endpoint, options) {
   // 判断是否是密码验证请求（文本或文件分享的密码验证）
   const isTextPasswordVerify = endpoint.match(/^(\/)?paste\/[a-zA-Z0-9_-]+$/i) && options.method === "POST";
   const isFilePasswordVerify = endpoint.match(/^(\/)?public\/files\/[a-zA-Z0-9_-]+\/verify$/i) && options.method === "POST";
+  const isFsMetaPasswordVerify = endpoint.includes("/fs/meta/password/verify") && options.method === "POST";
   const hasPasswordInBody = options.body && (typeof options.body === "string" ? options.body.includes("password") : options.body.password);
 
   // 检查是否是修改密码请求
   const isChangePasswordRequest = endpoint.includes("/admin/change-password") && options.method === "POST";
 
-  const isPasswordVerify = (isTextPasswordVerify || isFilePasswordVerify) && hasPasswordInBody;
+  const isPasswordVerify = (isTextPasswordVerify || isFilePasswordVerify || isFsMetaPasswordVerify) && hasPasswordInBody;
 
   return {
     isPasswordVerify,
     isChangePasswordRequest,
     isTextPasswordVerify,
     isFilePasswordVerify,
+    isFsMetaPasswordVerify,
     hasPasswordInBody,
   };
 }
@@ -299,6 +301,12 @@ export async function fetchApi(endpoint, options = {}) {
         console.error(`❌ API错误(${url}):`, responseData);
         const error = new Error(responseData.message || `HTTP错误 ${response.status}: ${response.statusText}`);
         error.__logged = true;
+        if (responseData.code) {
+          error.code = responseData.code;
+        }
+        if (Object.prototype.hasOwnProperty.call(responseData, "data")) {
+          error.data = responseData.data;
+        }
         throw error;
       }
 

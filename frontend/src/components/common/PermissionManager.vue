@@ -67,20 +67,20 @@ const authStore = useAuthStore();
 // 从Store获取权限状态的计算属性
 const isAdmin = computed(() => authStore.isAdmin);
 const hasApiKey = computed(() => authStore.isKeyUser && !!authStore.apiKey);
-const hasTextPermission = computed(() => authStore.hasTextPermission);
-const hasFilePermission = computed(() => authStore.hasFilePermission);
+const hasTextPermission = computed(() => authStore.hasTextSharePermission);
+const hasFilePermission = computed(() => authStore.hasFileSharePermission);
 const hasMountPermission = computed(() => authStore.hasMountPermission);
 
 // 根据权限类型动态计算权限状态
 const hasPermission = computed(() => {
   switch (props.permissionType) {
     case "file":
-      return authStore.hasFilePermission;
+      return authStore.hasFileSharePermission;
     case "mount":
       return authStore.hasMountPermission;
     case "text":
     default:
-      return authStore.hasTextPermission;
+      return authStore.hasTextSharePermission;
   }
 });
 

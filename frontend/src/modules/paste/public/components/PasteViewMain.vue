@@ -166,6 +166,8 @@ const loadPaste = async (password = null) => {
     // 检查返回的完整数据用于调试
     debugLog(enableDebug.value, isDev, "文本分享加载成功", {
       slug: result.slug,
+      title: result.title || "",
+      is_public: result.is_public,
       hasPassword: result.hasPassword,
       created_by: result.created_by || "无",
       contentLength: result.content?.length || 0,
@@ -366,13 +368,19 @@ const saveEdit = async (updateData) => {
     const updatedSlug = updateResult && typeof updateResult === "object" && updateResult.slug ? updateResult.slug : paste.value.slug;
     const slugChanged = updatedSlug && updatedSlug !== paste.value.slug;
 
-    // 更新本地内容状态
+    // 更新本地内容和元数据状态
     paste.value.content = updateData.content;
     // 保存成功后，更新编辑内容的原始值，这样取消按钮可以恢复到最新保存的内容
     editContent.value = updateData.content;
+    if (Object.prototype.hasOwnProperty.call(updateData, "title")) {
+      paste.value.title = updateData.title;
+    }
     paste.value.remark = updateData.remark;
     paste.value.max_views = updateData.max_views;
     paste.value.expires_at = updateData.expires_at;
+    if (Object.prototype.hasOwnProperty.call(updateData, "is_public")) {
+      paste.value.is_public = updateData.is_public;
+    }
     if (slugChanged) {
       paste.value.slug = updatedSlug;
     }
@@ -568,6 +576,25 @@ onBeforeUnmount(() => {
         <a href="/" class="hover:text-primary-600 dark:hover:text-primary-400">首页</a>
         <span class="mx-2">/</span>
         <span class="text-gray-700 dark:text-gray-300">文本分享</span>
+      </div>
+
+      <!-- 标题与可见性信息 - 仅在非密码保护状态下显示 -->
+      <div v-if="paste && !needPassword" class="mb-3">
+        <div class="flex items-center flex-wrap gap-2">
+          <h1 class="text-xl sm:text-2xl font-semibold text-gray-900 dark:text-white">
+            {{ paste.title || paste.slug || '未命名文本' }}
+          </h1>
+          <span
+            v-if="paste.is_public === false"
+            class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11c1.657 0 3-1.343 3-3S13.657 5 12 5s-3 1.343-3 3 1.343 3 3 3z" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.5 20a8.38 8.38 0 017.5-4.5 8.38 8.38 0 017.5 4.5" />
+            </svg>
+            仅内部可见
+          </span>
+        </div>
       </div>
 
       <!-- 加载中状态显示 -->

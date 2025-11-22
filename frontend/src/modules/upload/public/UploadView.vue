@@ -109,7 +109,7 @@ const { showSuccess, showError, showWarning } = useGlobalMessage();
 
 // 使用认证Store
 const authStore = useAuthStore();
-const { isAdmin, hasFilePermission, hasFileManagePermission } = storeToRefs(authStore);
+const { isAdmin, hasFileSharePermission, hasFileManagePermission } = storeToRefs(authStore);
 
 const props = defineProps({
   darkMode: {
@@ -134,8 +134,8 @@ const shareListContainerClass = computed(() => {
 const showShareQrModal = ref(false);
 const currentShareLink = ref("");
 
-// 从Store获取权限状态的计算属性
-const hasPermission = computed(() => hasFilePermission.value);
+// 从Store获取权限状态的计算属性（文件上传 = FILE_SHARE）
+const hasPermission = computed(() => hasFileSharePermission.value);
 const canLoadRecentFiles = computed(() => hasFileManagePermission.value);
 
 // 计算最近3条记录

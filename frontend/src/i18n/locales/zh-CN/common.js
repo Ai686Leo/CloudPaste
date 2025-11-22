@@ -74,6 +74,7 @@ export default {
       fileManagement: "文件管理",
       storageConfig: "存储管理",
       mountManagement: "挂载管理",
+      fsMetaManagement: "元信息管理",
       keyManagement: "密钥管理",
       settings: "系统设置",
       globalSettings: "全局设置",

@@ -770,16 +770,6 @@ const strategyMap = {
   multipart: STORAGE_STRATEGIES.PRESIGNED_MULTIPART,
 };
 
-const runServerResumeCheck = async (files = []) => {
-  const plugin = uppyInstance?.getPlugin?.("ServerResumePlugin");
-  if (!plugin?.prepareUpload || !files.length) return;
-  try {
-    await plugin.prepareUpload(files.map((item) => item.id));
-  } catch (error) {
-    console.warn("[ServerResumePlugin] resume 检查失败", error);
-  }
-};
-
 const runFsCommitIfNeeded = async (result) => {
   if (!result) return;
   result.failed = result.failed || [];
@@ -842,7 +832,6 @@ const startUpload = async () => {
     driverStrategy.value = strategyMap[uploadMethod.value] || STORAGE_STRATEGIES.S3_BACKEND_DIRECT;
 
     const storageConfigId = await ensureStorageConfigForCurrentPath();
-    await runServerResumeCheck(uppyInstance.getFiles());
 
     disposeFsSession();
     fsUploadSession = createFsUploadSession({

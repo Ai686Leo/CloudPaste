@@ -27,12 +27,14 @@ const emit = defineEmits(["close", "save"]);
  * 使用reactive使其具有响应性
  */
 const editForm = reactive({
+  title: "", // 标题
   remark: "", // 备注信息
   password: "", // 不回显密码，如果填写则更新密码
   clearPassword: false, // 是否清除密码的标记
   expiry_time: "0", // 过期时间（小时），0表示永不过期
   max_views: 0, // 最大查看次数，0表示无限制
   slug: "", // 链接后缀，为空则系统自动生成
+  is_public: true, // 是否公开访问
 });
 
 /**
@@ -45,6 +47,7 @@ watch(
     if (!newPaste) return;
 
     // 填充表单数据，但密码不回显（出于安全考虑）
+    editForm.title = newPaste.title || "";
     editForm.remark = newPaste.remark || "";
     editForm.password = ""; // 密码不回显
     editForm.clearPassword = false;
@@ -73,6 +76,9 @@ watch(
 
     // 设置最大查看次数
     editForm.max_views = newPaste.max_views || 0;
+
+    // 设置公开性
+    editForm.is_public = Boolean(newPaste.is_public);
   },
   { immediate: true }
 );
@@ -131,8 +137,10 @@ const saveEdit = () => {
     id: props.paste?.id, // 添加ID
     slug: props.paste?.slug, // 当前slug（用于API请求路径）
     content: props.paste?.content, // 使用原内容
+    title: editForm.title || null,
     remark: editForm.remark || null,
     max_views: editForm.max_views === 0 ? null : parseInt(editForm.max_views),
+    is_public: editForm.is_public,
   };
 
   // 只有当用户修改了slug时，才包含newSlug参数
@@ -196,6 +204,18 @@ const saveEdit = () => {
         <div class="bg-white dark:bg-gray-800 px-3 sm:px-4 py-3 sm:py-4 overflow-y-auto" style="max-height: calc(95vh - 160px); min-height: 200px">
           <!-- 修改表单 -->
           <form @submit.prevent="saveEdit" class="space-y-4">
+            <!-- 标题 -->
+            <div class="mb-4 text-left">
+              <label for="title" class="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">标题</label>
+              <input
+                id="title"
+                type="text"
+                v-model="editForm.title"
+                class="mt-1 block w-full px-3 py-2 border rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                :class="darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900'"
+                placeholder="为文本分享添加一个标题（可选）"
+              />
+            </div>
             <!-- 链接后缀（slug）字段 -->
             <div class="mb-4">
               <label class="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">链接后缀</label>
@@ -254,6 +274,22 @@ const saveEdit = () => {
                 <option value="0">永不过期</option>
               </select>
             </div>
+            <!-- 可见性设置 -->
+            <div class="mb-4">
+              <label class="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">访问可见性</label>
+              <div class="flex items-center">
+                <input
+                  id="is_public"
+                  type="checkbox"
+                  v-model="editForm.is_public"
+                  class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 focus:border-primary-500 cursor-pointer"
+                />
+                <label for="is_public" class="ml-2 text-sm text-gray-700 dark:text-gray-300">
+                  公开访问（关闭时仅管理员和创建者可访问）
+                </label>
+              </div>
+            </div>
+
             <!-- 密码保护设置区域 -->
             <div class="mb-4">
               <label class="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">密码保护</label>

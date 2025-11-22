@@ -72,6 +72,7 @@ export default {
       fileManagement: "File Management",
       storageConfig: "Storage Management",
       mountManagement: "Mount Management",
+      fsMetaManagement: "Meta Management",
       keyManagement: "Key Management",
       settings: "System Settings",
       globalSettings: "Global Settings",

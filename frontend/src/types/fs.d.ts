@@ -12,6 +12,12 @@ export interface FsDirectoryItem {
   preview_url?: string;
 }
 
+export interface FsResolvedMeta {
+  headerMarkdown?: string | null;
+  footerMarkdown?: string | null;
+  hidePatterns: string[];
+}
+
 export interface FsDirectoryResponse {
   path: string;
   items: FsDirectoryItem[];
@@ -19,5 +25,5 @@ export interface FsDirectoryResponse {
   mount_id?: string | number;
   total?: number;
   pagination?: PaginationInfo;
+  meta?: FsResolvedMeta | null;
 }
-

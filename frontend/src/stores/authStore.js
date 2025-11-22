@@ -86,10 +86,6 @@ export const useAuthStore = defineStore("auth", () => {
     return isAdmin.value || PermissionChecker.hasPermission(apiKeyPermissions.value, Permission.FILE_MANAGE);
   });
 
-  // 兼容旧命名：hasTextPermission / hasFilePermission 代表“具备对应分享能力（通常用于创建）”
-  const hasTextPermission = hasTextSharePermission;
-  const hasFilePermission = hasFileSharePermission;
-
   // 是否有挂载权限（任一挂载权限）
   const hasMountPermission = computed(() => {
     return (
@@ -300,8 +296,14 @@ export const useAuthStore = defineStore("auth", () => {
     console.log("初始化认证状态...");
     loadFromStorage();
 
-    if (isAuthenticated.value) {
+    // 管理员会话：启动时校验一次 token
+    if (isAuthenticated.value && authType.value === "admin") {
       await validateAuth();
+    }
+
+    // API Key 会话（包括 GUEST）：从本地恢复时视为“最近已验证”，避免刷新后立刻强制重新验证
+    if (isAuthenticated.value && authType.value === "apikey") {
+      lastValidated.value = Date.now();
     }
 
     initialized.value = true;
@@ -487,6 +489,10 @@ export const useAuthStore = defineStore("auth", () => {
     isLoading.value = true;
 
     try {
+      // 记录原始状态，方便失败时恢复
+      const originalApiKey = apiKey.value;
+      const originalAuthType = authType.value;
+
       const guestConfigResp = await api.system.getGuestConfig?.();
       const guestData = guestConfigResp?.data ?? guestConfigResp;
 
@@ -520,6 +526,9 @@ export const useAuthStore = defineStore("auth", () => {
       }
 
       lastValidated.value = Date.now();
+
+      // 游客会话与普通 API Key 一样持久化，支持刷新后自动恢复
+      saveToStorage();
 
       try {
         window.dispatchEvent(
@@ -615,9 +624,11 @@ export const useAuthStore = defineStore("auth", () => {
 
     switch (permissionType) {
       case "text":
-        return hasTextPermission.value;
+        // 文本权限语义：用于“创建文本分享”，对应 TEXT_SHARE
+        return hasTextSharePermission.value;
       case "file":
-        return hasFilePermission.value;
+        // 文件权限语义：用于“创建文件分享/上传”，对应 FILE_SHARE
+        return hasFileSharePermission.value;
       case "mount":
         return hasMountPermission.value;
       case "admin":
@@ -707,10 +718,8 @@ export const useAuthStore = defineStore("auth", () => {
     initialized,
 
     // 计算属性
-    hasTextPermission,
     hasTextSharePermission,
     hasTextManagePermission,
-    hasFilePermission,
     hasFileSharePermission,
     hasFileManagePermission,
     hasMountPermission,

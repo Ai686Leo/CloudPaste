@@ -24,6 +24,7 @@ import cacheBus, { CACHE_EVENTS } from "../../cache/cacheBus.js";
 import { ensureRepositoryFactory } from "../../utils/repositories.js";
 import { getAccessibleMountsForUser } from "../../security/helpers/access.js";
 import { UserType } from "../../constants/index.js";
+import { FsMetaService } from "../../services/fsMetaService.js";
 
 export class FileSystem {
   /**
@@ -45,7 +46,35 @@ export class FileSystem {
    * @returns {Promise<Object>} 目录内容
    */
   async listDirectory(path, userIdOrInfo, userType, options = {}) {
-    return await featureListDirectory(this, path, userIdOrInfo, userType, options);
+    const baseResult = await featureListDirectory(this, path, userIdOrInfo, userType, options);
+
+    try {
+      const db = this.mountManager?.db;
+      if (!db) {
+        return baseResult;
+      }
+
+      const metaService = new FsMetaService(db, this.repositoryFactory);
+      const resolvedMeta = await metaService.resolveMetaForPath(path);
+
+      // 仅向前端暴露与展示相关的 meta 字段，避免泄露路径密码
+      const safeMeta =
+        resolvedMeta && (resolvedMeta.headerMarkdown || resolvedMeta.footerMarkdown || (resolvedMeta.hidePatterns?.length ?? 0) > 0)
+          ? {
+              headerMarkdown: resolvedMeta.headerMarkdown ?? null,
+              footerMarkdown: resolvedMeta.footerMarkdown ?? null,
+              hidePatterns: resolvedMeta.hidePatterns ?? [],
+            }
+          : null;
+
+      return {
+        ...baseResult,
+        meta: safeMeta,
+      };
+    } catch (error) {
+      console.warn("解析 FS Meta 失败，将返回基础目录结果：", error);
+      return baseResult;
+    }
   }
 
   /**

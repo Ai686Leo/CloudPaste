@@ -204,7 +204,7 @@ export function usePasteService() {
 
   /**
    * 创建新的文本（Markdown 编辑页使用）
-   * @param {Partial<PasteUpdatePayload>} data
+   * @param {Partial<PasteUpdatePayload> & { title?: string | null; is_public?: boolean }} data
    * @returns {Promise<string>} 新创建的 slug
    */
   const createPaste = async (data) => {

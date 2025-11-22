@@ -46,6 +46,9 @@
 
     <!-- 主要内容区域 -->
     <div v-if="hasPermission" class="mount-explorer-main">
+      <!-- 顶部 README -->
+      <DirectoryReadme position="top" :meta="directoryMeta" :dark-mode="darkMode" />
+
       <!-- 操作按钮 -->
       <div class="card mb-4">
         <div class="p-3">
@@ -179,8 +182,21 @@
       <div class="card">
         <!-- 文件列表模式 -->
         <div v-if="!hasPreviewIntent">
+          <!-- 内嵌式密码验证 -->
+          <PathPasswordDialog
+            v-if="pathPassword.showPasswordDialog.value"
+            :is-open="pathPassword.showPasswordDialog.value"
+            :path="pathPassword.pendingPath.value || currentPath"
+            :dark-mode="darkMode"
+            :inline="true"
+            @verified="handlePasswordVerified"
+            @cancel="handlePasswordCancel"
+            @close="handlePasswordClose"
+            @error="handlePasswordError"
+          />
+
           <!-- 错误提示 -->
-          <div v-if="error" class="mb-4 p-4 bg-red-100 dark:bg-red-900/20 border border-red-300 dark:border-red-700 rounded-lg">
+          <div v-else-if="error" class="mb-4 p-4 bg-red-100 dark:bg-red-900/20 border border-red-300 dark:border-red-700 rounded-lg">
             <div class="flex items-center">
               <svg class="w-5 h-5 text-red-500 mr-2" fill="currentColor" viewBox="0 0 20 20">
                 <path
@@ -197,7 +213,7 @@
           <DirectoryList
             v-else
             :current-path="currentPath"
-            :items="directoryItems"
+            :items="visibleItems"
             :loading="loading"
             :is-virtual="isVirtualDirectory"
             :dark-mode="darkMode"
@@ -270,7 +286,7 @@
               :is-admin="isAdmin"
               :api-key-info="apiKeyInfo"
               :has-file-permission="hasFilePermission"
-              :directory-items="directoryItems"
+              :directory-items="visibleItems"
               @download="handleDownload"
               @loaded="handlePreviewLoaded"
               @error="handlePreviewError"
@@ -279,6 +295,9 @@
           </div>
         </div>
       </div>
+
+      <!-- 底部 README -->
+      <DirectoryReadme v-if="!hasPreviewIntent" position="bottom" :meta="directoryMeta" :dark-mode="darkMode" />
     </div>
 
     <!-- 搜索弹窗 -->
@@ -301,6 +320,7 @@ import { storeToRefs } from "pinia";
 
 // 组合式函数 - 使用统一聚合导出
 import { useSelection, useFileOperations, useUIState, useFileBasket } from "@/composables/index.js";
+import { usePathPassword } from "@/composables/usePathPassword.js";
 
 // 视图控制器
 import { useMountExplorerController } from "./useMountExplorerController.js";
@@ -308,12 +328,14 @@ import { useMountExplorerController } from "./useMountExplorerController.js";
 // 子组件
 import BreadcrumbNav from "@/modules/fs/components/shared/BreadcrumbNav.vue";
 import DirectoryList from "@/modules/fs/components/directory/DirectoryList.vue";
+import DirectoryReadme from "@/modules/fs/components/DirectoryReadme.vue";
 import FileOperations from "@/modules/fs/components/shared/FileOperations.vue";
 import FilePreview from "@/modules/fs/components/preview/FilePreview.vue";
 import UppyUploadModal from "@/modules/fs/components/shared/modals/UppyUploadModal.vue";
 import CopyModal from "@/modules/fs/components/shared/modals/CopyModal.vue";
 import TasksModal from "@/modules/fs/components/shared/modals/TasksModal.vue";
 import SearchModal from "@/modules/fs/components/shared/modals/SearchModal.vue";
+import PathPasswordDialog from "@/modules/fs/components/shared/modals/PathPasswordDialog.vue";
 import ConfirmDialog from "@/components/common/dialogs/ConfirmDialog.vue";
 import InputDialog from "@/components/common/dialogs/InputDialog.vue";
 import FileBasketPanel from "@/modules/fs/components/shared/FileBasketPanel.vue";
@@ -329,6 +351,7 @@ const selection = useSelection();
 const fileOperations = useFileOperations();
 const uiState = useUIState();
 const fileBasket = useFileBasket();
+const pathPassword = usePathPassword();
 
 // 文件篮状态
 const { isBasketOpen } = storeToRefs(fileBasket);
@@ -341,6 +364,7 @@ const {
   hasPermissionForCurrentPath,
   directoryItems,
   isVirtualDirectory,
+  directoryMeta,
   isAdmin,
   hasApiKey,
   hasFilePermission,
@@ -360,6 +384,33 @@ const {
   stopPreview,
   refreshDirectory,
 } = useMountExplorerController();
+
+// 根据目录 Meta 的隐藏规则计算实际可见条目
+const visibleItems = computed(() => {
+  const items = directoryItems.value || [];
+  const meta = directoryMeta.value;
+  const patterns = meta && Array.isArray(meta.hidePatterns) ? meta.hidePatterns : [];
+
+  if (!patterns.length) {
+    return items;
+  }
+
+  const regexes = patterns
+    .map((pattern) => {
+      try {
+        return new RegExp(pattern);
+      } catch {
+        return null;
+      }
+    })
+    .filter((re) => re);
+
+  if (!regexes.length) {
+    return items;
+  }
+
+  return items.filter((item) => !regexes.some((re) => re.test(item.name)));
+});
 
 const { isCheckboxMode, selectedItems, selectedCount, setAvailableItems, toggleCheckboxMode, toggleSelectAll, getSelectedItems, selectItem } = selection;
 
@@ -655,7 +706,7 @@ const batchDelete = () => {
 };
 
 /**
- * 🔧 取消删除
+ * 取消删除
  */
 const cancelDelete = () => {
   // 删除过程中不允许取消
@@ -799,6 +850,61 @@ const handleShowMessage = (messageInfo) => {
   showMessage(messageInfo.type, messageInfo.message);
 };
 
+// 密码验证事件处理
+const handlePasswordVerified = ({ path, token, message }) => {
+  console.log("密码验证成功:", { path, token });
+
+  // 保存验证 token
+  pathPassword.savePathToken(path, token);
+
+  // 显示成功消息
+  showMessage("success", message || t("mount.pathPassword.verified"));
+
+  // 关闭弹窗
+  pathPassword.closePasswordDialog();
+  pathPassword.clearPendingPath();
+
+  // 重新加载目录
+  refreshDirectory();
+};
+
+const handlePasswordCancel = async () => {
+  console.log("密码验证取消/返回");
+
+  // 关闭密码弹窗
+  pathPassword.closePasswordDialog();
+  pathPassword.clearPendingPath();
+
+  // 计算父目录路径
+  const currentPathValue = currentPath.value;
+  let parentPath = "/";
+
+  if (currentPathValue && currentPathValue !== "/") {
+    // 移除末尾的斜杠（如果有）
+    const normalized = currentPathValue.replace(/\/+$/, "");
+    // 获取最后一个斜杠之前的部分
+    const lastSlashIndex = normalized.lastIndexOf("/");
+    if (lastSlashIndex > 0) {
+      parentPath = normalized.substring(0, lastSlashIndex);
+    }
+  }
+
+  console.log("导航到父目录:", { from: currentPathValue, to: parentPath });
+
+  // 导航到父目录
+  await navigateTo(parentPath);
+};
+
+const handlePasswordClose = () => {
+  console.log("密码弹窗关闭");
+  pathPassword.closePasswordDialog();
+};
+
+const handlePasswordError = ({ message }) => {
+  console.error("密码验证错误:", message);
+  showMessage("error", message);
+};
+
 // 预览相关方法
 const handlePreviewLoaded = () => {
   console.log("预览加载完成");
@@ -851,13 +957,25 @@ const handleGlobalKeydown = (event) => {
   }
 };
 
-// 监听目录项目变化，更新选择状态
+// 监听目录项目变化，更新选择状态（仅针对可见条目）
 watch(
-  () => directoryItems.value,
+  () => visibleItems.value,
   (newItems) => {
     setAvailableItems(newItems);
   },
   { immediate: true }
+);
+
+// 监听路径变化，自动关闭密码弹窗
+watch(
+  () => currentPath.value,
+  (newPath, oldPath) => {
+    if (newPath !== oldPath && pathPassword.showPasswordDialog.value) {
+      console.log("路径变化，关闭密码弹窗:", { from: oldPath, to: newPath });
+      pathPassword.closePasswordDialog();
+      pathPassword.clearPendingPath();
+    }
+  }
 );
 
 // 组件挂载时执行

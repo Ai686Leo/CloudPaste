@@ -22,7 +22,11 @@ export async function getDirectoryList(path, options = {}) {
   if (options.refresh) {
     params.refresh = "true";
   }
-  return get("/fs/list", { params });
+  const requestOptions = { params };
+  if (options.headers) {
+    requestOptions.headers = options.headers;
+  }
+  return get("/fs/list", requestOptions);
 }
 
 /**
@@ -152,6 +156,22 @@ export async function getFileLink(path, expiresIn = null, forceDownload = false)
   }
 
   return get("/fs/file-link", { params });
+}
+
+/**
+ * 校验目录路径密码
+ * @param {string} path 目标路径
+ * @param {string} password 明文密码
+ * @returns {Promise<{ success: boolean; requiresPassword: boolean; verified: boolean; token?: string | null; path?: string }>}
+ */
+export async function verifyPathPassword(path, password) {
+  const response = await post("/fs/meta/password/verify", { path, password });
+  if (response && typeof response === "object" && "data" in response) {
+    return /** @type {{ verified: boolean; requiresPassword: boolean; token?: string | null; path?: string }} */ (
+      response.data
+    );
+  }
+  return response;
 }
 
 /******************************************************************************

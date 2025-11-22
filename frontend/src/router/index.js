@@ -127,6 +127,15 @@ const routes = [
         },
       },
       {
+        path: "fs-meta-management",
+        name: "AdminFsMetaManagement",
+        component: createOfflineAwareImport(() => import("../modules/admin/views/FsMetaManagementView.vue"), "元信息管理"),
+        meta: {
+          title: "元信息管理 - CloudPaste",
+          adminOnly: true, // 只有管理员可访问
+        },
+      },
+      {
         path: "storage",
         name: "AdminStorage",
         component: createOfflineAwareImport(() => import("../modules/admin/views/StorageConfigView.vue"), "存储管理"),
@@ -346,8 +355,9 @@ router.beforeEach(async (to, from, next) => {
       await authStore.initialize();
     }
 
-    // 自动游客会话：在未认证且非 /admin 路由时尝试一次基于 Guest API Key 的登录
-    if (!authStore.isAuthenticated && authStore.authType === "none" && !to.path.startsWith("/admin")) {
+    // 自动游客会话：在首次未认证状态下尝试一次基于 Guest API Key 的登录
+    // 统一在任意路由入口触发一次（包括 /admin 相关路由），由 maybeAutoGuestLogin 自身通过 guestAutoTried 控制只尝试一次
+    if (!authStore.isAuthenticated && authStore.authType === "none") {
       if (typeof authStore.maybeAutoGuestLogin === "function") {
         await authStore.maybeAutoGuestLogin();
       }
@@ -403,8 +413,8 @@ router.beforeEach(async (to, from, next) => {
         console.log("路由守卫：用户权限详情", {
           authType: authStore.authType,
           isAdmin: authStore.isAdmin,
-          hasTextPermission: authStore.hasTextPermission,
-          hasFilePermission: authStore.hasFilePermission,
+          hasTextSharePermission: authStore.hasTextSharePermission,
+          hasFileSharePermission: authStore.hasFileSharePermission,
           hasMountPermission: authStore.hasMountPermission,
           apiKeyPermissions: authStore.apiKeyPermissions,
         });
@@ -428,8 +438,8 @@ router.beforeEach(async (to, from, next) => {
             targetRoute: to.name,
             userPermissions: {
               isAdmin: authStore.isAdmin,
-              hasTextPermission: authStore.hasTextPermission,
-              hasFilePermission: authStore.hasFilePermission,
+              hasTextManagePermission: authStore.hasTextManagePermission,
+              hasFileManagePermission: authStore.hasFileManagePermission,
               hasMountPermission: authStore.hasMountPermission,
             },
           });
@@ -463,8 +473,8 @@ router.beforeEach(async (to, from, next) => {
         isAdmin: authStore.isAdmin,
         authType: authStore.authType,
         isGuest: authStore.isGuest,
-        hasTextPermission: authStore.hasTextPermission,
-        hasFilePermission: authStore.hasFilePermission,
+        hasTextManagePermission: authStore.hasTextManagePermission,
+        hasFileManagePermission: authStore.hasFileManagePermission,
         hasMountPermission: authStore.hasMountPermission,
       });
     }
@@ -565,6 +575,9 @@ router.afterEach(async (to, from) => {
         break;
       case "AdminMountManagement":
         title = `${t("pageTitle.adminModules.mountManagement")} - ${siteTitle}`;
+        break;
+      case "AdminFsMetaManagement":
+        title = `${t("pageTitle.adminModules.fsMetaManagement")} - ${siteTitle}`;
         break;
       case "AdminKeyManagement":
         title = `${t("pageTitle.adminModules.keyManagement")} - ${siteTitle}`;

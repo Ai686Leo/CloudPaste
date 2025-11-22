@@ -1,4 +1,6 @@
 import { api } from "@/api";
+import { useAuthStore } from "@/stores/authStore.js";
+import { usePathPassword } from "@/composables/usePathPassword.js";
 
 /** @typedef {import("@/types/fs").FsDirectoryResponse} FsDirectoryResponse */
 /** @typedef {import("@/types/fs").FsDirectoryItem} FsDirectoryItem */
@@ -13,6 +15,9 @@ import { api } from "@/api";
  * - UI 侧通过 DOM 操作创建 <a> 元素触发下载或预览
  */
 export function useFsService() {
+  const authStore = useAuthStore();
+  const pathPassword = usePathPassword();
+
   /**
    * 获取目录列表
    * @param {string} path
@@ -20,11 +25,45 @@ export function useFsService() {
    * @returns {Promise<FsDirectoryResponse>}
    */
   const getDirectoryList = async (path, options = {}) => {
-    const response = await api.fs.getDirectoryList(path, options);
-    if (!response?.success) {
-      throw new Error(response?.message || "获取目录列表失败");
+    const normalizedPath = path || "/";
+    const isAdmin = authStore.isAdmin;
+
+    /** @type {{ refresh?: boolean; headers?: Record<string,string> }} */
+    const requestOptions = { refresh: options.refresh };
+
+    // 非管理员访问时，如果已有 token，则附带在请求头中
+    if (!isAdmin) {
+      const token = pathPassword.getPathToken(normalizedPath);
+      if (token) {
+        requestOptions.headers = {
+          "X-FS-Path-Token": token,
+        };
+      }
     }
-    return /** @type {FsDirectoryResponse} */ (response.data);
+
+    try {
+      const response = await api.fs.getDirectoryList(normalizedPath, requestOptions);
+      if (!response?.success) {
+        throw new Error(response?.message || "获取目录列表失败");
+      }
+      return /** @type {FsDirectoryResponse} */ (response.data);
+    } catch (error) {
+      // 目录路径密码缺失或失效：触发前端密码验证流程
+      if (!isAdmin && error && error.code === "FS_PATH_PASSWORD_REQUIRED") {
+        console.warn("目录需要路径密码，触发密码验证流程:", { path: normalizedPath, error });
+        // 旧 token 失效，清除后重新走验证
+        pathPassword.removePathToken(normalizedPath);
+        pathPassword.setPendingPath(normalizedPath);
+        pathPassword.openPasswordDialog();
+
+        const friendlyError = new Error(error.message || "目录需要密码访问");
+        friendlyError.code = "FS_PATH_PASSWORD_REQUIRED";
+        friendlyError.__logged = true;
+        throw friendlyError;
+      }
+
+      throw error;
+    }
   };
 
   /**
@@ -119,4 +158,3 @@ export function useFsService() {
     getFileLink,
   };
 }
-

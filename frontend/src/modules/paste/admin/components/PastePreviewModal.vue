@@ -26,7 +26,7 @@ const props = defineProps({
 const emit = defineEmits(["close", "view-paste", "copy-link"]);
 
 // 导入统一的时间处理工具
-import { formatDateTime, formatRelativeTime as formatRelativeTimeUtil, formatExpiry as formatExpiryUtil } from "@/utils/timeUtils.js";
+import { formatDateTime, formatExpiry as formatExpiryUtil } from "@/utils/timeUtils.js";
 
 /**
  * 格式化日期为本地日期时间字符串
@@ -37,27 +37,7 @@ const formatDate = (dateString) => {
   return formatDateTime(dateString);
 };
 
-/**
- * 格式化相对时间（如：3天后过期）
- * @param {string} dateString - UTC 时间字符串
- * @returns {string} 相对时间描述
- */
-const formatRelativeTime = (dateString) => {
-  if (!dateString) return "";
-
-  const relativeTime = formatRelativeTimeUtil(dateString);
-
-  // 为过期场景添加特殊处理
-  if (relativeTime.includes("前")) {
-    return "已过期";
-  } else if (relativeTime === "即将") {
-    return "即将过期";
-  } else if (relativeTime.includes("后")) {
-    return relativeTime.replace("后", "后过期");
-  }
-
-  return relativeTime;
-};
+ 
 
 /**
  * 格式化过期日期，同时显示具体日期和相对时间
@@ -81,12 +61,28 @@ const hasPassword = (paste) => {
 import { getRemainingViews as getRemainingViewsUtil } from "@/utils/fileUtils.js";
 
 /**
- * 计算剩余可访问次数
+ * 计算剩余可访问次数（数值）
  * @param {Object} paste - 文本分享对象
- * @returns {string|number} 剩余访问次数或状态描述
+ * @returns {number} Infinity 表示无限制，0 表示已用完，正数表示剩余次数
  */
 const getRemainingViews = (paste) => {
-  return getRemainingViewsUtil(paste); // 不传t函数，使用中文
+  return getRemainingViewsUtil(paste);
+};
+
+/**
+ * 格式化剩余访问次数为展示文案
+ * @param {Object} paste - 文本分享对象
+ * @returns {string}
+ */
+const getRemainingViewsLabel = (paste) => {
+  const remaining = getRemainingViews(paste);
+  if (remaining === Infinity) {
+    return "无限制";
+  }
+  if (remaining === 0) {
+    return "已用完";
+  }
+  return `${remaining}`;
 };
 
 /**
@@ -131,31 +127,39 @@ const viewPaste = (slug) => {
 
       <!-- 弹窗主体内容 -->
       <div
-        class="inline-block align-middle sm:align-middle bg-white dark:bg-gray-800 rounded-lg text-left overflow-hidden shadow-xl transform transition-all w-full max-w-sm sm:max-w-2xl lg:max-w-3xl max-h-[95vh] sm:max-h-[85vh] my-1 sm:my-8"
+        class="inline-block align-middle sm:align-middle bg-white dark:bg-gray-800 rounded-lg text-left overflow-hidden shadow-xl transform transition-all w-full max-w-sm sm:max-w-2xl lg:max-w-3xl max-h-[85vh] sm:max-h-[85vh] my-1 sm:my-8"
         :class="darkMode ? 'dark' : ''"
       >
         <!-- 弹窗头部带关闭按钮 -->
-        <div class="bg-white dark:bg-gray-800 px-4 py-3 sm:py-4 border-b dark:border-gray-700 flex justify-between items-center">
-          <h3 class="text-lg leading-6 font-medium text-gray-900 dark:text-gray-100" id="modal-title">内容预览</h3>
+        <div class="bg-white dark:bg-gray-800 px-3 py-2 sm:px-4 sm:py-3 border-b dark:border-gray-700 flex justify-between items-center">
+          <h3 class="text-base sm:text-lg leading-6 font-medium text-gray-900 dark:text-gray-100" id="modal-title">内容预览</h3>
           <button
             type="button"
             @click="closePreview"
             class="rounded-md p-1 inline-flex items-center justify-center text-gray-400 hover:text-gray-500 dark:hover:text-gray-300 focus:outline-none"
           >
             <span class="sr-only">关闭</span>
-            <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg class="h-4 w-4 sm:h-5 sm:w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
         </div>
 
         <!-- 弹窗内容区 - 带滚动条 -->
-        <div class="bg-white dark:bg-gray-800 px-3 sm:px-4 py-3 sm:py-4 overflow-y-auto" style="max-height: calc(95vh - 140px); min-height: 200px">
-          <div class="flex flex-col space-y-4 w-full">
+        <div class="bg-white dark:bg-gray-800 px-2 sm:px-4 py-2 sm:py-4 overflow-y-auto" style="max-height: calc(85vh - 120px); min-height: 200px">
+          <div class="flex flex-col space-y-2 sm:space-y-4 w-full">
             <!-- 元数据展示区域 - 网格布局 -->
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 bg-gray-50 dark:bg-gray-700 p-3 sm:p-4 rounded-lg text-sm">
-              <!-- ID信息 -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-4 bg-gray-50 dark:bg-gray-700 p-2 sm:p-4 rounded-lg text-sm">
+              <!-- 标题 -->
               <div>
+                <p class="text-xs sm:text-sm text-gray-500 dark:text-gray-400">标题:</p>
+                <p class="font-medium text-gray-900 dark:text-gray-100 truncate" :title="paste?.title || '未设置'">
+                  {{ paste?.title || '未设置' }}
+                </p>
+              </div>
+
+              <!-- ID信息 - 移动端隐藏 -->
+              <div class="hidden sm:block">
                 <p class="text-xs sm:text-sm text-gray-500 dark:text-gray-400">ID:</p>
                 <p class="font-medium text-gray-900 dark:text-gray-100 truncate">{{ paste?.id }}</p>
               </div>
@@ -192,17 +196,18 @@ const viewPaste = (slug) => {
               </div>
 
               <!-- 过期时间 - 过期则使用红色文本 -->
-              <div>
+              <div class="col-span-1 sm:col-span-2">
                 <p class="text-xs sm:text-sm text-gray-500 dark:text-gray-400">过期时间:</p>
                 <p class="font-medium" :class="[isExpired(paste) ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-gray-100']">
                   {{ formatExpiry(paste?.expires_at) }}
                 </p>
               </div>
 
-              <!-- 密码保护状态 - 使用不同颜色的标签 -->
-              <div>
-                <p class="text-xs sm:text-sm text-gray-500 dark:text-gray-400">密码保护:</p>
-                <p class="font-medium">
+              <!-- 状态标签组 - 横向排列 -->
+              <div class="col-span-1 sm:col-span-2">
+                <p class="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mb-1.5">状态:</p>
+                <div class="flex flex-wrap items-center gap-2">
+                  <!-- 密码保护 -->
                   <span
                     v-if="paste && hasPassword(paste)"
                     class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
@@ -233,28 +238,52 @@ const viewPaste = (slug) => {
                         d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"
                       />
                     </svg>
+                    未加密
+                  </span>
+
+                  <!-- 可见性 -->
+                  <span
+                    v-if="paste?.is_public"
+                    class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+                    :class="[isExpired(paste) ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300' : 'bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100']"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
                     公开
                   </span>
-                </p>
-              </div>
+                  <span
+                    v-else
+                    class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+                    :class="[isExpired(paste) ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300' : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300']"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11c1.657 0 3-1.343 3-3S13.657 5 12 5s-3 1.343-3 3 1.343 3 3 3z" />
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.5 20a8.38 8.38 0 017.5-4.5 8.38 8.38 0 017.5 4.5" />
+                    </svg>
+                    私密
+                  </span>
 
-              <!-- 剩余访问次数 - 根据状态使用不同颜色 -->
-              <div>
-                <p class="text-xs sm:text-sm text-gray-500 dark:text-gray-400">剩余访问次数:</p>
-                <p
-                  class="font-medium"
-                  :class="[
-                    isExpired(paste)
-                      ? 'text-red-600 dark:text-red-400'
-                      : getRemainingViews(paste) === '已用完'
-                      ? 'text-red-500'
-                      : paste?.max_views && getRemainingViews(paste) < 3 && getRemainingViews(paste) !== '无限制'
-                      ? 'text-yellow-500'
-                      : 'text-gray-900 dark:text-gray-100',
-                  ]"
-                >
-                  {{ paste ? getRemainingViews(paste) : "-" }}
-                </p>
+                  <!-- 剩余访问次数 -->
+                  <span
+                    class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+                    :class="[
+                      isExpired(paste)
+                        ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300'
+                        : getRemainingViews(paste) === 0
+                        ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300'
+                        : paste?.max_views && getRemainingViews(paste) !== Infinity && getRemainingViews(paste) < 10
+                        ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-800 dark:text-yellow-100'
+                        : 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300',
+                    ]"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                    {{ paste ? getRemainingViewsLabel(paste) : "-" }}
+                  </span>
+                </div>
               </div>
 
               <!-- 备注信息 - 如果存在则跨两列显示 -->
@@ -269,7 +298,7 @@ const viewPaste = (slug) => {
             <!-- 内容展示区域 - 带滚动条 -->
             <div class="mt-1 sm:mt-2">
               <p class="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mb-1 sm:mb-2">内容:</p>
-              <div class="bg-gray-50 dark:bg-gray-700 p-3 sm:p-4 rounded-lg max-h-48 sm:max-h-64 overflow-y-auto">
+              <div class="bg-gray-50 dark:bg-gray-700 p-2 sm:p-4 rounded-lg max-h-48 sm:max-h-64 overflow-y-auto">
                 <pre class="text-gray-900 dark:text-gray-100 whitespace-pre-wrap break-words text-xs sm:text-sm">{{ paste?.content }}</pre>
               </div>
             </div>
@@ -277,17 +306,17 @@ const viewPaste = (slug) => {
         </div>
 
         <!-- 弹窗底部按钮区 -->
-        <div class="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:px-6 flex flex-col sm:flex-row-reverse sm:space-x-reverse space-y-2 sm:space-y-0 sm:space-x-3">
+        <div class="bg-gray-50 dark:bg-gray-700 px-3 py-2 sm:px-6 sm:py-3 flex flex-col sm:flex-row-reverse sm:space-x-reverse space-y-2 sm:space-y-0 sm:space-x-3">
           <button
             type="button"
-            class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-primary-600 text-base font-medium text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 sm:w-auto sm:text-sm"
+            class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-3 py-1.5 sm:px-4 sm:py-2 bg-primary-600 text-sm font-medium text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 sm:w-auto"
             @click="viewPaste(paste?.slug)"
           >
             查看链接
           </button>
           <button
             type="button"
-            class="w-full inline-flex justify-center rounded-md border border-gray-300 dark:border-gray-600 shadow-sm px-4 py-2 bg-white dark:bg-gray-800 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 sm:w-auto sm:text-sm"
+            class="w-full inline-flex justify-center rounded-md border border-gray-300 dark:border-gray-600 shadow-sm px-3 py-1.5 sm:px-4 sm:py-2 bg-white dark:bg-gray-800 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 sm:w-auto"
             @click="closePreview"
           >
             关闭

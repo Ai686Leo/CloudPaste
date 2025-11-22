@@ -189,8 +189,14 @@ const expiresClass = computed(() => {
  * 计算剩余访问次数
  */
 const getRemainingViews = computed(() => {
-  const result = getRemainingViewsUtil(props.file); // 不传t函数，使用中文
-  return typeof result === "number" ? `${result} 次` : result;
+  const remaining = getRemainingViewsUtil(props.file);
+  if (remaining === Infinity) {
+    return "无限制";
+  }
+  if (remaining === 0) {
+    return "已用完";
+  }
+  return `${remaining} 次`;
 });
 
 /**
@@ -208,7 +214,7 @@ const remainingViewsClass = computed(() => {
     return "text-red-500";
   }
 
-  if (remaining < 3) {
+  if (remaining < 10) {
     return "text-orange-500";
   }
 

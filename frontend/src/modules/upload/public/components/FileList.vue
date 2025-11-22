@@ -79,14 +79,14 @@
             <div
               :class="[
                 darkMode ? 'text-gray-300' : 'text-gray-600',
-                getRemainingViews(file) === t('file.usedUp')
+                getRemainingViewsRaw(file) === 0
                   ? 'text-red-500 dark:text-red-400'
-                  : getRemainingViews(file) !== t('file.unlimited') && getRemainingViews(file) < 3
+                  : getRemainingViewsRaw(file) !== Infinity && getRemainingViewsRaw(file) < 10
                   ? 'text-yellow-500 dark:text-yellow-400'
                   : '',
               ]"
             >
-              {{ getRemainingViews(file) }}
+              {{ getRemainingViewsLabel(file) }}
             </div>
 
             <!-- 密码状态 -->
@@ -210,13 +210,13 @@
                       <span>{{ formatFileSize(file.size) }}</span>
                       <span
                         :class="[
-                          getRemainingViews(file) === t('file.usedUp')
+                          getRemainingViewsRaw(file) === 0
                             ? 'text-red-500 dark:text-red-400'
-                            : getRemainingViews(file) !== t('file.unlimited') && getRemainingViews(file) < 3
+                            : getRemainingViewsRaw(file) !== Infinity && getRemainingViewsRaw(file) < 10
                             ? 'text-yellow-500 dark:text-yellow-400'
                             : '',
                         ]"
-                        >{{ getRemainingViews(file) }}</span
+                        >{{ getRemainingViewsLabel(file) }}</span
                       >
                       <span>{{ formatDate(file.created_at) }}</span>
                     </div>
@@ -414,8 +414,21 @@ const { t } = useI18n();
 const deleteSettingsStore = useDeleteSettingsStore();
 const fileshareService = useFileshareService();
 
-const getRemainingViews = (file) => {
-  return getRemainingViewsUtil(file, t);
+// 剩余访问次数 - 数值模型
+const getRemainingViewsRaw = (file) => {
+  return getRemainingViewsUtil(file);
+};
+
+// 剩余访问次数 - 展示文案（带 i18n）
+const getRemainingViewsLabel = (file) => {
+  const remaining = getRemainingViewsRaw(file);
+  if (remaining === Infinity) {
+    return t("file.unlimited");
+  }
+  if (remaining === 0) {
+    return t("file.usedUp");
+  }
+  return remaining;
 };
 
 const formatMimeType = (mimetype, filename) => {

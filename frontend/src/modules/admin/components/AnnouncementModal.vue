@@ -90,6 +90,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from "vue";
 import { useI18n } from "vue-i18n";
+import { loadVditor, VDITOR_ASSETS_BASE } from "@/utils/vditorLoader.js";
 
 const props = defineProps({
   content: {
@@ -159,38 +160,24 @@ const markDismissed = (contentKey) => {
   localStorage.setItem(STORAGE_KEY, dismissedArray.join(","));
 };
 
-// 加载 Vditor CSS
-const loadVditorCSS = async () => {
-  const existingLink = document.querySelector('link[href="/assets/vditor/dist/index.css"]');
-  if (!existingLink) {
-    const link = document.createElement("link");
-    link.rel = "stylesheet";
-    link.href = "/assets/vditor/dist/index.css";
-    document.head.appendChild(link);
-  }
-};
-
 // 使用 Vditor 渲染 Markdown 内容
 const renderContent = async () => {
   if (!contentRef.value || !props.content) return;
 
   try {
-    // 加载 CSS
-    await loadVditorCSS();
-
     // 清空之前的内容
     contentRef.value.innerHTML = "";
 
-    // 动态导入 Vditor
-    const { default: Vditor } = await import("vditor");
+    // 通过统一 loader 加载 Vditor
+    const Vditor = await loadVditor();
 
     // 使用 Vditor 的预览功能渲染 Markdown
-    Vditor.preview(contentRef.value, props.content, {
-      cdn: "/assets/vditor",
-      theme: {
-        current: props.darkMode ? "dark" : "light",
-        path: "/assets/vditor/dist/css/content-theme",
-      },
+      Vditor.preview(contentRef.value, props.content, {
+        cdn: VDITOR_ASSETS_BASE,
+        theme: {
+          current: props.darkMode ? "dark" : "light",
+          path: `${VDITOR_ASSETS_BASE}/dist/css/content-theme`,
+        },
       hljs: {
         lineNumber: false,
         style: props.darkMode ? "vs2015" : "github",

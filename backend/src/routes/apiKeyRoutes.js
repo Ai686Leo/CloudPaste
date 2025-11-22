@@ -47,7 +47,12 @@ apiKeyRoutes.get("/api/test/api-key", requireAuth, async (c) => {
 
   // API密钥用户，返回具体的权限信息
   const permissions = apiKeyInfo?.permissions || 0;
-  return jsonOk(c, {
+  const role = apiKeyInfo?.role || null;
+  const isGuestKey = role === "GUEST" || apiKeyInfo?.isGuest === true;
+
+  return jsonOk(
+    c,
+    {
       name: apiKeyInfo?.name || "未知",
       basic_path: apiKeyInfo?.basicPath || "/",
       permissions: {
@@ -67,8 +72,12 @@ apiKeyRoutes.get("/api/test/api-key", requireAuth, async (c) => {
         id: apiKeyId || apiKeyInfo?.id,
         name: apiKeyInfo?.name || "未知",
         basic_path: apiKeyInfo?.basicPath || "/",
+        role,
+        is_guest: isGuestKey,
       },
-    }, "API密钥验证成功");
+    },
+    "API密钥验证成功",
+  );
 });
 
 // 公共游客配置接口（基于 API Key 表中的 GUEST 角色）

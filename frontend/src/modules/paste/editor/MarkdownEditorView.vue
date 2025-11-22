@@ -358,6 +358,10 @@ const saveContent = async (formData) => {
       pasteData.slug = formData.customLink.trim();
     }
 
+    if (formData.title && formData.title.trim()) {
+      pasteData.title = formData.title.trim();
+    }
+
     if (formData.remark && formData.remark.trim()) {
       pasteData.remark = formData.remark.trim();
     }
@@ -368,6 +372,11 @@ const saveContent = async (formData) => {
 
     if (formData.max_views && parseInt(formData.max_views) > 0) {
       pasteData.max_views = parseInt(formData.max_views);
+    }
+
+    // 始终包含 is_public 字段（布尔值）
+    if (typeof formData.is_public === "boolean") {
+      pasteData.is_public = formData.is_public;
     }
 
     // 处理过期时间

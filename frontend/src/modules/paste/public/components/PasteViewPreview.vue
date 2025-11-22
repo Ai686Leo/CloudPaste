@@ -4,40 +4,7 @@
 import { ref, onMounted, watch, nextTick, onBeforeUnmount } from "vue";
 import { debugLog } from "./PasteViewUtils";
 import HtmlPreviewModal from "@/components/paste-view/preview/HtmlPreviewModal.vue"; // 引入HTML预览弹窗组件
-
-// 懒加载Vditor和CSS
-let VditorClass = null;
-let vditorCSSLoaded = false;
-
-const loadVditor = async () => {
-  if (!VditorClass) {
-    await loadVditorCSS();
-
-    // 从本地vditor目录加载Vditor
-    const script = document.createElement("script");
-    script.src = "/assets/vditor/dist/index.min.js";
-
-    return new Promise((resolve, reject) => {
-      script.onload = () => {
-        VditorClass = window.Vditor;
-        resolve(VditorClass);
-      };
-      script.onerror = reject;
-      document.head.appendChild(script);
-    });
-  }
-  return VditorClass;
-};
-
-const loadVditorCSS = async () => {
-  if (!vditorCSSLoaded) {
-    const link = document.createElement("link");
-    link.rel = "stylesheet";
-    link.href = "/assets/vditor/dist/index.css";
-    document.head.appendChild(link);
-    vditorCSSLoaded = true;
-  }
-};
+import { loadVditor, VDITOR_ASSETS_BASE } from "@/utils/vditorLoader.js";
 
 // 定义组件接收的属性
 const props = defineProps({
@@ -229,9 +196,9 @@ const renderContentInternal = async (content) => {
     imagesCache = null;
     codeBlocksCache = null;
 
-    try {
-      // 懒加载Vditor
-      const VditorConstructor = await loadVditor();
+      try {
+        // 懒加载Vditor
+        const VditorConstructor = await loadVditor();
 
       // 安全的预览渲染
       safeSetTimeout(() => {
@@ -242,9 +209,9 @@ const renderContentInternal = async (content) => {
             mode: "dark-light", // 支持明暗主题
             theme: {
               current: props.darkMode ? "dark" : "light", // 根据darkMode设置主题
-              path: "/assets/vditor/dist/css/content-theme",
+              path: `${VDITOR_ASSETS_BASE}/dist/css/content-theme`,
             },
-            cdn: "/assets/vditor",
+            cdn: VDITOR_ASSETS_BASE,
             hljs: {
               lineNumber: true, // 代码块显示行号
               style: props.darkMode ? "vs2015" : "github", // 代码高亮样式

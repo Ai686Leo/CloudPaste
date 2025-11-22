@@ -15,6 +15,7 @@ export const DbTables = {
   SYSTEM_SETTINGS: "system_settings", // 系统设置表
   PASTE_PASSWORDS: "paste_passwords", // 文本密码表
   STORAGE_MOUNTS: "storage_mounts", // 存储挂载表
+  FS_META: "fs_meta", // 目录 Meta 配置表
 };
 
 // 默认的最大上传大小（MB）
