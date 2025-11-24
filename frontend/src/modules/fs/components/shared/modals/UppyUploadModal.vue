@@ -20,135 +20,35 @@
 
       <!-- 弹窗内容区 -->
       <div class="flex-1 p-4 overflow-y-auto">
-        <!-- 上传方式选择 -->
-        <div class="mb-4 p-3 rounded-lg" :class="darkMode ? 'bg-gray-700/50' : 'bg-gray-100'">
-          <!-- 标题和模式指示器 -->
-          <div class="flex items-center justify-between mb-3">
-            <span class="text-sm font-medium" :class="darkMode ? 'text-gray-300' : 'text-gray-700'">{{ t("mount.uppy.uploadMethod") }}</span>
-            <span
-              class="text-xs px-2 py-1 rounded-full cursor-help"
-              :class="
-                uploadMethod === 'presigned'
-                  ? darkMode
-                    ? 'bg-green-900/30 text-green-300'
-                    : 'bg-green-100 text-green-700'
-                  : uploadMethod === 'direct'
-                  ? darkMode
-                    ? 'bg-blue-900/30 text-blue-300'
-                    : 'bg-blue-100 text-blue-700'
-                  : darkMode
-                  ? 'bg-amber-900/30 text-amber-300'
-                  : 'bg-amber-100 text-amber-700'
-              "
-              :title="
-                uploadMethod === 'presigned'
-                  ? t('mount.uppy.presignedModeTooltip')
-                  : uploadMethod === 'direct'
-                  ? t('mount.uppy.directModeTooltip')
-                  : t('mount.uppy.multipartModeTooltip')
-              "
-            >
-              {{ uploadMethod === "presigned" ? t("mount.uppy.presignedMode") : uploadMethod === "direct" ? t("mount.uppy.directMode") : t("mount.uppy.multipartMode") }}
-            </span>
-          </div>
+        <!-- 上传模式选择 -->
+        <UploadModeSelector
+          v-model="uploadMethod"
+          :modes="uploadModes"
+          :title="t('mount.uppy.uploadMethod')"
+          :dark-mode="darkMode"
+          :disabled="isUploading"
+        />
 
-          <!-- 选项区域 - 响应式布局 -->
-          <div class="flex flex-col sm:flex-row sm:space-x-4 space-y-2 sm:space-y-0">
-            <label class="flex items-center cursor-pointer">
-              <input
-                type="radio"
-                name="uploadMethod"
-                value="presigned"
-                v-model="uploadMethod"
-                class="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 dark:bg-gray-700 dark:border-gray-600 flex-shrink-0"
-                @change="updateUploadMethod"
-              />
-              <span class="ml-2 text-sm" :class="darkMode ? 'text-gray-300' : 'text-gray-600'">{{ t("mount.uppy.presignedUpload") }}</span>
-            </label>
-            <label class="flex items-center cursor-pointer">
-              <input
-                type="radio"
-                name="uploadMethod"
-                value="direct"
-                v-model="uploadMethod"
-                class="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 dark:bg-gray-700 dark:border-gray-600 flex-shrink-0"
-                @change="updateUploadMethod"
-              />
-              <span class="ml-2 text-sm" :class="darkMode ? 'text-gray-300' : 'text-gray-600'">{{ t("mount.uppy.directUpload") }}</span>
-            </label>
-            <label class="flex items-center cursor-pointer">
-              <input
-                type="radio"
-                name="uploadMethod"
-                value="multipart"
-                v-model="uploadMethod"
-                class="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 dark:bg-gray-700 dark:border-gray-600 flex-shrink-0"
-                @change="updateUploadMethod"
-              />
-              <div class="ml-2 flex items-center flex-wrap gap-1">
-                <span class="text-sm" :class="darkMode ? 'text-gray-300' : 'text-gray-600'">{{ t("mount.uppy.multipartUpload") }}</span>
-                <span class="text-xs px-1 py-0.5 rounded flex-shrink-0" :class="darkMode ? 'bg-green-900/50 text-green-300' : 'bg-green-100 text-green-700'">
-                  {{ t("mount.uppy.resumeSupport") }}
-                </span>
-              </div>
-            </label>
-          </div>
-        </div>
-
-        <!-- 高级功能（可折叠） -->
-        <div class="mb-4">
-          <button
-            @click="showAdvancedOptions = !showAdvancedOptions"
-            class="flex items-center justify-between w-full p-3 text-left rounded-lg transition-colors"
-            :class="darkMode ? 'bg-gray-700/50 hover:bg-gray-700/70' : 'bg-gray-100 hover:bg-gray-200'"
-          >
-            <span class="text-sm font-medium" :class="darkMode ? 'text-gray-300' : 'text-gray-700'">
-              {{ t("mount.uppy.advancedFeatures") }}
-              <span v-if="enabledPluginsCount > 0" class="ml-2 px-2 py-0.5 text-xs rounded-full" :class="darkMode ? 'bg-blue-900/50 text-blue-300' : 'bg-blue-100 text-blue-700'">
-                {{ t("mount.uppy.enabledCount", { count: enabledPluginsCount }) }}
-              </span>
-            </span>
-            <svg
-              class="w-4 h-4 transition-transform duration-200"
-              :class="[showAdvancedOptions ? 'rotate-180' : '', darkMode ? 'text-gray-400' : 'text-gray-500']"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
-
-          <!-- 可折叠的插件选项 -->
-          <div v-show="showAdvancedOptions" class="mt-2 p-3 rounded border-l-2" :class="darkMode ? 'bg-gray-800/30 border-gray-600' : 'bg-gray-50 border-gray-300'">
-            <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              <label v-for="plugin in mediaPlugins" :key="plugin.key" class="flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  :checked="plugin.enabled"
-                  @change="togglePlugin(plugin.key)"
-                  class="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded dark:bg-gray-700 dark:border-gray-600"
-                />
-                <span class="ml-2 text-sm" :class="darkMode ? 'text-gray-300' : 'text-gray-700'">
-                  {{ plugin.label }}
-                </span>
-              </label>
-            </div>
-          </div>
-        </div>
+        <!-- 高级功能 -->
+        <AdvancedPluginsPanel
+          :plugins="mediaPlugins"
+          :enabled-count="enabledPluginsCount"
+          :title="t('mount.uppy.advancedFeatures')"
+          :enabled-count-template="t('mount.uppy.enabledCount', { count: '{count}' })"
+          :dark-mode="darkMode"
+          @toggle-plugin="togglePlugin"
+        />
 
         <!-- Uppy Dashboard 容器 -->
-        <div class="uppy-container mb-4">
-          <div ref="uppyContainer" id="uppy-dashboard" class="min-h-[300px]"></div>
-          <!-- 粘贴提示 -->
-          <div class="mt-2 text-center">
-            <span class="text-xs" :class="darkMode ? 'text-gray-500' : 'text-gray-400'">
-              {{ t("mount.uppy.pasteSupport") }}
-              <kbd class="px-1 py-0.5 text-xs font-mono rounded" :class="darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-200 text-gray-600'">{{ t("mount.uppy.pasteKey") }}</kbd>
-              {{ t("mount.uppy.pasteHint") }}
-            </span>
-          </div>
-        </div>
+        <UppyDashboardContainer
+          ref="uppyContainerRef"
+          container-id="uppy-dashboard"
+          :dark-mode="darkMode"
+          :show-paste-hint="true"
+          :paste-hint-prefix="t('mount.uppy.pasteSupport')"
+          :paste-key="t('mount.uppy.pasteKey')"
+          :paste-hint-suffix="t('mount.uppy.pasteHint')"
+        />
 
         <!-- 错误显示 -->
         <div v-if="errorMessage" class="mb-4 p-3 rounded-md" :class="darkMode ? 'bg-red-900/20 border border-red-700' : 'bg-red-50 border border-red-200'">
@@ -200,8 +100,6 @@
               </svg>
               <span>{{ isUploading ? t("mount.uppy.uploading") : t("mount.uppy.startUpload") }}</span>
             </button>
-
-            <!-- 使用 Dashboard 官方控件（暂停/恢复/取消） -->
           </div>
         </div>
       </div>
@@ -228,14 +126,9 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from "vue";
 import { useI18n } from "vue-i18n";
 
-import Uppy from "@uppy/core";
 import Dashboard from "@uppy/dashboard";
 
-// 导入Uppy官方locale
-import ChineseLocale from "@uppy/locales/lib/zh_CN";
-import EnglishLocale from "@uppy/locales/lib/en_US";
-
-// 导入样式
+// 导入Uppy样式
 import "@uppy/core/dist/style.min.css";
 import "@uppy/dashboard/dist/style.min.css";
 import "@uppy/webcam/dist/style.min.css";
@@ -244,10 +137,21 @@ import "@uppy/audio/dist/style.min.css";
 import "@uppy/image-editor/dist/style.min.css";
 import "@uppy/url/dist/style.min.css";
 
-// 导入S3适配器和ServerResumePlugin插件
-import AwsS3 from "@uppy/aws-s3";
+// 导入共享CSS
+import "@/styles/uppy-dashboard.css";
+
+// 导入共享Composables
+import { useUppyCore, useUppyEvents, useUppyPaste, useUppyBackendProgress } from "@/composables/uppy";
+
+// 导入共享UI组件
+import UploadModeSelector from "@/components/uppy/UploadModeSelector.vue";
+import AdvancedPluginsPanel from "@/components/uppy/AdvancedPluginsPanel.vue";
+import UppyDashboardContainer from "@/components/uppy/UppyDashboardContainer.vue";
+
+// 导入ServerResumePlugin插件
 import ServerResumePlugin from "@/modules/storage-core/uppy/ServerResumePlugin.js";
 import { api } from "@/api";
+import { getUploadProgress } from "@/api/services/systemService.js";
 import { useStorageConfigsStore } from "@/stores/storageConfigsStore.js";
 import { STORAGE_STRATEGIES } from "@/modules/storage-core/drivers/types.js";
 import { resolveDriverByConfigId } from "@/modules/storage-core/drivers/registry.js";
@@ -256,27 +160,18 @@ import { useShareUploadController } from "@/modules/upload";
 // 导入插件管理器
 import { createUppyPluginManager } from "@/modules/storage-core/uppy/UppyPluginManager.js";
 
+// 导入 URL 上传服务
+import { validateUrlInfo, fetchUrlContent } from "@/api/services/urlUploadService.js";
+
 // 导入对话框组件
 import SelectUploadDialog from "@/components/common/dialogs/SelectUploadDialog.vue";
 
 // 组件属性
 const props = defineProps({
-  isOpen: {
-    type: Boolean,
-    default: false,
-  },
-  darkMode: {
-    type: Boolean,
-    default: false,
-  },
-  currentPath: {
-    type: String,
-    required: true,
-  },
-  isAdmin: {
-    type: Boolean,
-    default: false,
-  },
+  isOpen: { type: Boolean, default: false },
+  darkMode: { type: Boolean, default: false },
+  currentPath: { type: String, required: true },
+  isAdmin: { type: Boolean, default: false },
 });
 
 // 事件
@@ -285,20 +180,41 @@ const emit = defineEmits(["close", "upload-success", "upload-error"]);
 // 国际化
 const { locale, t } = useI18n();
 
-// 根据当前语言选择Uppy locale
-const getUppyLocale = () => {
-  return locale.value === "zh-CN" ? ChineseLocale : EnglishLocale;
-};
+// 使用Composables
+const { uppyInstance, initializeUppy, destroyUppy } = useUppyCore();
+const { fileCount } = useUppyEvents({
+  uppy: uppyInstance,
+  onFileAdded: (file) => {
+    console.log("[Uppy] 文件已添加:", file.name);
+    ensureUploadIdForFile(file);
+    errorMessage.value = "";
+  },
+  onFileRemoved: (file) => {
+    console.log("[Uppy] 文件已移除:", file.name);
+  },
+  onError: (error) => {
+    // 捕获Uppy系统错误，统一展示到错误区域
+    const message = error?.message || t("file.messages.uploadFailed");
+    errorMessage.value = message;
+  },
+});
 
-// 插件文本管理已移至 UppyPluginManager.js
+useUppyPaste({
+  uppy: uppyInstance,
+  enabled: computed(() => props.isOpen),
+  onPaste: (file) => {
+    console.log("[Uppy] 粘贴文件:", file.name);
+  },
+});
 
 // 响应式数据
-const uppyContainer = ref(null);
+const uppyContainerRef = ref(null);
 const uploadMethod = ref("presigned");
+const canUsePresigned = ref(true);
+const canUseMultipart = ref(true);
+const currentDriverType = ref(null);
 const errorMessage = ref("");
 const isUploading = ref(false);
-const showAdvancedOptions = ref(false);
-
 const mediaPlugins = ref([]);
 
 // 多个上传选择对话框状态
@@ -314,8 +230,7 @@ const selectUploadData = ref({
 // 插件管理器实例
 let pluginManager = null;
 
-// Uppy实例和驱动适配器句柄
-let uppyInstance = null;
+// 驱动适配器句柄
 let fsAdapterHandle = null;
 let fsUploadSession = null;
 
@@ -348,6 +263,22 @@ const driverStrategy = ref(STORAGE_STRATEGIES.PRESIGNED_SINGLE);
 const mountsCache = ref([]);
 const mountsLoading = ref(false);
 
+const enforceUploadMethodByDriver = (driver) => {
+  const fsCaps = driver?.capabilities?.fs || {};
+  const allowPresigned = fsCaps.presignedSingle === true;
+  const allowMultipart = fsCaps.multipart === true;
+  canUsePresigned.value = allowPresigned;
+  canUseMultipart.value = allowMultipart;
+  currentDriverType.value = driver?.config?.storage_type || driver?.type || null;
+
+  if (!allowPresigned && uploadMethod.value === "presigned") {
+    uploadMethod.value = allowMultipart ? "multipart" : "stream";
+  }
+  if (!allowMultipart && uploadMethod.value === "multipart") {
+    uploadMethod.value = allowPresigned ? "presigned" : "stream";
+  }
+};
+
 const normalizePath = (path) => {
   if (!path) return "/";
   return path.startsWith("/") ? path : `/${path}`;
@@ -364,7 +295,6 @@ const ensureMountsLoaded = async () => {
   if (mountsCache.value.length || mountsLoading.value) return;
   mountsLoading.value = true;
   try {
-    // 复用 admin mount service 以保持挂载列表获取逻辑一致
     const { useAdminMountService } = await import("@/modules/admin/services/mountService.js");
     const { getMountsList } = useAdminMountService();
     const mounts = await getMountsList();
@@ -384,37 +314,110 @@ const getStorageConfigIdForCurrentPath = async () => {
   return mount?.storage_config_id || null;
 };
 
-// 确保当前路径对应的 storage_config 已在 store 中可用；必要时按 id 拉取单条配置并 upsert
 const ensureStorageConfigForCurrentPath = async () => {
   const id = await getStorageConfigIdForCurrentPath();
   if (!id) throw new Error(t("file.messages.noStorageConfig"));
 
-  // 如果 store 未加载或不包含该 id，尝试加载列表
+  // 1) 尝试通过通用 storageConfigsStore 加载配置（可能对非 admin 返回 403）
+  let loadError = null;
   try {
     if (!storageConfigsStore.hasFreshCache.value) {
       await storageConfigsStore.loadConfigs();
     }
   } catch (e) {
-    // 忽略列表加载错误，尝试按 id 精准加载
+    // 记录加载错误，但先不急着决定提示内容
+    loadError = e;
   }
 
+  // 如果缓存中已有目标配置，直接返回
   if (storageConfigsStore.getConfigById(id)) return id;
 
-  // 精准补全：直接按 id 请求并写入 store，兼容 UUID/字符串 id
+  // 如果加载过程中发生错误（例如非 admin 无权访问存储配置列表），
+  // 且仍然找不到目标配置，则将原始错误抛出，交由上层统一规范化（包括权限错误提示）。
+  if (loadError) {
+    throw loadError;
+  }
+
+  // 2) admin 场景下的兜底：直接调用 admin storageConfigService 补全配置列表
   try {
     const { useAdminStorageConfigService } = await import("@/modules/admin/services/storageConfigService.js");
     const { getStorageConfigs } = useAdminStorageConfigService();
-    // 从列表中补全指定 id 的配置（避免新增单条 API）
     const resp = await getStorageConfigs();
     if (resp?.data) {
-      storageConfigsStore.setConfigs(resp.data);
+      storageConfigsStore.replaceConfigs(resp.data);
       if (storageConfigsStore.getConfigById(id)) return id;
     }
   } catch (e) {
-    // 保持原错误处理
+    // admin 兜底失败时不覆盖之前的错误语义，仍然落到“缺少配置”提示
   }
 
+  // 3) 确实不存在该存储配置（或配置被删除）
   throw new Error(`${t("file.messages.noStorageConfig")}: ${id}`);
+};
+
+// 上传模式配置
+const uploadModes = computed(() => {
+  return [
+    {
+      value: "presigned",
+      label: t("mount.uppy.presignedUpload"),
+      modeLabel: t("mount.uppy.presignedMode"),
+      tooltip: t("mount.uppy.presignedModeTooltip"),
+      disabled: !canUsePresigned.value,
+    },
+    {
+      value: "stream",
+      label: "流式上传",
+      modeLabel: "流式模式",
+      tooltip: "通过后端流式中转上传",
+    },
+    {
+      value: "form",
+      label: "表单上传",
+      modeLabel: "表单模式",
+      tooltip: "使用表单(multipart/form-data)上传",
+    },
+    {
+      value: "multipart",
+      label: t("mount.uppy.multipartUpload"),
+      modeLabel: t("mount.uppy.multipartMode"),
+      tooltip: t("mount.uppy.multipartModeTooltip"),
+      badge: t("mount.uppy.resumeSupport"),
+      disabled: !canUseMultipart.value,
+    },
+  ];
+});
+
+const {
+  ensureUploadIdForFile,
+  resetBackendProgressTracking,
+  updateBrowserProgressState,
+  startBackendProgressPolling,
+} = useUppyBackendProgress({
+  uppy: uppyInstance,
+  isDirectMode: () => uploadMethod.value === "stream",
+});
+
+// 计算属性
+const canStartUpload = computed(() => {
+  return fileCount.value > 0 && !isUploading.value;
+});
+
+const enabledPluginsCount = computed(() => {
+  return pluginManager ? pluginManager.getEnabledPluginsCount() : 0;
+});
+
+/**
+ * 切换插件状态
+ */
+const togglePlugin = (pluginKey) => {
+  if (pluginManager) {
+    pluginManager.togglePlugin(pluginKey);
+    mediaPlugins.value = pluginManager.getPluginList();
+    if (props.isOpen && uppyInstance.value) {
+      setupUppy();
+    }
+  }
 };
 
 /**
@@ -422,25 +425,23 @@ const ensureStorageConfigForCurrentPath = async () => {
  */
 const getDashboardConfig = () => ({
   inline: true,
-  target: uppyContainer.value,
+  target: uppyContainerRef.value.container,
   theme: props.darkMode ? "dark" : "light",
   width: "100%",
   height: 400,
   showProgressDetails: true,
   showRemoveButtonAfterComplete: true,
-  hideUploadButton: true, // 使用自定义按钮
-  hidePauseResumeButton: false, // 保留暂停/恢复按钮，但使用自定义逻辑
+  hideUploadButton: true,
+  hidePauseResumeButton: false,
   proudlyDisplayPoweredByUppy: false,
-  disableLocalFiles: false, // 明确启用本地文件选择
-  // 启用文件名编辑功能，使用项目国际化系统
+  disableLocalFiles: false,
   metaFields: [
     {
       id: "name",
-      name: t("mount.uppy.fileName"), // 使用项目国际化
-      placeholder: t("mount.uppy.customFilename"), // 使用项目国际化
+      name: t("mount.uppy.fileName"),
+      placeholder: t("mount.uppy.customFilename"),
     },
   ],
-  // 覆盖有问题的进度显示字符串
   locale: {
     strings: {
       dataUploadedOfTotal: "%{complete} / %{total}",
@@ -452,106 +453,42 @@ const getDashboardConfig = () => ({
  * 获取ServerResumePlugin插件配置
  */
 const getServerResumeConfig = () => ({
-  autoCheck: true, // 自动检测可恢复上传
-  matchThreshold: 0.8, // 匹配阈值
-  timeWindow: 24, // 24小时内的上传
-  showConfirmDialog: true, // 显示确认对话框
-  currentPath: props.currentPath, // 传递当前路径
-
-  // 用户选择相关配置
-  maxSelectionOptions: 5, // 最多显示5个选项
-  showMatchScore: true, // 显示匹配分数
-  // 强制按照当前选择的上传方式判定是否走分片
+  autoCheck: true,
+  matchThreshold: 0.8,
+  timeWindow: 24,
+  showConfirmDialog: true,
+  currentPath: props.currentPath,
+  maxSelectionOptions: 5,
+  showMatchScore: true,
   shouldUseMultipart: () => uploadMethod.value === 'multipart',
-  // 通过回调解析 driver 所需的 storage_config_id
   resolveStorageConfigId: async () => await ensureStorageConfigForCurrentPath(),
 });
 
-// 响应式状态：文件数量
-const fileCount = ref(0);
-
-// 计算属性：是否可以开始上传
-const canStartUpload = computed(() => {
-  return fileCount.value > 0 && !isUploading.value;
-});
-
-// 计算属性：启用的插件数量
-const enabledPluginsCount = computed(() => {
-  return pluginManager ? pluginManager.getEnabledPluginsCount() : 0;
-});
-
-/**
- * 切换插件状态（使用插件管理器）
- */
-const togglePlugin = (pluginKey) => {
-  if (pluginManager) {
-    pluginManager.togglePlugin(pluginKey);
-    // 更新本地显示
-    mediaPlugins.value = pluginManager.getPluginList();
-    // 重新初始化Uppy以应用插件变化
-    if (props.isOpen && uppyInstance) {
-      initializeUppy();
-    }
-  }
-};
-
-/**
- * 设置Uppy核心组件
- */
-const setupUppyCore = () => {
-  console.log("[Uppy] 开始初始化");
-
-  // 创建Uppy实例
-  uppyInstance = new Uppy({
-    id: "new-uppy-dashboard",
-    autoProceed: false,
-    allowMultipleUploadBatches: true,
-    debug: import.meta.env.DEV,
-    locale: getUppyLocale(), // 根据当前语言动态选择locale
-  });
-
-  // 创建插件管理器
-  pluginManager = createUppyPluginManager(uppyInstance, locale.value);
-
-  // 更新插件列表显示
-  mediaPlugins.value = pluginManager.getPluginList();
-};
-
-/**
- * 配置Dashboard插件
- */
-const configureDashboard = () => {
-  uppyInstance.use(Dashboard, getDashboardConfig());
-};
-
-/**
- * 配置ServerResumePlugin插件
- */
-const configureServerResumePlugin = () => {
-  // 仅在分片策略下启用断点续传插件
-  if (uploadMethod.value === 'multipart') {
-    uppyInstance.use(ServerResumePlugin, getServerResumeConfig());
-  }
+const strategyMap = {
+  stream: STORAGE_STRATEGIES.BACKEND_STREAM, // 流式直传：PUT /fs/upload
+  form: STORAGE_STRATEGIES.BACKEND_FORM,     // 表单上传：POST /fs/upload
+  presigned: STORAGE_STRATEGIES.PRESIGNED_SINGLE,
+  multipart: STORAGE_STRATEGIES.PRESIGNED_MULTIPART,
 };
 
 /**
  * 配置上传方式
  */
 const configureUploadMethod = async () => {
-  // 驱动策略解析
-  driverStrategy.value = strategyMap[uploadMethod.value] || STORAGE_STRATEGIES.S3_BACKEND_DIRECT;
-
   try {
     const storageConfigId = await ensureStorageConfigForCurrentPath();
     const driver = resolveDriverByConfigId(storageConfigId);
+    enforceUploadMethodByDriver(driver);
+    driverStrategy.value = strategyMap[uploadMethod.value] || STORAGE_STRATEGIES.BACKEND_STREAM;
     if (
       driver?.fs?.applyFsUploader &&
       (driverStrategy.value === STORAGE_STRATEGIES.PRESIGNED_SINGLE ||
         driverStrategy.value === STORAGE_STRATEGIES.PRESIGNED_MULTIPART ||
-        driverStrategy.value === STORAGE_STRATEGIES.S3_BACKEND_DIRECT)
+        driverStrategy.value === STORAGE_STRATEGIES.BACKEND_STREAM ||
+        driverStrategy.value === STORAGE_STRATEGIES.BACKEND_FORM)
     ) {
       disposeFsAdapterHandle();
-      const handle = driver.fs.applyFsUploader(uppyInstance, { strategy: driverStrategy.value, path: props.currentPath });
+      const handle = driver.fs.applyFsUploader(uppyInstance.value, { strategy: driverStrategy.value, path: props.currentPath });
       fsAdapterHandle = handle ? { ...handle, mode: handle.mode || driverStrategy.value } : null;
     }
   } catch (e) {
@@ -561,146 +498,69 @@ const configureUploadMethod = async () => {
 };
 
 /**
- * 完成最终设置
+ * 配置ServerResumePlugin插件
  */
-const finalizeSetup = () => {
-  // 添加插件到Uppy实例
-  pluginManager.addPluginsToUppy();
+const configureServerResumePlugin = () => {
+  if (uploadMethod.value === 'multipart') {
+    uppyInstance.value.use(ServerResumePlugin, getServerResumeConfig());
+  }
+};
 
-  // 设置事件监听器
-  setupEventListeners();
-
-  // 设置粘贴事件监听器
-  const cleanupPaste = setupPasteListener();
-
-  // 保存清理函数
-  uppyInstance._cleanupPaste = cleanupPaste;
-
-  // 使用正确的API获取插件信息
-  const installedPlugins = [];
-
-  // 检查常见的插件
-  const commonPlugins = ["Dashboard", "AwsS3", "ServerResumePlugin", "Webcam", "ScreenCapture", "Audio", "ImageEditor"];
-  commonPlugins.forEach((pluginName) => {
-    const plugin = uppyInstance.getPlugin(pluginName);
-    if (plugin) {
-      installedPlugins.push(pluginName);
-    }
+/**
+ * 设置断点续传对话框事件监听器
+ */
+const setupResumeDialogEvents = () => {
+  uppyInstance.value.on("server-resume-select-dialog", (data) => {
+    selectUploadData.value = {
+      file: data.file,
+      uploads: data.uploads,
+      showMatchScore: data.showMatchScore,
+      onSelect: data.onSelect,
+      onCancel: data.onCancel,
+    };
+    showSelectUploadDialog.value = true;
   });
-
-  console.log(`[Uppy] 已安装的插件:`, installedPlugins);
 };
 
 /**
  * 初始化Uppy实例
  */
-const initializeUppy = async () => {
+const setupUppy = async () => {
   try {
-    // 清理旧实例
-      if (uppyInstance) {
-        disposeFsSession(true);
-        // 清理粘贴监听器
-        if (uppyInstance._cleanupPaste) {
-          uppyInstance._cleanupPaste();
-        }
-        uppyInstance.destroy();
-      }
-      disposeFsAdapterHandle();
+    if (uppyInstance.value) {
+      disposeFsSession(true);
+      destroyUppy();
+    }
+    disposeFsAdapterHandle();
 
-    // 设置核心组件
-    setupUppyCore();
+    await initializeUppy({
+      id: "new-uppy-dashboard",
+      locale: locale.value,
+    });
 
-    // 配置Dashboard插件
-    configureDashboard();
+    pluginManager = createUppyPluginManager(uppyInstance.value, locale.value);
+    mediaPlugins.value = pluginManager.getPluginList();
 
-    // 先按策略安装上传插件
+    // 设置 URL 导入插件回调
+    pluginManager.setUrlImportCallbacks({
+      validateUrlInfo,
+      fetchUrlContent,
+    });
+
+    uppyInstance.value.use(Dashboard, getDashboardConfig());
+
     await configureUploadMethod();
 
-    // 分片场景启用 ServerResumePlugin + 对话框事件
     configureServerResumePlugin();
     if (uploadMethod.value === "multipart") {
       setupResumeDialogEvents();
     }
 
-    // 完成最终设置
-    finalizeSetup();
+    pluginManager.addPluginsToUppy();
   } catch (error) {
     console.error("[Uppy] 初始化失败:", error);
     errorMessage.value = t("mount.uppy.initializationFailed", { message: error.message });
   }
-};
-
-/**
- * 设置粘贴事件监听器
- */
-const setupPasteListener = () => {
-  if (!uppyInstance) return;
-
-  const handlePaste = (event) => {
-    if (!props.isOpen) return;
-
-    const items = event.clipboardData?.items;
-    if (!items) return;
-
-    for (const item of items) {
-      if (item.kind === "file") {
-        const file = item.getAsFile();
-        if (file) {
-          const ext = file.type.split("/")[1] || "bin";
-          const fileName = file.name || `pasted-${Date.now()}.${ext}`;
-
-          uppyInstance.addFile({
-            name: fileName,
-            type: file.type,
-            data: file,
-            source: "clipboard",
-          });
-          event.preventDefault();
-        }
-      }
-    }
-  };
-
-  document.addEventListener("paste", handlePaste);
-
-  // 返回清理函数
-  return () => document.removeEventListener("paste", handlePaste);
-};
-
-/**
- * 设置文件相关事件监听器
- */
-const setupFileEvents = () => {
-  uppyInstance
-    .on("file-added", (file) => {
-      console.log("[Uppy] 文件已添加:", file.name);
-      fileCount.value = uppyInstance.getFiles().length;
-      console.log(`[Uppy] 当前文件数量: ${fileCount.value}, canStartUpload: ${canStartUpload.value}, isUploading: ${isUploading.value}`);
-      errorMessage.value = "";
-    })
-    .on("file-removed", (file) => {
-      console.log("[Uppy] 文件已移除:", file.name);
-      fileCount.value = uppyInstance.getFiles().length;
-    });
-};
-
-/**
- * 设置上传相关事件监听器
- */
-
-/**
- * 设置错误处理事件监听器
- */
-const setupErrorEvents = () => {
-  uppyInstance
-    .on("upload-error", (file, error) => {
-      console.error("[Uppy] 上传失败:", file.name, error);
-      errorMessage.value = error.message || "上传失败";
-    })
-    .on("error", (error) => {
-      console.error("[Uppy] 系统错误:", error);
-      errorMessage.value = error.message || "系统错误";
-    });
 };
 
 /**
@@ -711,7 +571,6 @@ const handleUploadComplete = async (result) => {
   isUploading.value = false;
 
   if (result.successful.length > 0) {
-    // 发送上传成功事件，触发父组件刷新目录
     emit("upload-success", {
       count: result.successful.length,
       commitFailures: [],
@@ -728,46 +587,17 @@ const handleUploadComplete = async (result) => {
       })),
     });
 
-    // 清理Uppy实例中的文件，为下次上传做准备
     setTimeout(() => {
-      if (uppyInstance) {
-        uppyInstance.clear();
-        fileCount.value = 0;
+      if (uppyInstance.value) {
+        uppyInstance.value.clear();
       }
-    }, 4000); // 延迟4秒清理，让用户看到完成状态
+    }, 4000);
   }
 
   if (result.failed.length > 0) {
     const firstError = result.failed[0].error;
     emit("upload-error", new Error(firstError?.message || "上传失败"));
   }
-};
-
-/**
- * 设置事件监听器
- */
-const setupEventListeners = () => {
-  if (!uppyInstance) return;
-  // 仅保留文件添加/移除的 UI 状态同步；上传/错误事件由 Uppy 插件处理
-  setupFileEvents();
-};
-
-/**
- * 更新上传方式
- */
-const updateUploadMethod = () => {
-  if (props.isOpen && uppyInstance) {
-    initializeUppy();
-  }
-};
-
-/**
- * 开始上传
- */
-const strategyMap = {
-  direct: STORAGE_STRATEGIES.S3_BACKEND_DIRECT,
-  presigned: STORAGE_STRATEGIES.PRESIGNED_SINGLE,
-  multipart: STORAGE_STRATEGIES.PRESIGNED_MULTIPART,
 };
 
 const runFsCommitIfNeeded = async (result) => {
@@ -799,7 +629,7 @@ const runFsCommitIfNeeded = async (result) => {
       const failureError = failureMap.get(file.id);
       if (failureError) {
         try {
-          uppyInstance?.emit?.("upload-error", file, failureError);
+          uppyInstance.value?.emit?.("upload-error", file, failureError);
         } catch {}
         result.failed.push({ file, error: failureError });
       } else {
@@ -813,7 +643,7 @@ const runFsCommitIfNeeded = async (result) => {
     const failedFiles = result.successful.slice();
     failedFiles.forEach((file) => {
       try {
-        uppyInstance?.emit?.("upload-error", file, failureError);
+        uppyInstance.value?.emit?.("upload-error", file, failureError);
       } catch {}
       result.failed.push({ file, error: failureError });
     });
@@ -821,167 +651,112 @@ const runFsCommitIfNeeded = async (result) => {
   }
 };
 
+/**
+ * 规范化 FS 上传错误信息，统一处理权限错误等场景
+ */
+const normalizeFsUploadError = (error) => {
+  if (!error) {
+    return t("file.messages.uploadFailed");
+  }
+
+  const status = error?.request?.status || error?.response?.status;
+  const body = error?.response?.body;
+  const code = body?.code || error.code;
+
+  // 权限错误：后端返回 403 或特定错误码时，统一提示为“没有权限使用此存储配置”
+  if (status === 403 || code === "FS_PERMISSION_DENIED") {
+    return t("file.messages.permissionError");
+  }
+
+  if (typeof body?.message === "string" && body.message) {
+    return body.message;
+  }
+
+  if (typeof error.message === "string" && error.message) {
+    return error.message;
+  }
+
+  return t("file.messages.uploadFailed");
+};
+
+/**
+ * 开始上传
+ */
 const startUpload = async () => {
-  if (!uppyInstance || !canStartUpload.value || isUploading.value) {
+  if (!uppyInstance.value || !canStartUpload.value || isUploading.value) {
     return;
   }
 
   try {
     errorMessage.value = "";
     isUploading.value = true;
-    driverStrategy.value = strategyMap[uploadMethod.value] || STORAGE_STRATEGIES.S3_BACKEND_DIRECT;
-
     const storageConfigId = await ensureStorageConfigForCurrentPath();
+    try {
+      const driver = resolveDriverByConfigId(storageConfigId);
+      enforceUploadMethodByDriver(driver);
+    } catch (e) {
+      console.warn("[Uppy] startUpload 驱动解析失败", e);
+    }
+
+    driverStrategy.value = strategyMap[uploadMethod.value] || STORAGE_STRATEGIES.BACKEND_STREAM;
 
     disposeFsSession();
+    resetBackendProgressTracking();
     fsUploadSession = createFsUploadSession({
       storageConfigId,
       fsOptions: { strategy: driverStrategy.value, path: props.currentPath },
-      uppy: uppyInstance,
+      uppy: uppyInstance.value,
       events: {
+        onProgress: (progress) => {
+          if (progress) {
+            updateBrowserProgressState(progress);
+          }
+        },
         onError: ({ error }) => {
-          errorMessage.value = error?.message || t("file.messages.uploadFailed");
+          errorMessage.value = normalizeFsUploadError(error);
         },
         onComplete: async (result) => {
           try {
             await runFsCommitIfNeeded(result);
             await handleUploadComplete(result);
           } finally {
+            resetBackendProgressTracking();
             disposeFsSession();
           }
         },
       },
     });
 
+    if (uploadMethod.value === "stream") {
+      try {
+        uppyInstance.value.getFiles().forEach((file) => ensureUploadIdForFile(file));
+      } catch {}
+      startBackendProgressPolling();
+    }
+
     await fsUploadSession.start();
   } catch (error) {
     console.error("[Uppy] 上传失败", error);
-    errorMessage.value = error.message || t("file.messages.uploadFailed");
+    errorMessage.value = normalizeFsUploadError(error);
     emit("upload-error", error);
     disposeFsSession();
   } finally {
+    resetBackendProgressTracking();
     isUploading.value = false;
   }
 };
 
 const closeModal = () => {
-  if (uppyInstance) {
-    uppyInstance.cancelAll?.();
-    uppyInstance.clear();
+  if (uppyInstance.value) {
+    uppyInstance.value.cancelAll?.();
+    uppyInstance.value.clear();
   }
-  fileCount.value = 0;
   errorMessage.value = "";
   isUploading.value = false;
+  resetBackendProgressTracking();
   disposeFsSession(true);
   disposeFsAdapterHandle();
   emit("close");
-};
-
-// 监听弹窗打开状态
-watch(
-  () => props.isOpen,
-  async (newValue) => {
-    if (newValue) {
-      await ensureMountsLoaded();
-      // 预热存储配置，提升后续驱动解析命中率
-      try {
-        await storageConfigsStore.loadConfigs();
-      } catch (e) {
-        // 忽略预热失败，由 ensureStorageConfigForCurrentPath 兜底
-      }
-      await nextTick();
-      await initializeUppy();
-    } else if (uppyInstance) {
-      uppyInstance.cancelAll?.();
-      if (uppyInstance._cleanupPaste) {
-        uppyInstance._cleanupPaste();
-      }
-      uppyInstance.clear();
-      fileCount.value = 0;
-      errorMessage.value = "";
-      isUploading.value = false;
-      disposeFsSession(true);
-      disposeFsAdapterHandle();
-    }
-  }
-);
-
-// 监听路径变化，必要时重新初始化以切换目录
-watch(
-  () => props.currentPath,
-  async () => {
-    if (!props.isOpen || !uppyInstance || isUploading.value) {
-      return;
-    }
-    disposeFsSession(true);
-    await initializeUppy();
-  }
-);
-
-// 监听暗色模式变化
-watch(
-  () => props.darkMode,
-  async () => {
-    if (props.isOpen && uppyInstance) {
-      disposeFsSession(true);
-      await initializeUppy();
-    }
-  }
-);
-
-// 监听语言变化
-watch(
-  () => locale.value,
-  () => {
-    // 更新插件管理器语言
-    if (pluginManager) {
-      pluginManager.updateLocale(locale.value);
-      mediaPlugins.value = pluginManager.getPluginList();
-    }
-    // 如果弹窗打开，重新初始化Uppy以应用新语言
-    if (props.isOpen && uppyInstance) {
-      disposeFsSession(true);
-      initializeUppy();
-    }
-  }
-);
-
-// 生命周期
-onMounted(async () => {
-  if (props.isOpen) {
-    await ensureMountsLoaded();
-    await nextTick();
-    await initializeUppy();
-  }
-});
-
-onBeforeUnmount(() => {
-  if (uppyInstance) {
-    // 清理粘贴监听器
-    if (uppyInstance._cleanupPaste) {
-      uppyInstance._cleanupPaste();
-    }
-    uppyInstance.destroy();
-  }
-  disposeFsSession(true);
-  disposeFsAdapterHandle();
-});
-
-/**
- * 设置断点续传对话框事件监听器
- */
-const setupResumeDialogEvents = () => {
-  // 选择对话框事件
-  uppyInstance.on("server-resume-select-dialog", (data) => {
-    selectUploadData.value = {
-      file: data.file,
-      uploads: data.uploads,
-      showMatchScore: data.showMatchScore,
-      onSelect: data.onSelect,
-      onCancel: data.onCancel,
-    };
-    showSelectUploadDialog.value = true;
-  });
 };
 
 /**
@@ -1003,115 +778,100 @@ const handleUploadSelectCancel = () => {
     selectUploadData.value.onCancel();
   }
 };
+
+// 监听上传方式变化，重新初始化 Uppy（确保清理旧插件）
+watch(
+  () => uploadMethod.value,
+  async () => {
+    if (props.isOpen && uppyInstance.value && !isUploading.value) {
+      resetBackendProgressTracking();
+      disposeFsSession(true);
+      await setupUppy();
+    }
+  }
+);
+
+// 监听弹窗打开状态
+watch(
+  () => props.isOpen,
+  async (newValue) => {
+    if (newValue) {
+      await ensureMountsLoaded();
+      try {
+        await storageConfigsStore.loadConfigs();
+      } catch (e) {}
+      await nextTick();
+      await setupUppy();
+    } else if (uppyInstance.value) {
+      uppyInstance.value.cancelAll?.();
+      uppyInstance.value.clear();
+      errorMessage.value = "";
+      isUploading.value = false;
+      resetBackendProgressTracking();
+      disposeFsSession(true);
+      disposeFsAdapterHandle();
+    }
+  }
+);
+
+// 监听路径变化
+watch(
+  () => props.currentPath,
+  async () => {
+    if (!props.isOpen || !uppyInstance.value || isUploading.value) {
+      return;
+    }
+    resetBackendProgressTracking();
+    disposeFsSession(true);
+    await setupUppy();
+  }
+);
+
+// 监听暗色模式变化
+watch(
+  () => props.darkMode,
+  async () => {
+    if (props.isOpen && uppyInstance.value) {
+      resetBackendProgressTracking();
+      disposeFsSession(true);
+      await setupUppy();
+    }
+  }
+);
+
+// 监听语言变化
+watch(
+  () => locale.value,
+  () => {
+    if (pluginManager) {
+      pluginManager.updateLocale(locale.value);
+      mediaPlugins.value = pluginManager.getPluginList();
+    }
+    if (props.isOpen && uppyInstance.value) {
+      resetBackendProgressTracking();
+      disposeFsSession(true);
+      setupUppy();
+    }
+  }
+);
+
+// 生命周期
+onMounted(async () => {
+  if (props.isOpen) {
+    await ensureMountsLoaded();
+    await nextTick();
+    await setupUppy();
+  }
+});
+
+onBeforeUnmount(() => {
+  destroyUppy();
+  resetBackendProgressTracking();
+  disposeFsSession(true);
+  disposeFsAdapterHandle();
+});
 </script>
 
 <style scoped>
-.uppy-container {
-  border-radius: 0.5rem;
-  overflow: hidden;
-}
-</style>
-
-<style>
-.uppy-Dashboard {
-  border: none !important;
-  background: transparent !important;
-  font-family: inherit !important;
-  border-radius: 0.5rem !important;
-}
-
-.uppy-Dashboard-inner {
-  border-radius: 0.5rem !important;
-  border: 2px dashed #d1d5db !important;
-  background: #f9fafb !important;
-  transition: all 0.3s ease !important;
-}
-
-.uppy-Dashboard-inner:hover {
-  border-color: #3b82f6 !important;
-  background: #eff6ff !important;
-}
-
-/* 暗色模式适配 */
-.dark .uppy-Dashboard-inner {
-  border-color: #4b5563 !important;
-  background: #374151 !important;
-  color: #f3f4f6 !important;
-}
-
-.dark .uppy-Dashboard-inner:hover {
-  border-color: #3b82f6 !important;
-  background: #1f2937 !important;
-}
-
-.dark .uppy-Dashboard-AddFiles {
-  background: transparent !important;
-  color: #f3f4f6 !important;
-}
-
-.dark .uppy-Dashboard-AddFiles-title {
-  color: #f3f4f6 !important;
-}
-
-/* 文件项样式 */
-.uppy-Dashboard-file {
-  border-radius: 0.5rem !important;
-  border: 1px solid #e5e7eb !important;
-  background: white !important;
-  transition: all 0.2s ease !important;
-}
-
-.uppy-Dashboard-file:hover {
-  border-color: #3b82f6 !important;
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1) !important;
-}
-
-.dark .uppy-Dashboard-file {
-  background: #4b5563 !important;
-  border-color: #6b7280 !important;
-  color: #f3f4f6 !important;
-}
-
-.dark .uppy-Dashboard-file:hover {
-  border-color: #3b82f6 !important;
-  background: #6b7280 !important;
-}
-
-/* 进度条样式 */
-.uppy-ProgressBar {
-  background: #3b82f6 !important;
-  border-radius: 0.25rem !important;
-  height: 0.25rem !important;
-}
-
-/* 状态栏样式 */
-.uppy-StatusBar {
-  border-radius: 0.5rem !important;
-  margin-top: 0.5rem !important;
-  border: 1px solid #e5e7eb !important;
-  background: #f9fafb !important;
-}
-
-.dark .uppy-StatusBar {
-  background: #4b5563 !important;
-  border-color: #6b7280 !important;
-  color: #f3f4f6 !important;
-}
-
-/* 隐藏品牌信息 */
-.uppy-Dashboard-poweredBy {
-  display: none !important;
-}
-
-/* 响应式调整 */
-@media (max-width: 768px) {
-  .uppy-Dashboard-AddFiles {
-    padding: 1.5rem 1rem !important;
-  }
-
-  .uppy-Dashboard-browse {
-    padding: 0.5rem 1rem !important;
-    font-size: 0.875rem !important;
-  }
-}
+/* 组件特有样式 */
 </style>

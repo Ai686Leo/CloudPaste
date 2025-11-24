@@ -16,17 +16,20 @@ import { checkLockPermission } from "../utils/lockUtils.js";
 /**
  * 获取WebDAV上传模式设置
  * @param {D1Database} db - 数据库实例
- * @returns {Promise<string>} 上传模式 ('direct' 或 'multipart')
+ * @returns {Promise<string>} 上传模式 ('single' 或 'chunked')
  */
 async function getWebDAVUploadMode(db) {
   try {
     // WebDAV设置组ID为3
     const settings = await getSettingsByGroup(db, 3, false);
     const uploadModeSetting = settings.find((setting) => setting.key === "webdav_upload_mode");
-    return uploadModeSetting ? uploadModeSetting.value : "multipart"; // 默认分片上传
+    const raw = uploadModeSetting ? uploadModeSetting.value : "chunked";
+    // 仅接受 single / chunked，其它一律按 single 处理
+    if (raw === "chunked") return "chunked";
+    return "single";
   } catch (error) {
     console.warn("获取WebDAV上传模式设置失败，使用默认值:", error);
-    return "direct"; // 默认分片上传
+    return "single";
   }
 }
 
@@ -128,17 +131,17 @@ export async function handlePut(c, path, userId, userType, db) {
     const isEmptyFile = isReallyEmptyFile(declaredContentLength, transferEncoding);
 
     if (isEmptyFile) {
-      console.log(`WebDAV PUT - 确认为空文件，使用FileSystem直接上传`);
+      console.log(`WebDAV PUT - 确认为空文件，使用FileSystem一次性上传`);
 
-      // 创建一个空的File对象
-      const emptyFile = new File([""], filename, { type: contentType });
-
-      // 使用FileSystem上传空文件
-      const result = await fileSystem.uploadFile(path, emptyFile, userId, userType, {
-        useMultipart: false,
+      // 使用 FileSystem 流式上传一个空文件
+      const emptyBody = new Uint8Array(0);
+      const result = await fileSystem.uploadFile(path, emptyBody, userId, userType, {
+        filename,
+        contentType,
+        contentLength: 0,
       });
 
-      console.log(`WebDAV PUT - 空文件上传成功`);
+      console.log(`WebDAV PUT - 空文件上传成功，ETag: ${result.etag}`);
 
       return new Response(null, {
         status: 201, // Created
@@ -151,33 +154,38 @@ export async function handlePut(c, path, userId, userType, db) {
       });
     }
 
-    // 直接使用原始流
+    // 直接使用原始流（WebDAV 客户端通常是流式 PUT）
     const processedStream = bodyStream;
 
-    // 对分块传输强制使用multipart
+    // 对分块传输强制使用 chunked 模式
     let finalUploadMode = uploadMode;
     if (transferEncoding && transferEncoding.toLowerCase().includes("chunked")) {
-      finalUploadMode = "multipart";
-      console.log(`WebDAV PUT - 检测到分块传输，强制使用流式分片上传`);
+      finalUploadMode = "chunked";
+      console.log(`WebDAV PUT - 检测到分块传输，强制使用分块上传模式`);
     }
 
-    // 根据最终决定的上传模式处理
-    if (finalUploadMode === "direct") {
-      console.log(`WebDAV PUT - 使用直接上传模式`);
+    // 根据最终决定的上传模式处理：
+    // - single  ：按“表单/一次性”语义处理，先完整缓冲，再走驱动的表单上传路径
+    // - chunked ：保持真正的流式上传语义
+    if (finalUploadMode === "single") {
+      console.log(`WebDAV PUT - 使用单次上传模式（一次性缓冲后上传）`);
 
       try {
-        // 使用FileSystem抽象层的uploadStream方法
+        // 将请求体完整读入内存，作为“表单上传”数据交给 FileSystem
+        const buffer = await c.req.arrayBuffer();
+        const body = new Uint8Array(buffer);
+        const effectiveLength = body.byteLength;
+
         const startTime = Date.now();
-        const result = await fileSystem.uploadStream(path, processedStream, userId, userType, {
-          filename: filename,
-          contentType: contentType,
-          contentLength: declaredContentLength,
-          useMultipart: false, // direct模式使用直接上传
+        const result = await fileSystem.uploadFile(path, body, userId, userType, {
+          filename,
+          contentType,
+          contentLength: effectiveLength,
         });
         const duration = Date.now() - startTime;
 
-        const speedMBps = declaredContentLength > 0 ? (declaredContentLength / 1024 / 1024 / (duration / 1000)).toFixed(2) : "未知";
-        console.log(`WebDAV PUT - 直接上传成功，用时: ${duration}ms，速度: ${speedMBps}MB/s，ETag: ${result.etag}`);
+        const speedMBps = effectiveLength > 0 ? (effectiveLength / 1024 / 1024 / (duration / 1000)).toFixed(2) : "未知";
+        console.log(`WebDAV PUT - 单次上传成功，用时: ${duration}ms，速度: ${speedMBps}MB/s，ETag: ${result.etag}`);
 
         return new Response(null, {
           status: 201, // Created
@@ -190,26 +198,24 @@ export async function handlePut(c, path, userId, userType, db) {
           }),
         });
       } catch (error) {
-        console.error(`WebDAV PUT - 直接上传失败: ${error.message}`);
+        console.error(`WebDAV PUT - 单次上传失败: ${error.message}`);
         throw error;
       }
     } else {
-      // 使用分片上传模式（流式上传）
-      console.log(`WebDAV PUT - 使用流式分片上传模式`);
+      // 使用分块上传模式：保持真正的流式语义，直接传递 Web ReadableStream
+      console.log(`WebDAV PUT - 使用分块上传模式（流式上传）`);
 
       try {
-        // 使用FileSystem抽象层的uploadStream方法
         const startTime = Date.now();
-        const result = await fileSystem.uploadStream(path, processedStream, userId, userType, {
-          filename: filename,
-          contentType: contentType,
+        const result = await fileSystem.uploadFile(path, processedStream, userId, userType, {
+          filename,
+          contentType,
           contentLength: declaredContentLength,
-          useMultipart: true, // multipart模式使用分片上传
         });
         const duration = Date.now() - startTime;
 
         const speedMBps = declaredContentLength > 0 ? (declaredContentLength / 1024 / 1024 / (duration / 1000)).toFixed(2) : "未知";
-        console.log(`WebDAV PUT - 流式分片上传成功，用时: ${duration}ms，速度: ${speedMBps}MB/s，ETag: ${result.etag}`);
+        console.log(`WebDAV PUT - 分块上传成功，用时: ${duration}ms，速度: ${speedMBps}MB/s，ETag: ${result.etag}`);
 
         return new Response(null, {
           status: 201, // Created
@@ -222,7 +228,7 @@ export async function handlePut(c, path, userId, userType, db) {
           }),
         });
       } catch (error) {
-        console.error(`WebDAV PUT - 流式分片上传失败: ${error.message}`);
+        console.error(`WebDAV PUT - 分块上传失败: ${error.message}`);
         throw error;
       }
     }

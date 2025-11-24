@@ -62,6 +62,11 @@ export async function fetchUrlContent(options) {
     console.log(`尝试直接获取URL: ${options.url}`);
     return await fetchFromUrl(options.url, options.onProgress, options.setXhr, "directDownload");
   } catch (error) {
+    // 用户主动取消下载时，直接抛出错误，不尝试代理重试
+    if (error.message === "下载已取消") {
+      throw error;
+    }
+
     console.warn(`直接获取URL内容失败: ${error.message}`);
 
     // 检查是否是CORS错误或其他网络错误，如果是则尝试使用代理
@@ -100,8 +105,8 @@ function fetchFromUrl(url, onProgress, setXhr, phaseType) {
     // 进度事件
     xhr.onprogress = (event) => {
       if (event.lengthComputable && onProgress) {
-        // 下载过程占总进度的49%，保留1%给最终确认步骤
-        const progress = Math.round((event.loaded / event.total) * 49);
+        // 下载进度从 0% 到 100%
+        const progress = Math.round((event.loaded / event.total) * 100);
         onProgress(progress, event.loaded, event.total, "downloading", phaseType);
       }
     };
@@ -129,68 +134,4 @@ function fetchFromUrl(url, onProgress, setXhr, phaseType) {
   });
 }
 
-/**
- * 获取URL上传的预签名URL
- * @param {Object} options - 上传选项
- * @param {string} options.url - 要上传的URL
- * @param {string} options.storage_config_id - 存储配置ID
- * @param {Object} [options.metadata] - 可选的文件元数据
- * @param {string} [options.filename] - 可选的自定义文件名
- * @param {string} [options.slug] - 可选的自定义链接
- * @param {string} [options.remark] - 可选的备注
- * @param {string} [options.path] - 可选的存储路径
- * @returns {Promise<Object>} 包含预签名URL和文件ID的响应
- */
-export async function getUrlUploadPresignedUrl(options) {
-  try {
-    const data = {
-      url: options.url,
-      storage_config_id: options.storage_config_id || null,
-      path: options.path || null,
-    };
-
-    if (options.filename) data.filename = options.filename;
-    if (options.contentType) data.contentType = options.contentType;
-    if (options.fileSize !== undefined) data.fileSize = options.fileSize;
-
-    return await post("share/url/presign", data);
-  } catch (error) {
-    throw new Error(`获取URL上传预签名失败: ${error.message}`);
-  }
-}
-
-/**
- * 提交URL上传完成信息
- * @param {Object} data - 上传完成数据
- * @param {string} data.file_id - 文件ID
- * @param {string} data.etag - 文件ETag
- * @param {number} [data.size] - 文件大小（字节）
- * @param {string} [data.remark] - 备注
- * @param {string} [data.password] - 密码
- * @param {number} [data.expires_in] - 过期时间（小时）
- * @param {number} [data.max_views] - 最大查看次数
- * @returns {Promise<Object>} 提交响应
- */
-export async function commitUrlUpload(data) {
-  try {
-    // 新协议：优先使用 key + storage_config_id；兼容 commit_suggestion 旧结构
-    return await completeFileUpload({
-      key: data.key || (data.commit_suggestion && data.commit_suggestion.key) || undefined,
-      storage_config_id: data.storage_config_id || (data.commit_suggestion && data.commit_suggestion.storage_config_id) || undefined,
-      path: data.path, // 兼容保留
-      filename: data.filename,
-      size: data.size,
-      etag: data.etag,
-      slug: data.slug,
-      remark: data.remark,
-      password: data.password,
-      expires_in: data.expires_in,
-      max_views: data.max_views,
-      use_proxy: data.use_proxy,
-      original_filename: data.original_filename ?? false,
-    });
-  } catch (error) {
-    throw new Error(`提交URL上传完成信息失败: ${error.message}`);
-  }
-}
 

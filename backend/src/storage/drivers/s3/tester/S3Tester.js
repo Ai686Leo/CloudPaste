@@ -104,6 +104,7 @@ export async function s3TestConnection(config, encryptionSecret, requestOrigin =
       new ListObjectsV2Command({ Bucket: config.bucket_name, MaxKeys: 10, Prefix: prefix || undefined })
     );
     result.read.success = true;
+    result.read.prefix = prefix || "";
     result.read.objectCount = list.Contents?.length || 0;
     if (list.Contents && list.Contents.length > 0) {
       result.read.firstObjects = list.Contents.slice(0, 3).map((o) => ({

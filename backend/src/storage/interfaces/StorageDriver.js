@@ -70,14 +70,82 @@ export class StorageDriver {
   }
 
   /**
-   * 上传文件
-   * @param {string} path - 目标路径
-   * @param {File} file - 文件对象
+   * 统一上传入口（文件 / 流）
+   * - 面向所有需要写入二进制内容的场景（FS 写入、直传、分享上传等）
+   * - fileOrStream 可以是 Web 流、Node 流、Buffer、Uint8Array、ArrayBuffer、File、Blob、字符串等
+   * - 驱动应在内部自行选择合适的上传策略（流式 / 表单/缓冲）
+   *
+   * @param {string} path - 目标路径或对象键（存储内部视角）
+   * @param {ReadableStream|Uint8Array|ArrayBuffer|Buffer|File|Blob|string} fileOrStream - 数据源
    * @param {Object} options - 选项参数
    * @returns {Promise<Object>} 上传结果
    */
-  async uploadFile(path, file, options = {}) {
+  async uploadFile(path, fileOrStream, options = {}) {
     throw new Error("uploadFile方法必须在子类中实现");
+  }
+
+  /**
+   * 初始化前端分片上传（生成预签名URL列表）
+   * 仅当驱动具备 MULTIPART 能力时需要实现
+   * @param {string} subPath - 存储子路径（不含挂载前缀）
+   * @param {Object} options - 选项参数 { fileName, fileSize, partSize, partCount, mount, db, userIdOrInfo, userType }
+   * @returns {Promise<Object>} 初始化结果
+   */
+  async initializeFrontendMultipartUpload(subPath, options = {}) {
+    throw new Error("initializeFrontendMultipartUpload方法必须在子类中实现");
+  }
+
+  /**
+   * 完成前端分片上传
+   * @param {string} subPath - 存储子路径
+   * @param {Object} options - 选项参数 { uploadId, parts, fileName, fileSize, mount, db, userIdOrInfo, userType }
+   * @returns {Promise<Object>} 完成结果
+   */
+  async completeFrontendMultipartUpload(subPath, options = {}) {
+    throw new Error("completeFrontendMultipartUpload方法必须在子类中实现");
+  }
+
+  /**
+   * 中止前端分片上传
+   * @param {string} subPath - 存储子路径
+   * @param {Object} options - 选项参数 { uploadId, fileName, mount, db, userIdOrInfo, userType }
+   * @returns {Promise<Object>} 中止结果
+   */
+  async abortFrontendMultipartUpload(subPath, options = {}) {
+    throw new Error("abortFrontendMultipartUpload方法必须在子类中实现");
+  }
+
+  /**
+   * 列出进行中的分片上传
+   * @param {string} subPath - 存储子路径（可为空表示整个挂载）
+   * @param {Object} options - 选项参数 { mount, db, ... }
+   * @returns {Promise<Object>} 进行中的上传列表
+   */
+  async listMultipartUploads(subPath = "", options = {}) {
+    throw new Error("listMultipartUploads方法必须在子类中实现");
+  }
+
+  /**
+   * 列出已上传的分片
+   * @param {string} subPath - 存储子路径
+   * @param {string} uploadId - 上传ID
+   * @param {Object} options - 选项参数 { mount, db, fileName, ... }
+   * @returns {Promise<Object>} 已上传分片列表
+   */
+  async listMultipartParts(subPath, uploadId, options = {}) {
+    throw new Error("listMultipartParts方法必须在子类中实现");
+  }
+
+  /**
+   * 为现有上传刷新预签名URL
+   * @param {string} subPath - 存储子路径
+   * @param {string} uploadId - 上传ID
+   * @param {Array<number>} partNumbers - 需要刷新的分片编号
+   * @param {Object} options - 选项参数 { mount, db, ... }
+   * @returns {Promise<Object>} 刷新后的URL列表
+   */
+  async refreshMultipartUrls(subPath, uploadId, partNumbers, options = {}) {
+    throw new Error("refreshMultipartUrls方法必须在子类中实现");
   }
 
   /**
@@ -133,14 +201,38 @@ export class StorageDriver {
   }
 
   /**
-   * 生成预签名URL
+   * 生成预签名URL - 兼容入口
    * @param {string} path - 文件路径
    * @param {Object} options - 选项参数
    * @param {string} options.operation - 操作类型：'download' 或 'upload'
    * @returns {Promise<Object>} 预签名URL信息
    */
   async generatePresignedUrl(path, options = {}) {
-    throw new Error("generatePresignedUrl方法必须在子类中实现");
+    const op = options?.operation || "download";
+    if (op === "upload") {
+      return await this.generateUploadUrl(path, options);
+    }
+    return await this.generateDownloadUrl(path, options);
+  }
+
+  /**
+   * 生成预签名下载URL
+   * @param {string} path - 文件路径
+   * @param {Object} options - 选项参数
+   * @returns {Promise<Object>} 预签名下载URL信息
+   */
+  async generateDownloadUrl(path, options = {}) {
+    throw new Error("generateDownloadUrl方法必须在子类中实现");
+  }
+
+  /**
+   * 生成预签名上传URL
+   * @param {string} path - 目标路径
+   * @param {Object} options - 选项参数
+   * @returns {Promise<Object>} 预签名上传URL信息
+   */
+  async generateUploadUrl(path, options = {}) {
+    throw new Error("generateUploadUrl方法必须在子类中实现");
   }
 
   /**
@@ -215,16 +307,6 @@ export class StorageDriver {
   // async completeBackendMultipartUpload(path, options = {}) {
   //   throw new Error("completeBackendMultipartUpload方法必须在子类中实现");
   // }
-
-  /**
-   * 中止后端分片上传
-   * @param {string} path - 目标路径
-   * @param {Object} options - 选项参数
-   * @returns {Promise<Object>} 中止结果
-   */
-  async abortBackendMultipartUpload(path, options = {}) {
-    throw new Error("abortBackendMultipartUpload方法必须在子类中实现");
-  }
 
   /**
    * 清理资源

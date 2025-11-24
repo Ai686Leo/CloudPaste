@@ -8,7 +8,7 @@ import { AppError, ValidationError, NotFoundError, ConflictError, Authentication
 import { S3Client, DeleteObjectCommand, CopyObjectCommand, ListObjectsV2Command, HeadObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { normalizeS3SubPath } from "../utils/S3PathUtils.js";
 import { updateMountLastUsed } from "../../../fs/utils/MountResolver.js";
-import { generatePresignedUrl, generatePresignedPutUrl, createS3Client, getDirectoryPresignedUrls } from "../utils/s3Utils.js";
+import { generateDownloadUrl, generateUploadUrl, createS3Client, getDirectoryPresignedUrls } from "../utils/s3Utils.js";
 import { getMimeTypeFromFilename } from "../../../../utils/fileUtils.js";
 import { findMountPointByPath } from "../../../fs/utils/MountResolver.js";
 import { updateParentDirectoriesModifiedTime } from "../utils/S3DirectoryUtils.js";
@@ -886,13 +886,13 @@ export class S3BatchOperations {
 
           // 生成源文件的下载预签名URL
           const expiresIn = 3600; // 1小时
-          const downloadUrl = await generatePresignedUrl(sourceS3Config, s3SourcePath, this.encryptionSecret, expiresIn, false);
+          const downloadUrl = await generateDownloadUrl(sourceS3Config, s3SourcePath, this.encryptionSecret, expiresIn, false);
 
           // 生成目标文件的上传预签名URL（使用重命名后的路径）
           const fileName = sourcePath.split("/").filter(Boolean).pop() || "file";
           const contentType = getMimeTypeFromFilename(fileName);
 
-          const uploadUrl = await generatePresignedPutUrl(targetS3Config, finalS3TargetPath, contentType, this.encryptionSecret, expiresIn);
+          const uploadUrl = await generateUploadUrl(targetS3Config, finalS3TargetPath, contentType, this.encryptionSecret, expiresIn);
 
           return {
             crossStorage: true,

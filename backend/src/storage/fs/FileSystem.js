@@ -7,9 +7,18 @@
 import { ValidationError, AuthorizationError, DriverError } from "../../http/errors.js";
 import { ApiStatus } from "../../constants/index.js";
 import { CAPABILITIES } from "../interfaces/capabilities/index.js";
-import { listDirectory as featureListDirectory, getFileInfo as featureGetFileInfo, downloadFile as featureDownloadFile, exists as featureExists } from "./features/read.js";
-import { generatePresignedUrl as featureGeneratePresignedUrl, commitPresignedUpload as featureCommitPresignedUpload } from "./features/presign.js";
-import { uploadFile as featureUploadFile, uploadStream as featureUploadStream, uploadDirect as featureUploadDirect, createDirectory as featureCreateDirectory, updateFile as featureUpdateFile } from "./features/write.js";
+import {
+  listDirectory as featureListDirectory,
+  getFileInfo as featureGetFileInfo,
+  downloadFile as featureDownloadFile,
+  exists as featureExists,
+} from "./features/read.js";
+import {
+  generateUploadUrl as featureGenerateUploadUrl,
+  generateFileLink as featureGenerateFileLink,
+  commitPresignedUpload as featureCommitPresignedUpload,
+} from "./features/presign.js";
+import { uploadFile as featureUploadFile, uploadDirect as featureUploadDirect, createDirectory as featureCreateDirectory, updateFile as featureUpdateFile } from "./features/write.js";
 import { renameItem as featureRenameItem, copyItem as featureCopyItem, batchRemoveItems as featureBatchRemoveItems, batchCopyItems as featureBatchCopyItems, handleCrossStorageCopy as featureHandleCrossStorageCopy, commitCrossStorageCopy as featureCommitCrossStorageCopy } from "./features/ops.js";
 import {
   initializeFrontendMultipartUpload as featureInitMultipart,
@@ -18,13 +27,13 @@ import {
   listMultipartUploads as featureListMultipartUploads,
   listMultipartParts as featureListMultipartParts,
   refreshMultipartUrls as featureRefreshMultipartUrls,
-  abortBackendMultipartUpload as featureAbortBackendMultipart,
 } from "./features/multipart.js";
 import cacheBus, { CACHE_EVENTS } from "../../cache/cacheBus.js";
 import { ensureRepositoryFactory } from "../../utils/repositories.js";
 import { getAccessibleMountsForUser } from "../../security/helpers/access.js";
 import { UserType } from "../../constants/index.js";
 import { FsMetaService } from "../../services/fsMetaService.js";
+import { sortSearchResults } from "./utils/SearchUtils.js";
 
 export class FileSystem {
   /**
@@ -103,33 +112,19 @@ export class FileSystem {
   }
 
   /**
-   * 上传文件
+   * 上传文件（统一入口）
    * @param {string} path - 目标路径
-   * @param {File} file - 文件对象
-   * @param {string|Object} userIdOrInfo - 用户ID或API密钥信息
-   * @param {string} userType - 用户类型
-   * @param {Object} options - 选项参数
-   * @returns {Promise<Object>} 上传结果
-   */
-  async uploadFile(path, file, userIdOrInfo, userType, options = {}) {
-    return await featureUploadFile(this, path, file, userIdOrInfo, userType, options);
-  }
-
-  /**
-   * 上传流式数据
-   * @param {string} path - 目标路径
-   * @param {ReadableStream} stream - 数据流
+   * @param {ReadableStream|ArrayBuffer|Uint8Array|Buffer|File|Blob|string} fileOrStream - 数据源
    * @param {string|Object} userIdOrInfo - 用户ID或API密钥信息
    * @param {string} userType - 用户类型
    * @param {Object} options - 选项参数
    * @param {string} options.filename - 文件名
    * @param {string} options.contentType - 内容类型
    * @param {number} options.contentLength - 内容长度
-   * @param {boolean} options.useMultipart - 是否使用分片上传
    * @returns {Promise<Object>} 上传结果
    */
-  async uploadStream(path, stream, userIdOrInfo, userType, options = {}) {
-    return await featureUploadStream(this, path, stream, userIdOrInfo, userType, options);
+  async uploadFile(path, fileOrStream, userIdOrInfo, userType, options = {}) {
+    return await featureUploadFile(this, path, fileOrStream, userIdOrInfo, userType, options);
   }
 
   /**
@@ -221,15 +216,27 @@ export class FileSystem {
   }
 
   /**
-   * 生成预签名URL
+   * 生成预签名上传URL（严格模式，仅支持具备 PRESIGNED 能力的驱动）
    * @param {string} path - 文件路径
    * @param {string|Object} userIdOrInfo - 用户ID或API密钥信息
    * @param {string} userType - 用户类型
    * @param {Object} options - 选项参数
-   * @returns {Promise<Object>} 预签名URL信息
+   * @returns {Promise<Object>} 预签名上传URL信息
    */
-  async generatePresignedUrl(path, userIdOrInfo, userType, options = {}) {
-    return await featureGeneratePresignedUrl(this, path, userIdOrInfo, userType, options);
+  async generateUploadUrl(path, userIdOrInfo, userType, options = {}) {
+    return await featureGenerateUploadUrl(this, path, userIdOrInfo, userType, options);
+  }
+
+  /**
+   * 生成通用文件链接（根据驱动能力与挂载配置在预签名与代理之间做决策）
+   * @param {string} path - 文件路径
+   * @param {string|Object} userIdOrInfo - 用户ID或API密钥信息
+   * @param {string} userType - 用户类型
+   * @param {Object} options - 选项参数
+   * @returns {Promise<Object>} 文件链接信息 { url, type, expiresIn?, proxyPolicy? }
+   */
+  async generateFileLink(path, userIdOrInfo, userType, options = {}) {
+    return await featureGenerateFileLink(this, path, userIdOrInfo, userType, options);
   }
 
   /**
@@ -313,120 +320,6 @@ export class FileSystem {
    */
   async refreshMultipartUrls(path, uploadId, partNumbers, userIdOrInfo, userType, options = {}) {
     return await featureRefreshMultipartUrls(this, path, uploadId, partNumbers, userIdOrInfo, userType, options);
-  }
-
-  // /**
-  //  * 初始化后端分片上传 - 已废弃，项目使用前端分片上传
-  //  * @deprecated 使用前端分片上传 initializeFrontendMultipartUpload 替代
-  //  * @param {string} path - 目标路径
-  //  * @param {string|Object} userIdOrInfo - 用户ID或API密钥信息
-  //  * @param {string} userType - 用户类型
-  //  * @param {string} contentType - 内容类型
-  //  * @param {number} fileSize - 文件大小
-  //  * @param {string} filename - 文件名
-  //  * @returns {Promise<Object>} 初始化结果
-  //  */
-  // async initializeBackendMultipartUpload(path, userIdOrInfo, userType, contentType, fileSize, filename) {
-  //   const { driver, mount, subPath } = await this.mountManager.getDriverByPath(path, userIdOrInfo, userType);
-
-  //   if (!driver.hasCapability(CAPABILITIES.MULTIPART)) {
-  //     throw new DriverError(`存储驱动 ${driver.getType()} 不支持分片上传`, {
-  //       status: ApiStatus.NOT_IMPLEMENTED,
-  //       expose: true,
-  //     });
-  //   }
-
-  //   return await driver.initializeBackendMultipartUpload(path, {
-  //     mount,
-  //     subPath,
-  //     db: this.mountManager.db,
-  //     contentType,
-  //     fileSize,
-  //     filename,
-  //   });
-  // }
-
-  // /**
-  //  * 上传后端分片 - 已废弃，项目使用前端分片上传
-  //  * @deprecated 使用前端分片上传替代
-  //  * @param {string} path - 目标路径
-  //  * @param {string|Object} userIdOrInfo - 用户ID或API密钥信息
-  //  * @param {string} userType - 用户类型
-  //  * @param {string} uploadId - 上传ID
-  //  * @param {number} partNumber - 分片编号
-  //  * @param {ArrayBuffer} partData - 分片数据
-  //  * @param {string} s3Key - S3键（可选）
-  //  * @returns {Promise<Object>} 上传结果
-  //  */
-  // async uploadBackendPart(path, userIdOrInfo, userType, uploadId, partNumber, partData, s3Key = null) {
-  //   const { driver, mount, subPath } = await this.mountManager.getDriverByPath(path, userIdOrInfo, userType);
-
-  //   if (!driver.hasCapability(CAPABILITIES.MULTIPART)) {
-  //     throw new DriverError(`存储驱动 ${driver.getType()} 不支持分片上传`, {
-  //       status: ApiStatus.NOT_IMPLEMENTED,
-  //       expose: true,
-  //     });
-  //   }
-
-  //   return await driver.uploadBackendPart(path, {
-  //     mount,
-  //     subPath,
-  //     db: this.mountManager.db,
-  //     uploadId,
-  //     partNumber,
-  //     partData,
-  //     s3Key,
-  //   });
-  // }
-
-  // /**
-  //  * 完成后端分片上传 - 已废弃，项目使用前端分片上传
-  //  * @deprecated 使用前端分片上传 completeFrontendMultipartUpload 替代
-  //  * @param {string} path - 目标路径
-  //  * @param {string|Object} userIdOrInfo - 用户ID或API密钥信息
-  //  * @param {string} userType - 用户类型
-  //  * @param {string} uploadId - 上传ID
-  //  * @param {Array} parts - 分片信息
-  //  * @param {string} contentType - 内容类型
-  //  * @param {number} fileSize - 文件大小
-  //  * @param {string} s3Key - S3键（可选）
-  //  * @returns {Promise<Object>} 完成结果
-  //  */
-  // async completeBackendMultipartUpload(path, userIdOrInfo, userType, uploadId, parts, contentType, fileSize, s3Key = null) {
-  //   const { driver, mount, subPath } = await this.mountManager.getDriverByPath(path, userIdOrInfo, userType);
-
-  //   if (!driver.hasCapability(CAPABILITIES.MULTIPART)) {
-  //     throw new DriverError(`存储驱动 ${driver.getType()} 不支持分片上传`, {
-  //       status: ApiStatus.NOT_IMPLEMENTED,
-  //       expose: true,
-  //     });
-  //   }
-
-  //   return await driver.completeBackendMultipartUpload(path, {
-  //     mount,
-  //     subPath,
-  //     db: this.mountManager.db,
-  //     uploadId,
-  //     parts,
-  //     contentType,
-  //     fileSize,
-  //     userIdOrInfo,
-  //     userType,
-  //     s3Key,
-  //   });
-  // }
-
-  /**
-   * 中止后端分片上传
-   * @param {string} path - 目标路径
-   * @param {string|Object} userIdOrInfo - 用户ID或API密钥信息
-   * @param {string} userType - 用户类型
-   * @param {string} uploadId - 上传ID
-   * @param {string} s3Key - S3键（可选）
-   * @returns {Promise<Object>} 中止结果
-   */
-  async abortBackendMultipartUpload(path, userIdOrInfo, userType, uploadId, s3Key = null) {
-    return await featureAbortBackendMultipart(this, path, userIdOrInfo, userType, uploadId, s3Key);
   }
 
   /**
@@ -578,9 +471,8 @@ export class FileSystem {
       }
     }
 
-    // 排序和分页
-    const { S3SearchOperations } = await import("../drivers/s3/operations/S3SearchOperations.js");
-    const sortedResults = S3SearchOperations.sortSearchResults(allResults, query);
+    // 排序和分页（使用通用排序工具）
+    const sortedResults = sortSearchResults(allResults, query);
     const total = sortedResults.length;
     const paginatedResults = sortedResults.slice(offset, offset + limit);
 

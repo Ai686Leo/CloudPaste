@@ -79,16 +79,26 @@ const Policies = {
     permissions: [Permission.FILE_SHARE],
     message: "缺少文件分享创建权限",
   },
+  //目前作为占位符无用
+  // URL 上传：只要具备“创建文件分享”或“挂载上传”能力之一即可。
   "urlupload.manage": {
-    permissions: [Permission.FILE_SHARE],
+    permissions: [Permission.FILE_SHARE, Permission.MOUNT_UPLOAD],
     message: "缺少URL上传权限",
   },
-  "s3.upload": {
+  // 通用“上传即分享”能力（直传到任意存储再创建文件分享记录）。目前无用
+  // 目前仅在 shareUploadRoutes 中通过 files.create 控制，因此暂保留占位，
+  // 后续若需要单独抽出“直传 share 权限”，可以将相关路由从 files.create 切换为 storage.upload。
+  "storage.upload": {
     permissions: [Permission.FILE_SHARE],
-    message: "缺少S3上传权限",
+    message: "缺少存储上传权限",
   },
-  "s3.config.read": {
-    permissions: [Permission.FILE_SHARE],
+  // 存储配置读取（多存储通用）：
+  // - 文件分享：需要 FILE_SHARE（用于 /upload 页、URL 上传等）
+  // - 挂载上传：需要 MOUNT_UPLOAD（用于挂载浏览页 FS 上传）
+  // - WebDAV：需要 WEBDAV_READ（用于 WebDAV 只读场景下也能解析驱动能力）
+  // 任意具备其中之一即可读取「自己可见」的存储配置（仍受 ACL / is_public 过滤）
+  "storage.config.read": {
+    permissions: [Permission.FILE_SHARE, Permission.MOUNT_UPLOAD],
     message: "缺少存储配置访问权限",
   },
   "webdav.read": {

@@ -6,6 +6,7 @@ import { MountManager } from "../../../storage/managers/MountManager.js";
 import { UserType } from "../../../constants/index.js";
 import { processWebDAVPath } from "../../utils/webdavUtils.js";
 import { getAccessibleMountsForUser } from "../../../security/helpers/access.js";
+import { isVirtualPath } from "../../../storage/fs/utils/VirtualDirectory.js";
 
 /**
  * WebDAVAuth 只负责协议层兼容（Basic Challenge + 路径验权），
@@ -49,23 +50,21 @@ export class WebDAVAuth {
         return false;
       }
 
-      // 2. 检查挂载点权限
-      const { getEncryptionSecret } = await import("../../../utils/environmentUtils.js");
       const repositoryFactory = c.get("repos");
+      const accessibleMounts = await getAccessibleMountsForUser(this.db, keyInfo, "apiKey", repositoryFactory);
+
+      // 2. 虚拟路径（根目录 / 以及不直接落在具体挂载点上的中间目录）：。
+      if (isVirtualPath(path, accessibleMounts)) {
+        console.log(`WebDAV虚拟路径访问允许: basicPath=${basicPath}, requestPath=${path}`);
+        return true;
+      }
+
+      // 3. 实际存储路径：保持原有挂载点 + 存储 ACL 校验逻辑，
+      const { getEncryptionSecret } = await import("../../../utils/environmentUtils.js");
       const mountManager = new MountManager(this.db, getEncryptionSecret(c), repositoryFactory);
 
       try {
-        const { mount } = await mountManager.getDriverByPath(path, keyInfo, "apiKey");
-
-        // 3. 验证API密钥是否有权限访问该挂载点
-        const accessibleMounts = await getAccessibleMountsForUser(this.db, keyInfo, "apiKey");
-        const isAccessible = accessibleMounts.some((m) => m.id === mount.id);
-
-        if (!isAccessible) {
-          console.log(`WebDAV挂载点权限检查失败: 用户无权限访问挂载点 ${mount.name}`);
-          return false;
-        }
-
+        await mountManager.getDriverByPath(path, keyInfo, "apiKey");
         return true;
       } catch (mountError) {
         console.log(`WebDAV挂载点检查失败: ${mountError.message}`);

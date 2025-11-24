@@ -228,7 +228,6 @@
         <!-- 分享设置表单 -->
         <div class="mt-6 border-t pt-4 w-full overflow-hidden" :class="darkMode ? 'border-gray-700' : 'border-gray-200'">
           <h3 class="text-lg font-medium mb-4" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">{{ t("file.shareSettings") }}</h3>
-
           <!-- 使用与FileUploader相同的表单布局 -->
           <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
             <!-- 备注 -->
@@ -391,6 +390,35 @@
             </div>
           </div>
 
+          <!-- 上传方式选择（与 FileUploader 保持一致） -->
+          <div class="mt-2 mb-4 flex items-center gap-6">
+            <label class="flex items-center cursor-pointer" :class="!canUsePresigned || isUploading ? 'opacity-50 cursor-not-allowed' : ''">
+              <input
+                type="radio"
+                v-model="uploadMode"
+                value="presign"
+                :disabled="!canUsePresigned || isUploading"
+                class="w-4 h-4 mr-2"
+              />
+              <span :class="darkMode ? 'text-gray-300' : 'text-gray-700'">{{ t("file.uploadModes.presign") }}</span>
+              <span
+                v-if="!canUsePresigned"
+                class="ml-1 text-xs"
+                :class="darkMode ? 'text-gray-500' : 'text-gray-400'"
+              >{{ t("file.uploadModes.presignOnly") }}</span>
+            </label>
+            <label class="flex items-center cursor-pointer" :class="isUploading ? 'opacity-50 cursor-not-allowed' : ''">
+              <input
+                type="radio"
+                v-model="uploadMode"
+                value="direct"
+                :disabled="isUploading"
+                class="w-4 h-4 mr-2"
+              />
+              <span :class="darkMode ? 'text-gray-300' : 'text-gray-700'">{{ t("file.uploadModes.direct") }}</span>
+            </label>
+          </div>
+
           <!-- 表单按钮 -->
           <div class="submit-section mt-6 flex flex-row items-center gap-3">
             <button
@@ -463,7 +491,7 @@ const props = defineProps({
 const emit = defineEmits(["upload-success", "upload-error", "refresh-files", "share-results"]);
 const { t } = useI18n();
 const storageConfigsStore = useStorageConfigsStore();
-const { activeUrlSession, createUrlSession, disposeUrlSession } = useShareUploadController();
+const { activeUrlSession, createUrlSession, createUrlDirectSession, disposeUrlSession } = useShareUploadController();
 const {
   formData,
   slugError,
@@ -477,6 +505,39 @@ const fileshareService = useFileshareService();
 
 const shareRecordMap = new Map();
 const pendingShareItem = ref(null);
+// URL 上传模式：'direct' 或 'presign'，默认与文件上传保持一致为预签名模式
+const uploadMode = ref("presign");
+
+// 实际可选的存储配置列表（优先使用父组件传入，其次使用全局 store）
+const storageConfigs = computed(() => {
+  if (props.storageConfigs && props.storageConfigs.length) {
+    return props.storageConfigs;
+  }
+  return storageConfigsStore.sortedConfigs;
+});
+
+const currentStorageConfig = computed(() => {
+  const id = formData.storage_config_id;
+  if (!id) return null;
+  return storageConfigs.value.find((cfg) => cfg.id === id) || null;
+});
+
+const canUsePresigned = computed(() => {
+  const cfg = currentStorageConfig.value;
+  if (!cfg) return false;
+  const storageType = (cfg.storage_type || cfg.provider_type || "").toUpperCase();
+  return storageType === "S3";
+});
+
+watch(
+  canUsePresigned,
+  (can) => {
+    if (!can && uploadMode.value === "presign") {
+      uploadMode.value = "direct";
+    }
+  },
+  { immediate: true }
+);
 
 const emitShareResults = (results = []) => {
   emit("share-results", Array.isArray(results) ? results : []);
@@ -496,12 +557,8 @@ const buildShareResultEntry = (record, meta = {}) => {
   }
   if (!shareUrl) return null;
 
-  const previewUrl = record.previewUrl || record.proxy_preview_url || record.proxyPreviewUrl || shareUrl;
-  const downloadUrl =
-    record.proxy_download_url ||
-    record.proxyDownloadUrl ||
-    record.downloadUrl ||
-    (slug ? fileshareService.getPermanentDownloadUrl({ slug }) : "");
+  const previewUrl = record.previewUrl || record.proxyPreviewUrl || shareUrl;
+  const downloadUrl = record.proxyDownloadUrl || record.downloadUrl || (slug ? fileshareService.getPermanentDownloadUrl({ slug }) : "");
 
   return {
     id: record.id || meta.fileId || slug || record.storage_path || record.filename,
@@ -534,13 +591,6 @@ const resetShareState = () => {
   shareRecordMap.clear();
   pendingShareItem.value = null;
 };
-
-const storageConfigs = computed(() => {
-  if (props.storageConfigs && props.storageConfigs.length) {
-    return props.storageConfigs;
-  }
-  return storageConfigsStore.sortedConfigs;
-});
 
 watch(
   storageConfigs,
@@ -788,34 +838,82 @@ const submitUpload = async () => {
     // 上传阶段（50-100%）
     handleStageChange("upload");
     disposeUrlSession();
-    const session = createUrlSession({
-      payload,
-      events: {
-        onProgress: ({ percent, bytesUploaded, bytesTotal }) => {
-          const translatedPercent = 50 + Math.round((Math.min(100, percent) / 100) * 49);
-          handleProgress({ percent: translatedPercent, loaded: bytesUploaded, total: bytesTotal || blob.size || 1, stage: "uploading" });
-        },
-        onError: ({ error }) => {
-          if (isCancelled.value) return;
-          emit("upload-error", error);
-        },
-        onComplete: () => {
-          currentStage.value = "completed";
-          uploadProgress.value = 100;
-          uploadSpeed.value = "";
-          flushPendingShareResult();
-          emit("upload-success", { message: t("file.urlUploadSuccess"), url: urlInput.value, fileInfo: fileInfo.value });
-          emit("refresh-files");
-          resetForm({ preserveShareState: true });
-        },
-        onShareRecord: ({ file, shareRecord }) => {
-          if (file?.id && shareRecord) {
-            shareRecordMap.set(file.id, shareRecord);
-          }
-          flushPendingShareResult();
-        },
-      },
-    });
+    const usePresigned = uploadMode.value === "presign" && canUsePresigned.value;
+    const session = usePresigned
+      ? createUrlSession({
+          payload,
+          events: {
+            onProgress: ({ percent, bytesUploaded, bytesTotal }) => {
+              const translatedPercent = 50 + Math.round((Math.min(100, percent) / 100) * 49);
+              handleProgress({
+                percent: translatedPercent,
+                loaded: bytesUploaded,
+                total: bytesTotal || blob.size || 1,
+                stage: "uploading",
+              });
+            },
+            onError: ({ error }) => {
+              if (isCancelled.value) return;
+              emit("upload-error", error);
+            },
+            onComplete: () => {
+              currentStage.value = "completed";
+              uploadProgress.value = 100;
+              uploadSpeed.value = "";
+              flushPendingShareResult();
+              emit("upload-success", {
+                message: t("file.urlUploadSuccess"),
+                url: urlInput.value,
+                fileInfo: fileInfo.value,
+              });
+              emit("refresh-files");
+              resetForm({ preserveShareState: true });
+            },
+            onShareRecord: ({ file, shareRecord }) => {
+              if (file?.id && shareRecord) {
+                shareRecordMap.set(file.id, shareRecord);
+              }
+              flushPendingShareResult();
+            },
+          },
+        })
+      : createUrlDirectSession({
+          payload,
+          events: {
+            onProgress: ({ percent, bytesUploaded, bytesTotal }) => {
+              const translatedPercent = 50 + Math.round((Math.min(100, percent) / 100) * 49);
+              handleProgress({
+                percent: translatedPercent,
+                loaded: bytesUploaded,
+                total: bytesTotal || blob.size || 1,
+                stage: "uploading",
+              });
+            },
+            onError: ({ error }) => {
+              if (isCancelled.value) return;
+              emit("upload-error", error);
+            },
+            onComplete: () => {
+              currentStage.value = "completed";
+              uploadProgress.value = 100;
+              uploadSpeed.value = "";
+              flushPendingShareResult();
+              emit("upload-success", {
+                message: t("file.urlUploadSuccess"),
+                url: urlInput.value,
+                fileInfo: fileInfo.value,
+              });
+              emit("refresh-files");
+              resetForm({ preserveShareState: true });
+            },
+            onShareRecord: ({ file, shareRecord }) => {
+              if (file?.id && shareRecord) {
+                shareRecordMap.set(file.id, shareRecord);
+              }
+              flushPendingShareResult();
+            },
+          },
+        });
     const ids = session.addFiles([
       {
         data: blob,

@@ -103,20 +103,20 @@ const adaptedFileData = computed(() => {
   return {
     name: "markdown-file.md",
     filename: "markdown-file.md",
-    preview_url: props.previewUrl,
+    previewUrl: props.previewUrl,
     contentType: "text/markdown",
   };
 });
 
 // 加载文本内容
 const loadTextContent = async () => {
-  if (!adaptedFileData.value?.preview_url) {
+  if (!adaptedFileData.value?.previewUrl) {
     console.warn("没有可用的预览URL");
     return;
   }
 
   try {
-    const result = await fetchText(adaptedFileData.value.preview_url, adaptedFileData.value);
+    const result = await fetchText(adaptedFileData.value.previewUrl, adaptedFileData.value);
 
     if (result.success) {
       textContent.value = result.text;
@@ -139,7 +139,7 @@ const loadTextContent = async () => {
 
 // 处理编码切换
 const handleEncodingChange = async () => {
-  if (!adaptedFileData.value?.preview_url) return;
+  if (!adaptedFileData.value?.previewUrl) return;
 
   try {
     const result = await reDecodeWithEncoding(currentEncoding.value);

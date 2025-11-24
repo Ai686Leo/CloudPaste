@@ -118,12 +118,13 @@ export const registerBrowseRoutes = (router, helpers) => {
 
     const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
     const fileSystem = new FileSystem(mountManager);
-    const result = await fileSystem.generatePresignedUrl(path, userIdOrInfo, userType, {
+    const result = await fileSystem.generateFileLink(path, userIdOrInfo, userType, {
       operation: "download",
       userType,
       userId: userType === UserType.ADMIN ? userIdOrInfo : userIdOrInfo.id,
       expiresIn,
       forceDownload,
+      request: c.req.raw,
     });
 
     return jsonOk(c, result, "获取文件直链成功");

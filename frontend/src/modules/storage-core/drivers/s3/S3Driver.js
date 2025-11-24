@@ -11,11 +11,14 @@ export class S3Driver {
     this.config = config;
     this.capabilities = createCapabilities({
       share: {
-        direct: true,
+        backendStream: true,
+        backendForm: true,
+        presigned: true,
         url: true,
       },
       fs: {
-        backendDirect: true,
+        backendStream: true,
+        backendForm: true,
         presignedSingle: true,
         multipart: true,
       },
@@ -24,13 +27,13 @@ export class S3Driver {
     this.share = {
       applyShareUploader: this.applyShareUploader.bind(this),
       applyUrlUploader: this.applyUrlUploader.bind(this),
+      applyDirectShareUploader: this.applyDirectShareUploader.bind(this),
     };
 
     this.fs = {
       // 只读辅助：供断点续传插件查询进行中的上传和已上传分片
       listUploads: this.listUploads.bind(this),
       listParts: this.listParts.bind(this),
-      // 在 Uppy 实例上安装合适的上传插件（一次性替换方案的统一入口）
       applyFsUploader: this.applyFsUploader.bind(this),
     };
   }
@@ -85,27 +88,73 @@ export class S3Driver {
       };
     }
 
-    // S3 后端直传：通过后端网关 /fs/upload 直传（非分片），由 XHRUpload 承载
-    if (strategy === STORAGE_STRATEGIES.S3_BACKEND_DIRECT) {
+    // S3 后端直传：通过后端网关 /fs/upload，支持流式与表单两种模式
+    if (strategy === STORAGE_STRATEGIES.BACKEND_STREAM || strategy === STORAGE_STRATEGIES.BACKEND_FORM) {
       const headers = buildAuthHeadersForRequest({});
 
       // 统一注入 path / use_multipart 到所有文件的 meta
-      try { uppy.setMeta({ path: path || "/", use_multipart: "false" }); } catch {}
+      try {
+        uppy.setMeta({ path: path || "/", use_multipart: "false" });
+      } catch {}
 
-      uppy.use(XHRUpload, {
-        id: "S3BackendDirect",
-        endpoint: getFullApiUrl("/fs/upload"),
-        method: "POST",
-        formData: true,
-        fieldName: "file",
-        limit: 3,
-        allowedMetaFields: ["path", "use_multipart"],
-        headers,
-        // 保持 Uppy 默认响应解析；后端完成最终 commit
+      if (strategy === STORAGE_STRATEGIES.BACKEND_FORM) {
+        // 表单模式：沿用 multipart/form-data 行为
+        uppy.use(XHRUpload, {
+          id: "S3BackendForm",
+          endpoint: getFullApiUrl("/fs/upload"),
+          method: "POST",
+          formData: true,
+          fieldName: "file",
+          limit: 3,
+          allowedMetaFields: ["path", "use_multipart", "upload_id"],
+          headers,
+        });
+      } else {
+        // 流式模式：PUT + 原始 body，参数通过 query/header 传递
+        uppy.use(XHRUpload, {
+          id: "S3BackendStream",
+          endpoint: (file) => {
+            const meta = file.meta || {};
+            const basePath = meta.path || path || "/";
+            const uploadId = meta.upload_id;
+            const params = new URLSearchParams();
+            params.set("path", basePath);
+            if (uploadId) {
+              params.set("upload_id", uploadId);
+            }
+            return `${getFullApiUrl("/fs/upload")}?${params.toString()}`;
+          },
+          method: "PUT",
+          formData: false,
+          limit: 3,
+          headers: (file) => {
+            const meta = file.meta || {};
+            const uploadOptions = {
+              overwrite: !!meta.overwrite,
+              originalFilename: !!meta.original_filename,
+            };
+            return {
+              ...headers,
+              "x-fs-filename": meta.name || file.name,
+              "x-fs-options": btoa(JSON.stringify(uploadOptions)),
+            };
+          },
+        });
+      }
+
+      // 在上传前同步用户修改的文件名
+      uppy.on("upload", () => {
+        const files = uppy.getFiles();
+        files.forEach((file) => {
+          if (file.meta?.name && file.meta.name !== file.name) {
+            uppy.setFileState(file.id, { name: file.meta.name });
+          }
+        });
       });
+
       return {
         adapter: null,
-        mode: STORAGE_STRATEGIES.S3_BACKEND_DIRECT,
+        mode: strategy,
       };
     }
 
@@ -116,7 +165,7 @@ export class S3Driver {
   /**
    * 在 Uppy 上安装用于“文件分享（本地）”的一致上传实现（一次性替换版）
    * - 统一走 AwsS3 单请求（getUploadParameters），暂停=取消、恢复=重传
-   * - 在 'upload-success' 内部完成 share/commit
+   * - 在 'upload-success' 内部完成 share/commit（/share/presign + /share/commit）
    * @param {object} uppy Uppy 实例
    * @param {object} options { payload }
    */
@@ -147,7 +196,7 @@ export class S3Driver {
 
         const presign = await api.file.getUploadPresignedUrl({
           storage_config_id: merged.storage_config_id,
-          filename: meta.filename || file.name,
+          filename: meta.name || file.name,
           mimetype: file.type || "application/octet-stream",
           path: merged.path,
           size: file.size,
@@ -164,7 +213,7 @@ export class S3Driver {
           uppy.setFileMeta(file.id, {
             key: data.key,
             storage_config_id: data.storage_config_id || merged.storage_config_id,
-            filename: data.filename || meta.filename || file.name,
+            filename: data.filename || meta.name || file.name,
             path: merged.path,
             slug: merged.slug,
             password: basePayload.password || meta.password || null,
@@ -190,7 +239,7 @@ export class S3Driver {
         const commitRes = await api.file.completeFileUpload({
           key: meta.key,
           storage_config_id: meta.storage_config_id,
-          filename: meta.filename || file.name,
+          filename: meta.name || file.name,
           size: file.size,
           etag: undefined, // ETag 可能因 CORS 不可用，后端兼容
           slug: meta.slug,
@@ -221,16 +270,141 @@ export class S3Driver {
         }
       } catch (e) {
         // 发出错误事件以便 UI 感知
-        try { uppy.emit('upload-error', file, e); } catch {}
+        try { uppy.emit("upload-error", file, e); } catch {}
       }
     };
 
     // 避免重复绑定
-    uppy.on('upload-success', onSuccess);
+    uppy.on("upload-success", onSuccess);
   }
 
   /**
-   * URL 分享：使用 urlUpload presign + AwsS3 单请求 + 在 'upload-success' 提交 commitUrlUpload
+   * Share 直传上传：通过 Uppy + XHRUpload 调用后端 /share/upload（ObjectStore 多存储通用）
+   * S3 在这一模式下与 WebDAV 一致，由后端统一处理写入与建档。
+   */
+  applyDirectShareUploader(uppy, { payload, onShareRecord, shareMode } = {}) {
+    if (!uppy) throw new Error("applyDirectShareUploader 需要提供 Uppy 实例");
+
+    const basePayload = this.#withStorageConfig(payload || {});
+    const mode = (shareMode || "stream").toLowerCase();
+
+    const baseMeta = {
+      storage_config_id: basePayload.storage_config_id,
+      path: basePayload.path || "",
+      slug: basePayload.slug || "",
+      remark: basePayload.remark || "",
+      password: basePayload.password || "",
+      expires_in: basePayload.expires_in || "0",
+      max_views: basePayload.max_views ?? 0,
+      use_proxy: basePayload.use_proxy,
+      original_filename: basePayload.original_filename,
+    };
+
+    const authHeaders = buildAuthHeadersForRequest({});
+    try {
+      uppy.setMeta(baseMeta);
+    } catch {}
+
+    if (mode === "stream") {
+      // 流式分享：PUT /share/upload + 原始 body，参数通过头部传递
+      uppy.use(XHRUpload, {
+        id: "S3ShareUploadStream",
+        endpoint: getFullApiUrl("/share/upload"),
+        method: "PUT",
+        formData: false,
+        limit: 3,
+        headers: (file) => {
+          const meta = file.meta || {};
+          const options = {
+            storage_config_id: meta.storage_config_id,
+            path: meta.path,
+            slug: meta.slug,
+            remark: meta.remark,
+            password: meta.password,
+            expires_in: meta.expires_in,
+            max_views: meta.max_views,
+            use_proxy: meta.use_proxy,
+            original_filename: meta.original_filename,
+            upload_id: meta.upload_id,
+          };
+          let encoded = "";
+          try {
+            encoded = btoa(JSON.stringify(options));
+          } catch {
+            encoded = "";
+          }
+          return {
+            ...authHeaders,
+            "x-share-filename": meta.name || file.name,
+            ...(encoded ? { "x-share-options": encoded } : {}),
+          };
+        },
+      });
+    } else {
+      // 表单分享：POST /share/upload multipart/form-data
+      uppy.use(XHRUpload, {
+        id: "S3ShareUploadDirect",
+        endpoint: getFullApiUrl("/share/upload"),
+        method: "POST",
+        formData: true,
+        fieldName: "file",
+        limit: 3,
+        allowedMetaFields: [
+          "storage_config_id",
+          "path",
+          "slug",
+          "remark",
+          "password",
+          "expires_in",
+          "max_views",
+          "use_proxy",
+          "original_filename",
+          "upload_id",
+        ],
+        headers: authHeaders,
+      });
+    }
+
+    // 在上传前同步用户修改的文件名
+    uppy.on("upload", () => {
+      const files = uppy.getFiles();
+      files.forEach((file) => {
+        if (file.meta?.name && file.meta.name !== file.name) {
+          uppy.setFileState(file.id, { name: file.meta.name });
+        }
+      });
+    });
+
+    const onSuccess = (file, response) => {
+      try {
+        const body = response && (response.body || response);
+        if (!body || body.success !== true) return;
+        const shareRecord = body.data;
+        if (!shareRecord) return;
+
+        try {
+          uppy.setFileMeta(file.id, {
+            ...(file.meta || {}),
+            shareRecord,
+            fileId: shareRecord.id,
+          });
+        } catch {}
+
+        try {
+          uppy.emit("share-record", { file, shareRecord });
+        } catch {}
+
+        try {
+          onShareRecord?.({ file, shareRecord });
+        } catch {}
+      } catch {}
+    };
+
+    uppy.on("upload-success", onSuccess);
+  }
+
+  /**
+   * URL 分享：使用通用 share/presign + AwsS3 单请求 + 在 'upload-success' 提交 share/commit
    */
   applyUrlUploader(uppy, { payload, onShareRecord } = {}) {
     if (!uppy) throw new Error("applyUrlUploader 需要提供 Uppy 实例");
@@ -252,22 +426,19 @@ export class S3Driver {
           slug: meta.slug ?? basePayload.slug,
           path: meta.path ?? basePayload.path,
         };
-        const presign = await api.urlUpload.getUrlUploadPresignedUrl({
-          url: meta.sourceUrl || meta.url, // 允许从 meta 获取源URL
+        const presign = await api.file.getUploadPresignedUrl({
           storage_config_id: merged.storage_config_id,
+          filename: meta.name || file.name,
+          mimetype: file.type || "application/octet-stream",
           path: merged.path,
-          filename: meta.filename || file.name,
-          contentType: file.type || "application/octet-stream",
-          fileSize: file.size,
+          size: file.size,
         });
         if (!presign?.success || !presign?.data) throw new Error(presign?.message || "获取URL上传预签名失败");
-        const responseData = presign.data || {};
-        const presignData = responseData.presign || responseData;
-        const commitSuggestion = responseData.commit_suggestion || responseData.commitSuggestion || {};
+        const presignData = presign.data;
         const uploadUrl = presignData.uploadUrl || presignData.upload_url;
-        const resolvedKey = commitSuggestion.key || presignData.key;
-        const resolvedStorageConfigId = commitSuggestion.storage_config_id || presignData.storage_config_id || merged.storage_config_id;
-        const resolvedFilename = commitSuggestion.filename || presignData.filename || meta.filename || file.name;
+        const resolvedKey = presignData.key;
+        const resolvedStorageConfigId = presignData.storage_config_id || merged.storage_config_id;
+        const resolvedFilename = presignData.filename || meta.name || file.name;
         if (!uploadUrl || !resolvedKey || !resolvedStorageConfigId) {
           throw new Error("URL上传预签名缺少必要的 key 或上传地址");
         }
@@ -293,10 +464,10 @@ export class S3Driver {
     const onSuccess = async (file) => {
       const meta = file?.meta || {};
       try {
-        const commitRes = await api.urlUpload.commitUrlUpload({
+        const commitRes = await api.file.completeFileUpload({
           key: meta.key,
           storage_config_id: meta.storage_config_id,
-          filename: meta.filename || file.name,
+          filename: meta.name || file.name,
           size: file.size,
           etag: undefined,
           path: meta.path,
@@ -353,7 +524,7 @@ export class S3Driver {
 }
 
 export const SUPPORTED_STRATEGIES = [
-  STORAGE_STRATEGIES.S3_BACKEND_DIRECT,
+  STORAGE_STRATEGIES.BACKEND_STREAM,
   STORAGE_STRATEGIES.PRESIGNED_SINGLE,
   STORAGE_STRATEGIES.PRESIGNED_MULTIPART,
 ];

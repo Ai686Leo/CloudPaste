@@ -1,0 +1,167 @@
+/* Uppy Dashboard共享样式 */
+
+.uppy-container {
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+.uppy-Dashboard {
+  border: none !important;
+  background: transparent !important;
+  font-family: inherit !important;
+  border-radius: 0.5rem !important;
+}
+
+.uppy-Dashboard-inner {
+  border-radius: 0.5rem !important;
+  border: 2px dashed #d1d5db !important;
+  background: #f9fafb !important;
+  transition: all 0.3s ease !important;
+}
+
+.uppy-Dashboard-inner:hover {
+  border-color: #3b82f6 !important;
+  background: #eff6ff !important;
+}
+
+/* 暗色模式适配 */
+.dark .uppy-Dashboard-inner {
+  border-color: #4b5563 !important;
+  background: #374151 !important;
+  color: #f3f4f6 !important;
+}
+
+.dark .uppy-Dashboard-inner:hover {
+  border-color: #3b82f6 !important;
+  background: #1f2937 !important;
+}
+
+.dark .uppy-Dashboard-AddFiles {
+  background: transparent !important;
+  color: #f3f4f6 !important;
+}
+
+.dark .uppy-Dashboard-AddFiles-title {
+  color: #f3f4f6 !important;
+}
+
+/* 文件项样式 */
+.uppy-Dashboard-file {
+  border-radius: 0.5rem !important;
+  border: 1px solid #e5e7eb !important;
+  background: white !important;
+  transition: all 0.2s ease !important;
+}
+
+.uppy-Dashboard-file:hover {
+  border-color: #3b82f6 !important;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1) !important;
+}
+
+.dark .uppy-Dashboard-file {
+  background: #4b5563 !important;
+  border-color: #6b7280 !important;
+  color: #f3f4f6 !important;
+}
+
+.dark .uppy-Dashboard-file:hover {
+  border-color: #3b82f6 !important;
+  background: #6b7280 !important;
+}
+
+/* 进度条样式 */
+.uppy-ProgressBar {
+  background: #3b82f6 !important;
+  border-radius: 0.25rem !important;
+  height: 0.25rem !important;
+}
+
+/* 状态栏样式 */
+.uppy-StatusBar {
+  border-radius: 0.5rem !important;
+  margin-top: 0.5rem !important;
+  border: 1px solid #e5e7eb !important;
+  background: #f9fafb !important;
+}
+
+.dark .uppy-StatusBar {
+  background: #4b5563 !important;
+  border-color: #6b7280 !important;
+  color: #f3f4f6 !important;
+}
+
+/* 隐藏品牌信息 */
+.uppy-Dashboard-poweredBy {
+  display: none !important;
+}
+
+/* URL导入插件输入框宽度优化 */
+.uppy-Url-input {
+  width: 360px !important;
+  max-width: 360px !important;
+}
+
+/* 文件信息卡片宽度限制 */
+.uppy-Url > div[style*="background-color: rgb(240, 253, 244)"],
+.uppy-Url > div[style*="background-color: rgb(254, 242, 242)"] {
+  width: fit-content !important;
+  max-width: 360px !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+
+/* 按钮容器居中 */
+.uppy-Url > div[style*="display: flex"] {
+  justify-content: center !important;
+  max-width: 360px !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+
+/* 下载按钮固定宽度 */
+.uppy-Url-actionButton {
+  flex: 0 0 auto !important;
+  width: 130px !important;
+}
+
+/* 重新输入按钮固定宽度 */
+.uppy-Url .uppy-c-btn:not(.uppy-Url-actionButton) {
+  flex: 0 0 auto !important;
+  width: 140px !important;
+}
+
+/* 暗色模式适配 - 成功信息卡片 */
+[data-uppy-theme=dark] .uppy-Url > div[style*="background-color: rgb(240, 253, 244)"] {
+  background-color: #064e3b !important;
+  border-color: #065f46 !important;
+}
+
+[data-uppy-theme=dark] .uppy-Url > div[style*="background-color: rgb(240, 253, 244)"] > div:first-child {
+  color: #86efac !important;
+}
+
+[data-uppy-theme=dark] .uppy-Url > div[style*="background-color: rgb(240, 253, 244)"] > div:last-child {
+  color: #d1d5db !important;
+}
+
+/* 暗色模式适配 - 错误信息卡片 */
+[data-uppy-theme=dark] .uppy-Url > div[style*="background-color: rgb(254, 242, 242)"] {
+  background-color: #7f1d1d !important;
+  border-color: #991b1b !important;
+}
+
+[data-uppy-theme=dark] .uppy-Url > div[style*="background-color: rgb(254, 242, 242)"] span {
+  color: #fca5a5 !important;
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+  .uppy-Dashboard-AddFiles {
+    padding: 1.5rem 1rem !important;
+  }
+
+  .uppy-Dashboard-browse {
+    padding: 0.5rem 1rem !important;
+    font-size: 0.875rem !important;
+  }
+}

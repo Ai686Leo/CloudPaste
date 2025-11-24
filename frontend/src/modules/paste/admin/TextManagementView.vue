@@ -422,7 +422,7 @@ onMounted(() => {
     </div>
 
     <!-- 数据展示区域 -->
-    <div class="overflow-hidden bg-white dark:bg-gray-800 shadow-md rounded-lg flex-1">
+    <div class="overflow-visible bg-white dark:bg-gray-800 shadow-md rounded-lg flex-1">
       <div class="flex flex-col h-full">
         <!-- 桌面端 - 表格视图 (中等及以上设备显示) -->
         <div v-if="viewMode === 'table'" class="hidden md:block flex-1 overflow-auto">
@@ -447,7 +447,7 @@ onMounted(() => {
         </div>
 
         <!-- 桌面端 - 瀑布流视图 (中等及以上设备显示) -->
-        <div v-if="viewMode === 'masonry'" class="hidden md:block flex-1 overflow-auto">
+        <div v-if="viewMode === 'masonry'" class="hidden md:block flex-1 overflow-visible">
           <PasteMasonryView
             :dark-mode="darkMode"
             :pastes="pastes"
@@ -489,7 +489,7 @@ onMounted(() => {
         </div>
 
         <!-- 移动端 - 瀑布流视图 (小于中等设备显示) -->
-        <div v-if="viewMode === 'masonry'" class="md:hidden flex-1 overflow-auto">
+        <div v-if="viewMode === 'masonry'" class="md:hidden flex-1 overflow-visible">
           <PasteMasonryView
             :dark-mode="darkMode"
             :pastes="pastes"

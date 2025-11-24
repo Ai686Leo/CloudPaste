@@ -109,19 +109,19 @@ export function useFilePreviewExtensions(
 
     try {
       isGeneratingPreview.value = true;
-      console.log("开始生成S3直链预览...");
+      console.log("开始生成直链/代理预览...");
 
-      // 直接使用文件信息中的preview_url字段（S3直链）
-      if (file.value.preview_url) {
-        console.log("S3直链预览使用文件信息中的preview_url:", file.value.preview_url);
-        window.open(file.value.preview_url, "_blank");
-        console.log("S3直链预览成功");
+      // 直接使用文件信息中的 previewUrl 字段
+      if (file.value.previewUrl) {
+        console.log("预览使用文件信息中的 previewUrl:", file.value.previewUrl);
+        window.open(file.value.previewUrl, "_blank");
+        console.log("预览成功");
         return;
       }
 
-      // 如果没有preview_url，说明后端有问题
-      console.error("S3直链预览：文件信息中没有preview_url字段，请检查后端getFileInfo实现");
-      throw new Error("文件信息中缺少preview_url字段");
+      // 如果没有 previewUrl，说明后端有问题
+      console.error("预览：文件信息中没有 previewUrl 字段，请检查后端 getFileInfo 实现");
+      throw new Error("文件信息中缺少 previewUrl 字段");
     } catch (error) {
       console.error("S3直链预览失败:", error);
       emit("show-message", {

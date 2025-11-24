@@ -47,8 +47,7 @@ export default {
       keyName: "密钥名称",
       basicPath: "基础路径",
       guestBannerTitle: "当前以游客 API 密钥身份使用系统",
-      guestBannerDescription:
-        "该游客密钥多人共享，权限受限。如需获取更多权限，请联系管理员申请专用 API 密钥/权限配置。",
+      guestBannerDescription: "该游客密钥多人共享，权限受限。如需获取更多权限，请联系管理员申请专用 API 密钥/权限配置。",
     },
     adminInfo: {
       title: "管理员信息修改",
@@ -92,8 +91,8 @@ export default {
       uploadModeLabel: "WebDAV上传模式",
       uploadModeHint: "选择WebDAV客户端的上传处理方式",
       modes: {
-        direct: "直接上传",
-        multipart: "分片上传",
+        single: "单次上传",
+        chunked: "分块上传",
       },
     },
     protocolInfo: {

@@ -1,8 +1,10 @@
 import { ValidationError } from "../../http/errors.js";
 import { ApiStatus, UserType } from "../../constants/index.js";
 import { generateFileId, generateUniqueFileSlug } from "../../utils/common.js";
+import { getSettingMetadata } from "../systemService.js";
 import { hashPassword } from "../../utils/crypto.js";
 import { generateFileDownloadUrl } from "../fileService.js";
+import { getEffectiveMimeType } from "../../utils/fileUtils.js";
 
 export class ShareRecordService {
   constructor(db, encryptionSecret, repositoryFactory) {
@@ -64,9 +66,25 @@ export class ShareRecordService {
     const now = new Date().toISOString();
     const expiresAt = expiresInHours > 0 ? new Date(Date.now() + expiresInHours * 3600000).toISOString() : null;
     const maxViewsValue = maxViews > 0 ? maxViews : null;
-    // use_proxy 默认关闭代理，未显式传入时走直链
-    const useProxyFlag = useProxy ? 1 : 0;
+    // use_proxy 默认值：优先使用显式传入，其次根据全局设置 default_use_proxy 决定
+    let useProxyFlag;
+    if (useProxy === true) {
+      useProxyFlag = 1;
+    } else if (useProxy === false) {
+      useProxyFlag = 0;
+    } else {
+      // 未显式传入时，根据系统设置 default_use_proxy 决定
+      try {
+        const setting = await getSettingMetadata(this.db, "default_use_proxy", this.repositoryFactory);
+        const defaultUseProxy = setting ? setting.value === "true" : false;
+        useProxyFlag = defaultUseProxy ? 1 : 0;
+      } catch (error) {
+        console.warn("读取 default_use_proxy 设置失败，使用默认直链模式:", error);
+        useProxyFlag = 0;
+      }
+    }
     const passwordHash = password ? await hashPassword(password) : null;
+    const normalizedMimeType = mimeType ?? getEffectiveMimeType(undefined, filename) ?? "application/octet-stream";
 
     const relativePath = (storageSubPath || "").replace(/^\/+/u, "");
     const storagePath = mount?.storage_config_id ? relativePath : (uploadResult?.storagePath || fsPath || filename);
@@ -87,7 +105,7 @@ export class ShareRecordService {
         await fileRepository.updateFile(existing.id, {
           filename,
           size,
-          mimetype: mimeType,
+          mimetype: normalizedMimeType,
           etag: uploadResult?.etag || null,
           remark,
           expires_at: expiresAt,
@@ -108,7 +126,7 @@ export class ShareRecordService {
           id: existing.id,
           slug: existing.slug,
           filename,
-          mimetype: mimeType,
+          mimetype: normalizedMimeType,
           size,
           remark,
           created_at: createdAt,
@@ -132,7 +150,7 @@ export class ShareRecordService {
           id: existing.id,
           slug: existing.slug,
           filename,
-          mimetype: mimeType,
+          mimetype: normalizedMimeType,
           size,
           remark,
           created_at: createdAt,
@@ -144,8 +162,8 @@ export class ShareRecordService {
           previewUrl: useProxyFlag ? urls.proxyPreviewUrl : urls.previewUrl,
           downloadUrl: useProxyFlag ? urls.proxyDownloadUrl : urls.downloadUrl,
           // 直链字段统一移除，仅保留代理与通用字段
-          proxy_preview_url: urls.proxyPreviewUrl,
-          proxy_download_url: urls.proxyDownloadUrl,
+          proxyPreviewUrl: urls.proxyPreviewUrl,
+          proxyDownloadUrl: urls.proxyDownloadUrl,
           use_proxy: useProxyFlag,
           created_by: existing.created_by,
           used_original_filename: originalFilenameUsed,
@@ -164,7 +182,7 @@ export class ShareRecordService {
       storage_type: storageType,
       storage_path: storagePath,
       file_path: fsPath,
-      mimetype: mimeType,
+      mimetype: normalizedMimeType,
       size,
       etag: uploadResult?.etag || null,
       remark,
@@ -185,7 +203,7 @@ export class ShareRecordService {
       id: fileId,
       slug: finalSlug,
       filename,
-      mimetype: mimeType,
+      mimetype: normalizedMimeType,
       size,
       remark,
       created_at: now,
@@ -209,7 +227,7 @@ export class ShareRecordService {
       id: fileId,
       slug: finalSlug,
       filename,
-      mimetype: mimeType,
+      mimetype: normalizedMimeType,
       size,
       remark,
       created_at: now,
@@ -221,8 +239,8 @@ export class ShareRecordService {
       previewUrl: useProxyFlag ? urls.proxyPreviewUrl : urls.previewUrl,
       downloadUrl: useProxyFlag ? urls.proxyDownloadUrl : urls.downloadUrl,
       // 直链字段统一移除，仅保留代理与通用字段
-      proxy_preview_url: urls.proxyPreviewUrl,
-      proxy_download_url: urls.proxyDownloadUrl,
+      proxyPreviewUrl: urls.proxyPreviewUrl,
+      proxyDownloadUrl: urls.proxyDownloadUrl,
       use_proxy: useProxyFlag,
       created_by: createdBy,
       used_original_filename: originalFilenameUsed,

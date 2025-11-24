@@ -16,10 +16,11 @@ export class BackupService {
       text_management: ["pastes", "paste_passwords"],
       file_management: ["files", "file_passwords"],
       mount_management: ["storage_mounts"],
-      storage_config: ["storage_configs"],
+      storage_config: ["storage_configs", "principal_storage_acl"],
       key_management: ["api_keys"],
       account_management: ["admins", "admin_tokens"],
       system_settings: ["system_settings"],
+      fs_meta_management: ["fs_meta"],
     };
 
     // 表的依赖关系（用于确定导入顺序）
@@ -65,11 +66,25 @@ export class BackupService {
     // 导出数据
     const data = await this.exportTables(tables);
 
+    // 读取当前 schema 版本（如果存在），用于在元数据中记录备份来源的结构版本
+    let schemaVersion = null;
+    try {
+      const row = await this.db
+        .prepare(`SELECT value FROM ${DbTables.SYSTEM_SETTINGS} WHERE key = ?`)
+        .bind("schema_version")
+        .first();
+      schemaVersion = row?.value ?? null;
+    } catch (error) {
+      console.warn(`[BackupService] 读取 schema_version 失败: ${error.message}`);
+      schemaVersion = null;
+    }
+
     // 生成元数据
     const metadata = {
       version: "1.0",
       timestamp: new Date().toISOString(),
       backup_type,
+      schema_version: schemaVersion,
       selected_modules: backup_type === "modules" ? selected_modules : null,
       included_modules: backup_type === "modules" ? finalModules : null, // 记录实际包含的模块
       auto_included_dependencies: backup_type === "modules" ? dependencies : null, // 记录自动包含的依赖
@@ -625,7 +640,8 @@ export class BackupService {
       text_management: "文本管理",
       file_management: "文件管理",
       mount_management: "挂载管理",
-      storage_config: "S3配置管理",
+      storage_config: "存储配置",
+      fs_meta_management: "元信息管理",
       key_management: "密钥管理",
       account_management: "账号管理",
       system_settings: "系统设置",
@@ -643,10 +659,11 @@ export class BackupService {
       text_management: "文本分享数据和密码",
       file_management: "文件分享数据和密码",
       mount_management: "存储挂载点配置",
-      storage_config: "S3存储配置信息",
+      storage_config: "存储配置和访问控制",
       key_management: "API密钥管理",
       account_management: "管理员账号和令牌",
       system_settings: "系统全局设置",
+      fs_meta_management: "目录元信息配置",
     };
     return descriptions[moduleKey] || "";
   }

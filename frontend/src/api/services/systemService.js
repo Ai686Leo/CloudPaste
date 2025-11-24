@@ -38,6 +38,20 @@ export async function getMaxUploadSize() {
   }
 }
 
+/**
+ * 获取上传进度（通用后端进度接口）
+ * @param {string} uploadId 上传ID
+ * @returns {Promise<Object>} 进度信息 { id, loaded, total, completed, path, storageType, updatedAt }
+ */
+export function getUploadProgress(uploadId) {
+  if (!uploadId) {
+    throw new Error("uploadId is required");
+  }
+  const params = new URLSearchParams();
+  params.append("upload_id", uploadId);
+  return get(`/upload/progress?${params.toString()}`);
+}
+
 /******************************************************************************
  * 分组设置管理API
  ******************************************************************************/

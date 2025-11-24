@@ -1,0 +1,955 @@
+/**
+ * WebDAV 存储驱动
+ * 仅支持 Reader/Writer/Proxy/Atomic 能力，预签名与分片上传不支持
+ */
+
+import { BaseDriver } from "../../interfaces/capabilities/BaseDriver.js";
+import { CAPABILITIES } from "../../interfaces/capabilities/index.js";
+import { ApiStatus, FILE_TYPES } from "../../../constants/index.js";
+import { DriverError, NotFoundError, AppError } from "../../../http/errors.js";
+import { decryptValue } from "../../../utils/crypto.js";
+import { getFileTypeName, GetFileType } from "../../../utils/fileTypeDetector.js";
+import { buildFullProxyUrl, buildSignedProxyUrl } from "../../../constants/proxy.js";
+import { ProxySignatureService } from "../../../services/ProxySignatureService.js";
+import { createClient } from "webdav";
+import { Buffer } from "buffer";
+import https from "https";
+import { updateUploadProgress, completeUploadProgress } from "../../utils/UploadProgressTracker.js";
+import { isNodeJSEnvironment } from "../../../utils/environmentUtils.js";
+
+export class WebDavStorageDriver extends BaseDriver {
+  constructor(config, encryptionSecret) {
+    super(config);
+    this.type = "WEBDAV";
+    this.encryptionSecret = encryptionSecret;
+    this.capabilities = [CAPABILITIES.READER, CAPABILITIES.WRITER, CAPABILITIES.ATOMIC, CAPABILITIES.PROXY];
+    this.client = null;
+    this.defaultFolder = config.default_folder || "";
+    this.endpoint = config.endpoint_url || "";
+    this.username = config.username || "";
+    this.passwordEncrypted = config.password || "";
+    this.customHost = config.custom_host || null;
+    this.tlsSkipVerify = !!config.tls_insecure_skip_verify;
+  }
+
+  /**
+   * 初始化 WebDAV 客户端
+   */
+  async initialize() {
+    try {
+      const password = await decryptValue(this.passwordEncrypted, this.encryptionSecret);
+      if (!password) {
+        throw new DriverError("WebDAV 凭据不可用", { status: ApiStatus.FORBIDDEN });
+      }
+      const agent = this.endpoint.startsWith("https://") && this.tlsSkipVerify ? new https.Agent({ rejectUnauthorized: false }) : undefined;
+      const clientOptions = agent ? { httpsAgent: agent } : {};
+      this.client = createClient(this.endpoint, {
+        username: this.username,
+        password,
+        ...clientOptions,
+      });
+      this.initialized = true;
+      this.decryptedPassword = password;
+      console.log(`WebDAV 驱动初始化完成: ${this.endpoint}`);
+    } catch (error) {
+      console.error("WebDAV 驱动初始化失败", error);
+      throw this._wrapError(error, "WebDAV 驱动初始化失败", ApiStatus.INTERNAL_ERROR);
+    }
+  }
+
+  /**
+   * 目录列表
+   */
+  async listDirectory(path, options = {}) {
+    this._ensureInitialized();
+    const { mount, subPath = "", refresh = false, db } = options;
+    const davPath = this._buildDavPath(subPath, true);
+    try {
+      const entries = await this.client.getDirectoryContents(davPath, { deep: false, glob: "*" });
+      const basePath = this._buildMountPath(mount, subPath);
+      const items = await Promise.all(
+        entries.map(async (item) => {
+          const isDirectory = item.type === "directory";
+          const rawName = item.basename || this._basename(item.filename);
+          const name = this._decodeComponent(rawName);
+          const mountPath = this._joinMountPath(basePath, name, isDirectory);
+          const type = isDirectory ? FILE_TYPES.FOLDER : await GetFileType(name, db);
+          const typeName = isDirectory ? "folder" : await getFileTypeName(name, db);
+
+          let size = 0;
+          let modified = new Date().toISOString();
+
+          if (isDirectory) {
+            size = 0;
+            if (item.lastmod) {
+              modified = new Date(item.lastmod).toISOString();
+            }
+          } else {
+            // 默认使用目录列表中的 size
+            size = typeof item.size === "number" ? item.size : 0;
+            if (item.lastmod) {
+              modified = new Date(item.lastmod).toISOString();
+            }
+
+            // 部分 WebDAV 服务在目录列表中返回错误 size（如恒为 2），
+            // 仅在明显异常时再发起一次 stat 精准获取大小，避免每个文件都额外请求。
+            if (!Number.isFinite(size) || size <= 2) {
+              try {
+                const rel = subPath
+                  ? `${subPath.replace(/^\\\\\+/, "")}/${rawName}`
+                  : rawName;
+                const fileDavPath = this._buildDavPath(rel, false);
+                const stat = await this.client.stat(fileDavPath);
+                if (stat && typeof stat.size === "number" && stat.size >= 0) {
+                  size = stat.size;
+                }
+                if (stat?.lastmod) {
+                  modified = new Date(stat.lastmod).toISOString();
+                }
+              } catch {
+                // stat 失败时保持原始 size，交由上层决定如何展示
+              }
+            }
+          }
+
+          return {
+            name,
+            path: mountPath,
+            isDirectory,
+            isVirtual: false,
+            size,
+            modified,
+            type,
+            typeName,
+          };
+        })
+      );
+
+      return {
+        path: basePath,
+        type: "directory",
+        isRoot: subPath === "" || subPath === "/",
+        isVirtual: false,
+        mount_id: mount?.id,
+        storage_type: mount?.storage_type,
+        items,
+      };
+    } catch (error) {
+      throw this._wrapError(error, "列出目录失败", this._statusFromError(error));
+    }
+  }
+
+  /**
+   * 文件信息
+   */
+  async getFileInfo(path, options = {}) {
+    this._ensureInitialized();
+    const { mount, subPath = "", db, request = null, userType = null, userId = null } = options;
+    const davPath = this._buildDavPath(subPath, false);
+    try {
+      const stat = await this.client.stat(davPath);
+      const isDirectory = stat.type === "directory";
+      const name = this._decodeComponent(this._basename(path));
+      const type = isDirectory ? FILE_TYPES.FOLDER : await GetFileType(name, db);
+      const typeName = isDirectory ? "folder" : await getFileTypeName(name, db);
+      const rawMime = stat.mime || null;
+      const mime = !isDirectory && rawMime === "httpd/unix-directory" ? null : rawMime;
+      const result = {
+        path,
+        name,
+        isDirectory,
+        size: isDirectory ? 0 : stat.size || 0,
+        modified: stat.lastmod ? new Date(stat.lastmod).toISOString() : new Date().toISOString(),
+        mimetype: mime || (isDirectory ? "application/x-directory" : undefined),
+        etag: stat.etag || undefined,
+        mount_id: mount?.id,
+        storage_type: mount?.storage_type,
+        type,
+        typeName,
+      };
+      return result;
+    } catch (error) {
+      if (this._isNotFound(error)) {
+        throw new NotFoundError("文件不存在");
+      }
+      throw this._wrapError(error, "获取文件信息失败", this._statusFromError(error));
+    }
+  }
+
+  /**
+   * 下载文件（代理转发 WebDAV 请求）
+   */
+  async downloadFile(path, options = {}) {
+    this._ensureInitialized();
+    const davPath = this._buildDavPath(options.subPath || path, false);
+    const url = this._buildRequestUrl(davPath);
+    try {
+      const headers = {};
+      const rangeHeader = options.request?.headers?.get?.("range");
+      if (rangeHeader) {
+        headers["Range"] = rangeHeader;
+      }
+      headers["Authorization"] = this._basicAuthHeader();
+      const resp = await fetch(url, { headers });
+      if (!resp.ok) {
+        throw this._wrapError(new Error(`HTTP ${resp.status}`), "下载失败", resp.status);
+      }
+      const passthroughHeaders = ["content-type", "content-length", "last-modified", "etag", "accept-ranges", "content-range", "cache-control"];
+      const responseHeaders = new Headers();
+      passthroughHeaders.forEach((h) => {
+        const v = resp.headers.get(h);
+        if (v) responseHeaders.set(h, v);
+      });
+      return new Response(resp.body, {
+        status: resp.status,
+        headers: responseHeaders,
+      });
+    } catch (error) {
+      throw this._wrapError(error, "下载文件失败", this._statusFromError(error));
+    }
+  }
+
+  /**
+   * 统一上传入口（文件 / 流）
+   * - 外部统一调用此方法，内部根据数据类型选择流式或表单实现
+   */
+  async uploadFile(path, fileOrStream, options = {}) {
+    this._ensureInitialized();
+    const isWebStream = fileOrStream && typeof fileOrStream.getReader === "function";
+
+    if (isWebStream) {
+      // WebDAV 协议入口等场景：优先走真正的流式上传
+      return await this.uploadStream(path, fileOrStream, options);
+    }
+
+    // 其它场景统一视为“表单/一次性上传”（读取到 Buffer 再写入）
+    return await this.uploadForm(path, fileOrStream, options);
+  }
+
+  /**
+   * 内部流式上传实现（主要用于 Web ReadableStream）
+   */
+  async uploadStream(path, stream, options = {}) {
+    this._ensureInitialized();
+    const davPath = this._resolveTargetDavPath(options.subPath, path, stream, options);
+    const url = this._buildRequestUrl(davPath);
+    const headers = {};
+    const contentType = options.contentType || null;
+    if (contentType) {
+      headers["Content-Type"] = contentType;
+    }
+    headers["Authorization"] = this._basicAuthHeader();
+
+    // 为流式上传添加简单的进度统计（仅在 Web ReadableStream 环境下生效）
+    /** @type {ReadableStream<any>} */
+    let body = stream;
+    try {
+      const hasGetReader = stream && typeof stream.getReader === "function";
+      if (hasGetReader) {
+        const total = options.contentLength || options.fileSize || null;
+        const reader = stream.getReader();
+        let loaded = 0;
+        let lastLogged = 0;
+        const LOG_INTERVAL = 50 * 1024 * 1024; // 每 50MB 打印一次，避免刷屏
+
+        const progressId = options.uploadId || davPath;
+
+        body = new ReadableStream({
+          async pull(controller) {
+            const { done, value } = await reader.read();
+            if (done) {
+              controller.close();
+              // 结束时再打印一次总进度
+              if (loaded > 0 && total) {
+                const percentage = ((loaded / total) * 100).toFixed(1);
+                console.log(`WebDAV 流式上传完成进度: ${loaded}/${total} (${percentage}%) -> ${davPath}`);
+              }
+              try {
+                completeUploadProgress(progressId);
+              } catch {}
+              return;
+            }
+
+            const chunkSize = value?.byteLength ?? value?.length ?? 0;
+            loaded += chunkSize;
+
+            const shouldLog =
+              total != null
+                ? loaded === total || loaded - lastLogged >= LOG_INTERVAL
+                : loaded - lastLogged >= LOG_INTERVAL;
+
+            if (shouldLog) {
+              const percentage = total ? ((loaded / total) * 100).toFixed(1) : "未知";
+              const totalLabel = total ?? "未知";
+              console.log(`WebDAV 流式上传进度: ${loaded}/${totalLabel} (${percentage}%) -> ${davPath}`);
+              lastLogged = loaded;
+            }
+
+            try {
+              updateUploadProgress(progressId, {
+                loaded,
+                total,
+                path: davPath,
+                storageType: "WEBDAV",
+              });
+            } catch {}
+
+            controller.enqueue(value);
+          },
+          cancel(reason) {
+            try {
+              reader.cancel(reason);
+            } catch {
+              // 取消失败时静默忽略
+            }
+          },
+        });
+      }
+    } catch {
+      // 若包装失败，退回原始 stream，避免影响主流程
+      body = stream;
+    }
+
+    try {
+      await this._ensureParentDirectories(davPath);
+      /** @type {RequestInit} */
+      const init = {
+        method: "PUT",
+        headers,
+        body,
+      };
+      // Node.js 原生 fetch 在使用可读流作为 body 时必须显式设置 duplex
+      if (isNodeJSEnvironment() && body != null) {
+        // @ts-ignore
+        init.duplex = "half";
+      }
+      const resp = await fetch(url, init);
+      if (!resp.ok && resp.status !== 201 && resp.status !== 204) {
+        throw this._wrapError(new Error(`HTTP ${resp.status}`), "上传文件失败", resp.status);
+      }
+      console.log(`WebDAV 流式直传成功: ${davPath}`);
+      return { success: true, storagePath: davPath, message: "WEBDAV_STREAM_UPLOAD" };
+    } catch (error) {
+      throw this._wrapError(error, "上传文件失败", this._statusFromError(error));
+    }
+  }
+
+  /**
+   * 内部表单上传实现（一次性缓冲，适用于 Buffer / Uint8Array / ArrayBuffer / File / Blob / string 等）
+   */
+  async uploadForm(path, fileOrData, options = {}) {
+    this._ensureInitialized();
+    const davPath = this._resolveTargetDavPath(options.subPath, path, fileOrData, options);
+    const { body, length, contentType } = await this._normalizeBody(fileOrData, options);
+
+    try {
+      await this._ensureParentDirectories(davPath);
+      await this.client.putFileContents(davPath, body, {
+        overwrite: true,
+        contentLength: length,
+        contentType,
+      });
+      console.log(`WebDAV 表单直传成功: ${davPath}`);
+
+      return { success: true, storagePath: davPath, message: "WEBDAV_FORM_UPLOAD" };
+    } catch (error) {
+      throw this._wrapError(error, "上传文件失败", this._statusFromError(error));
+    }
+  }
+
+  async createDirectory(path, options = {}) {
+    this._ensureInitialized();
+    const davSubPath = options.mount ? (options.subPath || "") : (options.subPath || path);
+    const davPath = this._buildDavPath(davSubPath, true);
+    try {
+      await this.client.createDirectory(davPath);
+    } catch (error) {
+      const status = this._statusFromError(error);
+      // 部分 WebDAV 服务对已存在目录或根目录返回 405/501，视为目录已存在即可
+      if (this._isConflict(error) || status === ApiStatus.NOT_IMPLEMENTED) {
+        return { success: true, path: davPath, alreadyExists: true };
+      }
+      throw this._wrapError(error, "创建目录失败", status);
+    }
+    return { success: true, path: davPath };
+  }
+
+  async updateFile(path, content, options = {}) {
+    return await this.uploadFile(path, content, options);
+  }
+
+  /**
+   * 搜索当前挂载内的文件/目录（名称模糊匹配）
+   * @param {string} query - 搜索关键字
+   * @param {Object} options - 搜索选项
+   * @param {Object} options.mount - 挂载点对象
+   * @param {string|null} options.searchPath - 搜索范围路径（FS 视图路径，可为空表示全挂载）
+   * @param {number} options.maxResults - 最大结果数量
+   * @param {D1Database} options.db - 数据库实例
+   * @returns {Promise<Array<Object>>} 搜索结果
+   */
+  async search(query, options = {}) {
+    this._ensureInitialized();
+    const { mount, searchPath = null, maxResults = 1000, db } = options;
+
+    if (!mount) {
+      throw new DriverError("WebDAV 搜索需要挂载点信息", { status: ApiStatus.BAD_REQUEST, expose: true });
+    }
+
+    // 从 FS 路径还原到 WebDAV 子路径
+    let subPath = "";
+    if (searchPath) {
+      subPath = this._extractSubPath(searchPath, mount) || "";
+    }
+    const davPath = this._buildDavPath(subPath, true);
+
+    try {
+      const q = (query || "").toLowerCase();
+      const results = [];
+      const base = this._normalize(this.defaultFolder || "");
+      const queue = [davPath];
+
+      while (queue.length > 0 && results.length < maxResults) {
+        const currentDavPath = queue.shift();
+        let raw;
+        try {
+          raw = await this.client.getDirectoryContents(currentDavPath, { deep: false, glob: "*" });
+        } catch (e) {
+          const status = this._statusFromError(e);
+          // 部分服务对某些路径返回 403/501，这里跳过该分支避免整个搜索失败
+          if (status === ApiStatus.FORBIDDEN || status === ApiStatus.NOT_IMPLEMENTED) {
+            continue;
+          }
+          throw e;
+        }
+
+        const entries = Array.isArray(raw) ? raw : raw?.data || [];
+
+        for (const item of entries) {
+          if (results.length >= maxResults) break;
+
+          const filename = item.filename || "";
+          const rawBasename = item.basename || this._basename(filename);
+          const basename = this._decodeComponent(rawBasename);
+          if (!basename) continue;
+
+          const isDirectory = item.type === "directory";
+
+          // 名称模糊匹配
+          if (basename.toLowerCase().includes(q)) {
+            // 还原相对于 default_folder 的子路径
+            const decodedFilename = this._decodeComponent(filename);
+            const normalizedFilename = this._normalize(decodedFilename);
+            let relative = normalizedFilename;
+            if (base && normalizedFilename.startsWith(base)) {
+              relative = normalizedFilename.slice(base.length);
+            }
+            if (relative && !relative.startsWith("/")) {
+              relative = "/" + relative;
+            }
+
+            const mountRoot = (mount.mount_path || "/").replace(/\/+$/, "") || "/";
+            const fullPath = `${mountRoot}${relative || "/"}`.replace(/\/+/, "/");
+
+            const type = isDirectory ? FILE_TYPES.FOLDER : await GetFileType(basename, db);
+            const typeName = isDirectory ? "folder" : await getFileTypeName(basename, db);
+            const rawMime = item.mime || null;
+            const mime = !isDirectory && rawMime === "httpd/unix-directory" ? null : rawMime;
+
+            results.push({
+              name: basename,
+              path: fullPath,
+              size: isDirectory ? 0 : item.size || 0,
+              modified: item.lastmod ? new Date(item.lastmod).toISOString() : new Date().toISOString(),
+              isDirectory,
+              mimetype: mime || (isDirectory ? "application/x-directory" : undefined),
+              type,
+              typeName,
+              mount_id: mount.id,
+              mount_name: mount.name,
+              storage_type: mount.storage_type,
+            });
+          }
+
+          // 收集子目录，使用浅层 PROPFIND 递归遍历
+          if (isDirectory) {
+            const nextPath = item.filename || filename;
+            if (nextPath) {
+              const normalizedNext = nextPath.endsWith("/") ? nextPath : `${nextPath}/`;
+              queue.push(normalizedNext);
+            }
+          }
+        }
+      }
+
+      return results;
+    } catch (error) {
+      throw this._wrapError(error, "WebDAV 搜索失败", this._statusFromError(error));
+    }
+  }
+
+  async renameItem(oldPath, newPath, options = {}) {
+    this._ensureInitialized();
+    const { mount } = options;
+    const fromSubPath = options.mount ? (options.subPath || "") : (options.subPath || oldPath);
+    const from = this._buildDavPath(fromSubPath, false);
+    const to = this._buildDavPath(this._relativeTargetPath(newPath, mount), false);
+    try {
+      await this.client.moveFile(from, to, { overwrite: false });
+      return { success: true, from, to };
+    } catch (error) {
+      if (this._isNotSupported(error)) {
+        throw new DriverError("WebDAV 不支持移动操作", { status: ApiStatus.NOT_IMPLEMENTED, expose: true });
+      }
+      throw this._wrapError(error, "重命名失败", this._statusFromError(error));
+    }
+  }
+
+  async copyItem(sourcePath, targetPath, options = {}) {
+    this._ensureInitialized();
+    const { mount } = options;
+    const fromSubPath = options.mount ? (options.subPath || "") : (options.subPath || sourcePath);
+    const from = this._buildDavPath(fromSubPath, false);
+    const to = this._buildDavPath(this._relativeTargetPath(targetPath, mount), false);
+    try {
+      await this.client.copyFile(from, to, { overwrite: false });
+      return { status: "success", source: from, target: to };
+    } catch (error) {
+      if (this._isNotSupported(error)) {
+        throw new DriverError("WebDAV 不支持复制操作", { status: ApiStatus.NOT_IMPLEMENTED, expose: true });
+      }
+      throw this._wrapError(error, "复制失败", this._statusFromError(error));
+    }
+  }
+
+  async batchRemoveItems(paths, options = {}) {
+    this._ensureInitialized();
+    const results = [];
+    for (const p of paths) {
+      const sub = options.mount ? this._extractSubPath(p, options.mount) : options.subPath || p;
+      const davPath = this._buildDavPath(sub, false);
+      try {
+        await this.client.deleteFile(davPath);
+        results.push({ path: p, success: true });
+      } catch (error) {
+        results.push({ path: p, success: false, error: error?.message || "删除失败" });
+      }
+    }
+    return {
+      success: results.filter((r) => r.success).length,
+      failed: results.filter((r) => !r.success),
+      results,
+    };
+  }
+
+  async exists(path, options = {}) {
+    this._ensureInitialized();
+    const sub = options.mount ? (options.subPath || "") : (options.subPath || path);
+    const davPath = this._buildDavPath(sub, false);
+    try {
+      return await this.client.exists(davPath);
+    } catch {
+      return false;
+    }
+  }
+
+  async stat(path, options = {}) {
+    const sub = options.mount ? (options.subPath || "") : (options.subPath || path);
+    return await this.client.stat(this._buildDavPath(sub, false));
+  }
+
+  async generatePresignedUrl() {
+    throw new DriverError("WebDAV 不支持预签名直链", { status: ApiStatus.NOT_IMPLEMENTED, expose: true });
+  }
+
+  async generateProxyUrl(path, options = {}) {
+    const { mount, request, download = false, db, forceProxy = false } = options;
+    const subPath = this._extractSubPath(path, mount);
+    const davPath = this._buildDavPath(subPath, false);
+
+    const customHostUrl = this._buildCustomHostUrl(subPath || path);
+
+    // 代理路径 = 挂载路径 + 子路径（确保以 / 开头）
+    const proxyPath = `${mount?.mount_path || ""}${subPath.startsWith("/") ? subPath : `/${subPath}`}`;
+
+    const signatureService = new ProxySignatureService(db, this.encryptionSecret);
+    const signatureNeed = await signatureService.needsSignature(mount);
+
+    // 有 custom_host 且未强制代理 → 直链
+    if (customHostUrl && !forceProxy) {
+      return {
+        url: customHostUrl,
+        type: "custom_host",
+        policy: mount?.webdav_policy || "302_redirect",
+      };
+    }
+
+    // 默认走代理 /api/p
+    let proxyUrl;
+    let signInfo = null;
+    if (signatureNeed.required) {
+      signInfo = await signatureService.generateStorageSignature(proxyPath, mount);
+      // request 可能为空，buildSignedProxyUrl 会自行回退
+      proxyUrl = buildSignedProxyUrl(request, proxyPath, {
+        download,
+        signature: signInfo.signature,
+        requestTimestamp: signInfo.requestTimestamp,
+        needsSignature: true,
+      });
+    } else {
+      proxyUrl = buildFullProxyUrl(request, proxyPath, download);
+    }
+
+    return {
+      url: proxyUrl,
+      type: "proxy",
+      signed: signatureNeed.required,
+      signatureLevel: signatureNeed.level,
+      expiresAt: signInfo?.expiresAt,
+      isTemporary: signInfo?.isTemporary,
+      policy: mount?.webdav_policy || "302_redirect",
+    };
+  }
+
+  /**
+   * 为 WebDAV use_proxy_url 策略生成代理 URL（基于 custom_host）
+   * @param {string} path - 挂载视图下的完整路径
+   * @param {Object} options - 选项参数
+   * @returns {Promise<{url: string, type: string}|null>}
+   */
+  async generateWebDavProxyUrl(path, options = {}) {
+    this._ensureInitialized();
+
+    const { mount, subPath, db } = options;
+    const relativePath = subPath || path;
+
+    if (db && mount?.id) {
+      await updateMountLastUsed(db, mount.id);
+    }
+
+    const url = this._buildCustomHostUrl(relativePath);
+    if (!url) {
+      return null;
+    }
+
+    return {
+      url,
+      type: "proxy_url",
+    };
+  }
+
+  supportsProxyMode(mount) {
+    // WebDAV 默认可以走代理
+    return true;
+  }
+
+  getProxyConfig(mount) {
+    return {
+      enabled: this.supportsProxyMode(mount),
+      webdavPolicy: mount?.webdav_policy || "302_redirect",
+    };
+  }
+
+  /**
+   * 构建 WebDAV 路径
+   * - 仅基于挂载视图下的 subPath
+   * - 远端根目录由 endpoint_url 本身的路径决定
+   */
+  _buildDavPath(subPath, ensureDir = false) {
+    let raw = subPath || "";
+    try {
+      raw = decodeURI(raw);
+    } catch {}
+    const cleaned = this._normalize(raw);
+    let full = cleaned;
+
+    if (full && !full.startsWith("/")) {
+      full = `/${full}`;
+    }
+
+    if (ensureDir) {
+      if (!full) {
+        full = "/";
+      }
+      if (!full.endsWith("/")) {
+        full += "/";
+      }
+    }
+
+    if (!full) {
+      return "/";
+    }
+
+    return full;
+  }
+
+  _normalize(p) {
+    const normalized = p.replace(/\\/g, "/").replace(/\/+/g, "/").replace(/^\/+/, "");
+    const parts = normalized.split("/").filter(Boolean);
+    for (const seg of parts) {
+      if (seg === "..") {
+        throw new DriverError("路径不允许包含 ..", { status: ApiStatus.FORBIDDEN, expose: true });
+      }
+    }
+    return parts.join("/");
+  }
+
+  _decodeComponent(value) {
+    if (!value) return value;
+    try {
+      return decodeURIComponent(value);
+    } catch {
+      try {
+        return decodeURI(value);
+      } catch {
+        return value;
+      }
+    }
+  }
+
+  _joinMountPath(basePath, name, isDirectory) {
+    const normalizedBase = basePath.endsWith("/") ? basePath : basePath + "/";
+    return `${normalizedBase}${name}${isDirectory ? "/" : ""}`;
+  }
+
+  _buildMountPath(mount, subPath = "") {
+    const mountRoot = mount?.mount_path || "/";
+    const normalized = subPath.startsWith("/") ? subPath : `/${subPath}`;
+    const compact = normalized.replace(/\/+/g, "/");
+    return mountRoot.endsWith("/") ? `${mountRoot.replace(/\/+$/, "")}${compact}` : `${mountRoot}${compact}`;
+  }
+
+  _relativeTargetPath(targetPath, mount) {
+    if (!targetPath) return targetPath;
+    let relative = targetPath;
+    if (mount?.mount_path && targetPath.startsWith(mount.mount_path)) {
+      relative = targetPath.slice(mount.mount_path.length);
+    }
+    relative = relative.startsWith("/") ? relative.slice(1) : relative;
+    return relative;
+  }
+
+  _basename(p) {
+    const parts = (p || "").split("/").filter(Boolean);
+    return parts.pop() || "";
+  }
+
+  _buildRequestUrl(davPath) {
+    const base = this.endpoint.endsWith("/") ? this.endpoint.slice(0, -1) : this.endpoint;
+    return `${base}${davPath}`;
+  }
+
+  _extractSubPath(fullPath, mount) {
+    if (!fullPath) return "";
+    if (mount?.mount_path && fullPath.startsWith(mount.mount_path)) {
+      return fullPath.slice(mount.mount_path.length);
+    }
+    return fullPath.startsWith("/") ? fullPath.slice(1) : fullPath;
+  }
+
+  _basicAuthHeader() {
+    const raw = `${this.username}:${this.decryptedPassword || ""}`;
+    const encoded =
+      typeof btoa === "function"
+        ? btoa(raw)
+        : Buffer.from(raw).toString("base64");
+    return `Basic ${encoded}`;
+  }
+
+  _isNotFound(error) {
+    const msg = error?.message || "";
+    return msg.includes("404") || msg.includes("not found");
+  }
+
+  _isNotSupported(error) {
+    const msg = error?.message?.toString?.() || "";
+    return msg.includes("405") || msg.includes("501");
+  }
+
+  _isConflict(error) {
+    const msg = error?.message?.toString?.() || "";
+    return error?.statusCode === 409 || msg.includes("409");
+  }
+
+  _statusFromError(error) {
+    const msg = error?.message || "";
+    if (msg.includes("401") || msg.includes("403")) return ApiStatus.FORBIDDEN;
+    if (msg.includes("404")) return ApiStatus.NOT_FOUND;
+    if (msg.includes("405") || msg.includes("501")) return ApiStatus.NOT_IMPLEMENTED;
+    return ApiStatus.INTERNAL_ERROR;
+  }
+
+  _wrapError(error, message, status = ApiStatus.INTERNAL_ERROR) {
+    if (error instanceof DriverError || error instanceof AppError) return error;
+    return new DriverError(message, { status, expose: status < 500, details: { cause: error?.message } });
+  }
+
+  async _normalizeBody(file, options = {}) {
+    // 处理 Blob/File/ArrayBuffer/Uint8Array/Buffer/ReadableStream（Node 或 Web API）
+    if (file === null || file === undefined) {
+      throw new DriverError("上传体为空", { status: ApiStatus.BAD_REQUEST, expose: true });
+    }
+
+    // Buffer 或 Uint8Array
+    if (typeof Buffer !== "undefined" && Buffer.isBuffer(file)) {
+      return { body: file, length: file.length, contentType: options.contentType || null };
+    }
+    if (file instanceof Uint8Array) {
+      return { body: file, length: file.byteLength, contentType: options.contentType || null };
+    }
+
+    // ArrayBuffer
+    if (file instanceof ArrayBuffer) {
+      const buf = Buffer.from(file);
+      return { body: buf, length: buf.length, contentType: options.contentType || null };
+    }
+
+    // Web File/Blob
+    if (typeof file.arrayBuffer === "function") {
+      const buf = Buffer.from(await file.arrayBuffer());
+      const length = file.size ?? buf.length;
+      const type = options.contentType || file.type || null;
+      return { body: buf, length, contentType: type };
+    }
+
+    // ReadableStream (Node 流或 Web API ReadableStream，例如 Cloudflare/Hono 请求体)
+    const isNodeStream = file && (typeof file.pipe === "function" || file.readable);
+    const isWebStream = file && typeof file.getReader === "function";
+    if (isNodeStream || isWebStream) {
+      // Node 流在 Node 环境下可以直接传递，由 webdav 客户端负责消费
+      if (isNodeStream && !isWebStream) {
+        const length = options.fileSize || options.contentLength || null;
+        const type = options.contentType || null;
+        return { body: file, length, contentType: type };
+      }
+
+      // Web API ReadableStream（Cloudflare/Hono 环境）：
+      // 为避免 webdav 客户端与 WebStream 兼容性问题，这里统一读取为 Buffer 再上传，
+      // 以确保上游存储端能够收到完整内容。
+      try {
+        const reader = file.getReader();
+        /** @type {Uint8Array[]} */
+        const chunks = [];
+        let total = 0;
+        // 按 Web Streams 标准逐块读取
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value && value.length) {
+            chunks.push(value);
+            total += value.length;
+          }
+        }
+        const buf = Buffer.allocUnsafe(total);
+        let offset = 0;
+        for (const chunk of chunks) {
+          buf.set(chunk, offset);
+          offset += chunk.length;
+        }
+        const length = total;
+        const type = options.contentType || null;
+        return { body: buf, length, contentType: type };
+      } catch (e) {
+        throw new DriverError("读取上传流失败", {
+          status: ApiStatus.INTERNAL_ERROR,
+          expose: false,
+          details: { cause: e?.message || String(e) },
+        });
+      }
+    }
+
+    // 字符串
+    if (typeof file === "string") {
+      const buf = Buffer.from(file);
+      return { body: buf, length: buf.length, contentType: options.contentType || "text/plain" };
+    }
+
+    throw new DriverError("不支持的上传数据类型", { status: ApiStatus.BAD_REQUEST, expose: true });
+  }
+
+  async _ensureParentDirectories(davPath) {
+    // davPath like /a/b/c.txt -> need ensure /a and /a/b
+    const trimmed = davPath.endsWith("/") ? davPath.slice(0, -1) : davPath;
+    const parts = trimmed.split("/").filter(Boolean);
+    if (parts.length <= 1) return;
+    const dirs = [];
+    for (let i = 0; i < parts.length - 1; i++) {
+      const prefix = "/" + parts.slice(0, i + 1).join("/") + "/";
+      dirs.push(prefix);
+    }
+    for (const dir of dirs) {
+      try {
+        await this.client.createDirectory(dir);
+      } catch (e) {
+        // 如果目录已存在则忽略
+        if (this._isConflict(e) || this._isNotFound(e) || this._isNotSupported(e)) {
+          // _isNotFound 对某些服务返回 409/404 混用，_isNotSupported 对 405/501，均视为无害
+          continue;
+        }
+        throw e;
+      }
+    }
+  }
+
+  _buildCustomHostUrl(path) {
+    if (!this.customHost) return null;
+
+    const cleanHost = this.customHost.endsWith("/") ? this.customHost.slice(0, -1) : this.customHost;
+    const sub = this._normalize(path || "");
+    const relative = sub.startsWith("/") ? sub.slice(1) : sub;
+
+    if (!relative) {
+      return cleanHost;
+    }
+
+    return `${cleanHost}/${relative}`;
+  }
+
+  /**
+   * 解析目标路径：当传入目录时自动拼接文件名
+   */
+  _resolveTargetDavPath(subPath, path, file, options = {}) {
+    const fileName =
+      options.filename ||
+      options.fileName ||
+      file?.name ||
+      path.split("/").filter(Boolean).pop() ||
+      "unnamed_file";
+
+    const normalizedSub = this._normalize(subPath || "");
+    const base = this._normalize(this.defaultFolder || "");
+
+    const isFilePath = this._isCompleteFilePath(normalizedSub, fileName);
+    let joined = "";
+    if (base) joined = base;
+    if (normalizedSub) joined = joined ? `${joined}/${normalizedSub}` : normalizedSub;
+
+    if (!isFilePath) {
+      joined = joined ? `${joined}/${fileName}` : fileName;
+    }
+
+    const withPrefix = joined.startsWith("/") ? joined : `/${joined}`;
+    return withPrefix;
+  }
+
+  _isCompleteFilePath(relativePath, originalFileName) {
+    if (!relativePath || !originalFileName) return false;
+    const relLast = relativePath.split("/").filter(Boolean).pop();
+    if (!relLast) return false;
+    const rel = this._splitName(relLast);
+    const ori = this._splitName(originalFileName);
+    if (!rel.ext) {
+      return rel.name === ori.name;
+    }
+    return rel.ext === ori.ext && rel.name === ori.name;
+  }
+
+  _splitName(name = "") {
+    const idx = name.lastIndexOf(".");
+    if (idx <= 0) {
+      return { name, ext: "" };
+    }
+    return { name: name.slice(0, idx), ext: name.slice(idx) };
+  }
+}

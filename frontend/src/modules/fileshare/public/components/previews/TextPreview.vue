@@ -130,7 +130,7 @@ const adaptedFileData = computed(() => {
   return {
     name: props.filename || "text-file",
     filename: props.filename || "text-file",
-    preview_url: props.previewUrl,
+    previewUrl: props.previewUrl,
     contentType: "text/plain",
   };
 });
@@ -147,7 +147,7 @@ const loadTextContent = async () => {
 
 // 处理编码切换 - 使用统一逻辑
 const handleEncodingChange = async () => {
-  if (!adaptedFileData.value?.preview_url) return;
+  if (!adaptedFileData.value?.previewUrl) return;
 
   await changeEncoding(currentEncoding.value, emit);
 };

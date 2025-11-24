@@ -494,9 +494,9 @@ export function useFileBasket() {
    */
   const getFileDownloadUrl = async (file) => {
     try {
-      // 如果文件对象中已经有download_url，直接使用
-      if (file.download_url) {
-        return file.download_url;
+      // 如果文件对象中已经有 downloadUrl，直接使用
+      if (file.downloadUrl) {
+        return file.downloadUrl;
       }
 
       // 使用统一API获取文件直链
@@ -504,17 +504,8 @@ export function useFileBasket() {
       const response = await getFileLinkApi(file.path, null, true); // 强制下载
 
       if (response.success && response.data) {
-        // file-link API返回的是presignedUrl字段
-        if (response.data.presignedUrl) {
-          return response.data.presignedUrl;
-        }
-        // 兼容其他可能的字段名
-        if (response.data.download_url) {
-          return response.data.download_url;
-        }
-        if (response.data.proxy_download_url) {
-          return response.data.proxy_download_url;
-        }
+        const url = response.data.presignedUrl || response.data.downloadUrl || response.data.proxyDownloadUrl || response.data.url;
+        if (url) return url;
       }
 
       throw new Error(t("fileBasket.errors.noDownloadUrl"));

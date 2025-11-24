@@ -7,7 +7,7 @@ import Webcam from "@uppy/webcam";
 import ScreenCapture from "@uppy/screen-capture";
 import Audio from "@uppy/audio";
 import ImageEditor from "@uppy/image-editor";
-import Url from "@uppy/url";
+import UrlImportPlugin from "./plugins/UrlImportPlugin.js";
 
 /**
  * 插件管理器类
@@ -36,11 +36,12 @@ export class UppyPluginManager {
         console.warn("Failed to parse saved plugin states:", e);
       }
     }
-    // 默认状态：摄像头开启，其他关闭
+    // 默认状态：摄像头和URL导入开启，其他关闭
     return {
       webcam: true,
       screen: false,
       audio: false,
+      urlImport: true,
     };
   }
 
@@ -120,6 +121,30 @@ export class UppyPluginManager {
           saturation: isZh ? "饱和度" : "Saturation",
         },
       },
+      urlImport: {
+        label: isZh ? "URL导入" : "URL Import",
+        description: isZh ? "从链接导入文件" : "Import files from URL",
+        strings: {
+          pluginName: isZh ? "URL" : "URL",
+          importFromUrl: isZh ? "从URL导入" : "Import from URL",
+          enterUrl: isZh ? "输入文件URL" : "Enter file URL",
+          analyzing: isZh ? "分析中..." : "Analyzing...",
+          downloading: isZh ? "下载中..." : "Downloading...",
+          analyzeUrl: isZh ? "分析 URL" : "Analyze URL",
+          download: isZh ? "下载" : "Download",
+          fileInfoReady: isZh ? "文件信息已获取" : "File info retrieved",
+          unknownFile: isZh ? "未知文件" : "Unknown file",
+          reInput: isZh ? "重新输入" : "Re-enter",
+          cannotGetUrlInfo: isZh ? "无法获取URL信息" : "Cannot retrieve URL info",
+          analysisFailed: isZh ? "URL分析失败" : "URL analysis failed",
+          missingFileInfo: isZh ? "缺少文件信息" : "Missing file info",
+          downloadFailed: isZh ? "下载失败" : "Download failed",
+          downloadComplete: isZh ? "下载完成" : "Download complete",
+          progressPercent: "%{progress}%",
+          cancelDownload: isZh ? "取消下载" : "Cancel",
+          downloadCancelled: isZh ? "下载已取消" : "Download cancelled",
+        },
+      },
     };
   }
 
@@ -177,18 +202,22 @@ export class UppyPluginManager {
           },
         },
       },
-      // URL导入功能需要Companion服务器，暂时禁用
-      // {
-      //   key: "url",
-      //   label: "URL导入",
-      //   description: "从链接导入文件",
-      //   enabled: false,
-      //   plugin: Url,
-      //   config: {
-      //     companionUrl: "https://api2.transloadit.com/companion",
-      //     companionAllowedHosts: ["https://api2.transloadit.com"],
-      //   },
-      // },
+      {
+        key: "urlImport",
+        label: texts.urlImport.label,
+        description: texts.urlImport.description,
+        enabled: this.pluginStates.urlImport,
+        plugin: UrlImportPlugin,
+        config: {
+          // 传入语言包配置（会与插件的 defaultLocale 合并）
+          locale: {
+            strings: texts.urlImport.strings,
+          },
+          // API回调函数（由外部设置）
+          validateUrlInfo: null,
+          fetchUrlContent: null,
+        },
+      },
     ];
   }
 
@@ -216,6 +245,21 @@ export class UppyPluginManager {
       return plugin.enabled;
     }
     return false;
+  }
+
+  /**
+   * 设置URL导入插件的回调函数
+   * @param {Object} callbacks - 回调函数对象
+   * @param {Function} callbacks.validateUrlInfo - URL验证函数
+   * @param {Function} callbacks.fetchUrlContent - URL下载函数
+   * @param {Function} callbacks.onShowModal - 显示模态框回调
+   * @param {Function} callbacks.onHideModal - 隐藏模态框回调
+   */
+  setUrlImportCallbacks(callbacks = {}) {
+    const urlPlugin = this.pluginDefinitions.find(p => p.key === 'urlImport');
+    if (urlPlugin && urlPlugin.config) {
+      Object.assign(urlPlugin.config, callbacks);
+    }
   }
 
   /**

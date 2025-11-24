@@ -148,14 +148,14 @@ const initializeCurrentFile = async () => {
   console.log("📄 开始初始化当前文件:", props.file.name);
 
   // 使用传入的文本URL或文件的预览URL
-  const previewUrl = props.textUrl || props.file.preview_url;
+  const previewUrl = props.textUrl || props.file.previewUrl;
 
   if (previewUrl) {
     console.log("📄 使用文本URL:", previewUrl);
     currentFileData.value = {
       name: props.file.name || "unknown",
       filename: props.file.name || "unknown",
-      preview_url: previewUrl,
+      previewUrl: previewUrl,
       contentType: props.file.contentType,
       size: props.file.size,
       modified: props.file.modified,

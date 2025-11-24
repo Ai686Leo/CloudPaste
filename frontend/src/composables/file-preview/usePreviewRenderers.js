@@ -80,19 +80,19 @@ export function usePreviewRenderers(file, emit, darkMode) {
   });
 
   /**
-   * 预览URL - 直接使用文件信息中的preview_url字段
+  * 预览URL - 直接使用文件信息中的 previewUrl 字段
    */
   const previewUrl = computed(() => {
     if (!file.value) return "";
 
-    // 直接使用文件信息中的preview_url字段（S3直链）
-    if (file.value.preview_url) {
-      console.log("使用文件信息中的preview_url:", file.value.preview_url);
-      return file.value.preview_url;
+    // 直接使用文件信息中的 previewUrl 字段（S3直链/代理）
+    if (file.value.previewUrl) {
+      console.log("使用文件信息中的previewUrl:", file.value.previewUrl);
+      return file.value.previewUrl;
     }
 
-    // 如果没有preview_url，说明后端有问题
-    console.error("文件信息中没有preview_url字段，请检查后端getFileInfo实现");
+    // 如果没有 previewUrl，说明后端有问题
+    console.error("文件信息中没有 previewUrl 字段，请检查后端 getFileInfo 实现");
     return "";
   });
 
@@ -127,15 +127,15 @@ export function usePreviewRenderers(file, emit, darkMode) {
    */
   const getOfficeDirectUrlForPreview = async () => {
     try {
-      // 直接使用文件信息中的preview_url字段（S3直链）
-      if (file.value.preview_url) {
-        console.log("Office预览使用文件信息中的preview_url:", file.value.preview_url);
-        return file.value.preview_url;
+      // 直接使用文件信息中的 previewUrl 字段（S3直链/代理）
+      if (file.value.previewUrl) {
+        console.log("Office预览使用文件信息中的previewUrl:", file.value.previewUrl);
+        return file.value.previewUrl;
       }
 
-      // 如果没有preview_url，说明后端有问题
-      console.error("Office预览：文件信息中没有preview_url字段，请检查后端getFileInfo实现");
-      throw new Error("文件信息中缺少preview_url字段");
+      // 如果没有 previewUrl，说明后端有问题
+      console.error("Office预览：文件信息中没有 previewUrl 字段，请检查后端 getFileInfo 实现");
+      throw new Error("文件信息中缺少 previewUrl 字段");
     } catch (error) {
       console.error("获取Office预览URL失败:", error);
       throw error;

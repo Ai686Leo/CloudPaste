@@ -163,7 +163,7 @@ export const registerMultipartRoutes = (router, helpers) => {
     }
 
     const fileSystem = new FileSystem(mountManager);
-    const result = await fileSystem.generatePresignedUrl(targetPath, userIdOrInfo, userType, {
+    const result = await fileSystem.generateUploadUrl(targetPath, userIdOrInfo, userType, {
       operation: "upload",
       fileName,
       fileSize,

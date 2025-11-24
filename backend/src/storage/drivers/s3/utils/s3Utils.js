@@ -15,7 +15,7 @@ import { ValidationError, S3DriverError } from "../../../../http/errors.js";
  * @param {string} encryptionSecret - 用于解密凭证的密钥
  * @returns {Promise<S3Client>} S3客户端实例
  */
-export async function createS3Client(config, encryptionSecret) {
+async function createS3Client(config, encryptionSecret) {
   // 解密敏感配置
   const accessKeyId = await decryptValue(config.access_key_id, encryptionSecret);
   const secretAccessKey = await decryptValue(config.secret_access_key, encryptionSecret);
@@ -112,7 +112,7 @@ export async function createS3Client(config, encryptionSecret) {
  * @param {string} storagePath - S3存储路径
  * @returns {string} 访问URL
  */
-export function buildS3Url(s3Config, storagePath) {
+function buildS3Url(s3Config, storagePath) {
   const bucketName = s3Config.bucket_name;
   const endpointUrl = s3Config.endpoint_url;
 
@@ -143,7 +143,7 @@ export function buildS3Url(s3Config, storagePath) {
 }
 
 /**
- * 生成S3文件的上传预签名URL
+ * 生成S3文件的上传预签名URL（PUT）
  * @param {Object} s3Config - S3配置
  * @param {string} storagePath - S3存储路径
  * @param {string} mimetype - 文件的MIME类型
@@ -151,15 +151,14 @@ export function buildS3Url(s3Config, storagePath) {
  * @param {number} expiresIn - URL过期时间（秒），如果为null则使用S3配置的默认值
  * @returns {Promise<string>} 预签名URL
  */
-export async function generatePresignedPutUrl(s3Config, storagePath, mimetype, encryptionSecret, expiresIn = null) {
+async function generateUploadUrl(s3Config, storagePath, mimetype, encryptionSecret, expiresIn = null) {
   // 如果没有指定过期时间，使用S3配置中的默认值
   const finalExpiresIn = expiresIn || s3Config.signature_expires_in || 3600;
+  // 确保storagePath不以斜杠开始（在 try/catch 外部计算，便于错误信息引用）
+  const normalizedPath = storagePath.startsWith("/") ? storagePath.slice(1) : storagePath;
   try {
     // 创建S3客户端
     const s3Client = await createS3Client(s3Config, encryptionSecret);
-
-    // 确保storagePath不以斜杠开始
-    const normalizedPath = storagePath.startsWith("/") ? storagePath.slice(1) : storagePath;
 
     // 创建PutObjectCommand
     // 在预签名URL中指定ContentType，确保MIME类型正确传递
@@ -191,7 +190,7 @@ export async function generatePresignedPutUrl(s3Config, storagePath, mimetype, e
     const url = await getSignedUrl(s3Client, command, commandOptions);
 
     // 保留关键调试日志：确认预签名URL包含ContentType参数
-    console.log(`生成预签名PUT URL - 文件[${normalizedPath}], ContentType[${mimetype}]`);
+    console.log(`生成上传预签名URL(PUT) - 文件[${normalizedPath}], ContentType[${mimetype}]`);
 
     return url;
   } catch (error) {
@@ -217,7 +216,7 @@ export async function generatePresignedPutUrl(s3Config, storagePath, mimetype, e
  * @param {string} storagePath - S3存储路径
  * @returns {string} 自定义域名直链URL
  */
-function generateCustomHostDirectUrl(s3Config, storagePath) {
+export function generateCustomHostDirectUrl(s3Config, storagePath) {
   const normalizedPath = storagePath.startsWith("/") ? storagePath.slice(1) : storagePath;
   const customHost = s3Config.custom_host.endsWith("/") ? s3Config.custom_host.slice(0, -1) : s3Config.custom_host;
 
@@ -230,16 +229,16 @@ function generateCustomHostDirectUrl(s3Config, storagePath) {
 }
 
 /**
- * 生成原始S3预签名URL（内部函数）
+ * 生成原始 S3 下载预签名 URL（内部函数，基于 GetObject）
  * @param {Object} s3Config - S3配置
  * @param {string} storagePath - S3存储路径
  * @param {string} encryptionSecret - 用于解密凭证的密钥
  * @param {number} expiresIn - URL过期时间（秒）
  * @param {boolean} forceDownload - 是否强制下载（而非预览）
  * @param {string} mimetype - 文件的MIME类型（可选）
- * @returns {Promise<string>} 原始S3预签名URL
+ * @returns {Promise<string>} 原始 S3 预签名下载 URL
  */
-async function generateOriginalPresignedUrl(s3Config, storagePath, encryptionSecret, expiresIn, forceDownload = false, mimetype = null) {
+async function generateOriginalDownloadUrl(s3Config, storagePath, encryptionSecret, expiresIn, forceDownload = false, mimetype = null) {
   try {
     // 创建S3客户端
     const s3Client = await createS3Client(s3Config, encryptionSecret);
@@ -321,7 +320,7 @@ async function generateOriginalPresignedUrl(s3Config, storagePath, encryptionSec
  * @param {Object} cacheOptions - 缓存选项 {userType, userId, enableCache}
  * @returns {Promise<string>} 预签名URL或自定义域名URL
  */
-export async function generatePresignedUrl(s3Config, storagePath, encryptionSecret, expiresIn = null, forceDownload = false, mimetype = null, cacheOptions = {}) {
+async function generateDownloadUrl(s3Config, storagePath, encryptionSecret, expiresIn = null, forceDownload = false, mimetype = null, cacheOptions = {}) {
   // 如果没有指定过期时间，使用S3配置中的默认值
   const finalExpiresIn = expiresIn || s3Config.signature_expires_in || 3600;
 
@@ -351,7 +350,7 @@ export async function generatePresignedUrl(s3Config, storagePath, encryptionSecr
       console.log(`自定义域名强制下载：添加response-content-disposition参数`);
 
       // 先生成预签名URL（包含response-content-disposition参数）
-      const presignedUrl = await generateOriginalPresignedUrl(s3Config, storagePath, encryptionSecret, finalExpiresIn, forceDownload, mimetype);
+      const presignedUrl = await generateOriginalDownloadUrl(s3Config, storagePath, encryptionSecret, finalExpiresIn, forceDownload, mimetype);
 
       // 然后将域名替换为自定义域名，保留查询参数
       const presignedUrlObj = new URL(presignedUrl);
@@ -367,7 +366,7 @@ export async function generatePresignedUrl(s3Config, storagePath, encryptionSecr
     }
   } else {
     // 没有自定义域名：使用原始S3预签名URL
-    generatedUrl = await generateOriginalPresignedUrl(s3Config, storagePath, encryptionSecret, finalExpiresIn, forceDownload, mimetype);
+    generatedUrl = await generateOriginalDownloadUrl(s3Config, storagePath, encryptionSecret, finalExpiresIn, forceDownload, mimetype);
   }
 
   // 缓存生成的URL
@@ -387,7 +386,7 @@ export async function generatePresignedUrl(s3Config, storagePath, encryptionSecr
  * @param {string} encryptionSecret - 加密密钥
  * @returns {Promise<boolean>} 是否成功删除
  */
-export async function deleteFileFromS3(s3Config, storagePath, encryptionSecret) {
+async function deleteFileFromS3(s3Config, storagePath, encryptionSecret) {
   try {
     const s3Client = await createS3Client(s3Config, encryptionSecret);
 
@@ -412,7 +411,7 @@ export async function deleteFileFromS3(s3Config, storagePath, encryptionSecret) 
  * @param {string} key - 对象键名
  * @returns {Promise<boolean>} 对象是否存在
  */
-export async function checkS3ObjectExists(s3Client, bucketName, key) {
+async function checkS3ObjectExists(s3Client, bucketName, key) {
   try {
     const headParams = {
       Bucket: bucketName,
@@ -437,7 +436,7 @@ export async function checkS3ObjectExists(s3Client, bucketName, key) {
  * @param {string} key - 对象键名
  * @returns {Promise<Object|null>} 对象元数据，不存在时返回null
  */
-export async function getS3ObjectMetadata(s3Client, bucketName, key) {
+async function getS3ObjectMetadata(s3Client, bucketName, key) {
   try {
     const headParams = {
       Bucket: bucketName,
@@ -463,7 +462,7 @@ export async function getS3ObjectMetadata(s3Client, bucketName, key) {
  * @param {string} continuationToken - 分页令牌
  * @returns {Promise<Object>} 目录内容
  */
-export async function listS3Directory(s3Client, bucketName, prefix, delimiter = "/", continuationToken = undefined) {
+async function listS3Directory(s3Client, bucketName, prefix, delimiter = "/", continuationToken = undefined) {
   const listParams = {
     Bucket: bucketName,
     Prefix: prefix,
@@ -486,7 +485,7 @@ export async function listS3Directory(s3Client, bucketName, prefix, delimiter = 
  * @param {number} expiresIn - URL过期时间（秒）
  * @returns {Promise<Array>} 包含文件预签名URL的数组
  */
-export async function getDirectoryPresignedUrls(s3Client, sourceS3Config, targetS3Config, sourcePath, targetPath, encryptionSecret, expiresIn = 3600) {
+async function getDirectoryPresignedUrls(s3Client, sourceS3Config, targetS3Config, sourcePath, targetPath, encryptionSecret, expiresIn = 3600) {
   // 确保目录路径以斜杠结尾
   const sourcePrefix = sourcePath.endsWith("/") ? sourcePath : sourcePath + "/";
   const targetPrefix = targetPath.endsWith("/") ? targetPath : targetPath + "/";
@@ -526,7 +525,7 @@ export async function getDirectoryPresignedUrls(s3Client, sourceS3Config, target
         const targetKey = targetPrefix + relativePath;
 
         // 为每个文件生成下载和上传的预签名URL
-        const downloadUrl = await generatePresignedUrl(sourceS3Config, sourceKey, encryptionSecret, expiresIn);
+        const downloadUrl = await generateDownloadUrl(sourceS3Config, sourceKey, encryptionSecret, expiresIn);
 
         // 获取文件的content-type
         let contentType = "application/octet-stream";
@@ -549,7 +548,7 @@ export async function getDirectoryPresignedUrls(s3Client, sourceS3Config, target
         console.log(`目录复制：从文件名[${fileName}]推断MIME类型: ${contentType}`);
 
         // 生成上传预签名URL
-        const uploadUrl = await generatePresignedPutUrl(targetS3Config, targetKey, contentType, encryptionSecret, expiresIn);
+        const uploadUrl = await generateUploadUrl(targetS3Config, targetKey, contentType, encryptionSecret, expiresIn);
 
         // 计算相对目录路径
         const relativeDir = pathParts.join("/");
@@ -574,3 +573,17 @@ export async function getDirectoryPresignedUrls(s3Client, sourceS3Config, target
 
   return items;
 }
+
+// ========== Exports ==========
+
+export {
+  createS3Client,
+  buildS3Url,
+  generateUploadUrl,
+  generateDownloadUrl,
+  deleteFileFromS3,
+  checkS3ObjectExists,
+  getS3ObjectMetadata,
+  listS3Directory,
+  getDirectoryPresignedUrls,
+};

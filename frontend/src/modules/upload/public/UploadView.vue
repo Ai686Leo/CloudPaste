@@ -17,11 +17,14 @@
     <div class="main-content" v-if="hasPermission">
       <!-- 文件上传区域 -->
       <div class="card mb-6 p-4 sm:p-6">
-        <FileUploader
+        <UppyShareUploader
           :dark-mode="darkMode"
+          :loading="loadingFiles"
           :is-admin="isAdmin"
+          :storage-configs="storageConfigsStore.sortedConfigs"
           @upload-success="handleUploadSuccess"
           @upload-error="handleUploadError"
+          @refresh-files="loadFiles"
           @share-results="handleShareResults"
         />
       </div>
@@ -92,7 +95,7 @@
 <script setup>
 import { ref, onMounted, computed } from "vue";
 import { storeToRefs } from "pinia";
-import FileUploader from "@/modules/upload/public/components/FileUploader.vue";
+import UppyShareUploader from "@/modules/upload/public/components/UppyShareUploader.vue";
 import FileList from "@/modules/upload/public/components/FileList.vue";
 import PermissionManager from "@/components/common/PermissionManager.vue";
 import ShareLinkBox from "@/components/common/ShareLinkBox.vue";

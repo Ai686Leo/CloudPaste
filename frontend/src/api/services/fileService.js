@@ -66,6 +66,60 @@ export async function completeFileUpload(data) {
   return await post("share/commit", payload);
 }
 
+/**
+ * 通过通用分享上传接口上传单个文件并创建分享记录（ObjectStore 多存储直传）
+ * @param {Object} options
+ * @param {File|Blob} options.file - 要上传的文件
+ * @param {string|number} options.storage_config_id - 存储配置ID
+ * @param {string} [options.path] - 目标目录（可选）
+ * @param {string} [options.slug] - 自定义链接后缀（可选）
+ * @param {string} [options.remark] - 备注（可选）
+ * @param {string} [options.password] - 密码（可选）
+ * @param {number|string} [options.expires_in] - 过期时间（小时，可选）
+ * @param {number|string} [options.max_views] - 最大访问次数（可选）
+ * @param {boolean} [options.use_proxy] - 是否通过代理下载（可选）
+ * @param {boolean} [options.original_filename] - 是否使用原始文件名（可选）
+ * @returns {Promise<Object>} 后端统一响应对象 { success, message, data }
+ */
+export async function uploadShareFile(options) {
+  const {
+    file,
+    storage_config_id,
+    path = "",
+    slug = "",
+    remark = "",
+    password = "",
+    expires_in = "0",
+    max_views = 0,
+    use_proxy = undefined,
+    original_filename = undefined,
+  } = options || {};
+
+  if (!file) {
+    throw new Error("缺少上传文件");
+  }
+  if (!storage_config_id) {
+    throw new Error("缺少存储配置ID");
+  }
+
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("storage_config_id", String(storage_config_id));
+
+  if (path) formData.append("path", String(path));
+  if (slug) formData.append("slug", String(slug));
+  if (remark) formData.append("remark", String(remark));
+  if (password) formData.append("password", String(password));
+  if (expires_in != null) formData.append("expires_in", String(expires_in));
+  if (max_views != null) formData.append("max_views", String(max_views));
+  if (use_proxy !== undefined) formData.append("use_proxy", use_proxy ? "true" : "false");
+  if (original_filename !== undefined) {
+    formData.append("original_filename", original_filename ? "true" : "false");
+  }
+
+  return post("share/upload", formData);
+}
+
 
 /******************************************************************************
  * 统一文件管理API

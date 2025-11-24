@@ -28,11 +28,11 @@ export const registerFilesPublicRoutes = (router) => {
         throw new AppError("文件已达到最大查看次数", { status: ApiStatus.GONE, code: "GONE", expose: true });
       }
       const urlsObj = await generateFileDownloadUrl(db, result.file, encryptionSecret, c.req.raw);
-      const publicInfo = await getPublicFileInfo(result.file, requiresPassword, urlsObj);
+      const publicInfo = await getPublicFileInfo(db, result.file, requiresPassword, urlsObj, encryptionSecret);
       return jsonOk(c, publicInfo, "获取文件成功");
     }
 
-    const publicInfo = await getPublicFileInfo(file, true);
+    const publicInfo = await getPublicFileInfo(db, file, true, null, encryptionSecret);
     return jsonOk(c, publicInfo, "获取文件成功");
   });
 
@@ -72,12 +72,12 @@ export const registerFilesPublicRoutes = (router) => {
       }
 
       const urlsObj = await generateFileDownloadUrl(db, result.file, encryptionSecret, c.req.raw);
-      const publicInfo = await getPublicFileInfo(result.file, requiresPassword, urlsObj);
+      const publicInfo = await getPublicFileInfo(db, result.file, requiresPassword, urlsObj, encryptionSecret);
 
       return jsonOk(c, publicInfo, "获取文件成功");
     }
 
-    const publicInfo = await getPublicFileInfo(file, true);
+    const publicInfo = await getPublicFileInfo(db, file, true, null, encryptionSecret);
     return jsonOk(c, publicInfo, "获取文件成功");
   });
 
@@ -102,7 +102,7 @@ export const registerFilesPublicRoutes = (router) => {
 
     if (!file.password) {
       const urlsObj = await generateFileDownloadUrl(db, file, encryptionSecret, c.req.raw);
-      const publicInfo = await getPublicFileInfo(file, false, urlsObj);
+      const publicInfo = await getPublicFileInfo(db, file, false, urlsObj, encryptionSecret);
       return jsonOk(c, publicInfo, "此文件不需要密码");
     }
 
@@ -132,7 +132,7 @@ export const registerFilesPublicRoutes = (router) => {
       }
     }
 
-      const publicInfo = await getPublicFileInfo(fileWithPassword, false, urlsObj);
+      const publicInfo = await getPublicFileInfo(db, fileWithPassword, false, urlsObj, encryptionSecret);
 
     return jsonOk(c, publicInfo, "密码验证成功");
   });

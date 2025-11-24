@@ -87,6 +87,7 @@ const showViewsWarning = computed(() => {
 const isEditing = ref(false);
 const editingContent = ref("");
 const longPressTimer = ref(null);
+const isTouchDevice = ref(false);
 
 /**
  * 开始编辑内容
@@ -135,13 +136,19 @@ const cancelEdit = () => {
 };
 
 /**
- * 处理双击事件（桌面端）
+ * 处理双击事件（仅桌面端）
  */
 const handleDoubleClick = (event) => {
+  // 移动端不响应双击，避免与浏览器缩放冲突
+  if (isTouchDevice.value) {
+    return;
+  }
+
   // 如果点击的是按钮或链接，不触发编辑
   if (event.target.closest("button") || event.target.closest("a")) {
     return;
   }
+
   startEditing();
 };
 
@@ -214,6 +221,12 @@ const handleClickOutside = (event) => {
 // 生命周期：添加全局点击事件监听
 onMounted(() => {
   document.addEventListener("click", handleClickOutside);
+
+  // 检测是否为触摸设备（移动端）
+  isTouchDevice.value =
+    'ontouchstart' in window ||
+    navigator.maxTouchPoints > 0 ||
+    /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 });
 
 // 生命周期：移除全局点击事件监听
@@ -224,10 +237,12 @@ onUnmounted(() => {
 
 <template>
   <div
-    class="paste-masonry-card relative group flex flex-col bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
-    :class="{ 'opacity-60': isExpired && !isEditing }"
+    class="paste-masonry-card relative group flex flex-col rounded-lg border border-gray-200 dark:border-gray-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+    :class="isExpired && !isEditing
+      ? 'bg-gray-50 dark:bg-gray-900'
+      : 'bg-white dark:bg-gray-800'"
     tabindex="0"
-    @dblclick="handleDoubleClick"
+    @dblclick.prevent="handleDoubleClick"
     @touchstart="handleTouchStart"
     @touchend="handleTouchEnd"
     @touchmove="handleTouchMove"
@@ -386,7 +401,7 @@ onUnmounted(() => {
             <!-- 下拉菜单 -->
             <div
               v-if="showDropdown"
-              class="absolute right-0 top-8 mt-1 w-40 rounded-md shadow-lg bg-white dark:bg-gray-700 ring-1 ring-black ring-opacity-5 z-10"
+              class="absolute right-0 top-8 mt-1 w-40 rounded-md shadow-lg bg-white dark:bg-gray-700 ring-1 ring-black ring-opacity-5 z-50"
               @click.stop
             >
               <div class="py-1">

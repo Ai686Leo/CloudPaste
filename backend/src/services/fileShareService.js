@@ -230,6 +230,7 @@ export class FileShareService {
       bodyStream,
       size: normalizedSize,
       contentType: mimeType,
+      uploadId: options.uploadId || null,
     });
 
     const { shouldUseRandomSuffix } = await import("../utils/common.js");
@@ -252,6 +253,80 @@ export class FileShareService {
       mimeType,
       request: options.request || null,
       uploadResult: { storagePath: result.storagePath, publicUrl: result.publicUrl, etag: result.etag },
+      originalFilenameUsed: Boolean(options.originalFilename),
+      storageConfig: cfg,
+      updateIfExists: !useRandom,
+    });
+  }
+
+  // 通过 ObjectStore + File/Blob 上传并创建分享记录（多存储通用）
+  async uploadFileViaObjectStoreAndShare(file, userIdOrInfo, userType, options = {}) {
+    if (!file) throw new ValidationError("缺少文件参数");
+    const normalizedSize = Number(file.size ?? options.size ?? 0) || 0;
+    if (normalizedSize <= 0) {
+      throw new ValidationError("上传内容为空");
+    }
+    await this.limit.check(normalizedSize);
+
+    const { ObjectStore } = await import("../storage/object/ObjectStore.js");
+    const { getEffectiveMimeType } = await import("../utils/fileUtils.js");
+    const storedFilename = file.name || options.filename || "upload.bin";
+    const mimeType = getEffectiveMimeType(options.contentType || file.type || null, storedFilename);
+
+    // 选择 storage_config：显式优先，否则选默认（API Key 需公开 + ACL 白名单）
+    const { subjectType, subjectId } = this._resolveAclSubject(userType, userIdOrInfo);
+    const cfg = await this.resolveStorageConfig({
+      storageConfigId: options.storage_config_id,
+      userType,
+      subjectType,
+      subjectId,
+    });
+    if (!cfg) throw new ValidationError("未找到可用的存储配置，无法上传");
+
+    const store = new ObjectStore(this.db, this.encryptionSecret, this.repositoryFactory);
+
+    // 预先计算最终Key用于配额校验（考虑命名策略与冲突重命名）
+    const plannedKey = await store.getPlannedKey(cfg.id, options.path || null, storedFilename);
+    const fileRepo = this.repositoryFactory.getFileRepository();
+    if (!cfg.storage_type) throw new ValidationError("存储配置缺少 storage_type");
+    const existing = await fileRepo.findByStoragePath(cfg.id, plannedKey, cfg.storage_type).catch(() => null);
+    await this.limit.checkStorageQuota(cfg.id, normalizedSize, { excludeFileId: existing?.id || null });
+
+    const uploadResult = await store.uploadFileForShare({
+      storage_config_id: cfg.id,
+      directory: options.path || null,
+      filename: storedFilename,
+      file,
+      size: normalizedSize,
+      contentType: mimeType,
+      uploadId: options.uploadId || null,
+    });
+
+    const { shouldUseRandomSuffix } = await import("../utils/common.js");
+    const useRandom = await shouldUseRandomSuffix(this.db).catch(() => false);
+
+    return await this.records.createShareRecord({
+      mount: null,
+      fsPath: null,
+      storageSubPath: uploadResult.storagePath,
+      filename: storedFilename,
+      size: normalizedSize,
+      remark: options.remark || "",
+      userIdOrInfo,
+      userType,
+      slug: options.slug || null,
+      override: Boolean(options.override),
+      password: options.password || null,
+      expiresInHours: options.expiresIn || 0,
+      maxViews: options.maxViews || 0,
+      useProxy: options.useProxy,
+      mimeType,
+      request: options.request || null,
+      uploadResult: {
+        storagePath: uploadResult.storagePath,
+        publicUrl: uploadResult.publicUrl,
+        etag: uploadResult.etag,
+      },
       originalFilenameUsed: Boolean(options.originalFilename),
       storageConfig: cfg,
       updateIfExists: !useRandom,

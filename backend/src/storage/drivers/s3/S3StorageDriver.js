@@ -6,7 +6,7 @@
 import { BaseDriver } from "../../interfaces/capabilities/BaseDriver.js";
 import { CAPABILITIES } from "../../interfaces/capabilities/index.js";
 import { ApiStatus } from "../../../constants/index.js";
-import { createS3Client } from "./utils/s3Utils.js";
+import { createS3Client, generateCustomHostDirectUrl } from "./utils/s3Utils.js";
 import { DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { normalizeS3SubPath, isCompleteFilePath } from "./utils/S3PathUtils.js";
 import { updateMountLastUsed, findMountPointByPath } from "../../fs/utils/MountResolver.js";
@@ -32,6 +32,7 @@ export class S3StorageDriver extends BaseDriver {
     this.type = "S3";
     this.encryptionSecret = encryptionSecret;
     this.s3Client = null;
+    this.customHost = config.custom_host || null;
 
     // S3存储驱动支持所有能力
     this.capabilities = [
@@ -222,66 +223,39 @@ export class S3StorageDriver extends BaseDriver {
   }
 
   /**
-   * 上传文件
-   * @param {string} path - 目标路径
-   * @param {File} file - 文件对象
-   * @param {Object} options - 选项参数
-   * @returns {Promise<Object>} 上传结果
+   * 统一上传入口（文件 / 流）
+   * - 外部只调用此方法，内部根据数据类型选择流式或表单实现
    */
-  async uploadFile(path, file, options = {}) {
+  async uploadFile(path, fileOrStream, options = {}) {
     this._ensureInitialized();
 
-    const { mount, subPath, db, userIdOrInfo, userType, useMultipart = true } = options;
+    const isNodeStream = fileOrStream && (typeof fileOrStream.pipe === "function" || fileOrStream.readable);
+    const isWebStream = fileOrStream && typeof fileOrStream.getReader === "function";
 
-    // 规范化S3子路径
-    const s3SubPath = normalizeS3SubPath(subPath, false);
-
-    try {
-      if (useMultipart) {
-        // 使用分片上传
-        return await this.uploadOps.initializeFrontendMultipartUpload(s3SubPath, {
-          fileName: file.name,
-          fileSize: file.size,
-          mount,
-          db,
-          userIdOrInfo,
-          userType,
-        });
-      } else {
-        // 使用直接上传
-        return await this.uploadOps.uploadFile(s3SubPath, file, {
-          mount,
-          db,
-          userIdOrInfo,
-          userType,
-        });
-      }
-    } catch (error) {
-      throw this._rethrow(error, "上传文件失败");
+    // 有 Stream 能力时优先走“流式上传”路径
+    if (isNodeStream || isWebStream) {
+      return await this.uploadStream(path, fileOrStream, options);
     }
+
+    // 其它情况按“表单上传”（一次性完整缓冲后上传）处理
+    return await this.uploadForm(path, fileOrStream, options);
   }
 
   /**
-   * 上传流式数据
-   * @param {string} path - 目标路径
-   * @param {ReadableStream} stream - 数据流
-   * @param {Object} options - 选项参数
-   * @returns {Promise<Object>} 上传结果
+   * 内部流式上传实现
    */
   async uploadStream(path, stream, options = {}) {
     this._ensureInitialized();
 
-    const { mount, subPath, db, userIdOrInfo, userType, filename, contentType, contentLength, useMultipart = false } = options;
+    const { mount, subPath, db, userIdOrInfo, userType, filename, contentType, contentLength, uploadId } = options;
 
-    // 规范化S3子路径
     const s3SubPath = normalizeS3SubPath(subPath, false);
-
-    // 构建完整的S3 key
     const s3Key = this._normalizeFilePath(s3SubPath, path, filename);
 
+    // 统一交由 S3UploadOperations.uploadStream 使用 Upload 处理流式上传，
+    // 包含自动的单请求/多分片选择和进度回调
     try {
-      // 委托给上传操作模块
-      return await this.uploadOps.uploadStream(s3Key, stream, {
+      return await this.uploadOps.uploadStream(s3Key, /** @type {any} */ (stream), {
         mount,
         db,
         userIdOrInfo,
@@ -289,10 +263,35 @@ export class S3StorageDriver extends BaseDriver {
         filename,
         contentType,
         contentLength,
-        useMultipart,
+        uploadId,
       });
     } catch (error) {
       throw this._rethrow(error, "流式上传失败");
+    }
+  }
+
+  /**
+   * 内部表单上传实现（一次性读入内存）
+   */
+  async uploadForm(path, fileOrData, options = {}) {
+    this._ensureInitialized();
+
+    const { mount, subPath, db, userIdOrInfo, userType, filename, contentType } = options;
+
+    const s3SubPath = normalizeS3SubPath(subPath, false);
+    const s3Key = this._normalizeFilePath(s3SubPath, path, filename);
+
+    try {
+      return await this.uploadOps.uploadForm(s3Key, /** @type {any} */ (fileOrData), {
+        mount,
+        db,
+        userIdOrInfo,
+        userType,
+        filename,
+        contentType,
+      });
+    } catch (error) {
+      throw this._rethrow(error, "表单上传失败");
     }
   }
 
@@ -391,26 +390,6 @@ export class S3StorageDriver extends BaseDriver {
   }
 
   /**
-   * 通过存储路径生成下载直链
-   * @param {string} storagePath
-   * @param {Object} options
-   * @param {boolean} options.forceDownload
-   * @param {string} options.contentType
-   * @returns {Promise<string>} 预签名URL
-   */
-  async generateDownloadUrlByStoragePath(storagePath, options = {}) {
-    this._ensureInitialized();
-    try {
-      const { forceDownload = false, contentType = null, expiresIn = null } = options || {};
-      const { generatePresignedUrl } = await import("./utils/s3Utils.js");
-      const url = await generatePresignedUrl(this.config, storagePath, this.encryptionSecret, expiresIn, forceDownload, contentType, { enableCache: false });
-      return url;
-    } catch (error) {
-      throw this._rethrow(error, "生成下载URL失败");
-    }
-  }
-
-  /**
    * 复制文件或目录
    * @param {string} sourcePath - 源路径
    * @param {string} targetPath - 目标路径
@@ -450,46 +429,88 @@ export class S3StorageDriver extends BaseDriver {
   }
 
   /**
-   * 生成预签名URL
+   * 生成预签名下载URL
    * @param {string} path - 文件路径
    * @param {Object} options - 选项参数
-   * @param {string} options.operation - 操作类型：'download' 或 'upload'
    * @returns {Promise<Object>} 预签名URL信息
    */
-  async generatePresignedUrl(path, options = {}) {
+  async generateDownloadUrl(path, options = {}) {
     this._ensureInitialized();
 
-    const { mount, subPath, db, operation = "download" } = options;
-
-    // 规范化S3子路径
+    const { mount, subPath, db } = options;
     const s3SubPath = normalizeS3SubPath(subPath, false);
 
-    // 更新挂载点的最后使用时间
-    if (db && mount.id) {
+    if (db && mount?.id) {
       await updateMountLastUsed(db, mount.id);
     }
 
-    // 根据操作类型委托给不同的模块
     try {
-      if (operation === "upload") {
-        const { fileName, fileSize, expiresIn } = options;
-        return await this.uploadOps.generatePresignedUploadUrl(s3SubPath, {
-          fileName,
-          fileSize,
-          expiresIn,
-        });
-      } else {
-        const { expiresIn, forceDownload, userType, userId } = options;
-        return await this.fileOps.generatePresignedUrl(s3SubPath, {
-          expiresIn,
-          forceDownload,
-          userType,
-          userId,
-          mount,
-        });
-      }
+      const { expiresIn, forceDownload, userType, userId } = options;
+      return await this.fileOps.generateDownloadUrl(s3SubPath, {
+        expiresIn,
+        forceDownload,
+        userType,
+        userId,
+        mount,
+      });
     } catch (error) {
-      throw this._rethrow(error, operation === "upload" ? "生成上传URL失败" : "生成下载URL失败");
+      throw this._rethrow(error, "生成下载URL失败");
+    }
+  }
+
+  /**
+   * 为 WebDAV use_proxy_url 策略生成代理 URL（基于 custom_host）
+   * @param {string} path - 挂载视图下的完整路径
+   * @param {Object} options - 选项参数
+   * @returns {Promise<{url: string, type: string}|null>}
+   */
+  async generateWebDavProxyUrl(path, options = {}) {
+    this._ensureInitialized();
+
+    const { mount, subPath, db } = options;
+    const s3SubPath = normalizeS3SubPath(subPath, false);
+
+    if (db && mount?.id) {
+      await updateMountLastUsed(db, mount.id);
+    }
+
+    if (!this.customHost) {
+      return null;
+    }
+
+    const url = generateCustomHostDirectUrl(this.config, s3SubPath);
+    return {
+      url,
+      type: "proxy_url",
+    };
+  }
+
+  /**
+   * 生成预签名上传URL
+   * @param {string} path - 目标路径
+   * @param {Object} options - 选项参数
+   * @returns {Promise<Object>} 预签名URL信息
+   */
+  async generateUploadUrl(path, options = {}) {
+    this._ensureInitialized();
+
+    const { mount, subPath, db } = options;
+    // 对于 FS 视图，使用 subPath 规范化；对于 ObjectStore 等 storage-first 场景，直接使用传入的 path 作为对象 Key
+    const s3SubPath = subPath != null ? normalizeS3SubPath(subPath, false) : path;
+
+    if (db && mount?.id) {
+      await updateMountLastUsed(db, mount.id);
+    }
+
+    try {
+      const { fileName, fileSize, expiresIn } = options;
+      return await this.uploadOps.generateUploadUrl(s3SubPath, {
+        fileName,
+        fileSize,
+        expiresIn,
+      });
+    } catch (error) {
+      throw this._rethrow(error, "生成上传URL失败");
     }
   }
 
@@ -864,37 +885,6 @@ export class S3StorageDriver extends BaseDriver {
 
     // 构建最终路径
     return fullPrefix + fileName;
-  }
-
-  /**
-   * 中止后端分片上传
-   * @param {string} path - 目标路径
-   * @param {Object} options - 选项参数
-   * @returns {Promise<Object>} 中止结果
-   */
-  async abortBackendMultipartUpload(path, options = {}) {
-    this._ensureInitialized();
-
-    const { mount, subPath, db, uploadId, s3Key } = options;
-
-    // 如果提供了s3Key，直接使用，否则重新计算
-    const s3SubPath = s3Key || this._normalizeFilePath(subPath, path);
-
-    // 委托给后端分片操作模块
-    const result = await this.backendMultipartOps.abortBackendMultipartUpload(s3SubPath, {
-      uploadId,
-    });
-
-    // 更新挂载点的最后使用时间
-    if (db && mount.id) {
-      try {
-        await updateMountLastUsed(db, mount.id);
-      } catch (updateError) {
-        console.warn(`更新挂载点最后使用时间失败: ${updateError.message}`);
-      }
-    }
-
-    return result;
   }
 
   /**

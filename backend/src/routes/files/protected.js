@@ -123,31 +123,14 @@ export const registerFilesProtectedRoutes = (router) => {
             });
         }
 
-        // storage-first 或无 file_path 时，直接按存储配置删除对象（驱动直调）
+        // storage-first 或无 file_path 时，直接按存储配置删除对象（通过 ObjectStore 统一封装）
         if (deleteMode === "both" && file.storage_path && file.storage_config_id) {
-          const storageConfigRepo = repositoryFactory.getStorageConfigRepository();
-          const storageConfig = storageConfigRepo?.findByIdWithSecrets
-            ? await storageConfigRepo.findByIdWithSecrets(file.storage_config_id).catch(() => null)
-            : await storageConfigRepo.findById(file.storage_config_id).catch(() => null);
-
-          if (storageConfig) {
-            try {
-              const { StorageFactory } = await import("../../storage/factory/StorageFactory.js");
-              if (!storageConfig.storage_type) {
-                throw new ValidationError("存储配置缺少 storage_type");
-              }
-              const driver = await StorageFactory.createDriver(storageConfig.storage_type, storageConfig, encryptionSecret);
-              await driver.initialize?.();
-              if (typeof driver.deleteObjectByStoragePath === "function") {
-                await driver.deleteObjectByStoragePath(file.storage_path, { db });
-              } else if (typeof driver.batchRemoveItems === "function") {
-                await driver.batchRemoveItems([file.storage_path], { subPath: file.storage_path, db });
-              }
-            } catch (deleteError) {
-              console.error(`删除存储文件失败 (ID: ${id}):`, deleteError);
-            }
-          } else {
-            console.warn(`未找到存储配置，跳过对象删除 (fileId: ${id}, storage_config_id: ${file.storage_config_id})`);
+          try {
+            const { ObjectStore } = await import("../../storage/object/ObjectStore.js");
+            const objectStore = new ObjectStore(db, encryptionSecret, repositoryFactory);
+            await objectStore.deleteByStoragePath(file.storage_config_id, file.storage_path, { db });
+          } catch (deleteError) {
+            console.error(`删除存储文件失败 (ID: ${id}):`, deleteError);
           }
         }
       })().catch((deleteError) => {

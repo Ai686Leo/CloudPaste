@@ -33,23 +33,11 @@ export function useFileSave() {
         currentPath,
       });
 
-      // 将文本内容转换为File对象
-      const textBlob = new Blob([content], { type: 'text/plain; charset=utf-8' });
-      const textFile = new File([textBlob], fileName, { 
-        type: 'text/plain',
-        lastModified: Date.now()
-      });
-
-      // 使用现有的上传API
-      const response = await api.fs.uploadFile(
-        currentPath, 
-        textFile, 
-        false 
-      );
+      const response = await api.fs.updateFile(filePath, content);
 
       if (response && response.success) {
         console.log("文件保存成功:", response);
-        
+
         return {
           success: true,
           message: t("mount.messages.fileSaveSuccess", { name: fileName }),

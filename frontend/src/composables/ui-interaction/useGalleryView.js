@@ -192,19 +192,19 @@ export function useGalleryView() {
       // 使用统一的API函数
       const getFileInfo = api.fs.getFileInfo;
 
-      // 获取文件信息，包含preview_url字段
+      // 获取文件信息，包含 previewUrl 字段
       const response = await getFileInfo(imagePath);
 
-      if (response?.success && response.data?.preview_url) {
+      if (response?.success && response.data?.previewUrl) {
         // 设置加载完成状态
         imageStates.value.set(imagePath, {
           status: "loaded",
-          url: response.data.preview_url,
+          url: response.data.previewUrl,
         });
         console.log(`✅ 懒加载完成: ${image.name}`);
 
         // 🔍 检测图片是否会走Service Worker缓存
-        checkImageCacheStatus(response.data.preview_url, image.name);
+        checkImageCacheStatus(response.data.previewUrl, image.name);
       } else {
         // 设置错误状态
         imageStates.value.set(imagePath, { status: "error", url: null });

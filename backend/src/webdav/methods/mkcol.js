@@ -38,7 +38,7 @@ export async function handleMkcol(c, path, userId, userType, db) {
     // 处理根目录特殊情况（符合WebDAV标准的特殊处理）
     const pathParts = path.split("/").filter((p) => p);
     if (pathParts.length === 1) {
-      console.log(`WebDAV MKCOL - 检测到根目录请求，执行S3桶验证`);
+      console.log(`WebDAV MKCOL - 检测到根目录请求，执行存储驱动验证`);
 
       try {
         // 通过尝试获取挂载点信息来验证访问权限

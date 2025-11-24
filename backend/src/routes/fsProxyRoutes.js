@@ -14,6 +14,7 @@ import { PROXY_CONFIG, safeDecodeProxyPath } from "../constants/proxy.js";
 import { ProxySignatureService } from "../services/ProxySignatureService.js";
 import { getEncryptionSecret } from "../utils/environmentUtils.js";
 import { getQueryBool } from "../utils/common.js";
+import { CAPABILITIES } from "../storage/interfaces/capabilities/index.js";
 
 // 签名代理路径不会走 RBAC，因此这里用结构化日志补充最少可观测性。
 const emitProxyAudit = (c, details) => {
@@ -118,6 +119,10 @@ fsProxyRoutes.get(`${PROXY_CONFIG.ROUTE_PREFIX}/*`, async (c) => {
 
     // 创建FileSystem实例进行文件访问
     const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
+    const driver = await mountManager.getDriver(mountResult.mount);
+    if (!driver.hasCapability(CAPABILITIES.PROXY)) {
+      throw new AppError("当前存储驱动不支持代理访问", { status: ApiStatus.NOT_IMPLEMENTED, code: "PROXY_NOT_SUPPORTED", expose: true });
+    }
     const fileSystem = new FileSystem(mountManager);
 
     // 获取文件名用于下载

@@ -138,6 +138,11 @@ app.use("*", async (c, next) => {
         "Lock-Token",
         "Content-Length",
         "X-Requested-With",
+        // FS / Share 流式上传自定义头
+        "X-FS-Filename",
+        "X-FS-Options",
+        "X-Share-Filename",
+        "X-Share-Options",
       ],
       allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PROPFIND", "PROPPATCH", "MKCOL", "COPY", "MOVE", "LOCK", "UNLOCK", "HEAD"],
       exposeHeaders: ["ETag", "Content-Length", "Content-Disposition", "Content-Range", "Accept-Ranges"],

@@ -1,7 +1,6 @@
 /**
  * 处理WebDAV GET请求
  * 用于获取文件内容
- * 重构版本：使用FileSystem统一抽象层替代直接S3调用
  */
 import { MountManager } from "../../storage/managers/MountManager.js";
 import { getEncryptionSecret } from "../../utils/environmentUtils.js";
@@ -9,6 +8,55 @@ import { FileSystem } from "../../storage/fs/FileSystem.js";
 import { createWebDAVErrorResponse, withWebDAVErrorHandling } from "../utils/errorUtils.js";
 import { addWebDAVHeaders, getStandardWebDAVHeaders } from "../utils/headerUtils.js";
 import { getEffectiveMimeType } from "../../utils/fileUtils.js";
+
+/**
+ * 从驱动返回结果中提取 URL
+ * 当前 WebDAV 场景下，generateDownloadUrl / generateWebDavProxyUrl 约定返回 string 或 { url, presignedUrl? }
+ * @param {*} result - 驱动返回的结果
+ * @returns {string|null} 提取的 URL 或 null
+ */
+function extractUrlFromResult(result) {
+  if (!result) return null;
+  if (typeof result === "string") return result;
+  if (typeof result === "object") {
+    return result.url || result.presignedUrl || null;
+  }
+  return null;
+}
+
+/**
+ * 通过本地代理下载文件（native_proxy）
+ * @param {FileSystem} fileSystem - 文件系统实例
+ * @param {string} path - 文件路径
+ * @param {string} fileName - 文件名
+ * @param {Object} c - Hono 上下文
+ * @param {string} userId - 用户ID
+ * @param {string} userType - 用户类型
+ * @param {string} contentType - 内容类型
+ * @param {string} lastModifiedStr - 最后修改时间字符串
+ * @param {string} etag - ETag
+ * @returns {Promise<Response>} WebDAV 响应
+ */
+async function downloadViaProxy(fileSystem, path, fileName, c, userId, userType, contentType, lastModifiedStr, etag) {
+  console.log(`WebDAV GET - 使用本地代理模式: ${path}`);
+  const fileResponse = await fileSystem.downloadFile(path, fileName, c.req, userId, userType);
+
+  const updatedHeaders = new Headers(fileResponse.headers);
+  updatedHeaders.set("Content-Type", contentType);
+  updatedHeaders.set("Last-Modified", lastModifiedStr);
+  if (etag) {
+    updatedHeaders.set("ETag", etag);
+  }
+  updatedHeaders.set("Accept-Ranges", "bytes");
+  updatedHeaders.set("Cache-Control", "max-age=3600");
+
+  const response = new Response(fileResponse.body, {
+    status: fileResponse.status,
+    headers: updatedHeaders,
+  });
+
+  return addWebDAVHeaders(response);
+}
 
 /**
  * 处理GET请求
@@ -144,49 +192,84 @@ export async function handleGet(c, path, userId, userType, db) {
       });
     }
 
-    // 根据挂载点的webdav_policy配置决定处理方式
-    const { mount } = await mountManager.getDriverByPath(path, userId, userType);
+    // 根据挂载点的 webdav_policy 配置决定处理方式
+    const { driver, mount, subPath } = await mountManager.getDriverByPath(path, userId, userType);
+    const policy = mount.webdav_policy || "native_proxy";
 
-    if (mount.webdav_policy === "302_redirect") {
-      // 302重定向模式：生成预签名URL并重定向
-      console.log(`WebDAV GET - 使用302重定向模式: ${path}`);
+    switch (policy) {
+      case "302_redirect": {
+        // 策略 1：存储直链重定向（通过驱动自己的 generateDownloadUrl 能力）
+        if (typeof driver.generateDownloadUrl === "function") {
+          try {
+            console.log(`WebDAV GET - 尝试生成存储直链: ${path}`);
+            const result = await driver.generateDownloadUrl(path, {
+              mount,
+              subPath,
+              db,
+              userId,
+              userType,
+              forceDownload: false,
+            });
 
-      const presignedResult = await fileSystem.generatePresignedUrl(path, userId, userType, {
-        operation: "download",
-        forceDownload: false, // WebDAV通常不强制下载
-      });
+            const url = extractUrlFromResult(result);
+            if (url) {
+              console.log(`WebDAV GET - 302 重定向到存储直链: ${url}`);
+              return new Response(null, {
+                status: 302,
+                headers: getStandardWebDAVHeaders({
+                  customHeaders: {
+                    Location: url,
+                    "Cache-Control": "no-cache",
+                  },
+                }),
+              });
+            }
+          } catch (error) {
+            console.warn(`WebDAV GET - 生成存储直链失败，降级到本地代理:`, error?.message || error);
+          }
+        }
 
-      return new Response(null, {
-        status: 302,
-        headers: getStandardWebDAVHeaders({
-          customHeaders: {
-            Location: presignedResult.presignedUrl,
-            "Cache-Control": "no-cache",
-          },
-        }),
-      });
-    } else {
-      // 代理模式（默认）：使用FileSystem下载文件
-      console.log(`WebDAV GET - 使用代理模式: ${path}`);
-      const fileResponse = await fileSystem.downloadFile(path, fileName, c.req, userId, userType);
-
-      // 更新响应头以包含WebDAV特有的头信息
-      const updatedHeaders = new Headers(fileResponse.headers);
-      updatedHeaders.set("Content-Type", contentType);
-      updatedHeaders.set("Last-Modified", lastModifiedStr);
-      if (etag) {
-        updatedHeaders.set("ETag", etag);
+        console.log(`WebDAV GET - 驱动不支持直链生成或未返回 URL，降级到本地代理`);
+        return downloadViaProxy(fileSystem, path, fileName, c, userId, userType, contentType, lastModifiedStr, etag);
       }
-      updatedHeaders.set("Accept-Ranges", "bytes");
-      updatedHeaders.set("Cache-Control", "max-age=3600");
 
-      // 创建响应并添加WebDAV标准头部
-      const response = new Response(fileResponse.body, {
-        status: fileResponse.status,
-        headers: updatedHeaders,
-      });
+      case "use_proxy_url": {
+        // 策略 2：自定义域名 / 代理 URL 重定向（custom_host_proxy），由驱动生成 URL
+        if (typeof driver.generateWebDavProxyUrl === "function") {
+          try {
+            const result = await driver.generateWebDavProxyUrl(path, {
+              mount,
+              subPath,
+              db,
+              request: c.req.raw,
+            });
+            const url = extractUrlFromResult(result);
+            if (url) {
+              console.log(`WebDAV GET - URL代理custom_host_proxy URL: ${url}`);
+              return new Response(null, {
+                status: 302,
+                headers: getStandardWebDAVHeaders({
+                  customHeaders: {
+                    Location: url,
+                    "Cache-Control": "no-cache",
+                  },
+                }),
+              });
+            }
+          } catch (error) {
+            console.warn(`WebDAV GET - 生成 use_proxy_url 代理链接失败，降级到本地代理:`, error?.message || error);
+          }
+        }
 
-      return addWebDAVHeaders(response);
+        console.warn(`WebDAV GET - use_proxy_url 策略但未配置 custom_host 或驱动不支持，降级到本地代理`);
+        return downloadViaProxy(fileSystem, path, fileName, c, userId, userType, contentType, lastModifiedStr, etag);
+      }
+
+      case "native_proxy":
+      default: {
+        // 策略 3：本地服务器代理（默认兜底）
+        return downloadViaProxy(fileSystem, path, fileName, c, userId, userType, contentType, lastModifiedStr, etag);
+      }
     }
   });
 }

@@ -18,13 +18,14 @@ const props = defineProps({
 
 // WebDAV设置
 const webdavSettings = ref({
-  webdav_upload_mode: "direct", // 默认直接上传模式 - 可选值: multipart, direct
+  // 默认采用单次上传模式，可选值: single, chunked
+  webdav_upload_mode: "single",
 });
 
 // WebDAV上传模式选项
 const webdavUploadModes = ref([
-  { value: "direct", label: t("admin.webdav.uploadSettings.modes.direct") },
-  { value: "multipart", label: t("admin.webdav.uploadSettings.modes.multipart") },
+  { value: "single", label: t("admin.webdav.uploadSettings.modes.single") },
+  { value: "chunked", label: t("admin.webdav.uploadSettings.modes.chunked") },
 ]);
 
 // WebDAV设置更新状态

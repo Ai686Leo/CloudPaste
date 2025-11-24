@@ -49,7 +49,7 @@ export default {
       },
       storage_config: {
         name: "Storage Config Management",
-        description: "Storage configuration information",
+        description: "Storage configuration and access control",
       },
       key_management: {
         name: "Key Management",
@@ -62,6 +62,10 @@ export default {
       system_settings: {
         name: "System Settings",
         description: "System global settings",
+      },
+      fs_meta_management: {
+        name: "FS Meta Management",
+        description: "Directory README, hide rules and path passwords",
       },
     },
 

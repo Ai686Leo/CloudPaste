@@ -3,25 +3,26 @@
  * 文件业务逻辑，通过Repository访问数据
  */
 
-// 统一改为通过 StorageFactory/Driver 能力获取直链或使用代理URL
 import { FileRepository } from "../repositories/index.js";
-import { StorageConfigUtils } from "../storage/utils/StorageConfigUtils.js";
-import { StorageFactory } from "../storage/factory/StorageFactory.js";
 import { GetFileType, getFileTypeName } from "../utils/fileTypeDetector.js";
 import { generateUniqueFileSlug, validateSlugFormat } from "../utils/common.js";
 import { hashPassword } from "../utils/crypto.js";
 import { ApiStatus, DbTables, UserType } from "../constants/index.js";
 import { ValidationError, NotFoundError, AuthorizationError, ConflictError } from "../http/errors.js";
+import { ensureRepositoryFactory } from "../utils/repositories.js";
+import { ObjectStore } from "../storage/object/ObjectStore.js";
 
 export class FileService {
   /**
    * 构造函数
    * @param {D1Database} db - 数据库实例
    * @param {string} encryptionSecret - 加密密钥
+   * @param {Object} repositoryFactory - 仓储工厂（可选）
    */
-  constructor(db, encryptionSecret) {
+  constructor(db, encryptionSecret, repositoryFactory = null) {
     this.db = db;
     this.encryptionSecret = encryptionSecret;
+    this.repositoryFactory = ensureRepositoryFactory(db, repositoryFactory);
     this.fileRepository = new FileRepository(db);
   }
 
@@ -52,21 +53,6 @@ export class FileService {
     }
 
     return { accessible: true };
-  }
-
-  /**
-   * 根据文件信息获取存储驱动
-   * @param {Object} file - 文件对象
-   * @returns {Promise<Object>} 存储驱动实例
-   */
-  async getStorageDriver(file) {
-    // 获取存储配置
-    const config = await StorageConfigUtils.getStorageConfig(this.db, file.storage_type, file.storage_config_id);
-
-    // 创建存储驱动
-    const driver = await StorageFactory.createDriver(file.storage_type, config, this.encryptionSecret);
-
-    return driver;
   }
 
   /**
@@ -129,12 +115,10 @@ export class FileService {
    * @param {Request} request - 原始请求对象，用于获取当前域名
    * @returns {Promise<Object>} 包含预览链接和下载链接的对象
    */
-  async generateFileDownloadUrl(file, encryptionSecret, request = null) {
+  async generateFileDownloadUrl(file, encryptionSecret, request = null, userInfo = null) {
     // 同时准备直链与代理链路，最终根据 use_proxy 选择默认输出
     let previewUrl = "";
     let downloadUrl = "";
-    let directPreviewUrl = "";
-    let directDownloadUrl = "";
 
     // 获取当前域名作为基础URL（用于构建绝对代理链接）
     let baseUrl = "";
@@ -160,31 +144,22 @@ export class FileService {
     proxyPreviewUrl = appendPasswordParam(proxyPreviewUrl);
     proxyDownloadUrl = appendPasswordParam(proxyDownloadUrl);
 
-    // 尝试生成直链（预签名 URL）
-    const tryGenerateDirectUrl = async (forceDownload) => {
-      if (!file?.storage_type || !file?.storage_path) return "";
+    // 使用 ObjectStore + ObjectLinkStrategy 生成直链
+    let directPreviewUrl = "";
+    let directDownloadUrl = "";
+    if (file?.storage_type && file?.storage_path) {
       try {
-        const driver = await this.getStorageDriver(file);
-        if (!driver?.generatePresignedUrl) return "";
-        const result = await driver.generatePresignedUrl(file.storage_path, {
-          subPath: file.storage_path,
-          forceDownload,
-          expiresIn: null,
+        const objectStore = new ObjectStore(this.db, this.encryptionSecret, this.repositoryFactory);
+        const links = await objectStore.generateLinksByStoragePath(file.storage_config_id, file.storage_path, {
+          userType: userInfo?.type || null,
+          userId: userInfo?.id || null,
         });
-        if (!result) return "";
-        if (typeof result === "string") return result;
-        if (typeof result === "object") {
-          return result.url || result.downloadUrl || result.previewUrl || result.presignedUrl || "";
-        }
-        return "";
-      } catch (error) {
-        console.warn("生成直链失败（已回退代理）:", error?.message || error);
-        return "";
+        directPreviewUrl = links?.preview?.url || "";
+        directDownloadUrl = links?.download?.url || "";
+      } catch (e) {
+        console.warn("生成直链失败（已回退代理）:", e?.message || e);
       }
-    };
-
-    directPreviewUrl = await tryGenerateDirectUrl(false);
-    directDownloadUrl = await tryGenerateDirectUrl(true);
+    }
 
     const useProxyFlag = file.use_proxy ?? 0;
 
@@ -196,8 +171,6 @@ export class FileService {
       downloadUrl,
       proxyPreviewUrl,
       proxyDownloadUrl,
-      directPreviewUrl,
-      directDownloadUrl,
       use_proxy: useProxyFlag,
     };
   }
@@ -235,8 +208,8 @@ export class FileService {
       expires_at: file.expires_at,
       previewUrl: effectivePreviewUrl,
       downloadUrl: effectiveDownloadUrl,
-      proxy_preview_url: urlsObj?.proxyPreviewUrl,
-      proxy_download_url: urlsObj?.proxyDownloadUrl,
+      proxyPreviewUrl: urlsObj?.proxyPreviewUrl ?? urlsObj?.previewUrl ?? null,
+      proxyDownloadUrl: urlsObj?.proxyDownloadUrl ?? urlsObj?.downloadUrl ?? null,
       use_proxy: useProxy,
       created_by: file.created_by || null,
       type: fileType, // 整数类型常量 (0-6)
@@ -692,14 +665,13 @@ export async function incrementAndCheckFileViews(db, file, encryptionSecret) {
   return await fileService.incrementAndCheckFileViews(file.slug);
 }
 
-export async function generateFileDownloadUrl(db, file, encryptionSecret, request = null) {
+export async function generateFileDownloadUrl(db, file, encryptionSecret, request = null, userInfo = null) {
   const fileService = new FileService(db, encryptionSecret);
-  return await fileService.generateFileDownloadUrl(file, encryptionSecret, request);
+  return await fileService.generateFileDownloadUrl(file, encryptionSecret, request, userInfo);
 }
 
-export async function getPublicFileInfo(file, requiresPassword, urlsObj = null) {
-  // 使用类方法，避免代码重复
-  const fileService = new FileService(null);
+export async function getPublicFileInfo(db, file, requiresPassword, urlsObj = null, encryptionSecret = null) {
+  const fileService = new FileService(db, encryptionSecret);
   return await fileService.getPublicFileInfo(file, requiresPassword, urlsObj);
 }
 

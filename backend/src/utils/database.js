@@ -377,13 +377,13 @@ async function initDefaultSettings(db) {
     },
     {
       key: "webdav_upload_mode",
-      value: "direct",
+      value: "single",
       description: "WebDAV客户端的上传模式选择。",
       type: "select",
       group_id: 3,
       options: JSON.stringify([
-        { value: "direct", label: "直接上传" },
-        { value: "multipart", label: "分片上传" },
+        { value: "single", label: "单次上传" },
+        { value: "chunked", label: "分块上传" },
       ]),
       sort_order: 1,
       flags: 0,
@@ -782,6 +782,12 @@ async function executeMigrationForVersion(db, version) {
       console.log("版本21：fs_meta 表及其索引检查/创建完成。");
       break;
 
+    case 22:
+      // 版本22：将 WebDAV 上传模式设置迁移为 single/chunked
+      console.log("版本22：迁移 webdav_upload_mode 设置到 single/chunked...");
+      await migrateWebDavUploadModeToSingleChunked(db);
+      break;
+
     default:
       console.log(`未知的迁移版本: ${version}`);
       break;
@@ -1051,6 +1057,57 @@ async function migrateToBitFlagPermissions(db) {
     }
   } catch (error) {
     console.error("位标志权限系统迁移失败:", error);
+  }
+}
+
+/**
+ * 将 WebDAV 上传模式设置迁移为 single/chunked
+ * 兼容旧值：
+ *  - direct/stream -> single
+ *  - multipart     -> chunked
+ *  - 其它值        -> 保持不变
+ * @param {D1Database} db - D1数据库实例
+ */
+async function migrateWebDavUploadModeToSingleChunked(db) {
+  console.log("开始迁移 webdav_upload_mode 设置到 single/chunked...");
+
+  try {
+    const row = await db
+      .prepare(`SELECT key, value, options FROM ${DbTables.SYSTEM_SETTINGS} WHERE key = ?`)
+      .bind("webdav_upload_mode")
+      .first();
+
+    if (!row) {
+      console.log("未找到 webdav_upload_mode 设置，跳过迁移");
+      return;
+    }
+
+    let value = row.value;
+    if (value === "direct" || value === "stream") {
+      value = "single";
+    } else if (value === "multipart") {
+      value = "chunked";
+    }
+
+    const options = JSON.stringify([
+      { value: "single", label: "单次上传" },
+      { value: "chunked", label: "分块上传" },
+    ]);
+
+    const now = new Date().toISOString();
+
+    await db
+      .prepare(
+        `UPDATE ${DbTables.SYSTEM_SETTINGS}
+         SET value = ?, options = ?, updated_at = ?
+         WHERE key = 'webdav_upload_mode'`
+      )
+      .bind(value, options, now)
+      .run();
+
+    console.log("webdav_upload_mode 设置迁移完成:", value);
+  } catch (error) {
+    console.error("迁移 webdav_upload_mode 设置失败:", error);
   }
 }
 
@@ -1488,7 +1545,7 @@ export async function checkAndInitDatabase(db) {
     const versionSetting = await db.prepare(`SELECT value FROM ${DbTables.SYSTEM_SETTINGS} WHERE key = 'schema_version'`).first();
 
     const currentVersion = versionSetting ? parseInt(versionSetting.value) : 0;
-    const targetVersion = 21; // 当前最新版本
+    const targetVersion = 22; // 当前最新版本
 
     if (currentVersion < targetVersion) {
       console.log(`需要更新数据库结构，当前版本:${currentVersion}，目标版本:${targetVersion}`);

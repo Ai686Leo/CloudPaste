@@ -49,7 +49,7 @@ export default {
       },
       storage_config: {
         name: "存储配置管理",
-        description: "存储配置信息",
+        description: "存储配置信息和访问控制",
       },
       key_management: {
         name: "密钥管理",
@@ -62,6 +62,10 @@ export default {
       system_settings: {
         name: "系统设置",
         description: "系统全局设置",
+      },
+      fs_meta_management: {
+        name: "目录元信息管理",
+        description: "目录元信息配置",
       },
     },
 

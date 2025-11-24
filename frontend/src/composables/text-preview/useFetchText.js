@@ -200,8 +200,8 @@ export function useFetchText() {
   const reDecodeWithEncoding = async (encoding) => {
     if (!rawBuffer.value) {
       // 如果没有原始数据，重新获取
-      if (fileInfo.value?.preview_url) {
-        return await fetchText(fileInfo.value.preview_url, fileInfo.value);
+      if (fileInfo.value?.previewUrl) {
+        return await fetchText(fileInfo.value.previewUrl, fileInfo.value);
       } else {
         throw new Error("没有可用的文件数据");
       }

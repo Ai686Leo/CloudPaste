@@ -1,11 +1,11 @@
 <script setup>
 import { onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
-import { useFsMetaManagement } from "@/modules/admin/fs-meta/useFsMetaManagement.js";
+import { useFsMetaManagement } from "@/modules/admin/composables/useFsMetaManagement.js";
 
 // 导入子组件
-import FsMetaTable from "@/modules/admin/fs-meta/components/FsMetaTable.vue";
-import FsMetaForm from "@/modules/admin/fs-meta/components/FsMetaForm.vue";
+import FsMetaTable from "@/modules/admin/components/FsMetaTable.vue";
+import FsMetaForm from "@/modules/admin/components/FsMetaForm.vue";
 import CommonPagination from "@/components/common/CommonPagination.vue";
 import GlobalSearchBox from "@/components/common/GlobalSearchBox.vue";
 

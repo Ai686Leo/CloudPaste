@@ -187,28 +187,4 @@ export class S3SearchOperations {
     };
   }
 
-  /**
-   * 排序搜索结果
-   * @param {Array} results - 搜索结果数组
-   * @param {string} query - 搜索查询
-   * @returns {Array} 排序后的结果数组
-   */
-  static sortSearchResults(results, query) {
-    return results.sort((a, b) => {
-      // 优先级1: 文件名完全匹配
-      const aExactMatch = a.name.toLowerCase() === query.toLowerCase();
-      const bExactMatch = b.name.toLowerCase() === query.toLowerCase();
-      if (aExactMatch && !bExactMatch) return -1;
-      if (!aExactMatch && bExactMatch) return 1;
-
-      // 优先级2: 文件名开头匹配
-      const aStartsMatch = a.name.toLowerCase().startsWith(query.toLowerCase());
-      const bStartsMatch = b.name.toLowerCase().startsWith(query.toLowerCase());
-      if (aStartsMatch && !bStartsMatch) return -1;
-      if (!aStartsMatch && bStartsMatch) return 1;
-
-      // 优先级3: 修改时间（最新的在前）
-      return new Date(b.modified) - new Date(a.modified);
-    });
-  }
 }

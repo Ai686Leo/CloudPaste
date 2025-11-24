@@ -129,7 +129,7 @@ export const useStorageConfigsStore = defineStore("storageConfigs", () => {
     return [];
   };
 
-  const setConfigs = (list = []) => {
+  const replaceConfigs = (list = []) => {
     configs.value = Array.isArray(list) ? list : [];
     lastLoadedAt.value = Date.now();
   };
@@ -155,7 +155,7 @@ export const useStorageConfigsStore = defineStore("storageConfigs", () => {
       .getStorageConfigs({ limit })
       .then((response) => {
         const normalized = normalizeResponse(response);
-        setConfigs(normalized);
+        replaceConfigs(normalized);
         return configs.value;
       })
       .catch((err) => {
@@ -238,6 +238,7 @@ export const useStorageConfigsStore = defineStore("storageConfigs", () => {
     loadConfigs,
     refreshConfigs,
     invalidateCache,
+    replaceConfigs,
     getConfigById,
     getDefaultConfigId,
     upsertConfig,

@@ -8,8 +8,8 @@ export interface FsDirectoryItem {
   size?: number;
   modified?: string;
   mimetype?: string;
-  download_url?: string;
-  preview_url?: string;
+  downloadUrl?: string;
+  previewUrl?: string;
 }
 
 export interface FsResolvedMeta {

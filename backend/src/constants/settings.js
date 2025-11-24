@@ -187,14 +187,14 @@ export const DEFAULT_SETTINGS = {
     key: "webdav_upload_mode",
     type: SETTING_TYPES.SELECT,
     group_id: SETTING_GROUPS.WEBDAV,
-    help: "WebDAV客户端的上传模式选择。直接上传适合小文件，分片上传适合大文件。",
+    help: "WebDAV客户端的上传模式选择。单次上传适合小文件，分块上传适合大文件。",
     options: JSON.stringify([
-      { value: "direct", label: "直接上传" },
-      { value: "multipart", label: "分片上传" },
+      { value: "single", label: "单次上传" },
+      { value: "chunked", label: "分块上传" },
     ]),
     sort_order: 1,
     flag: SETTING_FLAGS.PUBLIC,
-    default_value: "multipart",
+    default_value: "chunked",
   },
 
   // 站点设置组
@@ -326,7 +326,7 @@ export function validateSettingValue(key, value, type) {
 
     case SETTING_TYPES.SELECT:
       if (key === "webdav_upload_mode") {
-        return ["direct", "multipart"].includes(value);
+        return ["single", "chunked"].includes(value);
       }
       return true;
 

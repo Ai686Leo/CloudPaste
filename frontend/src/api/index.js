@@ -161,12 +161,11 @@ export const api = {
       createShareFromFileSystem: fsService.createShareFromFileSystem,
     },
 
-    // API密钥用户的URL上传服务
+    // API密钥用户的URL上传服务（仅负责URL元信息和内容拉取）
     urlUpload: {
       validateUrlInfo: urlUploadService.validateUrlInfo,
       getProxyUrl: urlUploadService.getProxyUrl,
-      getUrlUploadPresignedUrl: urlUploadService.getUrlUploadPresignedUrl,
-      commitUrlUpload: urlUploadService.commitUrlUpload,
+      fetchUrlContent: urlUploadService.fetchUrlContent,
     },
 
     // API密钥用户的系统服务

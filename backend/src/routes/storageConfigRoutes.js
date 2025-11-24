@@ -23,7 +23,7 @@ import { useRepositories } from "../utils/repositories.js";
 import { NotFoundError } from "../http/errors.js";
 
 const storageConfigRoutes = new Hono();
-const requireRead = usePolicy("s3.config.read");
+const requireRead = usePolicy("storage.config.read");
 const requireAdmin = usePolicy("admin.all");
 
 // 获取存储配置列表（管理员或公开）

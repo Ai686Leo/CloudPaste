@@ -1,6 +1,6 @@
 name = "cloudpaste-backend"
-main = "cloudflare-entry.js"
-compatibility_date = "2024-09-23"
+main = "unified-entry.js"
+compatibility_date = "2025-09-01"
 compatibility_flags = ["nodejs_compat"]
 
 # 环境变量

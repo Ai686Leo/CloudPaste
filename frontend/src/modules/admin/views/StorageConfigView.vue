@@ -4,6 +4,7 @@ import { useStorageConfigManagement } from "@/modules/admin/storage/useStorageCo
 import ConfigForm from "@/modules/admin/components/ConfigForm.vue";
 import CommonPagination from "@/components/common/CommonPagination.vue";
 import { formatDateTimeWithSeconds } from "@/utils/timeUtils.js";
+import { getAdminStorageStrategy } from "@/modules/storage-core/schema/adminStorageSchemas.js";
 
 // 接收darkMode属性
 const props = defineProps({
@@ -52,11 +53,20 @@ const formatStorageTypeLabel = (type) => {
     return "未指定类型";
   }
   const map = {
-    S3: "S3 / 对象存储",
+    S3: "S3/对象存储",
     WEBDAV: "WebDAV",
     LOCAL: "本地存储",
   };
   return map[type] || type;
+};
+
+const getConfigSummaryRows = (config) => {
+  if (!config) return [];
+  const strategy = getAdminStorageStrategy(config.storage_type);
+  if (!strategy || typeof strategy.buildCardSummary !== "function") {
+    return [];
+  }
+  return strategy.buildCardSummary(config) || [];
 };
 
 const storageTypeOptions = computed(() =>
@@ -223,7 +233,7 @@ onMounted(() => {
                   </span>
                 </div>
                 <div class="flex items-center gap-2">
-                  <span class="text-xs px-2 py-1 rounded-full font-medium" :class="darkMode ? 'bg-primary-900/40 text-primary-200' : 'bg-primary-100 text-primary-800'">
+                  <span v-if="config.storage_type === 'S3'" class="text-xs px-2 py-1 rounded-full font-medium" :class="darkMode ? 'bg-primary-900/40 text-primary-200' : 'bg-primary-100 text-primary-800'">
                     {{ config.provider_type || '未指定' }}
                   </span>
                   <span class="text-xs px-2 py-1 rounded-full font-medium" :class="darkMode ? 'bg-gray-800 text-gray-200 border border-gray-600' : 'bg-gray-100 text-gray-700 border border-gray-200'">
@@ -234,26 +244,27 @@ onMounted(() => {
 
               <div class="p-4">
                 <div :class="darkMode ? 'text-gray-300' : 'text-gray-600'">
-                  <div class="grid grid-cols-1 gap-2 text-sm">
-                    <div class="flex justify-between">
-                      <span class="font-medium">存储桶:</span>
-                      <span>{{ config.bucket_name }}</span>
+                  <!-- 类型特定字段：使用策略生成摘要 -->
+                  <div v-if="getConfigSummaryRows(config).length" class="grid grid-cols-1 gap-2 text-sm">
+                    <div
+                      v-for="row in getConfigSummaryRows(config)"
+                      :key="row.key"
+                      class="flex justify-between"
+                    >
+                      <span class="font-medium">{{ row.label }}:</span>
+                      <span
+                        v-if="row.key === 'endpoint_url'"
+                        class="truncate ml-2 max-w-[60%] text-right"
+                        :title="row.value"
+                      >
+                        {{ row.value }}
+                      </span>
+                      <span v-else>{{ row.value }}</span>
                     </div>
+                  </div>
 
-                    <div class="flex justify-between">
-                      <span class="font-medium">区域:</span>
-                      <span>{{ config.region || "自动" }}</span>
-                    </div>
-
-                    <div class="flex justify-between" v-if="config.default_folder">
-                      <span class="font-medium">默认文件夹:</span>
-                      <span>{{ config.default_folder || "根目录" }}</span>
-                    </div>
-
-                    <div class="flex justify-between" v-if="config.path_style !== undefined">
-                      <span class="font-medium">路径样式:</span>
-                      <span>{{ config.path_style ? "路径样式" : "虚拟主机样式" }}</span>
-                    </div>
+                  <!-- 通用字段 -->
+                  <div class="grid grid-cols-1 gap-2 text-sm" :class="config.storage_type === 'S3' || config.storage_type === 'WEBDAV' ? 'mt-2 pt-2 border-t' : ''" :style="config.storage_type === 'S3' || config.storage_type === 'WEBDAV' ? (darkMode ? 'border-color: rgb(75, 85, 99)' : 'border-color: rgb(229, 231, 235)') : ''">
 
                     <div class="flex justify-between">
                       <span class="font-medium">API密钥可见:</span>
@@ -513,15 +524,20 @@ onMounted(() => {
                 <svg class="h-4 w-4 mr-1 mt-0.5 flex-shrink-0 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                <div>S3 存储测试，最终请以实际上传结果为准</div>
+                <div v-if="selectedTestResult.result?.info && !selectedTestResult.result?.cors">
+                  WebDAV 存储测试，最终请以实际上传结果为准
+                </div>
+                <div v-else>
+                  S3 存储测试，最终请以实际上传结果为准
+                </div>
               </div>
             </div>
 
-            <!-- 连接信息 -->
-            <div class="mb-3">
+            <!-- 连接信息 - S3 -->
+            <div class="mb-3" v-if="selectedTestResult.result?.connectionInfo">
               <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">连接信息</h4>
               <div class="bg-gray-50 dark:bg-gray-900/50 rounded p-2 sm:p-3 text-xs sm:text-sm">
-                <div v-if="selectedTestResult.result?.connectionInfo" class="space-y-2">
+                <div class="space-y-2">
                   <div v-for="(value, key) in selectedTestResult.result.connectionInfo" :key="key" class="connection-info-item">
                     <div class="text-gray-500 dark:text-gray-400 font-medium mb-0.5">{{ formatLabel(key) }}:</div>
                     <div
@@ -529,6 +545,73 @@ onMounted(() => {
                       :class="{ 'endpoint-url': key === 'endpoint' || key.includes('url') || key.includes('URI') }"
                     >
                       {{ value || "未设置" }}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 连接信息 - WebDAV -->
+            <div class="mb-3" v-if="selectedTestResult.result?.info">
+              <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">连接信息</h4>
+              <div class="bg-gray-50 dark:bg-gray-900/50 rounded p-2 sm:p-3 text-xs sm:text-sm">
+                <div class="space-y-2">
+                  <div class="connection-info-item">
+                    <div class="text-gray-500 dark:text-gray-400 font-medium mb-0.5">端点地址:</div>
+                    <div class="pl-2 text-gray-900 dark:text-gray-200 break-all overflow-wrap-anywhere endpoint-url">
+                      {{ selectedTestResult.result.info.endpoint || "未设置" }}
+                    </div>
+                  </div>
+
+                  <div class="connection-info-item" v-if="selectedTestResult.result.info.defaultFolder">
+                    <div class="text-gray-500 dark:text-gray-400 font-medium mb-0.5">默认目录:</div>
+                    <div class="pl-2 text-gray-900 dark:text-gray-200">
+                      {{ selectedTestResult.result.info.defaultFolder || "/" }}
+                    </div>
+                  </div>
+
+                  <div class="connection-info-item" v-if="selectedTestResult.result.info.davCompliance">
+                    <div class="text-gray-500 dark:text-gray-400 font-medium mb-0.5">DAV协议支持:</div>
+                    <div class="pl-2 text-gray-900 dark:text-gray-200">
+                      <template v-if="selectedTestResult.result.info.davCompliance.compliance">
+                        {{ selectedTestResult.result.info.davCompliance.compliance.join(", ") }}
+                        <span v-if="selectedTestResult.result.info.davCompliance.server" class="text-gray-500 dark:text-gray-400 ml-1">
+                          ({{ selectedTestResult.result.info.davCompliance.server }})
+                        </span>
+                      </template>
+                      <template v-else-if="Array.isArray(selectedTestResult.result.info.davCompliance)">
+                        {{ selectedTestResult.result.info.davCompliance.join(", ") }}
+                      </template>
+                      <template v-else>
+                        {{ String(selectedTestResult.result.info.davCompliance) }}
+                      </template>
+                    </div>
+                  </div>
+
+                  <div class="connection-info-item" v-if="selectedTestResult.result.info.quota && (selectedTestResult.result.info.quota.used !== null || selectedTestResult.result.info.quota.available !== null)">
+                    <div class="text-gray-500 dark:text-gray-400 font-medium mb-0.5">存储配额:</div>
+                    <div class="pl-2 text-gray-900 dark:text-gray-200">
+                      <span v-if="selectedTestResult.result.info.quota.used !== null">
+                        已用: {{ (selectedTestResult.result.info.quota.used / 1024 / 1024).toFixed(2) }} MB
+                      </span>
+                      <span v-if="selectedTestResult.result.info.quota.used !== null && selectedTestResult.result.info.quota.available !== null"> / </span>
+                      <span v-if="selectedTestResult.result.info.quota.available !== null">
+                        可用: {{ (selectedTestResult.result.info.quota.available / 1024 / 1024).toFixed(2) }} MB
+                      </span>
+                    </div>
+                  </div>
+
+                  <div class="connection-info-item" v-if="selectedTestResult.result.info.tlsSkipVerify">
+                    <div class="text-gray-500 dark:text-gray-400 font-medium mb-0.5">TLS证书验证:</div>
+                    <div class="pl-2 text-yellow-600 dark:text-yellow-400">
+                      已跳过（不安全）
+                    </div>
+                  </div>
+
+                  <div class="connection-info-item" v-if="selectedTestResult.result.info.customHost">
+                    <div class="text-gray-500 dark:text-gray-400 font-medium mb-0.5">自定义Host:</div>
+                    <div class="pl-2 text-gray-900 dark:text-gray-200">
+                      {{ selectedTestResult.result.info.customHost }}
                     </div>
                   </div>
                 </div>
@@ -628,11 +711,15 @@ onMounted(() => {
 
                 <div v-if="selectedTestResult.result?.write?.success" class="pl-5">
                   <div class="grid grid-cols-2 gap-1">
-                    <div class="text-gray-500 dark:text-gray-400">测试文件:</div>
-                    <div class="text-gray-900 dark:text-gray-200 truncate">{{ selectedTestResult.result.write.testFile }}</div>
+                    <template v-if="selectedTestResult.result.write.testFile">
+                      <div class="text-gray-500 dark:text-gray-400">测试文件:</div>
+                      <div class="text-gray-900 dark:text-gray-200 truncate">{{ selectedTestResult.result.write.testFile }}</div>
+                    </template>
 
-                    <div v-if="selectedTestResult.result.write.uploadTime" class="text-gray-500 dark:text-gray-400">上传时间:</div>
-                    <div v-if="selectedTestResult.result.write.uploadTime" class="text-gray-900 dark:text-gray-200">{{ selectedTestResult.result.write.uploadTime }}ms</div>
+                    <template v-if="selectedTestResult.result.write.uploadTime">
+                      <div class="text-gray-500 dark:text-gray-400">上传时间:</div>
+                      <div class="text-gray-900 dark:text-gray-200">{{ selectedTestResult.result.write.uploadTime }}ms</div>
+                    </template>
 
                     <div class="text-gray-500 dark:text-gray-400">已清理:</div>
                     <div :class="selectedTestResult.result.write.cleaned ? 'text-green-600 dark:text-green-400' : 'text-yellow-600 dark:text-yellow-400'">

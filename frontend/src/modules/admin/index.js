@@ -19,6 +19,9 @@ import { useAdminApiKeyService } from "./services/apiKeyService.js";
 import { useMountManagement } from "./storage/useMountManagement.js";
 import { useStorageConfigManagement } from "./storage/useStorageConfigManagement.js";
 
+// FS Meta 元信息管理 composable
+import { useFsMetaManagement } from "./composables/useFsMetaManagement.js";
+
 // 基础 admin 通用逻辑（仍位于通用 composables 下）
 import { useAdminBase } from "@/composables/admin-management/useAdminBase.js";
 
@@ -40,6 +43,9 @@ export {
   useMountManagement,
   useStorageConfigManagement,
 
+  // fs meta
+  useFsMetaManagement,
+
   // shared admin base
   useAdminBase,
 };
@@ -54,6 +60,6 @@ export default {
   useAdminApiKeyService,
   useMountManagement,
   useStorageConfigManagement,
+  useFsMetaManagement,
   useAdminBase,
 };
-

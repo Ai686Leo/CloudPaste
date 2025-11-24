@@ -192,8 +192,16 @@ export const registerPastesPublicRoutes = (router) => {
         if (result.isDeleted && !result.isLastNormalAccess) {
           throw new AppError("文本分享已达到最大查看次数", { status: ApiStatus.GONE, code: "PASTE_GONE", expose: true });
         }
-      } else if (!isPasteAccessible(paste)) {
-        throw new AppError("文本分享已过期或超过最大查看次数", { status: ApiStatus.GONE, code: "PASTE_GONE", expose: true });
+      } else {
+        if (!isPasteAccessible(paste)) {
+          throw new AppError("文本分享已过期或超过最大查看次数", { status: ApiStatus.GONE, code: "PASTE_GONE", expose: true });
+        }
+
+        const result = await incrementAndCheckPasteViews(db, paste.id, paste.max_views);
+
+        if (result.isDeleted && !result.isLastNormalAccess) {
+          throw new AppError("文本分享已达到最大查看次数", { status: ApiStatus.GONE, code: "PASTE_GONE", expose: true });
+        }
       }
 
       c.header("Content-Type", "text/plain; charset=utf-8");

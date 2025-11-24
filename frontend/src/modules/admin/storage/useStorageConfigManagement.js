@@ -48,16 +48,25 @@ export function useStorageConfigManagement() {
   });
 
   const filteredConfigs = computed(() => {
-    if (storageTypeFilter.value === "all") {
-      return storageConfigs.value;
-    }
-    return storageConfigs.value.filter((config) => normalizeStorageTypeValue(config.storage_type) === storageTypeFilter.value);
+    const filtered = storageTypeFilter.value === "all"
+      ? storageConfigs.value
+      : storageConfigs.value.filter((config) => normalizeStorageTypeValue(config.storage_type) === storageTypeFilter.value);
+
+    // 前端分页：基于筛选结果切片
+    const start = (base.pagination.page - 1) * base.pagination.limit;
+    const end = start + base.pagination.limit;
+    return filtered.slice(start, end);
   });
 
   watch(availableStorageTypes, (types) => {
     if (storageTypeFilter.value !== "all" && !types.includes(storageTypeFilter.value)) {
       storageTypeFilter.value = "all";
     }
+  });
+
+  // 筛选条件变化时重置到第一页
+  watch(storageTypeFilter, () => {
+    base.resetPagination();
   });
 
   // 测试详情模态框状态
@@ -87,25 +96,33 @@ export function useStorageConfigManagement() {
   // 重新初始化分页状态
   base.pagination.limit = getDefaultPageSize();
 
+  // 筛选后的总数（用于分页）
+  const filteredTotal = computed(() => {
+    const filtered = storageTypeFilter.value === "all"
+      ? storageConfigs.value
+      : storageConfigs.value.filter((config) => normalizeStorageTypeValue(config.storage_type) === storageTypeFilter.value);
+    return filtered.length;
+  });
+
+  // 监听筛选结果变化，更新分页
+  watch([filteredTotal, () => base.pagination.limit], () => {
+    base.updatePagination({ total: filteredTotal.value }, "page");
+  });
+
   /**
    * 加载存储配置列表
    */
   const loadStorageConfigs = async () => {
     return await base.withLoading(async () => {
       try {
-        const { items, pagination } = await getStorageConfigs({
-          page: base.pagination.page,
-          limit: base.pagination.limit,
-        });
-
+        const { items } = await getStorageConfigs();
         storageConfigs.value = items;
-        base.updatePagination({ total: pagination.total }, "page");
+        base.updatePagination({ total: filteredTotal.value }, "page");
         base.updateLastRefreshTime();
         console.log(`存储配置列表加载完成，共 ${items.length} 条`);
       } catch (error) {
         console.error("加载存储配置列表失败:", error);
         storageConfigs.value = [];
-        // withLoading 会统一处理错误消息，这里只负责状态
         throw error;
       }
     });
@@ -116,15 +133,13 @@ export function useStorageConfigManagement() {
    */
   const handlePageChange = (page) => {
     base.handlePaginationChange(page, "page");
-    loadStorageConfigs();
   };
 
   /**
-   * 处理每页数量变化 - 使用标准方法
+   * 处理每页数量变化
    */
   const handleLimitChange = (newLimit) => {
     base.changePageSize(newLimit);
-    loadStorageConfigs();
   };
 
   /**
@@ -203,6 +218,8 @@ export function useStorageConfigManagement() {
   class TestResultProcessor {
     constructor(result) {
       this.result = result;
+      // 识别存储类型：WebDAV有info字段但没有cors/frontendSim，S3有cors/frontendSim但没有info
+      this.isWebDAV = !!(this.result.info && !this.result.cors && !this.result.frontendSim);
     }
 
     /**
@@ -211,21 +228,33 @@ export function useStorageConfigManagement() {
     calculateStatus() {
       const basicConnectSuccess = this.result.read?.success === true;
       const writeSuccess = this.result.write?.success === true;
-      const corsSuccess = this.result.cors?.success === true;
-      const frontendSimSuccess = this.result.frontendSim?.success === true;
 
-      // 完全成功：读写权限都可用、CORS配置正确且前端模拟测试通过
-      const isFullSuccess = basicConnectSuccess && writeSuccess && corsSuccess && frontendSimSuccess;
-      // 部分成功：至少读权限可用
-      const isPartialSuccess = basicConnectSuccess && (!writeSuccess || !corsSuccess || !frontendSimSuccess);
-      // 整体成功状态：至少基础连接成功
-      const isSuccess = basicConnectSuccess;
+      if (this.isWebDAV) {
+        // WebDAV测试：只检查读写权限
+        const isFullSuccess = basicConnectSuccess && writeSuccess;
+        const isPartialSuccess = basicConnectSuccess && !writeSuccess;
+        const isSuccess = basicConnectSuccess;
 
-      return {
-        isFullSuccess,
-        isPartialSuccess,
-        isSuccess,
-      };
+        return {
+          isFullSuccess,
+          isPartialSuccess,
+          isSuccess,
+        };
+      } else {
+        // S3测试：检查读写权限、CORS和前端模拟
+        const corsSuccess = this.result.cors?.success === true;
+        const frontendSimSuccess = this.result.frontendSim?.success === true;
+
+        const isFullSuccess = basicConnectSuccess && writeSuccess && corsSuccess && frontendSimSuccess;
+        const isPartialSuccess = basicConnectSuccess && (!writeSuccess || !corsSuccess || !frontendSimSuccess);
+        const isSuccess = basicConnectSuccess;
+
+        return {
+          isFullSuccess,
+          isPartialSuccess,
+          isSuccess,
+        };
+      }
     }
 
     /**
@@ -269,13 +298,40 @@ export function useStorageConfigManagement() {
         }
       }
 
-      // CORS配置状态 - 简洁显示
-      if (this.result.cors?.success) {
-        details.push("✓ CORS配置正确");
-      } else {
-        details.push("✗ CORS配置有问题");
-        if (this.result.cors?.error) {
-          details.push(`  ${this.result.cors.error.split("\n")[0]}`);
+      // S3特有的CORS配置状态
+      if (!this.isWebDAV && this.result.cors) {
+        if (this.result.cors.success) {
+          details.push("✓ CORS配置正确");
+        } else {
+          details.push("✗ CORS配置有问题");
+          if (this.result.cors.error) {
+            details.push(`  ${this.result.cors.error.split("\n")[0]}`);
+          }
+        }
+      }
+
+      // WebDAV特有的协议信息
+      if (this.isWebDAV && this.result.info) {
+        if (this.result.info.davCompliance) {
+          // davCompliance 可能是对象 {compliance: [...], server: "..."} 或直接是数组
+          const dav = this.result.info.davCompliance;
+          let davText = "";
+          if (dav.compliance && Array.isArray(dav.compliance)) {
+            davText = dav.compliance.join(", ");
+            if (dav.server) {
+              davText += ` (${dav.server})`;
+            }
+          } else if (Array.isArray(dav)) {
+            davText = dav.join(", ");
+          } else {
+            davText = String(dav);
+          }
+          details.push(`✓ DAV协议: ${davText}`);
+        }
+        if (this.result.info.quota && (this.result.info.quota.used !== null || this.result.info.quota.available !== null)) {
+          const usedMB = this.result.info.quota.used !== null ? (this.result.info.quota.used / 1024 / 1024).toFixed(2) : "N/A";
+          const availableMB = this.result.info.quota.available !== null ? (this.result.info.quota.available / 1024 / 1024).toFixed(2) : "N/A";
+          details.push(`✓ 配额: 已用${usedMB}MB / 可用${availableMB}MB`);
         }
       }
 

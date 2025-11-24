@@ -6,6 +6,7 @@
  */
 
 import { S3StorageDriver } from "../drivers/s3/S3StorageDriver.js";
+import { WebDavStorageDriver } from "../drivers/webdav/WebDavStorageDriver.js";
 import { CAPABILITIES } from "../interfaces/capabilities/index.js";
 import { ValidationError, NotFoundError } from "../../http/errors.js";
 
@@ -14,8 +15,8 @@ const registry = new Map();
 export class StorageFactory {
   static SUPPORTED_TYPES = {
     S3: "S3",
+    WEBDAV: "WEBDAV",
     // 未来扩展：
-    // WEBDAV: "WebDAV",
     // LOCAL: "Local"
   };
 
@@ -82,6 +83,9 @@ export class StorageFactory {
     if (storageType === StorageFactory.SUPPORTED_TYPES.S3) {
       return StorageFactory._validateS3Config(config);
     }
+    if (storageType === StorageFactory.SUPPORTED_TYPES.WEBDAV) {
+      return StorageFactory._validateWebDavConfig(config);
+    }
     return { valid: true, errors: [] };
   }
 
@@ -101,6 +105,33 @@ export class StorageFactory {
     }
     return { valid: errors.length === 0, errors };
   }
+
+  static _validateWebDavConfig(config) {
+    const errors = [];
+    if (!config.endpoint_url) errors.push("WebDAV配置缺少必填字段: endpoint_url");
+    if (!config.username) errors.push("WebDAV配置缺少必填字段: username");
+    if (!config.password) errors.push("WebDAV配置缺少必填字段: password");
+
+    if (config.endpoint_url) {
+      try {
+        const parsed = new URL(config.endpoint_url);
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+          errors.push("endpoint_url 必须以 http:// 或 https:// 开头");
+        }
+      } catch {
+        errors.push("endpoint_url 格式无效");
+      }
+    }
+
+    if (config.default_folder) {
+      const folder = config.default_folder.toString();
+      if (folder.includes("..")) {
+        errors.push("default_folder 不允许包含 .. 段");
+      }
+    }
+
+    return { valid: errors.length === 0, errors };
+  }
 }
 
 // 默认注册 S3 驱动与 tester
@@ -118,4 +149,14 @@ StorageFactory.registerDriver(StorageFactory.SUPPORTED_TYPES.S3, {
     CAPABILITIES.ATOMIC,
     CAPABILITIES.PROXY,
   ],
+});
+
+// 注册 WebDAV 驱动
+import { webDavTestConnection } from "../drivers/webdav/WebDavTester.js";
+StorageFactory.registerDriver(StorageFactory.SUPPORTED_TYPES.WEBDAV, {
+  ctor: WebDavStorageDriver,
+  tester: webDavTestConnection,
+  displayName: "WebDAV 存储",
+  validate: (cfg) => StorageFactory._validateWebDavConfig(cfg),
+  capabilities: [CAPABILITIES.READER, CAPABILITIES.WRITER, CAPABILITIES.ATOMIC, CAPABILITIES.PROXY],
 });

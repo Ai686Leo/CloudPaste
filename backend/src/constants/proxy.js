@@ -20,8 +20,9 @@ export const PROXY_CONFIG = {
 
   // 支持的WebDAV策略
   WEBDAV_POLICIES: {
-    REDIRECT: "302_redirect",
-    NATIVE_PROXY: "native_proxy",
+    REDIRECT: "302_redirect",      // 存储直链重定向
+    USE_PROXY_URL: "use_proxy_url", // 自定义域名/代理 URL 重定向（custom_host_proxy）
+    NATIVE_PROXY: "native_proxy",   // 本地服务器代理
   },
 
   // 签名相关配置

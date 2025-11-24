@@ -141,11 +141,11 @@ export function useFsService() {
    * @returns {Promise<string>}
    */
   const getFileLink = async (path, expiresIn = null, forceDownload = true) => {
-    const response = await api.fs.getFileLink(path, expiresIn, forceDownload);
-    if (!response?.success || !response.data?.presignedUrl) {
-      throw new Error(response?.message || "获取文件直链失败");
+    const url = await api.fs.getFileLink(path, expiresIn, forceDownload);
+    if (!url) {
+      throw new Error("获取文件直链失败");
     }
-    return response.data.presignedUrl;
+    return url;
   };
 
   return {

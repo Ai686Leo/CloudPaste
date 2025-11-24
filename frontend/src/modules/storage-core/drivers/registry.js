@@ -1,10 +1,12 @@
 import { useStorageConfigsStore } from "@/stores/storageConfigsStore.js";
 import { DRIVER_TYPES, DriverResolutionError } from "./types.js";
 import { S3Driver } from "./s3/S3Driver.js";
+import { WebDavDriver } from "./webdav/WebDavDriver.js";
 
 // 存储驱动工厂
 const driverFactories = new Map([
   [DRIVER_TYPES.S3, (config) => new S3Driver(config)],
+  [DRIVER_TYPES.WEBDAV, (config) => new WebDavDriver(config)],
 ]);
 
 const driverCache = new Map();

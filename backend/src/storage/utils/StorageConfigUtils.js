@@ -29,9 +29,8 @@ export class StorageConfigUtils {
       case "S3":
         return await StorageConfigUtils._getS3Config(db, configId);
 
-      // 未来扩展其他存储类型
-      // case "WebDAV":
-      //   return await StorageConfigUtils._getWebDAVConfig(db, configId);
+      case "WEBDAV":
+        return await StorageConfigUtils._getWebDAVConfig(db, configId);
 
       // case "Local":
       //   return await StorageConfigUtils._getLocalConfig(db, configId);
@@ -70,15 +69,20 @@ export class StorageConfigUtils {
    * @param {string} configId - WebDAV配置ID
    * @returns {Promise<Object>} WebDAV配置对象
    */
-  // static async _getWebDAVConfig(db, configId) {
-  //   const config = await db.prepare("SELECT * FROM webdav_configs WHERE id = ?").bind(configId).first();
-  //
-  //   if (!config) {
-  //     throw new NotFoundError("WebDAV配置不存在");
-  //   }
-  //
-  //   return config;
-  // }
+  static async _getWebDAVConfig(db, configId) {
+    const factory = ensureRepositoryFactory(db);
+    const repo = factory.getStorageConfigRepository();
+    const config = repo.findByIdWithSecrets ? await repo.findByIdWithSecrets(configId) : await repo.findById(configId);
+
+    if (!config) {
+      throw new NotFoundError("WebDAV配置不存在");
+    }
+
+    // 将 config_json 展平，方便驱动直接使用
+    const jsonRaw = config.__config_json__ || config.config_json || {};
+    const json = typeof jsonRaw === "string" ? JSON.parse(jsonRaw || "{}") : jsonRaw;
+    return { ...json, ...config };
+  }
 
   /**
    * 获取本地存储配置（未来实现）
@@ -121,7 +125,7 @@ export class StorageConfigUtils {
    * @returns {Array<string>} 支持的存储类型
    */
   static getSupportedStorageTypes() {
-    return ["S3"]; // 未来添加 "WebDAV", "Local" 等
+    return ["S3", "WEBDAV"]; // 未来添加 "Local" 等
   }
 
   /**

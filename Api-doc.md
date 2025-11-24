@@ -507,45 +507,9 @@ X-Custom-Auth-Key: <api_key>
 
 ### 文件分享 API
 
-#### 文件上传和下载
 
-- `POST /api/s3/presign`
 
-  - 描述：获取 S3 预签名上传 URL
-  - 授权：需要管理员令牌或有文件权限的 API 密钥
-  - 请求体：
-    ```json
-    {
-      "storage_config_id": "存储配置ID", // 必填
-      "filename": "文件名.jpg", // 必填
-      "size": 1024, // 可选，文件大小（字节）
-      "mimetype": "image/jpeg", // 可选，MIME类型
-      "path": "custom/path/", // 可选，自定义路径
-      "slug": "custom-slug", // 可选，自定义短链接
-      "override": true, // 可选，是否覆盖已存在文件
-      "remark": "文件备注", // 可选，文件备注信息
-      "password": "访问密码", // 可选，文件访问密码
-      "expires_in": 168, // 可选，过期时间（小时）
-      "max_views": 100, // 可选，最大查看次数
-      "use_proxy": false // 可选，是否使用代理访问
-    }
-    ```
-  - 响应：包含上传 URL 和文件信息
 
-- `POST /api/s3/commit`
-
-  - 描述：文件上传完成后的提交确认
-  - 授权：需要管理员令牌或有文件权限的 API 密钥
-  - 请求体：
-    ```json
-    {
-      "file_id": "文件ID", // 必填
-      "etag": "文件ETag", // 可选，S3返回的ETag（某些S3兼容服务可能无法提供）
-      "size": 1024 // 可选，文件实际大小（字节）
-    }
-    ```
-  - 响应：文件提交结果
-  - **重要说明**：业务参数（remark、password、expires_in、max_views 等）应该在 presign 阶段传递，commit 阶段只负责确认上传完成
 
 - `GET /api/file-download/:slug`
 
@@ -651,68 +615,102 @@ X-Custom-Auth-Key: <api_key>
     }
     ```
 
-### S3 存储配置 API
+### 存储配置 API（通用）
 
-- `GET /api/s3-configs`
 
-  - 描述：获取所有公开的 S3 配置列表
-  - 参数：无
-  - 响应：S3 配置列表
+- `GET /api/storage`
 
-- `GET /api/s3-configs/:id`
-
-  - 描述：获取单个 S3 配置详情（公开配置）
-  - 参数：id - 配置 ID
-  - 响应：S3 配置详情
-
-- `POST /api/s3-configs`
-
-  - 描述：创建新的 S3 配置
-  - 授权：需要管理员令牌
-  - 请求体：
+  - 描述：
+    - 管理员：获取全部存储配置列表（支持分页）；
+    - API 密钥用户：仅获取“公开 + ACL 白名单”内的存储配置列表。
+  - 授权：需要管理员令牌或具有 `s3.config.read` 权限的 API 密钥
+  - 查询参数（管理员）：
+    - `page` - 页码（可选）
+    - `limit` - 每页数量（可选，默认 10）
+  - 响应：
     ```json
     {
-      "name": "配置名称", // 必填
-      "provider_type": "Cloudflare R2", // 必填，提供商类型
-      "endpoint_url": "https://xxxx.r2.cloudflarestorage.com", // 必填，端点URL
-      "bucket_name": "my-bucket", // 必填，存储桶名称
-      "access_key_id": "ACCESS_KEY", // 必填
-      "secret_access_key": "SECRET_KEY", // 必填
-      "region": "auto", // 可选，区域
-      "path_style": false, // 可选，路径样式寻址，默认false
-      "default_folder": "uploads/", // 可选，默认上传文件夹
-      "is_public": true, // 可选，是否公开，默认false
-      "total_storage_bytes": 10737418240 // 可选，存储容量限制（字节）
+      "success": true,
+      "data": {
+        "items": [
+          {
+            "id": "配置ID",
+            "name": "配置名称",
+            "storage_type": "S3 或 WEBDAV",
+            "provider_type": "Cloudflare R2",
+            "endpoint_url": "https://xxxx",
+            "bucket_name": "my-bucket",
+            "default_folder": "uploads/",
+            "is_public": 1,
+            "is_default": 0,
+            "total_storage_bytes": 10737418240
+          }
+        ],
+        "total": 1
+      }
     }
     ```
-  - 响应：新创建的 S3 配置（不包含敏感字段）
 
-- `PUT /api/s3-configs/:id`
+- `GET /api/storage/:id`
 
-  - 描述：更新 S3 配置
+  - 描述：
+    - 管理员：获取指定存储配置详情，可通过 `reveal` 参数控制密钥字段显示方式；
+    - API 密钥用户：仅能访问“公开 + ACL 白名单”内的配置。
+  - 授权：同上
+  - 查询参数（仅管理员）：
+    - `reveal` - `plain` / `masked`，控制密钥字段是否返回明文或脱敏值
+  - 响应：存储配置详情（根据 `reveal` 决定是否包含敏感字段）
+
+- `POST /api/storage`
+
+  - 描述：创建新的存储配置（管理员）
   - 授权：需要管理员令牌
-  - 参数：id - 配置 ID
-  - 请求体：与 POST 请求类似，所有字段均为可选
-  - 响应：更新后的 S3 配置
+  - 请求体示例：
+    ```json
+    {
+      "name": "配置名称",
+      "storage_type": "S3",
+      "provider_type": "Cloudflare R2",
+      "endpoint_url": "https://xxxx.r2.cloudflarestorage.com",
+      "bucket_name": "my-bucket",
+      "access_key_id": "ACCESS_KEY",
+      "secret_access_key": "SECRET_KEY",
+      "region": "auto",
+      "path_style": false,
+      "default_folder": "uploads/",
+      "is_public": true,
+      "total_storage_bytes": 10737418240
+    }
+    ```
+  - 响应：新创建的存储配置（敏感字段按规则处理）
 
-- `DELETE /api/s3-configs/:id`
+- `PUT /api/storage/:id`
 
-  - 描述：删除 S3 配置
+  - 描述：更新存储配置（管理员）
   - 授权：需要管理员令牌
-  - 参数：id - 配置 ID
+  - 参数：`id` - 存储配置 ID
+  - 请求体：与 `POST /api/storage` 类似，所有字段均为可选
+  - 响应：更新成功状态
+
+- `DELETE /api/storage/:id`
+
+  - 描述：删除存储配置（管理员）
+  - 授权：需要管理员令牌
+  - 参数：`id` - 存储配置 ID
   - 响应：删除结果
 
-- `PUT /api/s3-configs/:id/set-default`
+- `PUT /api/storage/:id/set-default`
 
-  - 描述：设置默认 S3 配置
+  - 描述：设置默认存储配置（管理员）
   - 授权：需要管理员令牌
-  - 参数：id - 配置 ID
+  - 参数：`id` - 存储配置 ID
   - 响应：设置结果
 
-- `POST /api/s3-configs/:id/test`
-  - 描述：测试 S3 配置连接有效性
+- `POST /api/storage/:id/test`
+
+  - 描述：测试存储配置连接有效性（管理员）
   - 授权：需要管理员令牌
-  - 参数：id - 配置 ID
+  - 参数：`id` - 存储配置 ID
   - 响应：测试结果，包含连接状态和详细信息
 
 ### 管理员 API
@@ -1230,15 +1228,29 @@ X-Custom-Auth-Key: <api_key>
   - 响应：创建结果
   - 权限：API 密钥用户只能在其 basic_path 权限范围内创建目录
 
-- `POST /api/fs/upload`
+- `PUT /api/fs/upload`
 
-  - 描述：上传文件
+  - 描述：通过“流式”方式上传文件（推荐），请求体为原始字节流，适合大文件或希望端到端流式的场景。
   - 授权：需要管理员令牌或有文件权限的 API 密钥
-  - 请求体：FormData 格式
-    - `file` - 文件内容（必填）
-    - `path` - 上传目标路径，包含文件名（必填）
-    - `use_multipart` - 是否使用分片上传，true/false（可选）
-  - 响应：上传结果
+  - 查询参数：
+    - `path` - 目标文件路径（必填，可以是目录或完整路径，具体行为由后端挂载配置决定）
+    - `upload_id` - 上传进度 ID（可选，用于 `/api/upload/progress` 查询）
+  - 请求头：
+    - `Content-Type` - 文件 MIME 类型（可选，未提供时由后端推断或使用默认）
+    - `Content-Length` - 文件大小（可选，建议提供，用于配额校验与限流）
+    - `X-FS-Filename` - 文件名（可选，不提供时由 `path` 推断）
+    - `X-FS-Options` - base64(JSON) 编码的上传行为参数（可选），例如：
+
+      ```json
+      {
+        "overwrite": true,
+        "originalFilename": false
+      }
+      ```
+
+  - 请求体：文件原始字节流（ReadableStream / 二进制流）
+  - 响应：上传结果（由后端通过统一的流式上传管线写入底层存储），示例：
+
     ```json
     {
       "code": 200,
@@ -1252,6 +1264,20 @@ X-Custom-Auth-Key: <api_key>
       "success": true
     }
     ```
+
+  - 权限：API 密钥用户只能在其 basic_path 权限范围内上传文件
+
+- `POST /api/fs/upload`
+
+  - 描述：通过 `multipart/form-data` 表单上传文件（兼容模式），适合脚本调用或需要携带额外表单字段的场景。
+  - 授权：需要管理员令牌或有文件权限的 API 密钥
+  - 请求体：FormData 格式
+    - `file` - 文件内容（必填）
+    - `path` - 上传目标路径，包含文件名或目录（必填）
+    - `upload_id` - 上传进度 ID（可选，用于 `/api/upload/progress` 查询）
+    - `overwrite` - 是否覆盖同名文件（可选，字符串 `"true"` / `"false"`）
+    - `original_filename` - 是否保留原始文件名（可选，字符串 `"true"` / `"false"`）
+  - 响应：上传结果，结构与流式上传一致（同样包含 path/size/etag/contentType 等字段）
   - 权限：API 密钥用户只能在其 basic_path 权限范围内上传文件
 
 - `POST /api/fs/rename`
@@ -1537,11 +1563,195 @@ X-Custom-Auth-Key: <api_key>
     - 管理员账户：自动拥有所有操作权限
     - API 密钥：需要具有挂载权限（mount_permission）
 
+### 文件分享上传 API
+
+#### 通过 `/api/share/upload` 上传并创建分享记录
+
+支持三种主流程：
+
+- 预签名分享上传：`POST /api/share/presign` → 客户端 PUT 上传 → `POST /api/share/commit`
+- 表单分享上传：`POST /api/share/upload`（multipart/form-data）
+- 流式分享上传：`PUT /api/share/upload`（流式 body）
+
+1. `POST /api/share/presign`
+
+  - 描述：为“上传即分享”生成预签名上传地址。
+  - 授权：需要管理员令牌或有文件权限的 API 密钥。
+  - 请求体：
+
+    ```json
+    {
+      "filename": "文件名",          // 必填
+      "fileSize": 123456,          // 必填，字节数
+      "contentType": "video/mp4",  // 可选，MIME 类型
+      "path": "/share/path",       // 可选，存储目录
+      "storage_config_id": "uuid"  // 可选，存储配置 ID
+    }
+    ```
+
+  - 响应（示例）：
+
+    ```json
+    {
+      "success": true,
+      "code": "OK",
+      "message": "生成预签名成功",
+      "data": {
+        "uploadUrl": "https://...",
+        "key": "对象存储键",
+        "filename": "实际文件名",
+        "storage_config_id": "uuid",
+        "contentType": "video/mp4",
+        "expiresIn": 3600
+      }
+    }
+    ```
+
+2. `POST /api/share/commit`
+
+  - 描述：在预签名 PUT 完成后，创建分享记录。
+  - 授权：需要管理员令牌或有文件权限的 API 密钥。
+  - 请求体（示例）：
+
+    ```json
+    {
+      "key": "对象存储键",          // 必填，来自 presign 响应
+      "storage_config_id": "uuid", // 必填
+      "filename": "文件名",        // 必填
+      "size": 123456,             // 必填
+      "etag": "etag 字符串",      // 可选
+      "slug": "自定义短链",        // 可选
+      "remark": "备注说明",        // 可选
+      "password": "访问密码",      // 可选
+      "expires_in": 24,           // 可选，过期时间（小时）
+      "max_views": 100,           // 可选，最大访问次数
+      "use_proxy": true,          // 可选
+      "original_filename": false  // 可选
+    }
+    ```
+
+  - 响应：返回完整的分享记录。
+
+3. `POST /api/share/upload`（表单分享）
+
+  - 描述：通过 multipart/form-data 上传文件并立即创建分享记录（多存储通用）。
+  - 授权：需要管理员令牌或有文件权限的 API 密钥。
+  - Content-Type：`multipart/form-data`
+  - 表单字段：
+
+    | 字段名            | 必填 | 说明                                |
+         | ----------------- | ---- | ----------------------------------- |
+    | `file`            | 是   | 上传文件（Blob）                    |
+    | `storage_config_id` | 否 | 存储配置 ID，不填则由后端选择默认   |
+    | `path`            | 否   | 存储目录路径                        |
+    | `slug`            | 否   | 自定义分享短链                      |
+    | `remark`          | 否   | 备注                                |
+    | `password`        | 否   | 分享密码                            |
+    | `expires_in`      | 否   | 过期时间（小时）                    |
+    | `max_views`       | 否   | 最大查看次数                        |
+    | `use_proxy`       | 否   | 是否通过本机代理访问存储            |
+    | `original_filename` | 否 | 是否使用原始文件名                  |
+    | `upload_id`       | 否   | 上传进度 ID（用于 `/api/upload/progress` 查询） |
+
+  - 响应：返回创建好的分享记录。
+
+4. `PUT /api/share/upload`（流式分享）
+
+  - 描述：通过流式 PUT 上传文件并创建分享记录，适合较大文件和需要端到端流式的场景。
+  - 授权：需要管理员令牌或有文件权限的 API 密钥。
+  - URL：`/api/share/upload`
+  - 请求头：
+
+    | 名称               | 必填 | 说明                                        |
+         | ------------------ | ---- | ------------------------------------------- |
+    | `Content-Type`     | 否   | 文件 MIME 类型                             |
+    | `Content-Length`   | 否   | 文件大小（建议提供，用于配额校验 / 日志） |
+    | `X-Share-Filename` | 是   | 文件名，用于分享记录                        |
+    | `X-Share-Options`  | 否   | base64(JSON) 的分享参数，结构见下         |
+
+    `X-Share-Options` JSON 结构（示例）：
+
+    ```json
+    {
+      "storage_config_id": "uuid",
+      "path": "/share/path",
+      "slug": "custom-slug",
+      "remark": "备注说明",
+      "password": "可选密码",
+      "expires_in": 24,
+      "max_views": 100,
+      "use_proxy": true,
+      "original_filename": false,
+      "upload_id": "uuid"
+    }
+    ```
+
+  - 请求体：文件原始字节流（ReadableStream）。
+  - 响应：返回创建好的分享记录，结构与表单分享一致。
+
 ### URL 上传 API
+
+#### 上传进度查询
+
+- `GET /api/upload/progress`
+
+  - 描述：查询指定上传任务的进度（公共 API，可用于 FS 上传、分享上传等所有使用 `upload_id` 的场景）。
+  - 授权：无需认证（仅返回进度信息，不泄露敏感内容）。
+  - 查询参数：
+
+    - `upload_id` - 上传任务 ID（推荐使用此参数名）
+    - `id` - 兼容参数名，与 `upload_id` 等价
+
+  - 响应（示例：找到进度记录时）：
+
+    ```json
+    {
+      "code": 200,
+      "message": "获取上传进度成功",
+      "success": true,
+      "data": {
+        "id": "a4c0e0c8-7e6a-4f21-9a2b-123456789abc",
+        "loaded": 25165824,
+        "total": 47444227,
+        "completed": false,
+        "path": "/mount/path/file.webm",
+        "storageType": "S3",
+        "updatedAt": 1763964944868
+      }
+    }
+    ```
+
+  - 响应（未找到进度记录时）：
+
+    ```json
+    {
+      "code": 200,
+      "message": "未找到上传进度记录",
+      "success": true,
+      "data": {
+        "id": "a4c0e0c8-7e6a-4f21-9a2b-123456789abc",
+        "loaded": 0,
+        "total": null,
+        "completed": false
+      }
+    }
+    ```
+
+  - 说明：
+    - `loaded`：已上传字节数。
+    - `total`：总字节数（驱动能够感知时才会填充，未知时为 null）。
+    - `completed`：是否已完成（包括成功和失败后的完成态）。
+    - `path`：后端已知的存储路径（如果驱动在进度更新中提供）。
+    - `storageType`：底层存储类型（例如 `"S3"`、`"WEBDAV"`）。
+    - `updatedAt`：最近一次更新进度的时间戳（毫秒）。
+
+  - 注意事项：
+    - Cloudflare Workers 环境下，进度信息保存在单个实例的内存中，属于“最佳努力”：不同请求如果打到不同实例，可能出现短时间内查不到进度的情况。
+    - Docker/Node 环境下，由于所有请求共享同一进程，进度查询相对稳定。
 
 #### URL 验证与元信息
 
-- `POST /api/url/info`
+- `POST /api/share/url/info`
 
   - 描述：验证 URL 并获取文件元信息
   - 授权：无需授权
@@ -1553,7 +1763,7 @@ X-Custom-Auth-Key: <api_key>
     ```
   - 响应：包含 URL 文件的元信息，如文件名、大小、MIME 类型等
 
-- `GET /api/url/proxy`
+- `GET /api/share/url/proxy`
 
   - 描述：代理 URL 内容，用于不支持 CORS 的资源
   - 授权：无需授权
@@ -1563,136 +1773,15 @@ X-Custom-Auth-Key: <api_key>
 
 #### URL 上传准备与提交
 
-- `POST /api/share/url/presign`
+URL 上传在协议层复用前面的分享上传接口：
 
-  - 描述：根据 URL 元信息生成上传预签名（客户端 PUT 到对象存储），并返回提交建议
-  - 授权：需要管理员令牌或有文件权限的 API 密钥
-  - 请求体：
-    ```json
-    {
-      "url": "https://example.com/image.jpg",           // 必填，源URL
-      "storage_config_id": "配置ID",                     // 可选，不提供则选择默认（API Key 仅公开）
-      "filename": "自定义文件名.jpg",                    // 可选，覆盖元信息文件名
-      "contentType": "image/jpeg",                      // 可选
-      "fileSize": 102400,                                // 可选
-      "path": "custom/path"                             // 可选，存储目录（与 default_folder 组合）
-    }
-    ```
-  - 响应：
-    ```json
-    {
-      "presign": {
-        "uploadUrl": "...",            // 预签名上传URL（PUT）
-        "key": "images/a.jpg",         // 对象Key（用于提交）
-        "storage_config_id": "...",     // 提交所需配置ID
-        "expiresIn": 3600,
-        "filename": "a.jpg"
-      },
-      "metadata": { "filename": "a.jpg", "contentType": "image/jpeg", "size": 102400 },
-      "commit_suggestion": { "key": "images/a.jpg", "storage_config_id": "...", "filename": "a.jpg", "size": 102400 }
-    }
-    ```
+- 准备阶段：
+  - 调用 `POST /api/share/url/info` 获取 URL 的文件名、大小、MIME 类型等元信息；
+  - 前端将 URL 内容下载为文件（Blob），并根据存储类型选择上传策略：
+    - 对 S3 存储：可以使用 `POST /api/share/presign` + PUT + `POST /api/share/commit` 走预签名上传；
+    - 对所有存储（S3/WebDAV 等）：可以直接使用 `POST /api/share/upload`（表单上传）或 `PUT /api/share/upload`（流式上传），由后端写入存储并创建分享记录。
 
-- `POST /api/share/commit`
-
-  - 描述：确认预签名上传完成，创建或更新分享记录（覆盖策略由系统 `file_naming_strategy` 决定）
-  - 授权：需要管理员令牌或有文件权限的 API 密钥
-  - 请求体：
-    ```json
-    {
-      "key": "images/a.jpg",                 // 必填，对象Key
-      "storage_config_id": "...",            // 必填，目标存储配置ID
-      "filename": "a.jpg",                   // 必填，用于展示与MIME推断
-      "size": 102400,                         // 建议提供，便于配额校验
-      "etag": "...",                         // 建议提供
-      "remark": "备注",                      // 可选
-      "password": "...",                     // 可选
-      "expires_in": 24,                       // 可选（小时）
-      "max_views": 0,                         // 可选（0=不限）
-      "slug": "custom-slug",                 // 可选，支持覆盖（需同一创建者）
-      "use_proxy": true                        // 可选；不提供时使用系统 default_use_proxy
-    }
-    ```
-  - 响应：包含 slug、代理/直链 URL、直链签名等访问信息
-
-#### URL 分片上传
-
-- `POST /api/url/multipart/init`
-
-  - 描述：初始化 URL 分片上传流程
-  - 授权：需要管理员令牌或有文件权限的 API 密钥
-  - 请求体：
-    ```json
-    {
-      "url": "https://example.com/largefile.zip", // 必填，源文件URL
-      "storage_config_id": "存储配置ID", // 必填，上传目标存储配置
-      "metadata": {
-        // 可选，自定义元数据
-        "filename": "自定义文件名.zip",
-        "contentType": "application/zip"
-      },
-      "filename": "自定义文件名.zip", // 可选，覆盖元数据中的文件名
-      "slug": "custom-slug", // 可选，自定义短链接
-      "remark": "文件备注", // 可选
-      "password": "访问密码", // 可选
-      "expires_in": 168, // 可选，过期时间（小时）
-      "max_views": 10, // 可选，最大查看次数
-      "part_size": 5242880, // 可选，分片大小（字节）
-      "total_size": 104857600, // 可选，总文件大小（字节）
-      "part_count": 20, // 可选，分片数量
-      "path": "custom/path/" // 可选，自定义存储路径
-    }
-    ```
-  - 响应：初始化结果，包含 uploadId 和分片上传配置
-
-- `POST /api/url/multipart/complete`
-
-  - 描述：完成 URL 分片上传流程
-  - 授权：需要管理员令牌或有文件权限的 API 密钥
-  - 请求体：
-    ```json
-    {
-      "file_id": "文件ID", // 必填
-      "upload_id": "上传ID", // 必填，来自init响应
-      "parts": [
-        // 必填，分片信息数组
-        {
-          "PartNumber": 1,
-          "ETag": "分片1的ETag"
-        },
-        {
-          "PartNumber": 2,
-          "ETag": "分片2的ETag"
-        }
-      ]
-    }
-    ```
-  - 响应：完成结果和文件访问信息
-
-- `POST /api/url/multipart/abort`
-
-  - 描述：终止 URL 分片上传流程
-  - 授权：需要管理员令牌或有文件权限的 API 密钥
-  - 请求体：
-    ```json
-    {
-      "file_id": "文件ID", // 必填
-      "upload_id": "上传ID" // 必填，来自init响应
-    }
-    ```
-  - 响应：终止结果
-
-- `POST /api/url/cancel`
-
-  - 描述：取消 URL 上传并删除文件记录
-  - 授权：需要管理员令牌或有文件权限的 API 密钥
-  - 请求体：
-    ```json
-    {
-      "file_id": "文件ID" // 必填，要取消上传的文件ID
-    }
-    ```
-  - 响应：取消结果和清理状态
+后续生成的分享记录结构与本地文件上传完全一致（同样包含 `slug`、预览/下载 URL、过期时间、最大访问次数等字段）。
 
 ## API 使用说明
 

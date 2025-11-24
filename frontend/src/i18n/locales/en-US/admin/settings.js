@@ -93,8 +93,8 @@ export default {
       uploadModeLabel: "WebDAV Upload Mode",
       uploadModeHint: "Select the upload processing method for the WebDAV client.",
       modes: {
-        direct: "Direct Upload",
-        multipart: "Multipart Upload",
+        single: "Single Upload",
+        chunked: "Chunked Upload",
       },
     },
     protocolInfo: {

@@ -38,7 +38,9 @@ export function useMountManagement() {
 
   // 挂载管理专用分页配置：每页默认 6 条，自定义可选项
   const pageSizeOptions = [6, 12, 24, 48, 96];
-  base.pagination.limit = pageSizeOptions[0];
+  if (base.pagination.limit === 20) {
+    base.pagination.limit = pageSizeOptions[0];
+  }
 
   // 权限计算属性
   const isAdmin = computed(() => authStore.isAdmin);

@@ -1,9 +1,18 @@
 /**
  * FS Meta 元信息管理 Composable
+ *
+ * 说明：
+ * - 属于 Admin 模块下的业务组合逻辑
+ * - 仅负责状态管理和调用 fsMetaService，不直接处理 UI
  */
 import { ref } from "vue";
 import { useI18n } from "vue-i18n";
-import { getAllFsMeta, createFsMeta, updateFsMeta, deleteFsMeta } from "@/api/services/fsMetaService.js";
+import {
+  getAllFsMeta,
+  createFsMeta,
+  updateFsMeta,
+  deleteFsMeta,
+} from "@/api/services/fsMetaService.js";
 
 export function useFsMetaManagement() {
   const { t } = useI18n();
@@ -92,3 +101,4 @@ export function useFsMetaManagement() {
     deleteMeta,
   };
 }
+
