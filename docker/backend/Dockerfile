@@ -51,7 +51,6 @@ RUN mkdir -p /data
 
 # 设置环境变量
 ENV NODE_ENV=production
-ENV LOG_LEVEL=3
 ENV DATA_DIR=/data
 ENV PORT=8787
 # 注意：这个密钥应该在运行时通过环境变量传入，这里只是设置默认值

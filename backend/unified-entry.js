@@ -72,7 +72,8 @@ if (!isCloudflareWorkers) {
       import("path"),
       import("fs"),
       import("url"),
-      import("./src/adapters/SQLiteAdapter.js"),
+      // 动态字符串拼接避免 Wrangler esbuild 静态分析,Workers 环境不会执行此分支
+      import(`${"."}/src/adapters/SQLiteAdapter.js`),
     ]);
 
     const __filename = fileURLToPath(import.meta.url);

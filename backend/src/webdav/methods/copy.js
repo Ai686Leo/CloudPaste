@@ -145,12 +145,12 @@ async function performDirectoryCrossStorageTransfer(dirResult) {
  * @returns {Promise<Object>} 传输结果
  */
 async function performFileCrossStorageTransfer(fileItem) {
-  const { downloadUrl, uploadUrl, contentType, fileName } = fileItem;
+  const { rawUrl, uploadUrl, contentType, fileName } = fileItem;
 
   try {
     // 1. 从源存储下载文件
-    console.log(`下载文件: ${downloadUrl}`);
-    const downloadResponse = await fetch(downloadUrl);
+    console.log(`下载文件: ${rawUrl}`);
+    const downloadResponse = await fetch(rawUrl);
     if (!downloadResponse.ok) {
       throw new DriverError(`下载失败: ${downloadResponse.status} ${downloadResponse.statusText}`);
     }

@@ -59,7 +59,7 @@ export async function webDavTestConnection(config, encryptionSecret) {
       endpoint,
       defaultFolder,
       tlsSkipVerify: !!config.tls_insecure_skip_verify,
-      customHost: config.custom_host || null,
+      urlProxy: config.url_proxy || null,
       davCompliance: null,
       quota: null,
       davError: null,

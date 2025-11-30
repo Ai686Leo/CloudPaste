@@ -7,10 +7,81 @@
 
 import { S3StorageDriver } from "../drivers/s3/S3StorageDriver.js";
 import { WebDavStorageDriver } from "../drivers/webdav/WebDavStorageDriver.js";
-import { CAPABILITIES } from "../interfaces/capabilities/index.js";
-import { ValidationError, NotFoundError } from "../../http/errors.js";
+import { CAPABILITIES, REQUIRED_METHODS_BY_CAPABILITY } from "../interfaces/capabilities/index.js";
+import { ValidationError, NotFoundError, DriverContractError } from "../../http/errors.js";
 
 const registry = new Map();
+
+/**
+ * 对驱动实例进行运行时契约校验（类型 / 能力 / 方法实现）
+ * - 依赖 registerDriver 时声明的 capabilities 以及 REQUIRED_METHODS_BY_CAPABILITY 映射表
+ * - 目标是尽早发现“驱动声明的能力与实际实现不一致”的问题
+ *
+ * @param {any} driver - 已初始化的存储驱动实例
+ * @param {{ displayName?: string, capabilities?: string[] }} entryMeta - 注册信息
+ * @param {string} storageType - 注册时使用的存储类型（例如 'S3' / 'WEBDAV'）
+ */
+function validateDriverContract(driver, entryMeta, storageType) {
+  if (!driver || !entryMeta) {
+    throw new DriverContractError("存储驱动契约校验失败：驱动实例或注册元信息缺失", {
+      details: { storageType },
+    });
+  }
+
+  const registeredType = storageType;
+  const registeredCapabilities = Array.isArray(entryMeta.capabilities) ? entryMeta.capabilities : [];
+
+  const driverType = typeof driver.getType === "function" ? driver.getType() : driver.type;
+  const rawCaps =
+    typeof driver.getCapabilities === "function"
+      ? driver.getCapabilities() || []
+      : Array.isArray(driver.capabilities)
+      ? driver.capabilities
+      : [];
+
+  const driverCapabilities = Array.from(new Set(rawCaps));
+
+  const extraCapabilities = driverCapabilities.filter((cap) => !registeredCapabilities.includes(cap));
+  const missingRegisteredCapabilities = registeredCapabilities.filter((cap) => !driverCapabilities.includes(cap));
+
+  /** @type {Array<{capability: string, method: string}>} */
+  const missingMethods = [];
+
+  // 仅针对“注册表与驱动都声明”的能力进行方法级校验
+  const effectiveCapabilities = driverCapabilities.filter((cap) => registeredCapabilities.includes(cap));
+
+  for (const cap of effectiveCapabilities) {
+    const requiredMethods = REQUIRED_METHODS_BY_CAPABILITY[cap];
+    if (!requiredMethods || requiredMethods.length === 0) continue;
+    for (const methodName of requiredMethods) {
+      if (typeof driver[methodName] !== "function") {
+        missingMethods.push({ capability: cap, method: methodName });
+      }
+    }
+  }
+
+  const typeMismatch = driverType && registeredType && driverType !== registeredType;
+
+  // extraCapabilities / missingRegisteredCapabilities 目前仅作为调试信息存在：
+  // - 某些驱动（如基于 S3 的实现）会根据配置（custom_host 等）在实例上追加能力，这在类型层面是“额外能力”，
+  //   但不会破坏既有行为，因而不视为致命错误。
+  // - registeredCapabilities 描述的是该存储类型在理想情况下支持的能力集合，具体实例可以是其子集。
+
+  if (typeMismatch || missingMethods.length > 0) {
+    throw new DriverContractError("存储驱动契约校验失败", {
+      details: {
+        storageType,
+        registeredType,
+        driverType,
+        registeredCapabilities,
+        driverCapabilities,
+        extraCapabilities,
+        missingRegisteredCapabilities,
+        missingMethods,
+      },
+    });
+  }
+}
 
 export class StorageFactory {
   static SUPPORTED_TYPES = {
@@ -53,6 +124,8 @@ export class StorageFactory {
     if (entry) {
       const instance = new entry.ctor(config, encryptionSecret);
       await instance.initialize?.();
+      // 在实例化完成后执行一次契约校验，确保驱动 type / capabilities / 方法实现与注册信息一致
+      validateDriverContract(instance, entry, storageType);
       return instance;
     }
 
@@ -144,7 +217,7 @@ StorageFactory.registerDriver(StorageFactory.SUPPORTED_TYPES.S3, {
   capabilities: [
     CAPABILITIES.READER,
     CAPABILITIES.WRITER,
-    CAPABILITIES.PRESIGNED,
+    CAPABILITIES.DIRECT_LINK,
     CAPABILITIES.MULTIPART,
     CAPABILITIES.ATOMIC,
     CAPABILITIES.PROXY,

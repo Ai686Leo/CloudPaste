@@ -886,7 +886,7 @@ export class S3BatchOperations {
 
           // 生成源文件的下载预签名URL
           const expiresIn = 3600; // 1小时
-          const downloadUrl = await generateDownloadUrl(sourceS3Config, s3SourcePath, this.encryptionSecret, expiresIn, false);
+          const rawUrl = await generateDownloadUrl(sourceS3Config, s3SourcePath, this.encryptionSecret, expiresIn, false);
 
           // 生成目标文件的上传预签名URL（使用重命名后的路径）
           const fileName = sourcePath.split("/").filter(Boolean).pop() || "file";
@@ -906,7 +906,7 @@ export class S3BatchOperations {
             storagePath: finalS3TargetPath,
             fileName,
             contentType,
-            downloadUrl,
+            rawUrl,
             uploadUrl,
             renamed: wasRenamed,
             originalTarget: targetPath,
@@ -1025,8 +1025,10 @@ export class S3BatchOperations {
         // 更新父目录的修改时间
         await updateParentDirectoriesModifiedTime(this.s3Client, s3Config.bucket_name, fullOldS3Path, rootPrefix);
 
-        // 更新挂载点的最后使用时间
-        await updateMountLastUsed(db, mount.id);
+        // 更新挂载点的最后使用时间（仅在有挂载点上下文时）
+        if (db && mount && mount.id) {
+          await updateMountLastUsed(db, mount.id);
+        }
 
 
         return {

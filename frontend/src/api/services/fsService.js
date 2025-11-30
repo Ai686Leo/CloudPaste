@@ -32,10 +32,18 @@ export async function getDirectoryList(path, options = {}) {
 /**
  * 获取文件信息
  * @param {string} path 文件路径
+ * @param {{ headers?: Record<string,string> }} [options] 可选请求配置（如路径密码token等）
  * @returns {Promise<Object>} 文件信息响应对象
  */
-export async function getFileInfo(path) {
-  return get("/fs/get", { params: { path } });
+export async function getFileInfo(path, options = {}) {
+  /** @type {{ params: Record<string,string>, headers?: Record<string,string> }} */
+  const requestOptions = {
+    params: { path },
+  };
+  if (options.headers) {
+    requestOptions.headers = options.headers;
+  }
+  return get("/fs/get", requestOptions);
 }
 
 /**
@@ -66,15 +74,6 @@ export async function searchFiles(query, searchParams = {}) {
   }
 
   return get("/fs/search", { params });
-}
-
-/**
- * 下载文件
- * @param {string} path 文件路径
- * @returns {string} 文件下载URL
- */
-export function getFileDownloadUrl(path) {
-  return `${API_BASE_URL}/api/fs/download?path=${encodeURIComponent(path)}`;
 }
 
 /**
@@ -140,7 +139,7 @@ export async function updateFile(path, content) {
  * @param {string} path 文件路径
  * @param {number|null} expiresIn 过期时间（秒），null表示使用存储配置的默认签名时间
  * @param {boolean} forceDownload 是否强制下载而非预览
- * @returns {Promise<Object>} 包含预签名URL的响应对象
+ * @returns {Promise<string>} 预签名访问 URL（可能是直链或代理 URL）
  */
 export async function getFileLink(path, expiresIn = null, forceDownload = false) {
   const params = {
@@ -157,7 +156,7 @@ export async function getFileLink(path, expiresIn = null, forceDownload = false)
   if (!resp || resp.success === false) {
     throw new Error(resp?.message || "获取文件直链失败");
   }
-  const url = resp?.data?.url;
+  const url = resp?.data?.rawUrl;
   if (!url) {
     throw new Error(resp?.message || "获取文件直链失败");
   }
@@ -690,7 +689,7 @@ export async function performClientSideCopy(options) {
       // 下载源文件
       console.log(`下载源文件: ${singleFileCopy.sourceS3Path || singleFileCopy.sourceKey}`);
       const fileContent = await fetchFileContent({
-        url: singleFileCopy.downloadUrl,
+        url: singleFileCopy.rawUrl,
         onProgress: (progress, loaded, total) => {
           if (onProgress) {
             onProgress("downloading", progress, {
@@ -771,7 +770,7 @@ export async function performClientSideCopy(options) {
       // 下载源文件
       console.log(`下载源文件: ${item.sourceS3Path || item.sourceKey}`);
       const fileContent = await fetchFileContent({
-        url: item.downloadUrl,
+        url: item.rawUrl,
         onProgress: (progress) => {
           if (onProgress) {
             const itemProgress = (completedItems / totalItems) * 100;

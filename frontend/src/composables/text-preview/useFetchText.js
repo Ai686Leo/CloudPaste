@@ -199,12 +199,11 @@ export function useFetchText() {
    */
   const reDecodeWithEncoding = async (encoding) => {
     if (!rawBuffer.value) {
-      // 如果没有原始数据，重新获取
-      if (fileInfo.value?.previewUrl) {
-        return await fetchText(fileInfo.value.previewUrl, fileInfo.value);
-      } else {
-        throw new Error("没有可用的文件数据");
+      // 如果没有原始数据，重新获取（仅基于 rawUrl）
+      if (fileInfo.value?.rawUrl) {
+        return await fetchText(fileInfo.value.rawUrl, fileInfo.value);
       }
+      throw new Error("没有可用的文件数据");
     }
 
     try {

@@ -3,7 +3,6 @@ import { ApiStatus, UserType } from "../../constants/index.js";
 import { generateFileId, generateUniqueFileSlug } from "../../utils/common.js";
 import { getSettingMetadata } from "../systemService.js";
 import { hashPassword } from "../../utils/crypto.js";
-import { generateFileDownloadUrl } from "../fileService.js";
 import { getEffectiveMimeType } from "../../utils/fileUtils.js";
 
 export class ShareRecordService {
@@ -144,8 +143,6 @@ export class ShareRecordService {
         };
 
         fileForUrl.password_plain = password || null;
-        const urls = await generateFileDownloadUrl(this.db, fileForUrl, this.encryptionSecret, request);
-
         return {
           id: existing.id,
           slug: existing.slug,
@@ -159,11 +156,6 @@ export class ShareRecordService {
           max_views: maxViewsValue,
           expires_at: expiresAt,
           url: `/file/${existing.slug}`,
-          previewUrl: useProxyFlag ? urls.proxyPreviewUrl : urls.previewUrl,
-          downloadUrl: useProxyFlag ? urls.proxyDownloadUrl : urls.downloadUrl,
-          // 直链字段统一移除，仅保留代理与通用字段
-          proxyPreviewUrl: urls.proxyPreviewUrl,
-          proxyDownloadUrl: urls.proxyDownloadUrl,
           use_proxy: useProxyFlag,
           created_by: existing.created_by,
           used_original_filename: originalFilenameUsed,
@@ -221,8 +213,6 @@ export class ShareRecordService {
       password_plain: password || null,
     };
 
-    const urls = await generateFileDownloadUrl(this.db, fileForUrl, this.encryptionSecret, request);
-
     const response = {
       id: fileId,
       slug: finalSlug,
@@ -235,12 +225,8 @@ export class ShareRecordService {
       views: 0,
       max_views: maxViewsValue,
       expires_at: expiresAt,
+      // 分享页 URL，前端通过该地址进入 fileshare 视图
       url: `/file/${finalSlug}`,
-      previewUrl: useProxyFlag ? urls.proxyPreviewUrl : urls.previewUrl,
-      downloadUrl: useProxyFlag ? urls.proxyDownloadUrl : urls.downloadUrl,
-      // 直链字段统一移除，仅保留代理与通用字段
-      proxyPreviewUrl: urls.proxyPreviewUrl,
-      proxyDownloadUrl: urls.proxyDownloadUrl,
       use_proxy: useProxyFlag,
       created_by: createdBy,
       used_original_filename: originalFilenameUsed,

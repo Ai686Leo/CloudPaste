@@ -4,14 +4,16 @@
       <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
         {{ officeTypeDisplayName }}
       </span>
-      <div>
-        <button
-          @click="toggleOfficePreviewService"
-          class="text-xs px-2 py-1 rounded bg-blue-100 dark:bg-blue-700 text-blue-700 dark:text-blue-100 hover:bg-blue-200 dark:hover:bg-blue-600 transition-colors"
-        >
-          {{ useGoogleDocsPreview ? t("fileView.preview.office.useMicrosoft") : t("fileView.preview.office.useGoogle") }}
-        </button>
-      </div>
+      <!-- 仅在存在多个可选渠道时展示下拉选择 -->
+      <select
+        v-if="providerOptions.length > 1"
+        v-model="selectedProviderKey"
+        class="text-xs px-2 py-1 rounded border bg-white dark:bg-gray-800 dark:border-gray-600 dark:text-gray-100"
+      >
+        <option v-for="opt in providerOptions" :key="opt.key" :value="opt.key">
+          {{ opt.label }}
+        </option>
+      </select>
     </div>
     <div class="office-iframe flex-grow relative" style="height: calc(100vh - 400px); min-height: 300px; background-color: white">
       <iframe
@@ -50,7 +52,7 @@
           </svg>
           <p class="text-blue-600">{{ t("fileView.preview.office.loadingDetail") }}</p>
           <p class="text-gray-500 text-sm mt-1">
-            {{ useGoogleDocsPreview ? t("fileView.preview.office.googleService") : t("fileView.preview.office.microsoftService") }}
+            {{ t("fileView.preview.office.loadingDetail") }}
             {{ useProxy ? t("fileView.preview.office.proxyMode") : t("fileView.preview.office.directMode") }}
           </p>
         </div>
@@ -77,11 +79,13 @@ import { getExtension } from "@/utils/fileTypes.js";
 const { t } = useI18n();
 
 const props = defineProps({
-  microsoftOfficePreviewUrl: {
-    type: String,
-    default: "",
+  // DocumentApp providers 映射，例如 { microsoft: 'https://...', google: 'https://...' }
+  providers: {
+    type: Object,
+    default: () => ({}),
   },
-  googleDocsPreviewUrl: {
+  // 原生浏览器预览 URL（直链 / 代理）
+  nativeUrl: {
     type: String,
     default: "",
   },
@@ -103,9 +107,8 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(["load", "error", "toggle-service", "update-urls"]);
+const emit = defineEmits(["load", "error"]);
 
-const useGoogleDocsPreview = ref(false);
 const officePreviewLoading = ref(true);
 const officePreviewError = ref("");
 
@@ -171,20 +174,32 @@ const officeTypeDisplayName = computed(() => {
   return t("fileView.preview.office.title");
 });
 
-const currentOfficePreviewUrl = computed(() => {
-  return useGoogleDocsPreview.value ? props.googleDocsPreviewUrl : props.microsoftOfficePreviewUrl;
+// 可用预览渠道
+const providerOptions = computed(() => {
+  const options = [];
+
+  const providers = props.providers || {};
+  for (const key of Object.keys(providers)) {
+    options.push({
+      key,
+      label: key,
+      url: providers[key],
+    });
+  }
+
+  return options;
 });
 
-const toggleOfficePreviewService = () => {
-  useGoogleDocsPreview.value = !useGoogleDocsPreview.value;
-  officePreviewLoading.value = true;
-  officePreviewError.value = "";
-  emit("toggle-service", useGoogleDocsPreview.value);
-};
+const selectedProviderKey = ref("");
 
-const updateOfficePreviewUrls = () => {
-  emit("update-urls");
-};
+// 当前选中的 Office 预览 URL
+const currentOfficePreviewUrl = computed(() => {
+  const options = providerOptions.value;
+  if (!options.length) return "";
+
+  const current = options.find((opt) => opt.key === selectedProviderKey.value) || options[0];
+  return current.url || "";
+});
 
 const handleOfficePreviewLoad = () => {
   console.log("Office预览加载成功");
@@ -201,6 +216,11 @@ const handleOfficePreviewError = (event) => {
 };
 
 onMounted(() => {
+  const opts = providerOptions.value;
+  if (opts.length) {
+    selectedProviderKey.value = opts[0].key;
+  }
+
   if (currentOfficePreviewUrl.value) {
     officePreviewLoading.value = true;
   }

@@ -1,6 +1,7 @@
 import { api } from "@/api";
 import { useAuthStore } from "@/stores/authStore.js";
 import { usePathPassword } from "@/composables/usePathPassword.js";
+import { downloadFileWithAuth } from "@/api/services/fileDownloadService.js";
 
 /** @typedef {import("@/types/fs").FsDirectoryResponse} FsDirectoryResponse */
 /** @typedef {import("@/types/fs").FsDirectoryItem} FsDirectoryItem */
@@ -72,7 +73,22 @@ export function useFsService() {
    * @returns {Promise<FsDirectoryItem>}
    */
   const getFileInfo = async (path) => {
-    const response = await api.fs.getFileInfo(path);
+    const isAdmin = authStore.isAdmin;
+
+    /** @type {{ headers?: Record<string,string> }} */
+    const requestOptions = {};
+
+    // 非管理员访问时，为文件路径附加路径密码 token（如果存在）
+    if (!isAdmin) {
+      const token = pathPassword.getPathToken(path);
+      if (token) {
+        requestOptions.headers = {
+          "X-FS-Path-Token": token,
+        };
+      }
+    }
+
+    const response = await api.fs.getFileInfo(path, requestOptions);
     if (!response?.success) {
       throw new Error(response?.message || "获取文件信息失败");
     }
@@ -148,6 +164,31 @@ export function useFsService() {
     return url;
   };
 
+  /**
+   * 通过 Down 路由下载文件（复用统一带鉴权下载逻辑）
+   * @param {string} path
+   * @param {string} filename
+   * @returns {Promise<void>}
+   */
+  const downloadFile = async (path, filename) => {
+    const normalizedPath = path || "/";
+    const isAdmin = authStore.isAdmin;
+
+    /** @type {Record<string,string>|undefined} */
+    let headers;
+    if (!isAdmin) {
+      const token = pathPassword.getPathToken(normalizedPath);
+      if (token) {
+        headers = {
+          "X-FS-Path-Token": token,
+        };
+      }
+    }
+
+    const endpoint = `/api/fs/download?path=${encodeURIComponent(normalizedPath)}`;
+    await downloadFileWithAuth(endpoint, filename, headers ? { headers } : {});
+  };
+
   return {
     getDirectoryList,
     getFileInfo,
@@ -156,5 +197,6 @@ export function useFsService() {
     batchDeleteItems,
     batchCopyItems,
     getFileLink,
+    downloadFile,
   };
 }

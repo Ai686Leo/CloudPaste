@@ -20,7 +20,7 @@ function normalizeListResponse(response, limit, offset) {
 function ensurePasswordInUrl(url, password, file) {
   if (!url || !password) return url || "";
 
-  // 仅对代理 URL（/api/file-view 或 /api/file-download）追加密码
+  // 仅对 share 内容路由（/api/s/:slug?mode=...）追加密码
   // 以及标记为 use_proxy 的文件，避免污染直链/CDN URL
   const shareInfo = fileViewService.parseFileShareUrl(url);
   const isProxy = shareInfo.isFileShare || file?.use_proxy;
@@ -65,9 +65,18 @@ export function buildPreviewUrl(file, options = {}) {
   if (!file) return "";
   const password = resolvePassword(file, options.password);
 
-  let url = file.urls?.proxyPreviewUrl || file.previewUrl;
-  if (!url && file.slug) {
-    url = fileViewService.buildPreviewUrl(file.slug, password || null);
+  // 预览统一基于 Link JSON 的 rawUrl：
+  // - 当 rawUrl 为直链或 url_proxy/Worker 入口时直接使用
+  // - 当 rawUrl 为空且 linkType=proxy/use_proxy=1 时才回退到 `/api/s/:slug?mode=inline`
+  let url = file.rawUrl || "";
+
+  if (
+    !url &&
+    file.slug &&
+    (file.linkType === "proxy" || file.use_proxy)
+  ) {
+    // 仅在本地 share 内容路由模式下才回退到 inline 模式
+    url = `/api/s/${file.slug}?mode=inline`;
   }
 
   if (!url) return "";
@@ -79,8 +88,14 @@ export function buildDownloadUrl(file, options = {}) {
   if (!file) return "";
   const password = resolvePassword(file, options.password);
 
-  let url = file.urls?.proxyDownloadUrl || file.downloadUrl;
-  if (!url && file.slug) {
+  // 下载入口按 linkType 分流：
+  // - linkType=url_proxy：直接复用 rawUrl（通常为 /proxy/share/:slug）
+  // - 其他场景：继续使用 share 内容路由 `/api/s/:slug?mode=attachment`
+  let url = "";
+
+  if (file.linkType === "url_proxy" && file.rawUrl) {
+    url = file.rawUrl;
+  } else if (file.slug) {
     url = fileViewService.buildDownloadUrl(file.slug, password || null);
   }
 
@@ -90,20 +105,27 @@ export function buildDownloadUrl(file, options = {}) {
 }
 
 export async function getOfficePreviewUrl(file, options = {}) {
-  if (!file?.slug) return null;
-  const password = resolvePassword(file, options.password);
-  return await fileViewService.getOfficePreviewUrl(file.slug, {
-    password: password || undefined,
-    provider: options.provider || "microsoft",
-    returnAll: options.returnAll || false,
-  });
-}
+  const preview = file?.documentPreview;
 
-export async function getOfficePreviewUrlsForDirectUrl(directUrl) {
-  if (!directUrl) {
+  // 未提供 documentPreview 或不支持预览时直接返回 null
+  const providers = preview?.providers || {};
+  if (!preview || !Object.keys(providers).length) {
     return null;
   }
-  return await fileViewService.getOfficePreviewUrl({ directUrl }, { returnAll: true });
+
+  const returnAll = options.returnAll || false;
+
+  if (!returnAll) {
+    // 默认使用 providers 中的 microsoft 作为推荐入口
+    return providers.microsoft || null;
+  }
+
+  // 返回所有可用的预览 URL（如果服务端提供了 providers）
+  return {
+    directUrl: preview.rawUrl || null,
+    microsoft: providers.microsoft || "",
+    google: providers.google || "",
+  };
 }
 
 export function parseShareUrl(url) {

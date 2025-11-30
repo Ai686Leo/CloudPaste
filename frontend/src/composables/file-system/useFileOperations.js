@@ -28,11 +28,11 @@ export function useFileOperations() {
 
   /**
    * 下载文件
-   * @param {string | (FsDirectoryItem & { downloadUrl?: string })} pathOrItem - 文件路径或文件对象
+   * @param {string | FsDirectoryItem} pathOrItem - 文件路径或文件对象
    * @returns {Promise<FileOperationResult>}
    */
   const downloadFile = async (pathOrItem) => {
-    /** @type {FsDirectoryItem & { downloadUrl?: string }} */
+    /** @type {FsDirectoryItem} */
     const item =
       typeof pathOrItem === "string"
         ? { path: pathOrItem, name: pathOrItem.split("/").pop() || pathOrItem, isDirectory: false }
@@ -46,38 +46,10 @@ export function useFileOperations() {
       loading.value = true;
       error.value = null;
 
-      // 如果有已有的 downloadUrl（例如前端缓存的 S3 直链），直接使用
-      if (item.downloadUrl) {
-        console.log("使用已有 downloadUrl:", item.downloadUrl);
+      // 通过 FS service 调用 Down 路由下载，由后端根据 Link 能力统一决策直链/代理/302
+      await fsService.downloadFile(item.path, item.name);
 
-        const link = document.createElement("a");
-        link.href = item.downloadUrl;
-        link.download = item.name;
-        link.style.display = "none";
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-
-        return { success: true, message: t("mount.messages.downloadStarted", { name: item.name }) };
-      }
-
-      // 否则通过 FS service 获取文件信息，从中取 downloadUrl
-      const info = await fsService.getFileInfo(item.path);
-
-      if (info?.downloadUrl) {
-        const link = document.createElement("a");
-        link.href = info.downloadUrl;
-        link.download = item.name;
-        link.style.display = "none";
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-
-        return { success: true, message: t("mount.messages.downloadStarted", { name: item.name }) };
-      }
-
-      console.error("下载失败：文件信息中没有 downloadUrl 字段");
-      throw new Error("文件信息缺少 downloadUrl 字段");
+      return { success: true, message: t("mount.messages.downloadStarted", { name: item.name }) };
     } catch (err) {
       console.error("下载文件失败:", err);
       error.value = /** @type {any} */ (err)?.message;

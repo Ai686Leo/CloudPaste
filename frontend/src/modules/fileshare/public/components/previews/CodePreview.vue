@@ -124,20 +124,20 @@ const adaptedFileData = computed(() => {
   return {
     name: props.filename || "code-file",
     filename: props.filename || "code-file",
-    previewUrl: props.previewUrl,
+    rawUrl: props.previewUrl,
     contentType: "text/plain",
   };
 });
 
 // 加载文本内容
 const loadTextContent = async () => {
-  if (!adaptedFileData.value?.previewUrl) {
-    console.warn("没有可用的预览URL");
+  if (!adaptedFileData.value?.rawUrl) {
+    console.warn("没有可用的 rawUrl");
     return;
   }
 
   try {
-    const result = await fetchText(adaptedFileData.value.previewUrl, adaptedFileData.value);
+    const result = await fetchText(adaptedFileData.value.rawUrl, adaptedFileData.value);
 
     if (result.success) {
       textContent.value = result.text;
@@ -166,7 +166,7 @@ const loadTextContent = async () => {
 
 // 处理编码切换
 const handleEncodingChange = async () => {
-  if (!adaptedFileData.value?.previewUrl) return;
+  if (!adaptedFileData.value?.rawUrl) return;
 
   try {
     const result = await reDecodeWithEncoding(currentEncoding.value);

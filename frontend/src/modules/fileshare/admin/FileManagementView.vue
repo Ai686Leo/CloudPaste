@@ -178,6 +178,7 @@
 <script setup>
 import { onMounted, ref } from "vue";
 import { useFileManagement } from "@/modules/fileshare/admin/useFileManagement.js";
+import { useThemeMode } from "@/composables/core/useThemeMode.js";
 
 // 导入子组件
 import FileTable from "@/modules/fileshare/admin/components/FileTable.vue";
@@ -189,20 +190,20 @@ import GlobalSearchBox from "@/components/common/GlobalSearchBox.vue";
 
 /**
  * 组件接收的属性定义
- * darkMode: 主题模式
  * userType: 用户类型，'admin'或'apikey'
  */
 const props = defineProps({
-  darkMode: {
-    type: Boolean,
-    required: true,
-  },
   userType: {
     type: String,
     default: "admin", // 默认为管理员
     validator: (value) => ["admin", "apikey"].includes(value),
   },
 });
+
+/**
+ * 使用主题模式 composable
+ */
+const { isDarkMode: darkMode } = useThemeMode();
 
 // 使用文件管理composable
 const {

@@ -97,7 +97,15 @@ export const registerWriteRoutes = (router, helpers) => {
     const contentLengthHeader = c.req.header("content-length");
     const contentLength = contentLengthHeader ? parseInt(contentLengthHeader, 10) || 0 : 0;
     const contentType = c.req.header("content-type") || undefined;
-    const filenameHeader = c.req.header("x-fs-filename") || null;
+    const filenameHeaderRaw = c.req.header("x-fs-filename") || null;
+    let filenameHeader = filenameHeaderRaw;
+    if (filenameHeaderRaw) {
+      try {
+        filenameHeader = decodeURIComponent(filenameHeaderRaw);
+      } catch {
+        filenameHeader = filenameHeaderRaw;
+      }
+    }
 
     let inferredName = null;
     try {

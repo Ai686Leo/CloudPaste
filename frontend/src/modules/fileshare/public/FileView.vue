@@ -45,17 +45,17 @@
 
     <div v-else class="file-container flex-1 flex flex-col py-8 px-4 max-w-4xl mx-auto w-full">
       <!-- 密码验证界面 -->
-      <div v-if="requiresPassword && !fileUrls.previewUrl" class="password-container flex-1 flex items-start justify-center pt-8">
+      <div v-if="requiresPassword" class="password-container flex-1 flex items-start justify-center pt-8">
         <FileViewPassword :fileId="fileInfo.slug" @verified="handlePasswordVerified" />
       </div>
 
       <!-- 文件信息和操作界面 -->
       <div v-else class="file-content flex flex-col flex-1">
         <!-- 文件信息 -->
-        <FileViewInfo :fileInfo="fileInfo" :fileUrls="fileUrls" class="flex-1 flex flex-col" :darkMode="darkMode" />
+        <FileViewInfo :fileInfo="fileInfo" class="flex-1 flex flex-col" :darkMode="darkMode" />
 
         <!-- 文件操作按钮 -->
-        <FileViewActions :fileInfo="fileInfo" :fileUrls="fileUrls" :darkMode="darkMode" @edit="openEditModal" @delete="handleFileDeleted" @refresh-file-info="refreshFileInfo" />
+        <FileViewActions :fileInfo="fileInfo" :darkMode="darkMode" @edit="openEditModal" @delete="handleFileDeleted" @refresh-file-info="refreshFileInfo" />
       </div>
 
       <!-- 编辑模态框 (仅管理员可见) -->
@@ -102,10 +102,6 @@ const route = useRoute();
 // 状态变量
 const slug = ref(props.slug);
 const fileInfo = ref({});
-const fileUrls = ref({
-  previewUrl: "",
-  downloadUrl: "",
-});
 const loading = ref(true);
 const error = ref("");
 const requiresPassword = ref(false);
@@ -167,20 +163,7 @@ const loadFileInfo = async (force = false) => {
       slug: fileSlug,
     };
 
-    if (data.requires_password) {
-      requiresPassword.value = true;
-      fileUrls.value = {
-        previewUrl: "",
-        downloadUrl: "",
-      };
-    } else {
-      requiresPassword.value = false;
-
-      fileUrls.value = {
-        previewUrl: fileshareService.getPermanentPreviewUrl(fileInfo.value),
-        downloadUrl: fileshareService.getPermanentDownloadUrl(fileInfo.value),
-      };
-    }
+    requiresPassword.value = !!data.requires_password;
   } catch (err) {
     console.error("加载文件信息失败:", err);
     error.value = err.message || t("fileView.errors.loadFailed");
@@ -204,11 +187,6 @@ const handlePasswordVerified = (data) => {
 
   fileInfo.value = updated;
 
-  fileUrls.value = {
-    previewUrl: fileshareService.getPermanentPreviewUrl(updated),
-    downloadUrl: fileshareService.getPermanentDownloadUrl(updated),
-  };
-
   if (data.currentPassword) {
     try {
       sessionStorage.setItem(`file_password_${fileInfo.value.slug}`, data.currentPassword);
@@ -230,15 +208,19 @@ const openEditModal = async () => {
   try {
     // 只有当文件有ID时才尝试获取详情
     if (fileInfo.value.id) {
+      const prev = fileInfo.value;
       const detail = await fileShareStore.fetchById(fileInfo.value.id, { useCache: false });
       fileInfo.value = {
         ...detail,
-        slug: fileInfo.value.slug,
-        type: fileInfo.value.type,
-        requires_password: fileInfo.value.requires_password,
-        passwordVerified: fileInfo.value.passwordVerified,
-        currentPassword: fileInfo.value.currentPassword,
-        use_proxy: fileInfo.value.use_proxy,
+        slug: prev.slug,
+        type: prev.type,
+        requires_password: prev.requires_password,
+        passwordVerified: prev.passwordVerified,
+        currentPassword: prev.currentPassword,
+        use_proxy: prev.use_proxy,
+        rawUrl: prev.rawUrl,
+        linkType: prev.linkType,
+        documentPreview: prev.documentPreview,
       };
     }
 

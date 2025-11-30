@@ -9,7 +9,7 @@ export default defineConfig(({ command, mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
 
   // 统一版本管理
-  const APP_VERSION = "1.0.0";
+  const APP_VERSION = "1.1.0";
   const isDev = command === "serve";
 
   // 打印环境变量，帮助调试
@@ -50,7 +50,7 @@ export default defineConfig(({ command, mode }) => {
           // 集成自定义Service Worker代码以支持Background Sync API
           importScripts: ["/sw-background-sync.js"],
 
-          // 基于主流PWA最佳实践的正确缓存策略
+          // PWA缓存策略
           runtimeCaching: [
             // 应用静态资源 - StaleWhileRevalidate
             {
@@ -87,15 +87,15 @@ export default defineConfig(({ command, mode }) => {
             // 第三方CDN资源 - StaleWhileRevalidate
             {
               urlPattern: ({ url }) =>
-                  url.origin !== self.location.origin &&
-                  (url.hostname.includes("cdn") ||
-                      url.hostname.includes("googleapis") ||
-                      url.hostname.includes("gstatic") ||
-                      url.hostname.includes("jsdelivr") ||
-                      url.hostname.includes("unpkg") ||
-                      url.hostname.includes("elemecdn") ||
-                      url.hostname.includes("bootcdn") ||
-                      url.hostname.includes("staticfile")),
+                url.origin !== self.location.origin &&
+                (url.hostname.includes("cdn") ||
+                  url.hostname.includes("googleapis") ||
+                  url.hostname.includes("gstatic") ||
+                  url.hostname.includes("jsdelivr") ||
+                  url.hostname.includes("unpkg") ||
+                  url.hostname.includes("elemecdn") ||
+                  url.hostname.includes("bootcdn") ||
+                  url.hostname.includes("staticfile")),
               handler: "StaleWhileRevalidate",
               options: {
                 cacheName: "external-cdn-resources",
@@ -123,7 +123,7 @@ export default defineConfig(({ command, mode }) => {
             // 图廊图片 - StaleWhileRevalidate（图片适合后台更新）
             {
               urlPattern: ({ request, url }) =>
-                  request.destination === "image" && (url.pathname.includes("/api/") || url.searchParams.has("X-Amz-Algorithm") || url.hostname !== self.location.hostname),
+                request.destination === "image" && (url.pathname.includes("/api/") || url.searchParams.has("X-Amz-Algorithm") || url.hostname !== self.location.hostname),
               handler: "StaleWhileRevalidate",
               options: {
                 cacheName: "gallery-images",
@@ -140,8 +140,8 @@ export default defineConfig(({ command, mode }) => {
             // 用户媒体文件 - NetworkFirst（大文件适度缓存）
             {
               urlPattern: ({ request, url }) =>
-                  (request.destination === "video" || request.destination === "audio" || /\.(mp4|webm|ogg|mp3|wav|flac|aac)$/i.test(url.pathname)) &&
-                  (url.pathname.includes("/api/") || url.searchParams.has("X-Amz-Algorithm") || url.hostname !== self.location.hostname),
+                (request.destination === "video" || request.destination === "audio" || /\.(mp4|webm|ogg|mp3|wav|flac|aac)$/i.test(url.pathname)) &&
+                (url.pathname.includes("/api/") || url.searchParams.has("X-Amz-Algorithm") || url.hostname !== self.location.hostname),
               handler: "NetworkFirst",
               options: {
                 cacheName: "user-media",
@@ -160,8 +160,8 @@ export default defineConfig(({ command, mode }) => {
             // 用户文档文件 - NetworkFirst（文档快速更新）
             {
               urlPattern: ({ url }) =>
-                  /\.(pdf|doc|docx|xls|xlsx|ppt|pptx|txt|md)$/i.test(url.pathname) &&
-                  (url.pathname.includes("/api/") || url.searchParams.has("X-Amz-Algorithm") || url.hostname !== self.location.hostname),
+                /\.(pdf|doc|docx|xls|xlsx|ppt|pptx|txt|md)$/i.test(url.pathname) &&
+                (url.pathname.includes("/api/") || url.searchParams.has("X-Amz-Algorithm") || url.hostname !== self.location.hostname),
               handler: "NetworkFirst",
               options: {
                 cacheName: "user-documents",
@@ -308,8 +308,8 @@ export default defineConfig(({ command, mode }) => {
             // 管理员配置写入API - NetworkOnly（POST/PUT/DELETE操作）
             {
               urlPattern: ({ request, url }) =>
-                  ["POST", "PUT", "DELETE"].includes(request.method) &&
-                  /^.*\/api\/(mount\/(create|[^\/]+)|admin\/api-keys|admin\/system-settings|admin\/login|admin\/change-password|admin\/cache).*$/.test(url.href),
+                ["POST", "PUT", "DELETE"].includes(request.method) &&
+                /^.*\/api\/(mount\/(create|[^\/]+)|admin\/api-keys|admin\/system-settings|admin\/login|admin\/change-password|admin\/cache).*$/.test(url.href),
               handler: "NetworkOnly",
               options: {
                 cacheName: "admin-config-write",
@@ -359,11 +359,11 @@ export default defineConfig(({ command, mode }) => {
           theme_color: "#0ea5e9",
           background_color: "#ffffff",
           display: "standalone",
-          orientation: "portrait-primary", // 与manifest.json保持一致
+          orientation: "portrait-primary",
           scope: "/",
           start_url: "/",
-          lang: "zh-CN", // 添加语言设置
-          categories: ["productivity", "utilities"], // 添加应用分类
+          lang: "zh-CN",
+          categories: ["productivity", "utilities"],
           icons: [
             {
               src: "icons/icons-32.png",
@@ -444,7 +444,7 @@ export default defineConfig(({ command, mode }) => {
       // 移除vditor排除配置，因为现在从本地dist目录加载
     },
     build: {
-      outDir: 'dist',
+      outDir: 'dist', // 显式指定输出目录
       minify: "terser",
       terserOptions: {
         compress: {

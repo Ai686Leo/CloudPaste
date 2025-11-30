@@ -37,16 +37,17 @@ export function useTextPreview(options = {}) {
    * @returns {Promise<Object>} 加载结果
    */
   const loadTextContent = async (fileData, emitFn) => {
-    if (!fileData?.previewUrl) {
-      console.warn("没有可用的预览URL");
-      return { success: false, error: "没有可用的预览URL" };
+    if (!fileData?.rawUrl) {
+      console.warn("没有可用的 rawUrl");
+      return { success: false, error: "没有可用的 rawUrl" };
     }
 
     try {
       loading.value = true;
       error.value = null;
 
-      const result = await fetchText(fileData.previewUrl, fileData);
+      const url = fileData.rawUrl;
+      const result = await fetchText(url, fileData);
 
       if (result.success) {
         textContent.value = result.text;

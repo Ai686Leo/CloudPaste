@@ -78,7 +78,7 @@ export default {
       },
       webdavPolicyOptions: {
         "302_redirect": "302 Redirect",
-        use_proxy_url: "Custom HOST Redirect",
+        use_proxy_url: "Proxy URL",
         native_proxy: "Native Proxy",
       },
       webdavPolicyDescription: "Only applies to download/preview operations when the project is mounted as WebDAV.",

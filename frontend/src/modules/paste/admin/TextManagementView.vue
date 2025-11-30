@@ -1,6 +1,7 @@
 <script setup>
 import { onMounted, ref } from "vue";
 import { usePasteManagement } from "@/modules/paste";
+import { useThemeMode } from "@/composables/core/useThemeMode.js";
 
 // 导入子组件
 import PasteTable from "@/modules/paste/admin/components/PasteTable.vue";
@@ -13,15 +14,9 @@ import QRCodeModal from "@/modules/fileshare/admin/components/QRCodeModal.vue";
 import GlobalSearchBox from "@/components/common/GlobalSearchBox.vue";
 
 /**
- * 组件接收的属性定义
- * darkMode: 主题模式
+ * 使用主题模式 composable
  */
-const props = defineProps({
-  darkMode: {
-    type: Boolean,
-    required: true,
-  },
-});
+const { isDarkMode: darkMode } = useThemeMode();
 
 // 使用文本管理composable
 const {

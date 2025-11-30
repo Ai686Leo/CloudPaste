@@ -23,7 +23,7 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import TextRenderer from "@/components/common/text-preview/TextRenderer.vue";
 import { useTextPreview } from "@/composables/text-preview/useTextPreview.js";
 
@@ -147,14 +147,15 @@ const initializeCurrentFile = async () => {
 
   console.log("📄 开始初始化当前文件:", props.file.name);
 
-  // 使用传入的文本URL或文件的预览URL
-  const previewUrl = props.textUrl || props.file.previewUrl;
+  // 使用传入的文本URL或文件的 Down 路由 rawUrl
+  const previewUrl = props.textUrl || props.file.rawUrl;
 
   if (previewUrl) {
     console.log("📄 使用文本URL:", previewUrl);
     currentFileData.value = {
       name: props.file.name || "unknown",
       filename: props.file.name || "unknown",
+      rawUrl: previewUrl,
       previewUrl: previewUrl,
       contentType: props.file.contentType,
       size: props.file.size,
@@ -165,7 +166,7 @@ const initializeCurrentFile = async () => {
     // 加载文本内容
     await loadTextContent();
   } else {
-    console.error("❌ 没有可用的预览URL");
+    console.error("❌ 没有可用的 rawUrl");
   }
 };
 
@@ -201,11 +202,6 @@ watch(
     currentEncoding.value = newEncoding;
   }
 );
-
-// 组件挂载时初始化
-onMounted(() => {
-  initializeCurrentFile();
-});
 
 // 暴露方法供父组件调用
 defineExpose({

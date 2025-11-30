@@ -24,9 +24,7 @@ services:
     image: dragon730/cloudpaste-backend:latest
     environment:
       - NODE_ENV=production # 生产环境模式
-      - RUNTIME_ENV=docker # 运行环境标识
       - PORT=8787 # 应用监听端口
-      - LOG_LEVEL=2 # 日志级别
       # 重要: 请修改为您自己的安全密钥，用于加密数据
       - ENCRYPTION_SECRET=xxxxxxx
       # 管理员Token过期天数，默认7天

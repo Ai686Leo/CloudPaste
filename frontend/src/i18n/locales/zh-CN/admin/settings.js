@@ -87,12 +87,12 @@ export default {
     description: "配置WebDAV协议相关的功能和参数",
     uploadSettings: {
       title: "WebDAV上传设置",
-      description: "配置WebDAV客户端的上传处理方式",
-      uploadModeLabel: "WebDAV上传模式",
-      uploadModeHint: "选择WebDAV客户端的上传处理方式",
+      description: "配置 WebDAV 客户端的上传处理方式，推荐使用流式上传以支持大文件和长时间传输。",
+      uploadModeLabel: "WebDAV 上传模式",
+      uploadModeHint: "选择 WebDAV 客户端的上传处理方式。",
       modes: {
+        chunked: "流式上传",
         single: "单次上传",
-        chunked: "分块上传",
       },
     },
     protocolInfo: {
@@ -152,9 +152,14 @@ export default {
     documentTypesPlaceholder: "pdf",
     documentTypesHelp: "用逗号分隔的文档文件扩展名，这些文件可以直接在浏览器中预览",
 
+    documentAppsLabel: "文档/Office 预览模板",
+    documentAppsPlaceholder: "例如：为 doc,docx,xls,xlsx,ppt,pptx,rtf 配置 microsoft/Google 等服务的 urlTemplate，详见下方示例",
+    documentAppsHelp: "为文档/Office 文件配置 DocumentApp 模板，键为扩展名列表或正则，值为各个预览服务的 URL 模板。",
+
     resetDefaults: "重置为默认",
     resetConfirm: "确定要重置为默认设置吗？这将覆盖当前的所有配置。",
     saveSuccess: "预览设置保存成功",
+    documentAppsInvalidJson: "文档/Office 预览模板配置不是有效的 JSON，请检查格式后再保存。",
   },
 
   // 站点设置页面

@@ -6,22 +6,21 @@ import { Bar, Line } from "vue-chartjs";
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, BarElement, Title, Tooltip, Legend } from "chart.js";
 import { useAdminSystemService } from "@/modules/admin/services/systemService.js";
 import { useDashboardService } from "@/modules/admin/services/dashboardService.js";
+import { useThemeMode } from "@/composables/core/useThemeMode.js";
 
 // 注册Chart.js组件
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, Title, Tooltip, Legend);
 
 // 定义props
 const props = defineProps({
-  darkMode: {
-    type: Boolean,
-    required: true,
-  },
   permissions: {
     type: Object,
     required: true,
   },
 });
 
+
+const { isDarkMode: darkMode } = useThemeMode();
 const { t } = useI18n();
 const { getCacheStats, getVersionInfo, clearCache } = useAdminSystemService();
 const { getDashboardStats } = useDashboardService();

@@ -5,6 +5,8 @@ import { usePolicy } from "../security/policies/policies.js";
 import { resolvePrincipal } from "../security/helpers/principal.js";
 import { getEncryptionSecret } from "../utils/environmentUtils.js";
 import { FileShareService } from "../services/fileShareService.js";
+import { LinkService } from "../storage/link/LinkService.js";
+import { getFileBySlug, getPublicFileInfo } from "../services/fileService.js";
 import { useRepositories } from "../utils/repositories.js";
 import { getQueryBool, getQueryInt, jsonOk } from "../utils/common.js";
 
@@ -54,7 +56,6 @@ router.put("/api/upload-direct/:filename", requireFilesCreate, async (c) => {
     expiresIn: getQueryInt(c, "expires_in", 0),
     maxViews: getQueryInt(c, "max_views", 0),
     override: getQueryBool(c, "override", false),
-    // 仅当显式提供 use_proxy 时才传递，否则交由记录层按系统默认处理
     useProxy: c.req.query("use_proxy") != null ? getQueryBool(c, "use_proxy", true) : undefined,
     originalFilename: getQueryBool(c, "original_filename", false),
     contentType: c.req.header("content-type") || undefined,
@@ -72,7 +73,49 @@ router.put("/api/upload-direct/:filename", requireFilesCreate, async (c) => {
     { ...shareParams, uploadId: uploadId || null }
   );
 
-  return jsonOk(c, result, "文件上传成功");
+  // 对齐 /api/public/files/:slug：统一返回公开文件信息（含 rawUrl/linkType/documentPreview），不再返回分享页 URL
+  // upload-direct 属于受信任调用场景：
+  // - 即使设置了密码，这里也视为“已通过校验”，始终返回 rawUrl，方便调用方直接使用
+  // - 对于代理模式（share 内容路由），自动在 rawUrl 上附加 password 查询参数，生成一条可直接使用的代理链接
+  try {
+    const file = await getFileBySlug(db, result.slug, encryptionSecret);
+    const hasPassword = !!file.password;
+    const linkService = new LinkService(db, encryptionSecret, repositoryFactory);
+    const link = await linkService.getShareExternalLink(file, null);
+    const requestUrl = new URL(c.req.url);
+    const publicInfo = await getPublicFileInfo(
+      db,
+      file,
+      false,
+      link,
+      encryptionSecret,
+      { baseOrigin: requestUrl.origin },
+    );
+
+    // 如果是代理模式且本次上传提供了密码，为 rawUrl 附加 password 查询参数
+    let rawUrl = publicInfo.rawUrl || null;
+    const linkType = publicInfo.linkType || null;
+    const password = shareParams.password || null;
+    if (rawUrl && password && (linkType === "proxy" || file.use_proxy)) {
+      if (!rawUrl.includes("password=")) {
+        const separator = rawUrl.includes("?") ? "&" : "?";
+        rawUrl = `${rawUrl}${separator}password=${encodeURIComponent(password)}`;
+      }
+    }
+
+    const response = {
+      ...publicInfo,
+      rawUrl,
+      requires_password: hasPassword,
+    };
+
+    return jsonOk(c, response, "文件上传成功");
+  } catch (error) {
+    // 兜底：生成公开信息失败时，返回基础分享记录但移除 url 字段，避免泄露分享页 URL
+    console.warn("upload-direct: 生成公开文件信息失败，将返回基础分享记录：", error);
+    const { url, ...rest } = result || {};
+    return jsonOk(c, rest, "文件上传成功");
+  }
 });
 
 // 流式分享上传：通过 PUT /api/share/upload 使用原始 body 直传
@@ -93,9 +136,17 @@ router.put("/api/share/upload", requireFilesCreate, async (c) => {
   const declaredLengthHeader = c.req.header("content-length");
   const declaredLength = declaredLengthHeader ? parseInt(declaredLengthHeader, 10) : 0;
 
-  const filenameHeader = c.req.header("x-share-filename");
-  if (!filenameHeader) {
+  const filenameHeaderRaw = c.req.header("x-share-filename");
+  if (!filenameHeaderRaw) {
     throw new ValidationError("缺少 x-share-filename 头部");
+  }
+
+  let filenameHeader = filenameHeaderRaw;
+  try {
+    filenameHeader = decodeURIComponent(filenameHeaderRaw);
+  } catch {
+    // 解码失败时回退到原始值，避免影响兼容性
+    filenameHeader = filenameHeaderRaw;
   }
 
   let options = {};

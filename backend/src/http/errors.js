@@ -115,6 +115,27 @@ export class S3DriverError extends DriverError {
   }
 }
 
+// 驱动契约错误：用于标记存储驱动在类型/能力/方法实现上的契约不一致
+export class DriverContractError extends DriverError {
+  /**
+   * @param {string} message
+   * @param {object|any} optionsOrDetails - 同 DriverError，可覆盖 status/code/expose/details
+   */
+  constructor(message = "存储驱动契约不符合规范", optionsOrDetails = null) {
+    const base = {
+      status: ApiStatus.INTERNAL_ERROR,
+      code: "DRIVER_ERROR.INVALID_CONTRACT",
+      expose: false,
+    };
+    const opts =
+      optionsOrDetails && typeof optionsOrDetails === "object" && ("status" in optionsOrDetails || "code" in optionsOrDetails || "expose" in optionsOrDetails || "details" in optionsOrDetails)
+        ? { ...base, ...optionsOrDetails }
+        : { ...base, details: optionsOrDetails };
+    super(message, opts);
+    this.name = "DriverContractError";
+  }
+}
+
 //  maskSensitiveValue 用于 mask 敏感信息
 export const maskSensitiveValue = (value) => {
   if (!value || typeof value !== "string") {

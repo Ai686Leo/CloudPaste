@@ -271,14 +271,27 @@ export class S3FileOperations {
           enableCache: mount?.cache_ttl > 0,
         };
 
-        const presignedUrl = await generateDownloadUrl(this.config, s3SubPath, this.encryptionSecret, expiresIn, forceDownload, null, cacheOptions);
+        const presignedUrl = await generateDownloadUrl(
+          this.config,
+          s3SubPath,
+          this.encryptionSecret,
+          expiresIn,
+          forceDownload,
+          null,
+          cacheOptions,
+        );
 
         // 提取文件名
         const fileName = s3SubPath.split("/").filter(Boolean).pop() || "file";
 
+        // 统一在驱动层使用 canonical 字段 url，供上层 LinkStrategy/LinkService 消费
+        const url = presignedUrl;
+        const type = this.config.custom_host ? "custom_host" : "native_direct";
+
         return {
           success: true,
-          presignedUrl: presignedUrl,
+          url,
+          type,
           name: fileName,
           expiresIn: expiresIn,
           expiresAt: new Date(Date.now() + expiresIn * 1000).toISOString(),

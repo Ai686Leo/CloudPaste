@@ -159,19 +159,15 @@ import { useI18n } from "vue-i18n";
 import { formatLocalDateTimeWithSeconds, formatNowForFilename } from "@/utils/timeUtils.js";
 import { useAdminBase } from "@/composables/admin-management/useAdminBase.js";
 import { useAdminBackupService } from "@/modules/admin/services/backupService.js";
+import { useThemeMode } from "@/composables/core/useThemeMode.js";
 
 export default {
   name: "BackupView",
-  props: {
-    darkMode: {
-      type: Boolean,
-      required: true,
-    },
-  },
-  setup(props) {
+  setup() {
     const { t } = useI18n();
     const { showSuccess, showError } = useAdminBase();
     const { getModules, createBackup: createBackupRequest, restoreBackup: restoreBackupRequest } = useAdminBackupService();
+    const { isDarkMode: darkMode } = useThemeMode();
 
     // 统一的通知方法
     const showNotification = (message, type) => {
@@ -499,6 +495,9 @@ export default {
     });
 
     return {
+      // 主题
+      darkMode,
+
       // 响应式数据
       backupType,
       selectedModules,

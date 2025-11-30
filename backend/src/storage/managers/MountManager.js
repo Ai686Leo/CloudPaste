@@ -142,7 +142,7 @@ export class MountManager {
   /**
    * 根据挂载点获取存储驱动
    * @param {Object} mount - 挂载点对象
-   * @returns {Promise<StorageDriver>} 存储驱动实例
+   * @returns {Promise<any>} 存储驱动实例（BaseDriver 子类）
    */
   async getDriver(mount) {
     // 如果缓存数量超过限制，进行LRU清理
@@ -193,7 +193,7 @@ export class MountManager {
    * @private
    * @param {Object} mount - 挂载点对象
    * @param {number} maxRetries - 最大重试次数
-   * @returns {Promise<StorageDriver>} 存储驱动实例
+   * @returns {Promise<any>} 存储驱动实例（BaseDriver 子类）
    */
   async _createDriverWithRetry(mount, maxRetries = 3) {
     for (let i = 0; i < maxRetries; i++) {
@@ -228,7 +228,7 @@ export class MountManager {
    * 创建存储驱动实例
    * @private
    * @param {Object} mount - 挂载点对象
-   * @returns {Promise<StorageDriver>} 存储驱动实例
+   * @returns {Promise<any>} 存储驱动实例（BaseDriver 子类）
    */
   async _createDriver(mount) {
     // 获取存储配置

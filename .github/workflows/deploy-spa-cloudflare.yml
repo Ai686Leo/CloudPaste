@@ -1,0 +1,339 @@
+name: Deploy SPA CF Workers[一体化部署]
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "frontend/**"
+      - "backend/**"
+      - "!frontend/vercel.json"
+  workflow_dispatch:
+    inputs:
+      from_panel:
+        description: "是否由部署控制面板触发 / triggered from deployment control panel"
+        required: false
+        default: "false"
+  repository_dispatch:
+    types: [deploy-spa-button]
+
+jobs:
+  check-config:
+    runs-on: ubuntu-latest
+    outputs:
+      should_deploy: ${{ steps.check.outputs.should_deploy }}
+    steps:
+      - name: 📥 检出代码
+        uses: actions/checkout@v4
+
+      - name: 🔍 检查部署配置
+        id: check
+        run: |
+          # 手动触发（Actions 页面 / 外部仓库）时，总是部署，忽略自动部署开关
+          if [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+            echo "✅ 手动触发（repository_dispatch），忽略开关，允许部署"
+            exit 0
+          fi
+
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ github.event.inputs.from_panel }}" != "true" ]]; then
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+            echo "✅ 手动触发（workflow_dispatch），忽略开关，允许部署"
+            exit 0
+          fi
+
+          # 自动触发（push 或控制面板触发）根据仓库级变量决定是否部署
+          SPA_ENABLED="${{ vars.SPA_DEPLOY }}"
+          # 默认行为：如果仓库变量未设置，视为默认关闭，得去控制面板开启
+          [ -z "$SPA_ENABLED" ] && SPA_ENABLED="false"
+
+          if [ "$SPA_ENABLED" = "true" ]; then
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+            echo "✅ SPA 自动部署已开启，允许部署"
+          else
+            echo "should_deploy=false" >> $GITHUB_OUTPUT
+            echo "⏸️ SPA 自动部署已关闭，跳过部署"
+          fi
+
+  deploy-spa:
+    needs: check-config
+    if: needs.check-config.outputs.should_deploy == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Check if deploy button trigger
+        id: check-deploy-button
+        run: |
+          if [[ "${{ github.event_name }}" == "repository_dispatch" && "${{ github.event.action }}" == "deploy-spa-button" ]]; then
+            echo "is_deploy_button=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_deploy_button=false" >> $GITHUB_OUTPUT
+          fi
+
+      # ==================== 步骤 1：构建前端 ====================
+      - name: Install frontend dependencies
+        working-directory: ./frontend
+        run: |
+          echo "安装前端依赖..."
+          npm ci
+
+      - name: Build frontend
+        working-directory: ./frontend
+        run: |
+          echo "构建前端静态资源..."
+          npm run build
+        env:
+          VITE_APP_ENV: production
+          VITE_ENABLE_DEVTOOLS: false
+
+      - name: Verify frontend build
+        run: |
+          echo "✅ 验证前端构建产物..."
+          if [ ! -d "frontend/dist" ]; then
+            echo "❌ 前端构建失败：dist 目录不存在"
+            exit 1
+          fi
+
+          if [ ! -f "frontend/dist/index.html" ]; then
+            echo "❌ 前端构建失败：index.html 不存在"
+            exit 1
+          fi
+
+          echo "前端构建产物大小："
+          du -sh frontend/dist
+          echo "前端文件数量："
+          find frontend/dist -type f | wc -l
+
+      # ==================== 步骤 2：准备后端部署 ====================
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: |
+          echo "安装后端依赖（不包含可选依赖）..."
+          if npm ci --no-optional; then
+            echo "✅ npm ci 成功"
+          else
+            echo "⚠️ npm ci 失败，将使用npm install更新lock文件"
+            npm install --no-optional
+          fi
+
+      - name: Disable wrangler telemetry
+        working-directory: ./backend
+        run: npx wrangler telemetry disable
+
+      # ==================== 步骤 3：配置 D1 数据库 ====================
+      - name: Create or verify D1 Database
+        working-directory: ./backend
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          echo "检查并创建 D1 数据库..."
+          DATABASE_LIST=$(npx wrangler d1 list --json 2>/dev/null || echo "[]")
+          EXISTING_DB=$(echo "$DATABASE_LIST" | jq -r '.[] | select(.name=="cloudpaste-db") | .uuid')
+
+          if [ -n "$EXISTING_DB" ]; then
+            echo "✅ 找到现有 D1 数据库: $EXISTING_DB"
+            DATABASE_ID=$EXISTING_DB
+          else
+            echo "创建新的 D1 数据库..."
+            CREATE_OUTPUT=$(npx wrangler d1 create cloudpaste-db 2>&1)
+
+            if echo "$CREATE_OUTPUT" | grep -q "Successfully created DB"; then
+              DATABASE_ID=$(echo "$CREATE_OUTPUT" | grep -oP "database_id = \"\K[^\"]+")
+              if [ -z "$DATABASE_ID" ]; then
+                DATABASE_ID=$(echo "$CREATE_OUTPUT" | grep -oP "([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})")
+              fi
+              echo "✅ 数据库创建成功: $DATABASE_ID"
+            else
+              LIST_OUTPUT=$(npx wrangler d1 list --json 2>/dev/null || echo "[]")
+              DATABASE_ID=$(echo "$LIST_OUTPUT" | jq -r '.[] | select(.name=="cloudpaste-db") | .uuid')
+
+              if [ -z "$DATABASE_ID" ]; then
+                echo "❌ 无法创建或找到 D1 数据库"
+                exit 1
+              fi
+            fi
+          fi
+
+          # 更新 wrangler.spa.toml 中的 database_id
+          echo "更新 wrangler.spa.toml 中的数据库 ID..."
+          sed -i -E "s/(database_id = \")[^\"]+(\"\s*$)/\1$DATABASE_ID\2/" wrangler.spa.toml
+
+          # 验证更新
+          if grep -q "$DATABASE_ID" wrangler.spa.toml; then
+            echo "✅ wrangler.spa.toml 更新成功"
+          else
+            echo "❌ wrangler.spa.toml 更新失败"
+            exit 1
+          fi
+
+          echo "database_id=$DATABASE_ID" >> $GITHUB_ENV
+
+      - name: Initialize D1 Database schema
+        working-directory: ./backend
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          echo "初始化数据库表结构..."
+          npx wrangler d1 execute cloudpaste-db --file=./schema.sql || echo "⚠️ 表可能已存在，继续部署"
+
+      # ==================== 步骤 4：设置环境变量 ====================
+      - name: Set ENCRYPTION_SECRET environment variable
+        working-directory: ./backend
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          echo "🔐 检查 ENCRYPTION_SECRET 配置..."
+
+          # 检查 wrangler.spa.toml 中是否有硬编码的 ENCRYPTION_SECRET
+          if grep -q "ENCRYPTION_SECRET =" wrangler.spa.toml; then
+            echo "⚠️ 检测到 wrangler.spa.toml 中存在硬编码的 ENCRYPTION_SECRET"
+            echo "为确保 GitHub Actions 的密钥设置生效，将从配置中移除"
+            cp wrangler.spa.toml wrangler.spa.toml.bak
+            sed -i '/ENCRYPTION_SECRET =/d' wrangler.spa.toml
+            echo "✅ 已移除硬编码的 ENCRYPTION_SECRET"
+          fi
+
+          # 检查 GitHub 中是否已配置 ENCRYPTION_SECRET
+          if [[ -n "${{ secrets.ENCRYPTION_SECRET }}" ]]; then
+            echo "✅ GitHub 中已配置 ENCRYPTION_SECRET"
+            GITHUB_HAS_SECRET=true
+          else
+            echo "⚠️ GitHub 中未配置 ENCRYPTION_SECRET"
+            GITHUB_HAS_SECRET=false
+          fi
+
+          # 使用 --name 参数指定 Worker 名称
+          # 检查 cloudpaste-spa Worker 中是否已存在 ENCRYPTION_SECRET
+          set +e
+          SECRET_LIST_OUTPUT=$(npx wrangler secret list --name cloudpaste-spa 2>&1)
+          set -e
+
+          if echo "$SECRET_LIST_OUTPUT" | grep -q "ENCRYPTION_SECRET"; then
+            echo "✅ cloudpaste-spa Worker 中已存在 ENCRYPTION_SECRET"
+            WORKER_HAS_SECRET=true
+          else
+            echo "⚠️ cloudpaste-spa Worker 中未检测到 ENCRYPTION_SECRET"
+            WORKER_HAS_SECRET=false
+          fi
+
+          # 如果 Worker 中已有密钥，跳过创建
+          if [[ "$WORKER_HAS_SECRET" == "true" ]]; then
+            echo "✅ Worker 中已存在 ENCRYPTION_SECRET，跳过创建"
+          else
+            # 确定密钥值
+            if [[ "$GITHUB_HAS_SECRET" == "true" ]]; then
+              echo "使用 GitHub 中配置的 ENCRYPTION_SECRET 值"
+              ENCRYPTION_VALUE="${{ secrets.ENCRYPTION_SECRET }}"
+            else
+              echo "生成随机 ENCRYPTION_SECRET 值"
+              ENCRYPTION_VALUE=$(openssl rand -base64 32)
+            fi
+
+            # 设置密钥到 cloudpaste-spa Worker
+            set +e
+            echo "正在为 cloudpaste-spa Worker 设置 ENCRYPTION_SECRET..."
+            SECRET_PUT_OUTPUT=$(echo "$ENCRYPTION_VALUE" | npx wrangler secret put ENCRYPTION_SECRET --name cloudpaste-spa 2>&1)
+            SECRET_RESULT=$?
+            set -e
+
+            echo "Secret put 输出:"
+            echo "$SECRET_PUT_OUTPUT" | grep -v "Please update to the latest version"
+
+            if [ $SECRET_RESULT -ne 0 ]; then
+              if echo "$SECRET_PUT_OUTPUT" | grep -q -E "(already in use|already exists|conflict)"; then
+                echo "⚠️ 密钥已存在但未被列表命令检测到，继续执行"
+              else
+                set +e
+                FINAL_CHECK=$(npx wrangler secret list --name cloudpaste-spa 2>&1)
+                set -e
+
+                if echo "$FINAL_CHECK" | grep -q "ENCRYPTION_SECRET"; then
+                  echo "虽然设置密钥失败，但密钥似乎已存在，继续执行"
+                else
+                  echo "❌ 设置密钥失败，且密钥确实不存在"
+                  echo "详细错误信息: $SECRET_PUT_OUTPUT"
+                  exit 1
+                fi
+              fi
+            else
+              echo "✅ ENCRYPTION_SECRET 已成功创建"
+            fi
+          fi
+
+      # ==================== 步骤 5：部署 SPA Worker ====================
+      - name: Deploy to Cloudflare Workers (SPA Mode)
+        working-directory: ./backend
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          echo "🚀 使用 SPA 配置部署到 Cloudflare Workers..."
+          npx wrangler deploy --config wrangler.spa.toml 2>&1 | sed -E 's/https:\/\/[a-zA-Z0-9.-]*\.(workers|pages)\.dev/https:\/\/[REDACTED].\1.dev/g'
+
+      # ==================== 步骤 6：部署后验证 ====================
+      - name: Display Success Information
+        if: steps.check-deploy-button.outputs.is_deploy_button == 'true' && success()
+        run: |
+          echo "===================================================="
+          echo "🎉 CloudPaste SPA 已成功部署到 Cloudflare Workers!"
+          echo "===================================================="
+          echo ""
+          echo "✅ 部署模式：Workers + Static Assets 一体化"
+          echo "✅ Worker 名称：cloudpaste-spa"
+          echo "✅ 前端和后端已部署到同一个 Worker"
+          echo ""
+          echo "后续步骤："
+          echo "1. 访问您的 Worker URL (https://cloudpaste-spa.your-account.workers.dev)"
+          echo "2. 首次访问会自动初始化数据库"
+          echo "3. 使用默认管理员账户登录 (admin/admin123)"
+          echo "4. ⚠️  立即修改默认管理员密码"
+          echo "5. 在管理员面板中配置您的 S3 兼容存储"
+          echo "6. （可选）在 Cloudflare Dashboard 中绑定自定义域名"
+          echo ""
+          echo "优势："
+          echo "- 前后端同源请求，无跨域问题"
+          echo "- 导航请求不计费，成本降低 60%+"
+          echo "- 无需单独管理 Cloudflare Pages"
+          echo "===================================================="
+
+      - name: Display Troubleshooting Info
+        if: failure()
+        run: |
+          echo "===================================================="
+          echo "❌ 部署失败，可能的解决方案:"
+          echo ""
+          echo "1. 前端构建问题："
+          echo "   - 检查 frontend/package.json 依赖是否正确"
+          echo "   - 验证 npm run build 在本地是否成功"
+          echo ""
+          echo "2. 后端部署问题："
+          echo "   - 确保 wrangler.spa.toml 配置正确"
+          echo "   - 验证 D1 数据库权限"
+          echo "   - 检查 CLOUDFLARE_API_TOKEN 权限（需要 Workers:Edit, D1:Edit）"
+          echo ""
+          echo "3. 验证 GitHub Secrets："
+          echo "   - CLOUDFLARE_API_TOKEN: Workers 和 D1 编辑权限"
+          echo "   - CLOUDFLARE_ACCOUNT_ID: Cloudflare 账户 ID"
+          echo "   - ENCRYPTION_SECRET: （可选）加密密钥"
+          echo ""
+          echo "4. 查看上方详细错误信息以定位问题"
+          echo "===================================================="
+
+      - name: Notify deployment status
+        if: always()
+        run: |
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "✅ SPA Worker部署成功！"
+          else
+            echo "❌ SPA Worker部署失败！"
+          fi

@@ -10,8 +10,7 @@ import { createS3Client, generateCustomHostDirectUrl } from "./utils/s3Utils.js"
 import { DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { normalizeS3SubPath, isCompleteFilePath } from "./utils/S3PathUtils.js";
 import { updateMountLastUsed, findMountPointByPath } from "../../fs/utils/MountResolver.js";
-import { buildFullProxyUrl, buildSignedProxyUrl } from "../../../constants/proxy.js";
-import { ProxySignatureService } from "../../../services/ProxySignatureService.js";
+import { buildFullProxyUrl } from "../../../constants/proxy.js";
 import { S3DriverError, AppError } from "../../../http/errors.js";
 
 // 导入各个操作模块
@@ -38,7 +37,7 @@ export class S3StorageDriver extends BaseDriver {
     this.capabilities = [
       CAPABILITIES.READER, // 读取能力：list, get, getInfo
       CAPABILITIES.WRITER, // 写入能力：put, mkdir, remove
-      CAPABILITIES.PRESIGNED, // 预签名URL能力：generatePresignedUrl
+      CAPABILITIES.DIRECT_LINK, // 直链能力（custom_host/预签名等）：generateDownloadUrl/generateUploadUrl
       CAPABILITIES.MULTIPART, // 分片上传能力：multipart upload
       CAPABILITIES.ATOMIC, // 原子操作能力：rename, copy
       CAPABILITIES.PROXY, // 代理能力：generateProxyUrl
@@ -206,8 +205,8 @@ export class S3StorageDriver extends BaseDriver {
     // 规范化S3子路径
     const s3SubPath = normalizeS3SubPath(subPath, false);
 
-    // 更新挂载点的最后使用时间
-    if (db && mount.id) {
+    // 更新挂载点的最后使用时间（仅在有挂载点上下文时）
+    if (db && mount && mount.id) {
       await updateMountLastUsed(db, mount.id);
     }
 
@@ -437,15 +436,11 @@ export class S3StorageDriver extends BaseDriver {
   async generateDownloadUrl(path, options = {}) {
     this._ensureInitialized();
 
-    const { mount, subPath, db } = options;
+    const { subPath } = options;
     const s3SubPath = normalizeS3SubPath(subPath, false);
 
-    if (db && mount?.id) {
-      await updateMountLastUsed(db, mount.id);
-    }
-
     try {
-      const { expiresIn, forceDownload, userType, userId } = options;
+      const { expiresIn, forceDownload, userType, userId, mount } = options;
       return await this.fileOps.generateDownloadUrl(s3SubPath, {
         expiresIn,
         forceDownload,
@@ -459,29 +454,38 @@ export class S3StorageDriver extends BaseDriver {
   }
 
   /**
-   * 为 WebDAV use_proxy_url 策略生成代理 URL（基于 custom_host）
-   * @param {string} path - 挂载视图下的完整路径
-   * @param {Object} options - 选项参数
-   * @returns {Promise<{url: string, type: string}|null>}
+   * 上游 HTTP 能力：为 S3 生成可由反向代理/Worker 直接访问的上游请求信息
+   * - 基于现有 generateDownloadUrl 生成预签名 URL
+   * - headers 通常为空或仅包含补充标头
+   * @param {string} path - 文件路径（FS 视图路径或 storage_path）
+   * @param {Object} [options] - 选项参数
+   * @returns {Promise<{ url: string, headers: Record<string,string[]> }>}
    */
-  async generateWebDavProxyUrl(path, options = {}) {
+  async generateUpstreamRequest(path, options = {}) {
     this._ensureInitialized();
 
-    const { mount, subPath, db } = options;
-    const s3SubPath = normalizeS3SubPath(subPath, false);
+    const { subPath, expiresIn, forceDownload = true, userType, userId, mount } = options;
 
-    if (db && mount?.id) {
-      await updateMountLastUsed(db, mount.id);
-    }
+    // 对于 FS 场景优先使用 subPath（挂载内相对路径），storage-first 场景则使用传入的 path 作为对象 Key
+    const effectiveSubPath = subPath != null ? subPath : path;
 
-    if (!this.customHost) {
-      return null;
-    }
+    const downloadInfo = await this.generateDownloadUrl(effectiveSubPath, {
+      subPath: effectiveSubPath,
+      expiresIn,
+      forceDownload,
+      userType,
+      userId,
+      mount,
+    });
 
-    const url = generateCustomHostDirectUrl(this.config, s3SubPath);
+    const url = downloadInfo?.url || null;
+
+    /** @type {Record<string,string[]>} */
+    const headers = {};
+
     return {
       url,
-      type: "proxy_url",
+      headers,
     };
   }
 
@@ -898,44 +902,15 @@ export class S3StorageDriver extends BaseDriver {
    * @returns {Promise<Object>} 代理URL对象
    */
   async generateProxyUrl(path, options = {}) {
-    const { mount, request, download = false, db } = options;
+    const { request, download = false, channel = "web" } = options;
 
-    // 检查挂载点是否启用代理
-    if (!this.supportsProxyMode(mount)) {
-      throw new AppError("此挂载点未启用代理访问", { status: ApiStatus.FORBIDDEN, code: "FORBIDDEN", expose: true });
-    }
-
-    // 检查是否需要签名
-    const signatureService = new ProxySignatureService(db, this.encryptionSecret);
-    const signatureNeed = await signatureService.needsSignature(mount);
-
-    let proxyUrl;
-    let signInfo = null;
-
-    if (signatureNeed.required) {
-      // 生成签名
-      signInfo = await signatureService.generateStorageSignature(path, mount);
-
-      // 生成带签名的代理URL
-      proxyUrl = buildSignedProxyUrl(request, path, {
-        download,
-        signature: signInfo.signature,
-        requestTimestamp: signInfo.requestTimestamp,
-        needsSignature: true,
-      });
-    } else {
-      // 生成普通代理URL
-      proxyUrl = buildFullProxyUrl(request, path, download);
-    }
+    // 驱动层仅负责根据路径构造基础代理URL，不再做签名与策略判断
+    const proxyUrl = buildFullProxyUrl(request, path, download);
 
     return {
       url: proxyUrl,
       type: "proxy",
-      signed: signatureNeed.required,
-      signatureLevel: signatureNeed.level,
-      expiresAt: signInfo?.expiresAt,
-      isTemporary: signInfo?.isTemporary,
-      policy: mount?.webdav_policy || "302_redirect",
+      channel,
     };
   }
 
@@ -944,8 +919,8 @@ export class S3StorageDriver extends BaseDriver {
    * @param {Object} mount - 挂载点信息
    * @returns {boolean} 是否支持代理模式
    */
-  supportsProxyMode(mount) {
-    return mount && !!mount.web_proxy;
+  supportsProxyMode() {
+    return true;
   }
 
   /**
@@ -953,10 +928,9 @@ export class S3StorageDriver extends BaseDriver {
    * @param {Object} mount - 挂载点信息
    * @returns {Object} 代理配置对象
    */
-  getProxyConfig(mount) {
+  getProxyConfig() {
     return {
-      enabled: this.supportsProxyMode(mount),
-      webdavPolicy: mount?.webdav_policy || "302_redirect",
+      enabled: this.supportsProxyMode(),
     };
   }
 

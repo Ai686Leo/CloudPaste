@@ -21,6 +21,7 @@ body:
       options:
         - Docker
         - Cloudflare Worker
+        - Cloudflare Worker And Pages
     validations:
       required: true
 

@@ -3,26 +3,26 @@
  * 场景：ObjectStore / 分享模块，以 storage_config_id + storage_path 为入口。
  *
  * 设计要点：
- * - 仅负责“直链”能力（custom_host 或 PRESIGNED），不参与应用代理决策
- *   - 分享层的代理由 fileViewService / 路由 (/api/file-view, /api/file-download) 自行处理
+ * - 仅负责“直链”能力（storage_config.custom_host 或驱动 DirectLink 能力），不参与应用层代理决策
+ *   - 分享层的代理由 share 内容路由 (/api/s/:slug) 或 url_proxy 自行处理
  * - 不再按 storage_type 硬编码 WebDAV 等类型，统一通过驱动能力 + storageConfig 决策
  */
 
 import { CAPABILITIES } from "../interfaces/capabilities/index.js";
 
-// 提取驱动返回的 URL
+// 提取驱动返回的 URL（统一基于 canonical 字段 url）
 function pickUrl(result) {
   if (!result) return "";
   if (typeof result === "string") return result;
   if (typeof result === "object") {
-    return result.url || result.presignedUrl || result.downloadUrl || result.previewUrl || "";
+    return result.url || "";
   }
   return "";
 }
 
-function hasPresignedCapability(driver) {
+function hasDirectLinkCapability(driver) {
   try {
-    return typeof driver?.hasCapability === "function" && driver.hasCapability(CAPABILITIES.PRESIGNED);
+    return typeof driver?.hasCapability === "function" && driver.hasCapability(CAPABILITIES.DIRECT_LINK);
   } catch {
     return false;
   }
@@ -76,8 +76,8 @@ export async function resolveStorageLinks({
     };
   }
 
-  // 2) 无 custom_host：若驱动具备预签名能力，则使用预签名直链
-  if (hasPresignedCapability(driver)) {
+  // 2) 无 custom_host：若驱动具备直链能力，则使用直链（通常为预签名URL）
+  if (hasDirectLinkCapability(driver)) {
     const previewRes = await driver.generateDownloadUrl(path, {
       subPath: path,
       forceDownload: false,
@@ -96,13 +96,13 @@ export async function resolveStorageLinks({
     });
 
     return {
-      preview: { url: pickUrl(previewRes), type: "presigned" },
-      download: { url: pickUrl(downloadRes), type: "presigned" },
+      preview: { url: pickUrl(previewRes), type: "native_direct" },
+      download: { url: pickUrl(downloadRes), type: "native_direct" },
       proxyPolicy,
     };
   }
 
   // 3) 无 custom_host 且不具备预签名能力：存储视图下不提供直链
-  // 分享层可通过自身的 /api/file-view / /api/file-download 代理链路访问
+  // 分享层可通过自身的 /api/s/:slug 代理链路访问
   return { preview: null, download: null, proxyPolicy };
 }

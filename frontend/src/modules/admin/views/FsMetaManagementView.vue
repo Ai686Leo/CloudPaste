@@ -2,6 +2,7 @@
 import { onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useFsMetaManagement } from "@/modules/admin/composables/useFsMetaManagement.js";
+import { useThemeMode } from "@/composables/core/useThemeMode.js";
 
 // 导入子组件
 import FsMetaTable from "@/modules/admin/components/FsMetaTable.vue";
@@ -10,19 +11,10 @@ import CommonPagination from "@/components/common/CommonPagination.vue";
 import GlobalSearchBox from "@/components/common/GlobalSearchBox.vue";
 
 /**
- * 组件接收的属性定义
- * darkMode: 主题模式
+ * 使用主题模式 composable
  */
-const props = defineProps({
-  darkMode: {
-    type: Boolean,
-    required: true,
-  },
-});
-
+const { isDarkMode: darkMode } = useThemeMode();
 const { t } = useI18n();
-
-// 使用元信息管理 composable
 const {
   metaList,
   loading,
@@ -32,7 +24,6 @@ const {
   updateMeta,
   deleteMeta,
 } = useFsMetaManagement();
-
 // 本地状态
 const showForm = ref(false);
 const currentMeta = ref(null);

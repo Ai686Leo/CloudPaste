@@ -89,12 +89,12 @@ export default {
     description: "Configure WebDAV protocol related functions and parameters",
     uploadSettings: {
       title: "WebDAV Upload Settings",
-      description: "Configure WebDAV client upload processing method",
+      description: "Configure how WebDAV client uploads are handled. Streaming upload is recommended for large files and long transfers.",
       uploadModeLabel: "WebDAV Upload Mode",
-      uploadModeHint: "Select the upload processing method for the WebDAV client.",
+      uploadModeHint: "Select how the WebDAV client should upload files.",
       modes: {
+        chunked: "Streaming Upload (Recommended)",
         single: "Single Upload",
-        chunked: "Chunked Upload",
       },
     },
     protocolInfo: {
@@ -155,9 +155,16 @@ export default {
     documentTypesPlaceholder: "pdf",
     documentTypesHelp: "Comma-separated document file extensions that can be directly previewed in the browser",
 
+    documentAppsLabel: "Document/Office preview templates",
+    documentAppsPlaceholder:
+      "For example: Configure urlTemplate for services like Microsoft/Google for doc,docx,xls,xlsx,ppt,pptx,rtf files, see the example below for details",
+    documentAppsHelp:
+      "Configure DocumentApp templates for document/Office files, keys are extension lists or patterns, values are URL templates for each preview service.",
+
     resetDefaults: "Reset to Defaults",
     resetConfirm: "Are you sure you want to reset to default settings? This will overwrite all current configurations.",
     saveSuccess: "Preview settings saved successfully",
+    documentAppsInvalidJson: "Document/Office preview template configuration is not valid JSON. Please check the format before saving.",
   },
 
   // Site settings page

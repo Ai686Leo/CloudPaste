@@ -63,7 +63,8 @@ export class FileRepository extends BaseRepository {
             THEN COALESCE(json_extract(s.config_json,'$.provider_type'), 'S3')
           ELSE s.storage_type
         END as storage_provider_type,
-        s.name as storage_config_name
+        s.name as storage_config_name,
+        s.url_proxy as url_proxy
       FROM ${DbTables.FILES} f
       LEFT JOIN ${DbTables.STORAGE_CONFIGS} s ON f.storage_config_id = s.id
       WHERE f.slug = ?

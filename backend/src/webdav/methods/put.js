@@ -116,24 +116,21 @@ export async function handlePut(c, path, userId, userType, db) {
 
     // 智能MIME类型检测：优先使用文件名推断，客户端类型作为备选
     const contentType = getEffectiveMimeType(clientContentType, path);
-
-    console.log(`WebDAV PUT - 开始处理: ${path}, 声明大小: ${declaredContentLength} 字节, 类型: ${contentType}`);
-
-    // 获取请求体流
-    const bodyStream = c.req.body;
-    if (!bodyStream) {
-      throw new ValidationError("请求体为空");
-    }
-
     const filename = path.split("/").pop();
 
-    // 使用智能空文件检测
+    // 使用智能空文件检测（在获取流之前先依赖头部信息判断）
     const isEmptyFile = isReallyEmptyFile(declaredContentLength, transferEncoding);
+
+    console.log(
+      `WebDAV PUT - 开始处理: ${path}, 声明大小: ${declaredContentLength} 字节, 类型: ${contentType}, 空文件: ${
+        isEmptyFile ? "是" : "否"
+      }`
+    );
 
     if (isEmptyFile) {
       console.log(`WebDAV PUT - 确认为空文件，使用FileSystem一次性上传`);
 
-      // 使用 FileSystem 流式上传一个空文件
+      // 使用 FileSystem 上传一个空文件
       const emptyBody = new Uint8Array(0);
       const result = await fileSystem.uploadFile(path, emptyBody, userId, userType, {
         filename,
@@ -152,6 +149,12 @@ export async function handlePut(c, path, userId, userType, db) {
           },
         }),
       });
+    }
+
+    // 对于非空文件，必须拿到底层请求体流；这里统一使用 raw.body，与 FS 流式上传保持一致
+    const bodyStream = c.req.raw?.body || null;
+    if (!bodyStream) {
+      throw new ValidationError("请求体为空");
     }
 
     // 直接使用原始流（WebDAV 客户端通常是流式 PUT）

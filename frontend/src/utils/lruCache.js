@@ -135,14 +135,3 @@ export class LRUCache {
     };
   }
 }
-
-// 创建全局 Office 预览缓存实例
-export const officePreviewCache = new LRUCache(30); // 最多缓存 30 个 Office 预览 URL
-
-// 定期清理过期缓存（每 5 分钟）
-setInterval(() => {
-  const cleaned = officePreviewCache.cleanup();
-  if (cleaned > 0) {
-    console.log(`清理了 ${cleaned} 个过期的 Office 预览缓存项`);
-  }
-}, 5 * 60 * 1000);

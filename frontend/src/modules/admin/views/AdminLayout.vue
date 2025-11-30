@@ -22,7 +22,7 @@
         <div class="rounded-lg flex-1 flex flex-col" :class="darkMode ? 'bg-gray-800' : 'bg-white border border-gray-200'">
           <!-- 页面内容 -->
           <div class="p-2 md:p-4 flex-1 flex flex-col">
-            <router-view :dark-mode="darkMode" :permissions="userPermissions" @logout="handleLogout" />
+            <router-view :permissions="userPermissions" @logout="handleLogout" />
           </div>
         </div>
       </div>
@@ -36,15 +36,10 @@ import { useRouter } from "vue-router";
 import AdminSidebar from "@/modules/admin/components/AdminSidebar.vue";
 import AdminHeader from "@/modules/admin/components/AdminHeader.vue";
 import { useAuthStore } from "@/stores/authStore.js";
+import { useThemeMode } from "@/composables/core/useThemeMode.js";
 
-const props = defineProps({
-  darkMode: {
-    type: Boolean,
-    required: true,
-  },
-});
 
-// 使用认证Store和路由
+const { isDarkMode: darkMode } = useThemeMode();
 const authStore = useAuthStore();
 const router = useRouter();
 

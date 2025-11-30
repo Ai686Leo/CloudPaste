@@ -20,8 +20,8 @@ body:
       description: 采用的部署方式？
       options:
         - Docker
-        - Cloudfare worker
-
+        - Cloudflare worker
+        - Cloudflare Worker And Pages
     validations:
       required: true
 

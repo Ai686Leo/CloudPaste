@@ -14,7 +14,7 @@ class UrlCacheManager extends BaseCache {
       ...options,
     });
     this.config = {
-      customHostTtl: options.customHostTtl || 86400 * 7, // 自定义域名TTL(7天)
+      customHostTtl: options.customHostTtl || 86400 * 7,
     };
   }
 

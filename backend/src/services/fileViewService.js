@@ -25,37 +25,6 @@ export class FileViewService {
   }
 
   /**
-   * 增加文件查看次数并检查是否超过限制
-   * @param {Object} file - 文件对象
-   * @returns {Promise<Object>} 包含更新后的文件信息和状态
-   */
-  async incrementAndCheckFileViews(file) {
-    // 使用 FileRepository 递增访问计数
-    const fileRepository = this.repositoryFactory.getFileRepository();
-
-    await fileRepository.incrementViews(file.id);
-
-    // 重新获取更新后的文件信息（包含存储配置）
-    const updatedFile = await fileRepository.findByIdWithStorageConfig(file.id);
-
-    // 检查是否超过最大访问次数
-    if (updatedFile.max_views && updatedFile.max_views > 0 && updatedFile.views > updatedFile.max_views) {
-      // 已超过最大查看次数，执行删除
-      await this.checkAndDeleteExpiredFile(updatedFile);
-      return {
-        isExpired: true,
-        reason: "max_views",
-        file: updatedFile,
-      };
-    }
-
-    return {
-      isExpired: false,
-      file: updatedFile,
-    };
-  }
-
-  /**
    * 检查并删除过期文件
    * @param {Object} file - 文件对象
    */
@@ -157,8 +126,8 @@ export class FileViewService {
       const fileRecord = result.file;
       const useProxyFlag = fileRecord.use_proxy ?? 0;
 
-      // use_proxy = 1 时，走真正的本机代理，通过 ObjectStore 调用底层驱动的 downloadFile
-      if (useProxyFlag === 1) {
+      // 抽取本地代理下载逻辑，便于在直链失败时复用
+      const proxyDownload = async () => {
         // 获取文件的MIME类型（用于覆盖/统一 Content-Type）
         const contentType = getEffectiveMimeType(fileRecord.mimetype, fileRecord.filename);
 
@@ -196,9 +165,14 @@ export class FileViewService {
           statusText: driverResponse.statusText,
           headers: responseHeaders,
         });
+      };
+
+      // use_proxy = 1 时，走本地代理访问
+      if (useProxyFlag === 1) {
+        return await proxyDownload();
       }
 
-      // use_proxy != 1 时，尝试走直链：custom_host 优先，其次 PRESIGNED；不再“代理直链”
+      // use_proxy != 1 时，优先尝试直链：S3 custom_host 优先，其次驱动 DirectLink 能力（例如预签名 URL）
       let directUrl = null;
       try {
         const objectStore = new ObjectStore(this.db, this.encryptionSecret, this.repositoryFactory);
@@ -210,17 +184,18 @@ export class FileViewService {
         console.error("生成存储直链失败:", e);
       }
 
-      if (!directUrl) {
-        return new Response("当前存储不支持直链下载", { status: 501 });
+      if (directUrl) {
+        const redirectHeaders = new Headers();
+        redirectHeaders.set("Location", directUrl);
+
+        return new Response(null, {
+          status: 302,
+          headers: redirectHeaders,
+        });
       }
 
-      const redirectHeaders = new Headers();
-      redirectHeaders.set("Location", directUrl);
-
-      return new Response(null, {
-        status: 302,
-        headers: redirectHeaders,
-      });
+      // 直链不可用时回退为本地代理访问，避免 501，保证“反代访问”场景下始终可用
+      return await proxyDownload();
     } catch (error) {
       console.error("代理文件下载出错:", error);
       return new Response("获取文件失败: " + error.message, { status: 500 });

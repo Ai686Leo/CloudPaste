@@ -5,16 +5,10 @@ import ConfigForm from "@/modules/admin/components/ConfigForm.vue";
 import CommonPagination from "@/components/common/CommonPagination.vue";
 import { formatDateTimeWithSeconds } from "@/utils/timeUtils.js";
 import { getAdminStorageStrategy } from "@/modules/storage-core/schema/adminStorageSchemas.js";
+import { useThemeMode } from "@/composables/core/useThemeMode.js";
 
-// 接收darkMode属性
-const props = defineProps({
-  darkMode: {
-    type: Boolean,
-    required: true,
-  },
-});
 
-// 使用存储配置管理 composable
+const { isDarkMode: darkMode } = useThemeMode();
 const {
   // 状态
   loading,

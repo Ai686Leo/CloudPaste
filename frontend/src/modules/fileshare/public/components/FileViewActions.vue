@@ -2,7 +2,7 @@
   <div class="file-actions flex flex-wrap gap-3">
     <!-- 预览按钮 -->
     <button
-      v-if="fileUrls.previewUrl"
+      v-if="hasPreviewUrl"
       @click="previewFile"
       class="action-button flex items-center justify-center px-4 py-2 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 bg-indigo-600 hover:bg-indigo-700 text-white focus:ring-indigo-500 focus:ring-offset-white dark:focus:ring-offset-gray-800"
     >
@@ -20,7 +20,7 @@
 
     <!-- 下载按钮 -->
     <button
-      v-if="fileUrls.downloadUrl"
+      v-if="hasDownloadUrl"
       @click="downloadFile"
       class="action-button flex items-center justify-center px-4 py-2 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 bg-blue-600 hover:bg-blue-700 text-white focus:ring-blue-500 focus:ring-offset-white dark:focus:ring-offset-gray-800"
     >
@@ -136,13 +136,6 @@ const props = defineProps({
     type: Object,
     required: true,
   },
-  fileUrls: {
-    type: Object,
-    default: () => ({
-      previewUrl: "",
-      downloadUrl: "",
-    }),
-  },
   darkMode: {
     type: Boolean,
     default: false,
@@ -174,9 +167,11 @@ const showCopyToast = ref(false);
 const showShareModal = ref(false);
 
 // 计算属性：判断当前用户是否为文件创建者
-const isCreator = computed(() => {
-  return authStore.isFileCreator(props.fileInfo);
-});
+const isCreator = computed(() => authStore.isFileCreator(props.fileInfo));
+
+// 预览/下载可用性（统一基于 Link JSON + fileshareService）
+const hasPreviewUrl = computed(() => !!fileshareService.getPermanentPreviewUrl(props.fileInfo));
+const hasDownloadUrl = computed(() => !!fileshareService.getPermanentDownloadUrl(props.fileInfo));
 
 /**
  * 预览文件
@@ -199,7 +194,7 @@ const previewFile = async () => {
       return;
     }
 
-    const previewUrl = fileshareService.getPermanentPreviewUrl(props.fileInfo) || props.fileUrls.previewUrl;
+    const previewUrl = fileshareService.getPermanentPreviewUrl(props.fileInfo);
     if (!previewUrl) {
       throw new Error(t("fileView.errors.serverError"));
     }
@@ -228,7 +223,7 @@ const downloadFile = () => {
   try {
     console.log("开始下载文件:", props.fileInfo.filename);
 
-    const downloadUrl = fileshareService.getPermanentDownloadUrl(props.fileInfo) || props.fileUrls.downloadUrl;
+    const downloadUrl = fileshareService.getPermanentDownloadUrl(props.fileInfo);
     if (!downloadUrl) {
       throw new Error(t("fileView.errors.serverError"));
     }
@@ -245,7 +240,7 @@ const downloadFile = () => {
     }, 100);
   } catch (error) {
     console.error("下载文件失败:", error);
-    const fallbackUrl = fileshareService.getPermanentDownloadUrl(props.fileInfo) || props.fileUrls.downloadUrl;
+    const fallbackUrl = fileshareService.getPermanentDownloadUrl(props.fileInfo);
     if (fallbackUrl) {
       window.open(fallbackUrl, "_blank");
     }

@@ -86,8 +86,11 @@ const showViewsWarning = computed(() => {
  */
 const isEditing = ref(false);
 const editingContent = ref("");
-const longPressTimer = ref(null);
 const isTouchDevice = ref(false);
+
+// 移动端双击检测
+const lastTapTime = ref(0);
+const doubleTapDelay = 300;
 
 /**
  * 开始编辑内容
@@ -136,14 +139,9 @@ const cancelEdit = () => {
 };
 
 /**
- * 处理双击事件（仅桌面端）
+ * 处理桌面端双击事件
  */
 const handleDoubleClick = (event) => {
-  // 移动端不响应双击，避免与浏览器缩放冲突
-  if (isTouchDevice.value) {
-    return;
-  }
-
   // 如果点击的是按钮或链接，不触发编辑
   if (event.target.closest("button") || event.target.closest("a")) {
     return;
@@ -153,7 +151,8 @@ const handleDoubleClick = (event) => {
 };
 
 /**
- * 处理长按事件（移动端）
+ * 处理移动端双击事件
+ * 通过检测两次触摸的时间间隔来判断是否为双击
  */
 const handleTouchStart = (event) => {
   // 如果点击的是按钮或链接，不触发编辑
@@ -161,23 +160,19 @@ const handleTouchStart = (event) => {
     return;
   }
 
-  longPressTimer.value = setTimeout(() => {
+  const currentTime = new Date().getTime();
+  const tapInterval = currentTime - lastTapTime.value;
+
+  // 如果两次点击间隔小于阈值，认为是双击
+  if (tapInterval < doubleTapDelay && tapInterval > 0) {
+    // 阻止默认行为(如缩放)
+    event.preventDefault();
     startEditing();
-  }, 800);
-};
-
-const handleTouchEnd = () => {
-  if (longPressTimer.value) {
-    clearTimeout(longPressTimer.value);
-    longPressTimer.value = null;
-  }
-};
-
-const handleTouchMove = () => {
-  // 滚动时取消长按
-  if (longPressTimer.value) {
-    clearTimeout(longPressTimer.value);
-    longPressTimer.value = null;
+    // 重置时间，避免连续触发
+    lastTapTime.value = 0;
+  } else {
+    // 记录本次点击时间
+    lastTapTime.value = currentTime;
   }
 };
 
@@ -244,8 +239,6 @@ onUnmounted(() => {
     tabindex="0"
     @dblclick.prevent="handleDoubleClick"
     @touchstart="handleTouchStart"
-    @touchend="handleTouchEnd"
-    @touchmove="handleTouchMove"
   >
     <!-- 编辑模式：整个卡片变成编辑区 -->
     <div v-if="isEditing" class="flex flex-col min-h-[180px] sm:min-h-[220px]">

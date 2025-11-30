@@ -494,18 +494,12 @@ export function useFileBasket() {
    */
   const getFileDownloadUrl = async (file) => {
     try {
-      // 如果文件对象中已经有 downloadUrl，直接使用
-      if (file.downloadUrl) {
-        return file.downloadUrl;
-      }
-
-      // 使用统一API获取文件直链
+      // 使用统一API获取文件直链/代理 URL（file-link）
       const getFileLinkApi = api.fs.getFileLink;
-      const response = await getFileLinkApi(file.path, null, true); // 强制下载
+      const url = await getFileLinkApi(file.path, null, true); // 强制下载
 
-      if (response.success && response.data) {
-        const url = response.data.presignedUrl || response.data.downloadUrl || response.data.proxyDownloadUrl || response.data.url;
-        if (url) return url;
+      if (url) {
+        return url;
       }
 
       throw new Error(t("fileBasket.errors.noDownloadUrl"));

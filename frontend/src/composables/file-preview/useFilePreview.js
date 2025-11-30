@@ -5,18 +5,14 @@
 
 import { ref, computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { api } from "@/api";
 import { useAuthStore } from "@/stores/authStore.js";
+import { useFsService } from "@/modules/fs";
 
 export function useFilePreview() {
   const route = useRoute();
   const router = useRouter();
   const authStore = useAuthStore();
-
-  // API调用函数 - 使用统一API
-  const getFileInfo = computed(() => {
-    return api.fs.getFileInfo;
-  });
+  const fsService = useFsService();
 
   // 状态管理
   const previewFile = ref(null);
@@ -64,17 +60,11 @@ export function useFilePreview() {
 
       console.log("开始预览文件:", file.name);
 
-      // 直接调用API获取预览信息
-      const response = await getFileInfo.value(file.path);
+      // 通过 FS service 获取文件信息（自动附带路径密码 token 等）
+      const fileInfo = await fsService.getFileInfo(file.path);
+      previewInfo.value = fileInfo;
 
-      if (response.success) {
-        const fileInfo = response.data;
-        previewInfo.value = fileInfo;
-
-        console.log("文件预览信息获取成功:", fileInfo);
-      } else {
-        throw new Error(response.message || "获取预览信息失败");
-      }
+      console.log("文件预览信息获取成功:", fileInfo);
 
       // 更新URL
       updatePreviewUrl(currentPath, file.name);
@@ -139,21 +129,13 @@ export function useFilePreview() {
         filePath = normalizedPath + "/" + previewFileName;
       }
 
-      // 直接调用API获取文件信息
-      const response = await getFileInfo.value(filePath);
+      // 通过 FS service 获取文件信息
+      const fileInfo = await fsService.getFileInfo(filePath);
+      previewFile.value = fileInfo;
+      previewInfo.value = fileInfo;
+      isPreviewMode.value = true;
 
-      if (response.success) {
-        const fileInfo = response.data;
-        previewFile.value = fileInfo;
-        previewInfo.value = fileInfo;
-        isPreviewMode.value = true;
-
-        console.log("文件预览初始化成功:", fileInfo.name);
-      } else {
-        console.warn("无法加载预览文件:", response.message);
-        error.value = response.message || "文件不存在或无法访问";
-        // 保持预览模式，显示错误状态，不自动重定向
-      }
+      console.log("文件预览初始化成功:", fileInfo.name);
     } catch (err) {
       console.error("初始化文件预览失败:", err);
       error.value = err.message || "预览失败";

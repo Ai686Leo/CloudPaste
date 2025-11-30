@@ -85,7 +85,7 @@
             </div>
             <div v-if="file.views && file.max_views" class="text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">已用: {{ file.views || 0 }}/{{ file.max_views }}</div>
             <div v-if="file.expires_at" class="text-xs" :class="expiresClass(file.expires_at)">
-              {{ formatExpiry(file.expires_at) }}
+              {{ formatRelativeTime(file.expires_at) }}
             </div>
           </div>
 
@@ -205,7 +205,7 @@ import { getDisplayName } from "@/utils/fileTypes.js";
 // 导入统一的工具函数（数值模型）
 import { getRemainingViews as getRemainingViewsUtil, formatFileSize } from "@/utils/fileUtils.js";
 import { getFileIcon } from "@/utils/fileTypeIcons.js";
-import { formatDateTime, formatExpiry as formatExpiryUtil, parseUTCDate } from "@/utils/timeUtils.js";
+import { formatDateTime, formatRelativeTime, parseUTCDate } from "@/utils/timeUtils.js";
 import { useFileshareService } from "@/modules/fileshare/fileshareService.js";
 
 const props = defineProps({
@@ -348,7 +348,7 @@ const fileColumns = computed(() => [
             {
               class: `text-xs mt-1 ${expiresClass(file.expires_at)}`,
             },
-            formatExpiry(file.expires_at)
+            formatRelativeTime(file.expires_at)
           )
         );
       }
@@ -799,11 +799,6 @@ const expiresClass = (expiresAt) => {
   }
 
   return props.darkMode ? "text-green-400" : "text-green-600";
-};
-
-const formatExpiry = (expiresAt) => {
-  if (!expiresAt) return "";
-  return formatExpiryUtil(expiresAt);
 };
 
 const truncateFilename = (filename) => {

@@ -134,6 +134,7 @@ async function createStorageTables(db) {
         is_public INTEGER NOT NULL DEFAULT 0,
         is_default INTEGER NOT NULL DEFAULT 0,
         remark TEXT,
+        url_proxy TEXT,
         status TEXT NOT NULL DEFAULT 'ENABLED',
         config_json TEXT NOT NULL,
         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -377,13 +378,13 @@ async function initDefaultSettings(db) {
     },
     {
       key: "webdav_upload_mode",
-      value: "single",
-      description: "WebDAV客户端的上传模式选择。",
+      value: "chunked",
+      description: "WebDAV 客户端上传模式。流式上传大文件，单次上传适合小文件或兼容性场景。",
       type: "select",
       group_id: 3,
       options: JSON.stringify([
+        { value: "chunked", label: "流式上传" },
         { value: "single", label: "单次上传" },
-        { value: "chunked", label: "分块上传" },
       ]),
       sort_order: 1,
       flags: 0,
@@ -788,6 +789,25 @@ async function executeMigrationForVersion(db, version) {
       await migrateWebDavUploadModeToSingleChunked(db);
       break;
 
+    case 23:
+      // 版本23：
+      // 1）为已有数据库补充 preview_document_apps 文档/Office 预览模板配置
+      // 2）统一 WebDAV 上传模式 webdav_upload_mode 的显示文案（流式上传/单次上传）
+      console.log("版本23：检查并补充 preview_document_apps 预览模板配置...");
+      await addPreviewSettings(db);
+      console.log("版本23：preview_document_apps 配置检查/创建完成。");
+      console.log("版本23：更新 webdav_upload_mode 显示选项为“流式上传/单次上传”...");
+      await normalizeWebDavUploadModeLabels(db);
+      console.log("版本23：webdav_upload_mode 选项更新完成。");
+      break;
+
+    case 24:
+      // 版本24：为 storage_configs 表添加 url_proxy 字段（代理入口 URL）
+      console.log("版本24：为 storage_configs 表添加 url_proxy 字段...");
+      await addTableField(db, DbTables.STORAGE_CONFIGS, "url_proxy", "url_proxy TEXT");
+      console.log("版本24：storage_configs.url_proxy 字段检查/创建完成。");
+      break;
+
     default:
       console.log(`未知的迁移版本: ${version}`);
       break;
@@ -1089,9 +1109,10 @@ async function migrateWebDavUploadModeToSingleChunked(db) {
       value = "chunked";
     }
 
+    // 统一使用新的显示标签：流式上传 / 单次上传
     const options = JSON.stringify([
+      { value: "chunked", label: "流式上传" },
       { value: "single", label: "单次上传" },
-      { value: "chunked", label: "分块上传" },
     ]);
 
     const now = new Date().toISOString();
@@ -1274,6 +1295,30 @@ async function addPreviewSettings(db) {
       sort_order: 6,
       flags: 0,
     },
+    {
+      key: "preview_document_apps",
+      value:
+        JSON.stringify(
+          {
+            "doc,docx,xls,xlsx,ppt,pptx,rtf": {
+              microsoft: {
+                urlTemplate: "https://view.officeapps.live.com/op/view.aspx?src=$e_url",
+              },
+              google: {
+                urlTemplate: "https://docs.google.com/viewer?url=$e_url&embedded=true",
+              },
+            },
+          },
+          null,
+          2,
+        ),
+      description:
+        "文档/Office 预览使用的 DocumentApp 模板配置，JSON 结构：按扩展名映射到各个预览服务的 URL 模板",
+      type: "textarea",
+      group_id: 2,
+      sort_order: 7,
+      flags: 0,
+    },
   ];
 
   for (const setting of previewSettings) {
@@ -1287,6 +1332,47 @@ async function addPreviewSettings(db) {
         .bind(setting.key, setting.value, setting.description, setting.type, setting.group_id, setting.sort_order, setting.flags)
         .run();
     }
+  }
+}
+
+/**
+ * 统一 webdav_upload_mode 设置的显示选项为“流式上传 / 单次上传”
+ * 保留原有 value（single/chunked），仅更新 options 和 description
+ * @param {D1Database} db
+ */
+async function normalizeWebDavUploadModeLabels(db) {
+  try {
+    const row = await db
+      .prepare(`SELECT key, value FROM ${DbTables.SYSTEM_SETTINGS} WHERE key = ?`)
+      .bind("webdav_upload_mode")
+      .first();
+
+    if (!row) {
+      console.log("normalizeWebDavUploadModeLabels: 未找到 webdav_upload_mode 设置，跳过更新");
+      return;
+    }
+
+    const options = JSON.stringify([
+      { value: "chunked", label: "流式上传" },
+      { value: "single", label: "单次上传" },
+    ]);
+
+    const description ="WebDAV 客户端上传模式。流式上传大文件，单次上传适合小文件或兼容性场景。";
+
+    const now = new Date().toISOString();
+
+    await db
+      .prepare(
+        `UPDATE ${DbTables.SYSTEM_SETTINGS}
+         SET description = ?, options = ?, updated_at = ?
+         WHERE key = 'webdav_upload_mode'`,
+      )
+      .bind(description, options, now)
+      .run();
+
+    console.log("normalizeWebDavUploadModeLabels: 已更新 webdav_upload_mode 显示配置");
+  } catch (error) {
+    console.error("normalizeWebDavUploadModeLabels: 更新 webdav_upload_mode 显示配置失败:", error);
   }
 }
 
@@ -1545,7 +1631,7 @@ export async function checkAndInitDatabase(db) {
     const versionSetting = await db.prepare(`SELECT value FROM ${DbTables.SYSTEM_SETTINGS} WHERE key = 'schema_version'`).first();
 
     const currentVersion = versionSetting ? parseInt(versionSetting.value) : 0;
-    const targetVersion = 22; // 当前最新版本
+    const targetVersion = 24; // 当前最新版本
 
     if (currentVersion < targetVersion) {
       console.log(`需要更新数据库结构，当前版本:${currentVersion}，目标版本:${targetVersion}`);

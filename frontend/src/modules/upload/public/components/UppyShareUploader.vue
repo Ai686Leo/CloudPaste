@@ -385,16 +385,16 @@ const uploadModes = computed(() => {
     },
     {
       value: "stream",
-      label: "流式上传",
-      modeLabel: "流式模式",
-      tooltip: "通过后端流式中转上传",
+      label: t("file.uploadModes.stream"),
+      modeLabel: t("file.uploadModes.streamMode"),
+      tooltip: t("file.uploadModes.streamTooltip"),
       disabled: isUploading.value,
     },
     {
       value: "form",
-      label: "表单上传",
-      modeLabel: "表单模式",
-      tooltip: "使用表单(multipart/form-data)上传",
+      label: t("file.uploadModes.form"),
+      modeLabel: t("file.uploadModes.formMode"),
+      tooltip: t("file.uploadModes.formTooltip"),
       disabled: isUploading.value,
     },
   ];
@@ -598,8 +598,11 @@ const buildShareResultEntry = (item) => {
     shareUrl = record.url.startsWith("http") || !origin ? record.url : `${origin.replace(/\/$/,"")}${record.url}`;
   }
 
-  const previewUrl = record.previewUrl || record.proxyPreviewUrl || shareUrl;
-  const downloadUrl = record.proxyDownloadUrl || record.downloadUrl || (slug ? fileshareService.getPermanentDownloadUrl({ slug }) : "");
+  // 预览与下载统一依赖 Link JSON + share URL：
+  // - 预览：优先使用 fileshareService 基于 Link JSON 构造的预览入口，其次退回分享页
+  // - 下载：始终使用 Down 路由（getPermanentDownloadUrl）
+  const previewUrl = fileshareService.getPermanentPreviewUrl(record) || shareUrl;
+  const downloadUrl = slug ? fileshareService.getPermanentDownloadUrl({ slug }) : "";
 
   return {
     id: record.id || meta.fileId || item?.id || slug,

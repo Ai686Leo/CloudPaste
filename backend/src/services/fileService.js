@@ -11,6 +11,7 @@ import { ApiStatus, DbTables, UserType } from "../constants/index.js";
 import { ValidationError, NotFoundError, AuthorizationError, ConflictError } from "../http/errors.js";
 import { ensureRepositoryFactory } from "../utils/repositories.js";
 import { ObjectStore } from "../storage/object/ObjectStore.js";
+import { resolveDocumentPreview } from "./documentPreviewService.js";
 
 export class FileService {
   /**
@@ -108,91 +109,103 @@ export class FileService {
     };
   }
 
+
   /**
-   * 生成文件下载URL
-   * @param {Object} file - 文件对象
-   * @param {string} encryptionSecret - 加密密钥
-   * @param {Request} request - 原始请求对象，用于获取当前域名
-   * @returns {Promise<Object>} 包含预览链接和下载链接的对象
+   * 分享层统一 guard：
+   * - 根据 slug 获取文件记录
+   * - 校验过期/最大访问次数
+   * - 在需要时递增 views 并处理过期删除
+   * - 可选择是否在本次调用中递增 views
+   * @param {string} slug
+   * @param {Object} [options]
+   * @param {boolean} [options.incrementViews] 是否在本次调用中递增浏览次数
+   * @returns {Promise<{ file: any, isExpired: boolean }>}
    */
-  async generateFileDownloadUrl(file, encryptionSecret, request = null, userInfo = null) {
-    // 同时准备直链与代理链路，最终根据 use_proxy 选择默认输出
-    let previewUrl = "";
-    let downloadUrl = "";
+  async guardShareFile(slug, options = {}) {
+    const { incrementViews = false } = options;
 
-    // 获取当前域名作为基础URL（用于构建绝对代理链接）
-    let baseUrl = "";
-    if (request) {
-      try {
-        const url = new URL(request.url);
-        baseUrl = url.origin;
-      } catch (error) {
-        console.error("解析请求URL出错:", error);
-      }
+    // 统一获取文件记录
+    const file = await this.getFileBySlug(slug);
+
+    if (!incrementViews) {
+      const accessResult = this.validateFileAccess(file);
+      return {
+        file,
+        isExpired: !accessResult.accessible,
+      };
     }
 
-    let proxyPreviewUrl = baseUrl ? `${baseUrl}/api/file-view/${file.slug}` : `/api/file-view/${file.slug}`;
-    let proxyDownloadUrl = baseUrl ? `${baseUrl}/api/file-download/${file.slug}` : `/api/file-download/${file.slug}`;
-
-    // 如果存在明文密码，将其追加到代理链接中，便于一次性访问
-    const plainPassword = file.password_plain || file.plain_password || file.passwordPlain || null;
-    const appendPasswordParam = (url) => {
-      if (!plainPassword || !url) return url;
-      const separator = url.includes("?") ? "&" : "?";
-      return `${url}${separator}password=${encodeURIComponent(plainPassword)}`;
-    };
-    proxyPreviewUrl = appendPasswordParam(proxyPreviewUrl);
-    proxyDownloadUrl = appendPasswordParam(proxyDownloadUrl);
-
-    // 使用 ObjectStore + ObjectLinkStrategy 生成直链
-    let directPreviewUrl = "";
-    let directDownloadUrl = "";
-    if (file?.storage_type && file?.storage_path) {
-      try {
-        const objectStore = new ObjectStore(this.db, this.encryptionSecret, this.repositoryFactory);
-        const links = await objectStore.generateLinksByStoragePath(file.storage_config_id, file.storage_path, {
-          userType: userInfo?.type || null,
-          userId: userInfo?.id || null,
-        });
-        directPreviewUrl = links?.preview?.url || "";
-        directDownloadUrl = links?.download?.url || "";
-      } catch (e) {
-        console.warn("生成直链失败（已回退代理）:", e?.message || e);
-      }
-    }
-
-    const useProxyFlag = file.use_proxy ?? 0;
-
-    previewUrl = useProxyFlag === 1 || !directPreviewUrl ? proxyPreviewUrl : directPreviewUrl;
-    downloadUrl = useProxyFlag === 1 || !directDownloadUrl ? proxyDownloadUrl : directDownloadUrl;
-
-    return {
-      previewUrl,
-      downloadUrl,
-      proxyPreviewUrl,
-      proxyDownloadUrl,
-      use_proxy: useProxyFlag,
-    };
+    // 需要递增视图时复用 incrementAndCheckFileViews 的逻辑
+    return await this.incrementAndCheckFileViews(slug);
   }
 
   /**
-   * 获取文件的公开信息
+   * 获取文件的公开信息（分享视图 JSON）
+   * - 统一返回 Link JSON 结构，供前端 fileshare 视图消费
+   * - rawUrl 与 FS 一致，始终代表“最终 URL”（直链或 share 维度的代理 URL）
+   * - 当具备直链能力且 use_proxy = 0 时直接返回存储直链；否则使用 `/api/s/:slug?mode=inline`
    * @param {Object} file - 文件对象
    * @param {boolean} requiresPassword - 是否需要密码
-   * @param {Object} urlsObj - URL对象
+   * @param {import("../storage/link/LinkTypes.js").StorageLink|null} link - 由 LinkService 生成的 StorageLink
+   * @param {{ baseOrigin?: string }=} options - 额外选项（如当前请求的后端 Origin）
    * @returns {Promise<Object>} 公开文件信息
    */
-  async getPublicFileInfo(file, requiresPassword, urlsObj = null) {
-    // 确定使用哪种URL
-    const useProxy = urlsObj?.use_proxy !== undefined ? urlsObj.use_proxy : file.use_proxy || 0;
-
-    // 根据是否使用代理选择URL
-    const effectivePreviewUrl = useProxy === 1 ? urlsObj?.proxyPreviewUrl : urlsObj?.previewUrl;
-    const effectiveDownloadUrl = useProxy === 1 ? urlsObj?.proxyDownloadUrl : urlsObj?.downloadUrl;
-
-    // 获取文件类型
+  async getPublicFileInfo(file, requiresPassword, link = null, options = {}) {
+    // 获取文件类型（用于前端预览类型判断）
     const fileType = await GetFileType(file.filename, this.db);
     const fileTypeName = await getFileTypeName(file.filename, this.db);
+
+    const useProxyFlag = file.use_proxy ?? 0;
+    const storageUrlProxy = file.url_proxy || null;
+
+    const baseOrigin = options.baseOrigin || null;
+
+    // LinkService 已经根据 use_proxy / url_proxy / 直链能力生成了最终 URL，这里只做轻量封装：
+    let rawUrl = link && link.url ? link.url : null;
+    let linkType = "proxy";
+
+    // 补全 linkType 语义，方便前端区分“本地代理”“外部 Proxy/Worker 入口”和“直链”
+    if (useProxyFlag) {
+      linkType = "proxy";
+    } else if (storageUrlProxy && rawUrl) {
+      // 配置了 url_proxy 且存在可用 URL：视为外部 Proxy/Worker 入口
+      linkType = "url_proxy";
+    } else if (link && link.kind === "direct" && rawUrl) {
+      linkType = "direct";
+    } else if (rawUrl) {
+      // 其余非空 URL 默认视为 proxy 链路
+      linkType = "proxy";
+    } else {
+      // 没有任何 URL 时按“直链不可用”处理，方便前端渲染“不支持直链/预览”
+      linkType = "direct";
+    }
+
+    // 若提供了 baseOrigin，则仅对本地相对路径（/api/s/...）补全为绝对 URL；
+    // 对 Worker/直链等已为绝对 URL 的场景不做修改。
+    if (rawUrl && baseOrigin && rawUrl.startsWith("/")) {
+      rawUrl = `${baseOrigin}${rawUrl}`;
+    }
+
+    // 对于受密码保护且尚未通过校验的场景，不应在 JSON 中暴露任何可直接访问的 URL
+    if (requiresPassword) {
+      rawUrl = null;
+    }
+
+    // 基于文件信息和 Link JSON 生成 DocumentPreviewResult（仅用于文档/Office 预览）
+    const documentPreview = await resolveDocumentPreview(
+      {
+        type: fileType,
+        typeName: fileTypeName,
+        mimetype: file.mimetype,
+        filename: file.filename,
+        size: file.size,
+      },
+      {
+        rawUrl,
+        linkType,
+        use_proxy: useProxyFlag,
+      },
+    );
 
     return {
       id: file.id,
@@ -206,14 +219,13 @@ export class FileService {
       views: file.views,
       max_views: file.max_views,
       expires_at: file.expires_at,
-      previewUrl: effectivePreviewUrl,
-      downloadUrl: effectiveDownloadUrl,
-      proxyPreviewUrl: urlsObj?.proxyPreviewUrl ?? urlsObj?.previewUrl ?? null,
-      proxyDownloadUrl: urlsObj?.proxyDownloadUrl ?? urlsObj?.downloadUrl ?? null,
-      use_proxy: useProxy,
+      rawUrl,
+      linkType,
+      use_proxy: useProxyFlag,
       created_by: file.created_by || null,
       type: fileType, // 整数类型常量 (0-6)
       typeName: fileTypeName, // 类型名称（用于调试）
+      documentPreview,
     };
   }
 
@@ -456,14 +468,10 @@ export class FileService {
       throw new NotFoundError("文件不存在");
     }
 
-    // 生成文件下载URL
-    const urlsObj = await this.generateFileDownloadUrl(file, encryptionSecret, request);
-
     // 构建响应
     const result = {
       ...file,
       has_password: file.password ? true : false,
-      urls: urlsObj,
     };
 
     // 如果文件有密码保护，获取明文密码
@@ -627,14 +635,10 @@ export class FileService {
       throw new AuthorizationError("没有权限查看此文件");
     }
 
-    // 生成文件下载URL
-    const urlsObj = await this.generateFileDownloadUrl(file, encryptionSecret, request);
-
     // 构建响应
     const result = {
       ...file,
       has_password: file.password ? true : false,
-      urls: urlsObj,
     };
 
     // 如果文件有密码保护，获取明文密码
@@ -665,14 +669,21 @@ export async function incrementAndCheckFileViews(db, file, encryptionSecret) {
   return await fileService.incrementAndCheckFileViews(file.slug);
 }
 
-export async function generateFileDownloadUrl(db, file, encryptionSecret, request = null, userInfo = null) {
+export async function guardShareFile(db, slug, encryptionSecret, options = {}) {
   const fileService = new FileService(db, encryptionSecret);
-  return await fileService.generateFileDownloadUrl(file, encryptionSecret, request, userInfo);
+  return await fileService.guardShareFile(slug, options);
 }
 
-export async function getPublicFileInfo(db, file, requiresPassword, urlsObj = null, encryptionSecret = null) {
+export async function getPublicFileInfo(
+  db,
+  file,
+  requiresPassword,
+  link = null,
+  encryptionSecret = null,
+  options = {},
+) {
   const fileService = new FileService(db, encryptionSecret);
-  return await fileService.getPublicFileInfo(file, requiresPassword, urlsObj);
+  return await fileService.getPublicFileInfo(file, requiresPassword, link, options);
 }
 
 export async function deleteFileRecordByStoragePath(db, storageConfigId, storagePath, storageType) {

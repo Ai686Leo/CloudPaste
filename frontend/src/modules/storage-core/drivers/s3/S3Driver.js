@@ -133,9 +133,11 @@ export class S3Driver {
               overwrite: !!meta.overwrite,
               originalFilename: !!meta.original_filename,
             };
+            const rawName = meta.name || file.name || "upload-file";
+            const encodedName = encodeURIComponent(rawName);
             return {
               ...headers,
-              "x-fs-filename": meta.name || file.name,
+              "x-fs-filename": encodedName,
               "x-fs-options": btoa(JSON.stringify(uploadOptions)),
             };
           },
@@ -327,16 +329,18 @@ export class S3Driver {
             original_filename: meta.original_filename,
             upload_id: meta.upload_id,
           };
-          let encoded = "";
+          let encodedOptions = "";
           try {
-            encoded = btoa(JSON.stringify(options));
+            encodedOptions = btoa(JSON.stringify(options));
           } catch {
-            encoded = "";
+            encodedOptions = "";
           }
+          const rawName = meta.name || file.name || "upload-file";
+          const encodedName = encodeURIComponent(rawName);
           return {
             ...authHeaders,
-            "x-share-filename": meta.name || file.name,
-            ...(encoded ? { "x-share-options": encoded } : {}),
+            "x-share-filename": encodedName,
+            ...(encodedOptions ? { "x-share-options": encodedOptions } : {}),
           };
         },
       });

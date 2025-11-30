@@ -525,7 +525,7 @@ async function getDirectoryPresignedUrls(s3Client, sourceS3Config, targetS3Confi
         const targetKey = targetPrefix + relativePath;
 
         // 为每个文件生成下载和上传的预签名URL
-        const downloadUrl = await generateDownloadUrl(sourceS3Config, sourceKey, encryptionSecret, expiresIn);
+        const rawUrl = await generateDownloadUrl(sourceS3Config, sourceKey, encryptionSecret, expiresIn);
 
         // 获取文件的content-type
         let contentType = "application/octet-stream";
@@ -553,7 +553,7 @@ async function getDirectoryPresignedUrls(s3Client, sourceS3Config, targetS3Confi
         // 计算相对目录路径
         const relativeDir = pathParts.join("/");
 
-        // 添加到结果集
+        // 添加到结果集：仅提供统一的 rawUrl 字段
         items.push({
           sourceKey,
           targetKey,
@@ -561,7 +561,7 @@ async function getDirectoryPresignedUrls(s3Client, sourceS3Config, targetS3Confi
           relativeDir,
           contentType,
           size: item.Size,
-          downloadUrl,
+          rawUrl,
           uploadUrl,
         });
       }

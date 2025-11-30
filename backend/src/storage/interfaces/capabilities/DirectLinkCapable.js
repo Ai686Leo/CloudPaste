@@ -1,11 +1,20 @@
 /**
- * 预签名URL能力接口
- * 定义存储驱动的预签名URL生成能力
- * 主要用于S3等支持预签名URL的存储服务
- * 可以生成临时的、安全的直接访问URL
+ * 直链能力接口（下载/上传）
+ * 定义存储驱动生成“可直接对外访问 URL”的能力
+ * - 对于 S3 等对象存储：通常表现为预签名 URL
+ * - 对于有 custom_host 的存储：可以是 custom_host 直链
+ *
+ * 注意：
+ * - storage-driver 能力规范中，DIRECT_LINK 的“最小要求”是实现 generateDownloadUrl(path, options)
+ *   且返回对象需包含 canonical 字段：
+ *   - url: 最终可供浏览器/客户端使用的直链
+ *   - type: 直链类型标记（例如 "custom_host" | "native_direct"）
+ *   其余字段（expiresIn/expiresAt 等）为可选扩展。
+ * - generateUploadUrl / generatePresignedUrl 仅在支持预签名上传的驱动上实现（如 S3/R2），
+ *   WebDAV 等只提供下载直链的驱动可以不实现上传相关方法。
  */
 
-export class PresignedCapable {
+export class DirectLinkCapable {
   /**
    * 生成预签名下载URL
    * @param {string} path - 文件路径
@@ -17,7 +26,7 @@ export class PresignedCapable {
    * @returns {Promise<Object>} 预签名下载URL信息
    */
   async generateDownloadUrl(path, options = {}) {
-    throw new Error("generateDownloadUrl方法必须在实现PresignedCapable的类中实现");
+    throw new Error("generateDownloadUrl方法必须在实现DirectLinkCapable的类中实现");
   }
 
   /**
@@ -31,7 +40,7 @@ export class PresignedCapable {
    * @returns {Promise<Object>} 预签名上传URL信息
    */
   async generateUploadUrl(path, options = {}) {
-    throw new Error("generateUploadUrl方法必须在实现PresignedCapable的类中实现");
+    throw new Error("generateUploadUrl方法必须在实现DirectLinkCapable的类中实现");
   }
 
   /**
@@ -103,21 +112,19 @@ export class PresignedCapable {
 }
 
 /**
- * 检查对象是否实现了PresignedCapable接口
+ * 检查对象是否实现了 DirectLinkCapable 接口
  * @param {Object} obj - 要检查的对象
  * @returns {boolean} 是否实现了PresignedCapable接口
  */
-export function isPresignedCapable(obj) {
-  return (
-    obj &&
-    typeof obj.generateDownloadUrl === "function" &&
-    typeof obj.generateUploadUrl === "function" &&
-    typeof obj.generatePresignedUrl === "function"
-  );
+export function isDirectLinkCapable(obj) {
+  // 对于“能力探测”场景，最小判断标准统一为：存在 generateDownloadUrl 方法即可
+  // 上传相关方法（generateUploadUrl/generatePresignedUrl）为可选扩展能力，
+  // 由具体使用场景（例如 ObjectStore 预签名上传）在调用前自行做 typeof 检查。
+  return obj && typeof obj.generateDownloadUrl === "function";
 }
 
 /**
- * PresignedCapable能力的标识符
+ * DirectLinkCapable 能力的标识符
  */
-export const PRESIGNED_CAPABILITY = "PresignedCapable";
+export const DIRECT_LINK_CAPABILITY = "DirectLinkCapable";
 import { ValidationError } from "../../../http/errors.js";

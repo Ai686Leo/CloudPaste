@@ -554,12 +554,8 @@ const copyPermanentLink = async (file) => {
   }
 
   try {
-    let fileWithUrls = file;
-    if (!fileWithUrls.urls || !fileWithUrls.urls.proxyDownloadUrl) {
-      fileWithUrls = await fileshareService.fetchById(file.id);
-    }
-
-    const permanentDownloadUrl = fileshareService.getPermanentDownloadUrl(fileWithUrls);
+    // 基于 Link JSON 的 Down 路由获取永久下载链接
+    const permanentDownloadUrl = fileshareService.getPermanentDownloadUrl(file);
     if (!permanentDownloadUrl) {
       throw new Error(t("file.cannotGetProxyLink"));
     }

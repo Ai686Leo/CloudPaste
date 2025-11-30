@@ -2,18 +2,15 @@
 import { ref, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { useAdminSystemService } from "@/modules/admin/services/systemService.js";
+import { useThemeMode } from "@/composables/core/useThemeMode.js";
+import { useGlobalMessage } from "@/composables/core/useGlobalMessage.js";
 
 // 使用i18n
 const { t } = useI18n();
 const { getGlobalSettings, updateGlobalSettings } = useAdminSystemService();
 
-// 定义props
-const props = defineProps({
-  darkMode: {
-    type: Boolean,
-    required: true,
-  },
-});
+const { isDarkMode: darkMode } = useThemeMode();
+const { showSuccess, showError } = useGlobalMessage();
 
 // 上传限制设置
 const uploadSettings = ref({
@@ -24,11 +21,9 @@ const uploadSettings = ref({
 // 可选的大小单位
 const sizeUnits = ref(["KB", "MB", "GB"]);
 
-// 上传设置更新状态
+// 上传设置更新状态（仅用于控制加载状态）
 const uploadStatus = ref({
   loading: false,
-  success: false,
-  error: "",
 });
 
 // 代理签名设置
@@ -37,11 +32,9 @@ const proxySignSettings = ref({
   expires: 0,
 });
 
-// 代理签名设置更新状态
+// 代理签名设置更新状态（仅用于控制加载状态）
 const proxySignStatus = ref({
   loading: false,
-  success: false,
-  error: "",
 });
 
 // 默认代理设置
@@ -100,15 +93,12 @@ const handleUpdateUploadSettings = async (event) => {
   event.preventDefault();
 
   if (!uploadSettings.value.max_upload_size || uploadSettings.value.max_upload_size <= 0) {
-    uploadStatus.value.error = t("admin.global.uploadSettings.validationError");
+    const message = t("admin.global.uploadSettings.validationError");
+    showError(message);
     return;
   }
 
-  uploadStatus.value = {
-    loading: true,
-    success: false,
-    error: "",
-  };
+  uploadStatus.value.loading = true;
 
   try {
     const convertedSize = convertToMB(uploadSettings.value.max_upload_size, uploadSettings.value.max_upload_size_unit);
@@ -119,12 +109,10 @@ const handleUpdateUploadSettings = async (event) => {
       default_use_proxy: defaultProxySettings.value.defaultUseProxy.toString(),
       file_naming_strategy: fileNamingSettings.value.enableOverwrite ? "overwrite" : "random_suffix",
     });
-    uploadStatus.value.success = true;
-    setTimeout(() => {
-      uploadStatus.value.success = false;
-    }, 3000);
+    showSuccess(t("admin.global.messages.updateSuccess"));
   } catch (error) {
-    uploadStatus.value.error = error.message || t("admin.global.messages.updateFailed");
+    const message = error.message || t("admin.global.messages.updateFailed");
+    showError(message);
   } finally {
     uploadStatus.value.loading = false;
   }
@@ -134,11 +122,7 @@ const handleUpdateUploadSettings = async (event) => {
 const handleUpdateProxySignSettings = async (event) => {
   event.preventDefault();
 
-  proxySignStatus.value = {
-    loading: true,
-    success: false,
-    error: "",
-  };
+  proxySignStatus.value.loading = true;
 
   try {
     // 使用新的分组更新API（代理签名设置也属于全局设置组，分组ID = 1）
@@ -146,12 +130,10 @@ const handleUpdateProxySignSettings = async (event) => {
       proxy_sign_all: proxySignSettings.value.signAll.toString(),
       proxy_sign_expires: proxySignSettings.value.expires.toString(),
     });
-    proxySignStatus.value.success = true;
-    setTimeout(() => {
-      proxySignStatus.value.success = false;
-    }, 3000);
+    showSuccess(t("admin.global.messages.updateSuccess"));
   } catch (error) {
-    proxySignStatus.value.error = error.message || t("admin.global.messages.updateFailed");
+    const message = error.message || t("admin.global.messages.updateFailed");
+    showError(message);
   } finally {
     proxySignStatus.value.loading = false;
   }
@@ -172,41 +154,6 @@ const handleUpdateProxySignSettings = async (event) => {
       <div class="setting-group bg-white dark:bg-gray-800 rounded-lg p-6 border border-gray-200 dark:border-gray-700 max-w-2xl">
         <h2 class="text-lg font-medium mb-4 pb-2 border-b border-gray-200 dark:border-gray-700">{{ t("admin.global.uploadSettings.title") }}</h2>
         <div class="space-y-4">
-          <!-- 状态消息 -->
-          <div
-            v-if="uploadStatus.success"
-            class="mb-4 rounded-lg p-4 border transition-colors duration-200"
-            :class="darkMode ? 'bg-green-900/20 border-green-800/40 text-green-200' : 'bg-green-50 border-green-200 text-green-800'"
-          >
-            <div class="flex items-center">
-              <svg class="h-5 w-5 mr-2 flex-shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                <path
-                  fill-rule="evenodd"
-                  d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                  clip-rule="evenodd"
-                />
-              </svg>
-              <p class="text-sm font-medium">{{ t("admin.global.messages.updateSuccess") }}</p>
-            </div>
-          </div>
-
-          <div
-            v-if="uploadStatus.error"
-            class="mb-4 rounded-lg p-4 border transition-colors duration-200"
-            :class="darkMode ? 'bg-red-900/20 border-red-800/40 text-red-200' : 'bg-red-50 border-red-200 text-red-800'"
-          >
-            <div class="flex items-center">
-              <svg class="h-5 w-5 mr-2 flex-shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                <path
-                  fill-rule="evenodd"
-                  d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                  clip-rule="evenodd"
-                />
-              </svg>
-              <p class="text-sm font-medium">{{ uploadStatus.error }}</p>
-            </div>
-          </div>
-
           <!-- 上传限制设置表单 -->
           <form @submit="handleUpdateUploadSettings" class="space-y-6">
             <div class="setting-item">
@@ -304,41 +251,6 @@ const handleUpdateProxySignSettings = async (event) => {
       <div class="setting-group bg-white dark:bg-gray-800 rounded-lg p-6 border border-gray-200 dark:border-gray-700 max-w-2xl">
         <h2 class="text-lg font-medium mb-4 pb-2 border-b border-gray-200 dark:border-gray-700">{{ t("admin.global.proxySignSettings.title") }}</h2>
         <div class="space-y-4">
-          <!-- 状态消息 -->
-          <div
-            v-if="proxySignStatus.success"
-            class="mb-4 rounded-lg p-4 border transition-colors duration-200"
-            :class="darkMode ? 'bg-green-900/20 border-green-800/40 text-green-200' : 'bg-green-50 border-green-200 text-green-800'"
-          >
-            <div class="flex items-center">
-              <svg class="h-5 w-5 mr-2 flex-shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                <path
-                  fill-rule="evenodd"
-                  d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                  clip-rule="evenodd"
-                />
-              </svg>
-              <p class="text-sm font-medium">{{ t("admin.global.messages.updateSuccess") }}</p>
-            </div>
-          </div>
-
-          <div
-            v-if="proxySignStatus.error"
-            class="mb-4 rounded-lg p-4 border transition-colors duration-200"
-            :class="darkMode ? 'bg-red-900/20 border-red-800/40 text-red-200' : 'bg-red-50 border-red-200 text-red-800'"
-          >
-            <div class="flex items-center">
-              <svg class="h-5 w-5 mr-2 flex-shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                <path
-                  fill-rule="evenodd"
-                  d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                  clip-rule="evenodd"
-                />
-              </svg>
-              <p class="text-sm font-medium">{{ proxySignStatus.error }}</p>
-            </div>
-          </div>
-
           <!-- 代理签名设置表单 -->
           <form @submit="handleUpdateProxySignSettings" class="space-y-6">
             <!-- 签名所有请求开关 -->

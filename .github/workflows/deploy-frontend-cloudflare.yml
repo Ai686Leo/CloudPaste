@@ -1,4 +1,4 @@
-name: Deploy Frontend to Cloudflare Pages
+name: Deploy Frontend CF Pages[Pages前端分离部署]
 
 on:
   push:
@@ -7,11 +7,55 @@ on:
       - "frontend/**"
       - "!frontend/vercel.json"
   workflow_dispatch:
+    inputs:
+      from_panel:
+        description: "是否由部署控制面板触发 / triggered from deployment control panel"
+        required: false
+        default: "false"
   repository_dispatch:
     types: [deploy-button]
 
 jobs:
+  check-config:
+    runs-on: ubuntu-latest
+    outputs:
+      should_deploy: ${{ steps.check.outputs.should_deploy }}
+    steps:
+      - name: 📥 检出代码
+        uses: actions/checkout@v4
+
+      - name: 🔍 检查部署配置
+        id: check
+        run: |
+          # 手动触发时（workflow_dispatch / repository_dispatch），总是部署，忽略自动部署开关
+          if [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+            echo "✅ 手动触发（repository_dispatch），忽略开关，允许部署"
+            exit 0
+          fi
+
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ github.event.inputs.from_panel }}" != "true" ]]; then
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+            echo "✅ 手动触发（workflow_dispatch），忽略开关，允许部署"
+            exit 0
+          fi
+
+          # 自动触发（push 或控制面板触发）根据仓库级变量决定是否部署
+          FRONTEND_ENABLED="${{ vars.FRONTEND_DEPLOY }}"
+          # 默认行为：如果仓库变量未设置，视为已开启自动部署（向下兼容旧逻辑）
+          [ -z "$FRONTEND_ENABLED" ] && FRONTEND_ENABLED="true"
+
+          if [ "$FRONTEND_ENABLED" = "true" ]; then
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+            echo "✅ 前端自动部署已开启，允许部署"
+          else
+            echo "should_deploy=false" >> $GITHUB_OUTPUT
+            echo "⏸️ 前端自动部署已关闭，跳过部署"
+          fi
+
   deploy-frontend-cloudflare:
+    needs: check-config
+    if: needs.check-config.outputs.should_deploy == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -100,7 +144,17 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          npx wrangler pages deploy ./dist --project-name=cloudpaste-frontend --branch production 2>&1 | sed -E 's/https:\/\/[a-zA-Z0-9.-]*\.(workers|pages)\.dev/https:\/\/[REDACTED].\1.dev/g'
+          COMMIT_MSG=$(cat << 'EOF'
+          ${{ github.event.head_commit.message }}
+          EOF
+          )
+          # 清理非UTF-8字符并限制长度
+          CLEAN_MSG=$(echo "$COMMIT_MSG" | iconv -f utf-8 -t utf-8 -c | head -c 200)
+          # 如果消息为空或无效，使用默认消息
+          if [ -z "$CLEAN_MSG" ]; then
+            CLEAN_MSG="Deploy from GitHub Actions"
+          fi
+          npx wrangler pages deploy ./dist --project-name=cloudpaste-frontend --branch production --commit-message="$CLEAN_MSG" 2>&1 | sed -E 's/https:\/\/[a-zA-Z0-9.-]*\.(workers|pages)\.dev/https:\/\/[REDACTED].\1.dev/g'
 
       - name: Display Success Information
         if: steps.check-deploy-button.outputs.is_deploy_button == 'true' && success()

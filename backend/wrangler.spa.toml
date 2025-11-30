@@ -1,0 +1,46 @@
+# Cloudflare Workers + Static Assets 一体化部署配置
+# 用途：将前端静态资源和后端 API 部署到同一个 Worker
+# 使用方式：npx wrangler deploy --config wrangler.spa.toml
+
+name = "cloudpaste-spa"
+main = "unified-entry.js"
+compatibility_date = "2025-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+# 开发服务器配置
+[dev]
+port = 8787
+local_protocol = "http"
+
+# 环境变量
+[vars]
+# 用于加密敏感配置的密钥（生产环境应通过 wrangler secret 设置）
+ENCRYPTION_SECRET = "default-encryption-key"
+# 管理员Token过期天数，默认7天
+ADMIN_TOKEN_EXPIRY_DAYS = "7"
+
+# 绑定D1数据库
+# 需要替换为实际的数据库ID
+[[d1_databases]]
+binding = "DB"
+database_name = "cloudpaste-db"
+database_id = "xxxxxxxxxxxxxxxxx"
+
+# ==================== Static Assets 配置 ====================
+# 用于托管前端静态资源
+[assets]
+# 静态资源目录（相对于 backend/ 目录）
+directory = "../frontend/dist"
+
+# SPA 模式：前端路由刷新时返回 index.html（避免 404）
+not_found_handling = "single-page-application"
+
+# 配置：明确指定这些路径优先进入 Worker 处理
+# 防止 API 请求被 SPA fallback 拦截
+run_worker_first = ["/api/*", "/dav/*"]
+
+# ==================== 路由优先级说明 ====================
+# 1. /api/* 和 /dav/* -> 优先进入 Worker 处理（run_worker_first）
+# 2. 静态文件存在 -> 直接返回（不调用 Worker）
+# 3. 前端路由（浏览器导航）-> 返回 index.html（SPA fallback）
+# 4. 导航请求在 compatibility_date >= 2025-04-01 时不计费

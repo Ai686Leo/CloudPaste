@@ -19,8 +19,8 @@ export default {
       accessCount: "访问次数",
       expiresAt: "过期时间",
       accessMode: "访问模式",
-      proxyAccess: "Worker代理访问",
-      directAccess: "存储/CDN直链访问",
+      proxyAccess: "本地代理访问",
+      directAccess: "直链/URL代理访问",
       limit: "限制",
     },
 
@@ -106,7 +106,7 @@ export default {
       // 文本预览
       text: {
         title: "文本文件预览",
-        loading: "加载文本内容中...",
+        loading: "加载中...",
         error: "加载文本内容失败",
         tooLarge: "文件过大，为了性能考虑，请下载后查看完整内容",
         truncated: "内容已截断，请下载查看完整文件",
@@ -115,26 +115,26 @@ export default {
       // 代码预览
       code: {
         title: "代码预览",
-        loading: "加载代码内容中...",
+        loading: "加载中...",
       },
 
       // 配置文件预览
       config: {
         title: "配置文件预览",
-        loading: "加载配置文件中...",
+        loading: "加载中...",
       },
 
       // Markdown预览
       markdown: {
         title: "Markdown预览",
-        loading: "加载Markdown内容中...",
+        loading: "加载中...",
         error: "Markdown预览加载失败",
       },
 
       // HTML预览
       html: {
         title: "HTML预览",
-        loading: "加载HTML内容中...",
+        loading: "加载中...",
         loadingSource: "加载HTML源码中...",
         error: "HTML加载失败",
         viewSource: "查看源码",
@@ -144,29 +144,34 @@ export default {
       // PDF预览
       pdf: {
         title: "PDF预览",
-        loading: "加载PDF中...",
+        loading: "加载中...",
         error: "PDF加载失败",
+        browserNative: "原生预览",
+        pdfjsLabel: "PDF.js",
       },
 
       // 图片预览
       image: {
         title: "图片预览",
-        loading: "加载图片中...",
+        loading: "加载中...",
         error: "图片加载失败",
       },
 
       // 视频预览
       video: {
         title: "视频预览",
-        loading: "加载视频中...",
+        loading: "加载中...",
         error: "视频加载失败",
         notSupported: "您的浏览器不支持视频标签",
       },
 
+      // 直链预览提示
+      directNotSupported: "当前存储不支持直链预览，请切换为代理模式。",
+
       // 音频预览
       audio: {
         title: "音频预览",
-        loading: "加载音频中...",
+        loading: "加载中...",
         error: "音频加载失败",
         notSupported: "您的浏览器不支持音频标签",
       },
@@ -174,7 +179,7 @@ export default {
       // Office预览
       office: {
         title: "Office预览",
-        loading: "加载预览中...",
+        loading: "加载中...",
         loadingDetail: "加载Office预览中，请稍候...",
         error: "Office预览加载失败",
         useMicrosoft: "使用Microsoft预览",
@@ -195,6 +200,8 @@ export default {
         microsoftService: "使用Microsoft Office服务",
         proxyMode: " (Worker代理模式)",
         directMode: " (直接访问模式)",
+        providerMicrosoft: "Microsoft Office Online",
+        providerGoogle: "Google Docs",
       },
     },
 

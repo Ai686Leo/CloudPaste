@@ -6,6 +6,7 @@
 import { ref, computed, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import api from "@/api";
+import { useFsService } from "@/modules/fs";
 
 export function useGalleryView() {
   const { t } = useI18n();
@@ -55,6 +56,7 @@ export function useGalleryView() {
   // 工具栏状态管理
   const showSortMenu = ref(false);
   const showViewSettings = ref(false);
+  const fsService = useFsService();
 
   // ===== MasonryWall配置 =====
 
@@ -189,26 +191,23 @@ export function useGalleryView() {
     imageStates.value.set(imagePath, { status: "loading", url: null });
 
     try {
-      // 使用统一的API函数
-      const getFileInfo = api.fs.getFileInfo;
+      // 使用 FS service 获取文件信息，包含 Link JSON（rawUrl），并自动附带路径密码 token
+      const fileInfo = await fsService.getFileInfo(imagePath);
 
-      // 获取文件信息，包含 previewUrl 字段
-      const response = await getFileInfo(imagePath);
-
-      if (response?.success && response.data?.previewUrl) {
+      if (fileInfo?.rawUrl) {
         // 设置加载完成状态
         imageStates.value.set(imagePath, {
           status: "loaded",
-          url: response.data.previewUrl,
+          url: fileInfo.rawUrl,
         });
         console.log(`✅ 懒加载完成: ${image.name}`);
 
         // 🔍 检测图片是否会走Service Worker缓存
-        checkImageCacheStatus(response.data.previewUrl, image.name);
+        checkImageCacheStatus(fileInfo.rawUrl, image.name);
       } else {
         // 设置错误状态
         imageStates.value.set(imagePath, { status: "error", url: null });
-        console.error(`❌ API响应无效: ${image.name}`, response);
+        console.error(`❌ 获取到的文件信息缺少 rawUrl: ${image.name}`, fileInfo);
       }
     } catch (error) {
       console.error(`获取图片预览URL失败: ${image.name}`, error);

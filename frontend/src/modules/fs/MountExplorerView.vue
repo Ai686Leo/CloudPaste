@@ -317,6 +317,7 @@ import { ref, computed, provide, onMounted, onBeforeUnmount, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { storeToRefs } from "pinia";
+import { useThemeMode } from "@/composables/core/useThemeMode.js";
 
 // 组合式函数 - 使用统一聚合导出
 import { useSelection, useFileOperations, useUIState, useFileBasket } from "@/composables/index.js";
@@ -446,11 +447,13 @@ const showCreateFolderDialog = ref(false);
 const isCreatingFolder = ref(false);
 
 const props = defineProps({
-  darkMode: {
-    type: Boolean,
-    default: false,
+  mode: {
+    type: String,
+    default: "default", // 默认模式，或 "selection"（选择模式）
   },
 });
+
+const { isDarkMode: darkMode } = useThemeMode();
 
 // 权限变化处理
 const handlePermissionChange = (hasPermission) => {

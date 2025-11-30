@@ -3,36 +3,30 @@ import { ref, onMounted } from "vue";
 import { API_BASE_URL } from "@/api/config";
 import { useI18n } from "vue-i18n";
 import { useAdminSystemService } from "@/modules/admin/services/systemService.js";
+import { useThemeMode } from "@/composables/core/useThemeMode.js";
+import { useGlobalMessage } from "@/composables/core/useGlobalMessage.js";
 
 // 使用i18n
 const { t } = useI18n();
 const { getWebdavSettings, updateWebdavSettings } = useAdminSystemService();
-
-// 定义props，接收父组件传递的darkMode
-const props = defineProps({
-  darkMode: {
-    type: Boolean,
-    required: true,
-  },
-});
+const { isDarkMode: darkMode } = useThemeMode();
+const { showSuccess, showError } = useGlobalMessage();
 
 // WebDAV设置
 const webdavSettings = ref({
-  // 默认采用单次上传模式，可选值: single, chunked
-  webdav_upload_mode: "single",
+  // 默认采用流式上传模式，可选值: single, chunked
+  webdav_upload_mode: "chunked",
 });
 
 // WebDAV上传模式选项
 const webdavUploadModes = ref([
-  { value: "single", label: t("admin.webdav.uploadSettings.modes.single") },
   { value: "chunked", label: t("admin.webdav.uploadSettings.modes.chunked") },
+  { value: "single", label: t("admin.webdav.uploadSettings.modes.single") },
 ]);
 
-// WebDAV设置更新状态
+// WebDAV设置更新状态（仅用于控制加载状态）
 const webdavSettingsStatus = ref({
   loading: false,
-  success: false,
-  error: "",
 });
 
 // WebDAV服务地址
@@ -69,8 +63,6 @@ const handleUpdateWebdavSettings = async (event) => {
 
   webdavSettingsStatus.value = {
     loading: true,
-    success: false,
-    error: "",
   };
 
   try {
@@ -79,14 +71,15 @@ const handleUpdateWebdavSettings = async (event) => {
       webdav_upload_mode: webdavSettings.value.webdav_upload_mode,
     });
     // 更新成功
-    webdavSettingsStatus.value.success = true;
+    showSuccess(t("admin.webdav.messages.updateSuccess"));
 
     // 3秒后清除成功消息
     setTimeout(() => {
       webdavSettingsStatus.value.success = false;
     }, 3000);
   } catch (error) {
-    webdavSettingsStatus.value.error = error.message || t("admin.webdav.messages.updateFailed");
+    const message = error.message || t("admin.webdav.messages.updateFailed");
+    showError(message);
   } finally {
     webdavSettingsStatus.value.loading = false;
   }
@@ -99,43 +92,6 @@ const handleUpdateWebdavSettings = async (event) => {
     <div class="mb-6">
       <h1 class="text-2xl font-bold mb-2" :class="darkMode ? 'text-white' : 'text-gray-800'">{{ t("admin.webdav.title") }}</h1>
       <p class="text-base" :class="darkMode ? 'text-gray-300' : 'text-gray-600'">{{ t("admin.webdav.description") }}</p>
-    </div>
-
-    <!-- 状态消息 -->
-    <div v-if="webdavSettingsStatus.success || webdavSettingsStatus.error" class="mb-6">
-      <div
-        v-if="webdavSettingsStatus.success"
-        class="rounded-lg p-4 border"
-        :class="darkMode ? 'bg-green-900/20 border-green-800/40 text-green-200' : 'bg-green-50 border-green-200 text-green-800'"
-      >
-        <div class="flex items-center">
-          <svg class="h-5 w-5 mr-2 flex-shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-            <path
-              fill-rule="evenodd"
-              d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-              clip-rule="evenodd"
-            />
-          </svg>
-          <p class="text-sm font-medium">WebDAV设置更新成功</p>
-        </div>
-      </div>
-
-      <div
-        v-if="webdavSettingsStatus.error"
-        class="rounded-lg p-4 border"
-        :class="darkMode ? 'bg-red-900/20 border-red-800/40 text-red-200' : 'bg-red-50 border-red-200 text-red-800'"
-      >
-        <div class="flex items-center">
-          <svg class="h-5 w-5 mr-2 flex-shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-            <path
-              fill-rule="evenodd"
-              d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-              clip-rule="evenodd"
-            />
-          </svg>
-          <p class="text-sm font-medium">{{ webdavSettingsStatus.error }}</p>
-        </div>
-      </div>
     </div>
 
     <!-- 设置表单 -->

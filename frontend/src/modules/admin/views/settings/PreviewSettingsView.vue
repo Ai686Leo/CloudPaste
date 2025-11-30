@@ -12,41 +12,6 @@
       <div class="setting-group bg-white dark:bg-gray-800 rounded-lg p-6 border border-gray-200 dark:border-gray-700 max-w-2xl">
         <h2 class="text-lg font-medium mb-4 pb-2 border-b border-gray-200 dark:border-gray-700">{{ t("admin.preview.title") }}</h2>
         <div class="space-y-4">
-          <!-- 状态消息 -->
-          <div
-            v-if="status.success"
-            class="mb-4 rounded-lg p-4 border transition-colors duration-200"
-            :class="darkMode ? 'bg-green-900/20 border-green-800/40 text-green-200' : 'bg-green-50 border-green-200 text-green-800'"
-          >
-            <div class="flex items-center">
-              <svg class="h-5 w-5 mr-2 flex-shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                <path
-                  fill-rule="evenodd"
-                  d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                  clip-rule="evenodd"
-                />
-              </svg>
-              {{ t("admin.preview.saveSuccess") }}
-            </div>
-          </div>
-
-          <div
-            v-if="status.error"
-            class="mb-4 rounded-lg p-4 border transition-colors duration-200"
-            :class="darkMode ? 'bg-red-900/20 border-red-800/40 text-red-200' : 'bg-red-50 border-red-200 text-red-800'"
-          >
-            <div class="flex items-center">
-              <svg class="h-5 w-5 mr-2 flex-shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                <path
-                  fill-rule="evenodd"
-                  d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                  clip-rule="evenodd"
-                />
-              </svg>
-              {{ status.error }}
-            </div>
-          </div>
-
           <form @submit="handleSaveSettings" class="space-y-6">
             <!-- 文本文件类型设置 -->
             <div class="setting-item">
@@ -174,6 +139,27 @@
               </p>
             </div>
 
+            <!-- 文档/Office DocumentApp 模板配置 -->
+            <div class="setting-item">
+              <label class="block text-sm font-medium mb-2" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">
+                {{ t("admin.preview.documentAppsLabel") }}
+              </label>
+              <textarea
+                v-model="settings.preview_document_apps"
+                :placeholder="t('admin.preview.documentAppsPlaceholder')"
+                rows="6"
+                class="block w-full rounded border shadow-sm px-3 py-2 text-xs font-mono leading-snug"
+                :class="
+                  darkMode
+                    ? 'bg-gray-700 border-gray-600 text-white focus:ring-blue-500 focus:border-blue-500 placeholder-gray-400'
+                    : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500 focus:border-blue-500 placeholder-gray-500'
+                "
+              ></textarea>
+              <p class="mt-2 text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
+                {{ t("admin.preview.documentAppsHelp") }}
+              </p>
+            </div>
+
             <!-- 操作按钮 -->
             <div class="flex justify-between items-center pt-6">
               <button
@@ -227,24 +213,18 @@
 import { ref, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { useAdminSystemService } from "@/modules/admin/services/systemService.js";
+import { useThemeMode } from "@/composables/core/useThemeMode.js";
+import { useGlobalMessage } from "@/composables/core/useGlobalMessage.js";
 
 // 使用i18n
 const { t } = useI18n();
 const { getPreviewSettings, updatePreviewSettings } = useAdminSystemService();
+const { isDarkMode: darkMode } = useThemeMode();
+const { showSuccess, showError } = useGlobalMessage();
 
-// 定义props
-const props = defineProps({
-  darkMode: {
-    type: Boolean,
-    required: true,
-  },
-});
-
-// 状态管理
+// 状态管理（仅用于控制加载状态）
 const status = ref({
   loading: false,
-  success: false,
-  error: "",
 });
 
 // 预览设置数据
@@ -255,6 +235,7 @@ const settings = ref({
   preview_audio_types: "",
   preview_office_types: "",
   preview_document_types: "",
+  preview_document_apps: "",
 });
 
 // 默认设置
@@ -266,13 +247,26 @@ const defaultSettings = {
   preview_audio_types: "mp3,flac,ogg,m4a,wav,opus,wma",
   preview_office_types: "doc,docx,xls,xlsx,ppt,pptx,rtf",
   preview_document_types: "pdf",
+  preview_document_apps: JSON.stringify(
+    {
+      "doc,docx,xls,xlsx,ppt,pptx,rtf": {
+        microsoft: {
+          urlTemplate: "https://view.officeapps.live.com/op/view.aspx?src=$e_url",
+        },
+        google: {
+          urlTemplate: "https://docs.google.com/viewer?url=$e_url&embedded=true",
+        },
+      },
+    },
+    null,
+    2,
+  ),
 };
 
 // 加载设置
 const loadSettings = async () => {
   try {
     status.value.loading = true;
-    status.value.error = "";
 
     // 使用分组API获取预览设置（分组ID = 2）
     const previewSettings = await getPreviewSettings();
@@ -285,7 +279,8 @@ const loadSettings = async () => {
     });
   } catch (err) {
     console.error("加载预览设置失败:", err);
-    status.value.error = err.message || "加载设置失败";
+    const message = err.message || "加载设置失败";
+    showError(message);
   } finally {
     status.value.loading = false;
   }
@@ -295,13 +290,26 @@ const loadSettings = async () => {
 const handleSaveSettings = async (event) => {
   event.preventDefault();
 
-  status.value = {
-    loading: true,
-    success: false,
-    error: "",
-  };
-
   try {
+    // 基础 JSON 校验：preview_document_apps 需要是合法的 JSON 对象
+    if (settings.value.preview_document_apps && settings.value.preview_document_apps.trim().length > 0) {
+      try {
+        const parsed = JSON.parse(settings.value.preview_document_apps);
+        if (!parsed || typeof parsed !== "object") {
+          throw new Error("INVALID_DOCUMENT_APPS_JSON");
+        }
+        settings.value.preview_document_apps = JSON.stringify(parsed, null, 2);
+      } catch (e) {
+        console.error("预览模板配置 JSON 解析失败:", e);
+        const message = t("admin.preview.documentAppsInvalidJson");
+        status.value.loading = false;
+        showError(message);
+        return;
+      }
+    }
+
+    status.value.loading = true;
+
     // 预览设置组，分组ID = 2
     await updatePreviewSettings({
       preview_text_types: settings.value.preview_text_types,
@@ -309,16 +317,14 @@ const handleSaveSettings = async (event) => {
       preview_video_types: settings.value.preview_video_types,
       preview_audio_types: settings.value.preview_audio_types,
       preview_office_types: settings.value.preview_office_types,
+      preview_document_types: settings.value.preview_document_types,
+      preview_document_apps: settings.value.preview_document_apps,
     });
-    status.value.success = true;
-
-    // 3秒后清除成功消息
-    setTimeout(() => {
-      status.value.success = false;
-    }, 3000);
+    showSuccess(t("admin.preview.saveSuccess"));
   } catch (err) {
     console.error("保存预览设置失败:", err);
-    status.value.error = err.message || "保存设置失败";
+    const message = err.message || "保存设置失败";
+    showError(message);
   } finally {
     status.value.loading = false;
   }

@@ -3,10 +3,15 @@ main = "unified-entry.js"
 compatibility_date = "2025-09-01"
 compatibility_flags = ["nodejs_compat"]
 
+# 开发服务器配置
+[dev]
+port = 8787
+local_protocol = "http"
+
 # 环境变量
 [vars]
 # 用于加密敏感配置的密钥
-ENCRYPTION_SECRET = "xxxxxxxxxxx"
+ENCRYPTION_SECRET = "default-encryption-key"
 # 管理员Token过期天数，默认7天
 ADMIN_TOKEN_EXPIRY_DAYS = "7"
 

@@ -1,11 +1,12 @@
 {
   "name": "cloudpaste-api",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "CloudPaste API基于Cloudflare Workers和D1数据库",
-  "main": "unified-entry.js",
+  "main": "workers.js",
   "scripts": {
     "dev": "wrangler dev --local",
     "deploy": "wrangler publish",
+    "deploy:spa": "wrangler deploy --config wrangler.spa.toml",
     "docker-dev": "cross-env PORT=8787 ENCRYPTION_SECRET=default-encryption-key DATA_DIR=./data node unified-entry.js",
     "docker-start": "cross-env PORT=8787 DATA_DIR=/data node unified-entry.js"
   },

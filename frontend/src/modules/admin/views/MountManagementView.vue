@@ -3,6 +3,7 @@ import { onMounted } from "vue";
 import MountForm from "@/modules/admin/components/MountForm.vue";
 import CommonPagination from "@/components/common/CommonPagination.vue";
 import { useMountManagement } from "@/modules/admin/storage/useMountManagement.js";
+import { useThemeMode } from "@/composables/core/useThemeMode.js";
 
 /**
  * 挂载管理视图
@@ -10,10 +11,6 @@ import { useMountManagement } from "@/modules/admin/storage/useMountManagement.j
 
 // 组件接收的属性定义
 const props = defineProps({
-  darkMode: {
-    type: Boolean,
-    required: true,
-  },
   userType: {
     type: String,
     default: "admin",
@@ -21,7 +18,8 @@ const props = defineProps({
   },
 });
 
-// 使用挂载管理 composable
+
+const { isDarkMode: darkMode } = useThemeMode();
 const {
   // 状态
   loading,

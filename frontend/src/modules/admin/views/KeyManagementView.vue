@@ -6,6 +6,7 @@ import { copyToClipboard } from "@/utils/clipboard";
 import { useAdminApiKeyService } from "@/modules/admin/services/apiKeyService.js";
 import { useAdminMountService } from "@/modules/admin/services/mountService.js";
 import { useGlobalMessage } from "@/composables/core/useGlobalMessage.js";
+import { useThemeMode } from "@/composables/core/useThemeMode.js";
 
 // 导入子组件
 import KeyForm from "@/modules/admin/components/KeyForm.vue";
@@ -16,14 +17,7 @@ const { t } = useI18n();
 const { getAllApiKeys, deleteApiKey } = useAdminApiKeyService();
 const { getMountsList } = useAdminMountService();
 const { showSuccess, showError } = useGlobalMessage();
-
-// Props定义
-const props = defineProps({
-  darkMode: {
-    type: Boolean,
-    required: true,
-  },
-});
+const { isDarkMode: darkMode } = useThemeMode();
 
 // 状态管理
 const apiKeys = ref([]);

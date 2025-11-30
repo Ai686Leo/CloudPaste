@@ -78,7 +78,7 @@ export class ObjectStore {
     const driver = await StorageFactory.createDriver(storageConfig.storage_type, storageConfig, this.encryptionSecret);
 
     const key = await this._composeKeyWithStrategy(storageConfig, directory, filename);
-    if (typeof driver.generateUploadUrl !== "function" || (typeof driver.hasCapability === "function" && !driver.hasCapability(CAPABILITIES.PRESIGNED))) {
+    if (typeof driver.generateUploadUrl !== "function" || (typeof driver.hasCapability === "function" && !driver.hasCapability(CAPABILITIES.DIRECT_LINK))) {
       throw new ValidationError("当前存储驱动不支持预签名上传");
     }
 

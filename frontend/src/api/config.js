@@ -39,6 +39,12 @@ function getApiBaseUrl() {
     return envUrl;
   }
 
+  // 生产环境：单 Worker 部署时使用同源（Cloudflare Workers SPA 模式）
+  if (import.meta.env.PROD && typeof window !== "undefined") {
+    console.log("生产环境：使用同源后端", window.location.origin);
+    return window.location.origin;
+  }
+
   // 最后使用默认值
   return DEFAULT_DEV_API_URL;
 }

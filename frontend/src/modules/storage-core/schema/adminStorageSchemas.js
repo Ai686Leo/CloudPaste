@@ -18,6 +18,7 @@ function createS3DefaultFormState() {
     is_public: false,
     total_storage_bytes: null,
     custom_host: "",
+    url_proxy: "",
     signature_expires_in: 3600,
   };
 }
@@ -36,7 +37,7 @@ function createWebDavDefaultFormState() {
     default_folder: "",
     is_public: false,
     total_storage_bytes: null,
-    custom_host: "",
+    url_proxy: "",
     signature_expires_in: null,
     username: "",
     password: "",
@@ -133,6 +134,7 @@ function hydrateS3FormFromConfig(target, config) {
   target.default_folder = config.default_folder || "";
   target.path_style = config.path_style === 1 || config.path_style === true;
   target.custom_host = config.custom_host || "";
+  target.url_proxy = config.url_proxy || "";
   target.signature_expires_in = config.signature_expires_in || 3600;
   target.is_public = config.is_public === 1 || config.is_public === true;
   if (config.total_storage_bytes) {
@@ -151,7 +153,7 @@ function hydrateWebDavFormFromConfig(target, config) {
   target.default_folder = config.default_folder || "";
   target.tls_insecure_skip_verify =
     config.tls_insecure_skip_verify === 1 || config.tls_insecure_skip_verify === true;
-  target.custom_host = config.custom_host || "";
+  target.url_proxy = config.url_proxy || "";
   target.is_public = config.is_public === 1 || config.is_public === true;
   if (config.total_storage_bytes) {
     target.total_storage_bytes = config.total_storage_bytes;
@@ -176,6 +178,7 @@ function buildS3Payload(formState) {
     path_style: formState.path_style,
     default_folder: normalizeDefaultFolder(formState.default_folder),
     custom_host: formState.custom_host || "",
+    url_proxy: formState.url_proxy || "",
     signature_expires_in: formState.signature_expires_in,
   };
 }
@@ -192,7 +195,7 @@ function buildWebDavPayload(formState) {
     password: formState.password,
     default_folder: normalizeDefaultFolder(formState.default_folder),
     tls_insecure_skip_verify: formState.tls_insecure_skip_verify,
-    custom_host: formState.custom_host || "",
+    url_proxy: formState.url_proxy || "",
   };
 }
 

@@ -88,7 +88,6 @@ export function useFileshareService() {
    * @returns {Promise<any>}
    */
   const getOfficePreviewUrl = async (file, options = {}) => {
-    if (!file?.slug) return null;
     return gatewayGetOfficePreviewUrl(file, {
       provider: options.provider || "microsoft",
       returnAll: options.returnAll || false,
@@ -193,4 +192,3 @@ export function useFileshareService() {
     verifyFilePassword,
   };
 }
-

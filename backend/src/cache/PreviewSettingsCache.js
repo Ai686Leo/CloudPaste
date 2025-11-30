@@ -133,6 +133,29 @@ export class PreviewSettingsCache {
   }
 
   /**
+   * 获取 DocumentApp 模板配置（JSON 对象）
+   * @returns {Object|null} 解析后的配置对象
+   */
+  getDocumentAppsConfig() {
+    const raw = this.getSetting("preview_document_apps");
+    if (!raw || typeof raw !== "string" || raw.trim().length === 0) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object") {
+        return parsed;
+      }
+    } catch (e) {
+      console.error("解析 preview_document_apps 配置失败，将视为未配置:", e);
+      return null;
+    }
+
+    return null;
+  }
+
+  /**
    * 获取所有支持的扩展名（按类型分组）
    * @returns {Object} 按类型分组的扩展名对象
    */

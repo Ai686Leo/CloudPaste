@@ -44,8 +44,8 @@ export class S3SearchOperations {
           throw new ValidationError("挂载点信息不能为空");
         }
 
-        // 更新挂载点最后使用时间
-        if (db && mount.id) {
+        // 更新挂载点最后使用时间（仅在有挂载点上下文时）
+        if (db && mount && mount.id) {
           await updateMountLastUsed(db, mount.id);
         }
 

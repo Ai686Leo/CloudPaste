@@ -174,6 +174,100 @@
               @click="toggleFullscreen"
               class="fullscreen-btn flex items-center px-3 py-1 text-sm border rounded transition-colors"
               :class="darkMode ? 'bg-gray-600 hover:bg-gray-700 border-gray-500 text-gray-200' : 'bg-white hover:bg-gray-50 border-gray-300 text-gray-700'"
+              :title="isContentFullscreen ? $t('mount.filePreview.exitFullscreen') : $t('mount.filePreview.fullscreen')"
+            >
+              <svg v-if="!isContentFullscreen" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"
+                />
+              </svg>
+              <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M9 9V4.5M9 9H4.5M9 9L3.5 3.5M15 9h4.5M15 9V4.5M15 9l5.5-5.5M9 15v4.5M9 15H4.5M9 15l-5.5 5.5M15 15h4.5M15 15v4.5m0 0l5.5 5.5"
+                />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- PDF 预览工具栏 -->
+      <div v-if="isPdf" class="pdf-preview-toolbar p-3 mb-4 rounded-lg bg-opacity-50" :class="darkMode ? 'bg-gray-700/50' : 'bg-gray-100'">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <!-- 左侧：文件信息 -->
+          <div class="toolbar-left flex flex-wrap items-center gap-3">
+            <span class="font-medium" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">PDF</span>
+          </div>
+
+          <!-- 右侧：预览渠道切换 -->
+          <div class="toolbar-right flex flex-wrap items-center gap-2">
+            <select
+              v-if="pdfProviderOptions.length > 1"
+              v-model="selectedPdfProvider"
+              class="px-3 py-1 text-sm border rounded"
+              :class="darkMode ? 'bg-gray-600 border-gray-500 text-gray-200' : 'bg-white border-gray-300 text-gray-700'"
+            >
+              <option v-for="opt in pdfProviderOptions" :key="opt.key" :value="opt.key">
+                {{ opt.label }}
+              </option>
+            </select>
+            <button
+              @click="toggleFullscreen"
+              class="fullscreen-btn flex items-center px-3 py-1 text-sm border rounded transition-colors"
+              :class="darkMode ? 'bg-gray-600 hover:bg-gray-700 border-gray-500 text-gray-200' : 'bg-white hover:bg-gray-50 border-gray-300 text-gray-700'"
+              :title="isContentFullscreen ? $t('mount.filePreview.exitFullscreen') : $t('mount.filePreview.fullscreen')"
+            >
+              <svg v-if="!isContentFullscreen" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"
+                />
+              </svg>
+              <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M9 9V4.5M9 9H4.5M9 9L3.5 3.5M15 9h4.5M15 9V4.5M15 9l5.5-5.5M9 15v4.5M9 15H4.5M9 15l-5.5 5.5M15 15h4.5M15 15v4.5m0 0l5.5 5.5"
+                />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Office 预览工具栏 -->
+      <div v-if="isOffice" class="office-preview-toolbar p-3 mb-4 rounded-lg bg-opacity-50" :class="darkMode ? 'bg-gray-700/50' : 'bg-gray-100'">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <!-- 左侧：文件信息 -->
+          <div class="toolbar-left flex flex-wrap items-center gap-3">
+            <span class="font-medium" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">{{ officeTypeDisplayName }}</span>
+          </div>
+
+          <!-- 右侧：预览渠道切换 -->
+          <div class="toolbar-right flex flex-wrap items-center gap-2">
+            <select
+              v-if="officeProviderOptions.length > 1"
+              v-model="selectedOfficeProvider"
+              class="px-3 py-1 text-sm border rounded"
+              :class="darkMode ? 'bg-gray-600 border-gray-500 text-gray-200' : 'bg-white border-gray-300 text-gray-700'"
+            >
+              <option v-for="opt in officeProviderOptions" :key="opt.key" :value="opt.key">
+                {{ opt.label }}
+              </option>
+            </select>
+            <button
+              @click="toggleFullscreen"
+              class="fullscreen-btn flex items-center px-3 py-1 text-sm border rounded transition-colors"
+              :class="darkMode ? 'bg-gray-600 hover:bg-gray-700 border-gray-500 text-gray-200' : 'bg-white hover:bg-gray-50 border-gray-300 text-gray-700'"
               :title="isContentFullscreen ? '退出全屏' : '全屏显示'"
             >
               <svg v-if="!isContentFullscreen" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -345,98 +439,22 @@
 
         <!-- PDF预览 -->
         <div v-else-if="isPdf" class="pdf-preview h-[600px]">
-          <iframe
-            v-if="authenticatedPreviewUrl"
-            :src="authenticatedPreviewUrl"
-            frameborder="0"
-            class="w-full h-full"
+          <PdfFsPreview
+            :preview-url="currentPdfPreviewUrl"
+            :error-message="officePreviewError"
             @load="handleContentLoaded"
             @error="handleContentError"
-          ></iframe>
-          <div v-else class="loading-indicator text-center py-8">
-            <div class="animate-spin rounded-full h-10 w-10 border-b-2 mx-auto" :class="darkMode ? 'border-primary-500' : 'border-primary-600'"></div>
-          </div>
+          />
         </div>
 
         <!-- Office文件预览 -->
         <div v-else-if="isOffice" ref="officePreviewRef" class="office-preview h-[900px] w-full">
-          <!-- Office预览头部控制栏 -->
-          <div class="sticky top-0 z-20 flex items-center justify-between p-2 bg-gray-100 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
-            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
-              {{ isWordDoc ? t("mount.filePreview.wordPreview") : isExcel ? t("mount.filePreview.excelPreview") : t("mount.filePreview.powerpointPreview") }}
-            </span>
-            <div class="flex items-center space-x-2">
-              <button
-                @click="toggleOfficeFullscreen"
-                class="text-xs px-2 py-1 rounded flex items-center bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-500 transition-colors"
-              >
-                <svg v-if="!isOfficeFullscreen" class="w-3.5 h-3.5 mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5v-4m0 4h-4m4 0l-5-5"
-                  />
-                </svg>
-                <svg v-else class="w-3.5 h-3.5 mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-                <span>{{ isOfficeFullscreen ? t("mount.filePreview.exitFullscreen") : t("mount.filePreview.fullscreen") }}</span>
-              </button>
-              <button
-                @click="toggleOfficePreviewService"
-                class="text-xs px-2 py-1 rounded bg-blue-100 dark:bg-blue-700 text-blue-700 dark:text-blue-100 hover:bg-blue-200 dark:hover:bg-blue-600 transition-colors"
-              >
-                {{ useGoogleDocsPreview ? t("mount.filePreview.useMicrosoftPreview") : t("mount.filePreview.useGooglePreview") }}
-              </button>
-            </div>
-          </div>
-
-          <!-- 加载状态 -->
-          <div v-if="officePreviewLoading" class="flex flex-col items-center justify-center h-full">
-            <div class="animate-spin rounded-full h-12 w-12 border-b-2 mb-4" :class="darkMode ? 'border-primary-500' : 'border-primary-600'"></div>
-            <p class="text-sm" :class="darkMode ? 'text-gray-300' : 'text-gray-700'">{{ t("mount.filePreview.loadingPreview") }}</p>
-          </div>
-
-          <!-- 错误状态 -->
-          <div v-else-if="officePreviewError" class="flex flex-col items-center justify-center h-full p-4">
-            <svg
-              class="w-16 h-16 mb-4"
-              :class="darkMode ? 'text-red-400' : 'text-red-500'"
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="1.5"
-                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-              />
-            </svg>
-            <p class="text-center mb-4" :class="darkMode ? 'text-gray-300' : 'text-gray-700'">{{ officePreviewError }}</p>
-            <button
-              @click="updateOfficePreviewUrls"
-              class="px-3 py-1.5 text-sm font-medium rounded-md transition-colors"
-              :class="darkMode ? 'bg-primary-600 hover:bg-primary-700 text-white' : 'bg-primary-500 hover:bg-primary-600 text-white'"
-            >
-              {{ t("mount.filePreview.retry") }}
-            </button>
-          </div>
-
-          <!-- 预览内容 -->
-          <div v-else-if="currentOfficePreviewUrl" class="w-full h-full">
-            <iframe
-              :src="currentOfficePreviewUrl"
-              frameborder="0"
-              class="w-full h-full"
-              @load="handleOfficePreviewLoaded"
-              @error="handleOfficePreviewError"
-              sandbox="allow-scripts allow-same-origin allow-forms"
-              referrerpolicy="no-referrer"
-            ></iframe>
-          </div>
+          <OfficeFsPreview
+            :preview-url="currentOfficePreviewUrl"
+            :error-message="officePreviewError"
+            @load="handleOfficePreviewLoaded"
+            @error="handleOfficePreviewError"
+          />
         </div>
 
         <!-- Markdown预览 - 使用TextRenderer统一处理 -->
@@ -552,6 +570,8 @@ import AudioPreview from "./AudioPreview.vue";
 import VideoPreview from "./VideoPreview.vue";
 import TextPreview from "./TextPreview.vue";
 import ArchivePreview from "./ArchivePreview.vue";
+import PdfFsPreview from "./PdfFsPreview.vue";
+import OfficeFsPreview from "./OfficeFsPreview.vue";
 
 const { t } = useI18n();
 
@@ -627,9 +647,7 @@ const extensions = useFilePreviewExtensions(
   renderers.handleKeyDown,
   emit,
   renderers.authenticatedPreviewUrl,
-  renderers.previewTimeoutId,
-  renderers.microsoftOfficePreviewUrl,
-  renderers.googleDocsPreviewUrl
+  renderers.previewTimeoutId
 );
 
 // 解构保留的预览功能
@@ -639,7 +657,6 @@ const {
   authenticatedPreviewUrl,
   officePreviewLoading,
   officePreviewError,
-  useGoogleDocsPreview,
   isOfficeFullscreen,
 
   // 模板中使用的计算属性
@@ -649,9 +666,6 @@ const {
   isPdf,
   isOffice,
   isText,
-  isWordDoc,
-  isExcel,
-  currentOfficePreviewUrl,
 
   // 模板中使用的DOM引用
   officePreviewRef,
@@ -659,7 +673,6 @@ const {
   // 模板中使用的方法
   formatFileSize,
   formatDate,
-  toggleOfficePreviewService,
   toggleOfficeFullscreen,
   updateOfficePreviewUrls,
   handleContentLoaded,
@@ -687,6 +700,107 @@ const textPreviewMode = ref("text");
 const textEncoding = ref("utf-8");
 const textPreviewRef = ref(null);
 const userHasManuallyChanged = ref(false);
+
+// PDF 预览状态管理
+const selectedPdfProvider = ref("native");
+
+// PDF provider 选项
+const pdfProviderOptions = computed(() => {
+  const options = [];
+
+  // 始终添加原生预览选项
+  if (authenticatedPreviewUrl.value) {
+    options.push({
+      key: "native",
+      label: t("mount.filePreview.browserNative"),
+      url: authenticatedPreviewUrl.value,
+    });
+  }
+
+  // 添加其他 provider（如 pdfjs）
+  const providers = props.file?.documentPreview?.providers || {};
+  for (const [key, url] of Object.entries(providers)) {
+    options.push({
+      key,
+      label: key === "pdfjs" ? t("mount.filePreview.pdfjsLabel") : key,
+      url,
+    });
+  }
+
+  return options;
+});
+
+// 当前 PDF 预览 URL
+const currentPdfPreviewUrl = computed(() => {
+  const options = pdfProviderOptions.value;
+  if (!options.length) return "";
+  const current = options.find((opt) => opt.key === selectedPdfProvider.value) || options[0];
+  return current.url || "";
+});
+
+// Office 预览状态管理
+const selectedOfficeProvider = ref("");
+
+// Office provider 选项
+const officeProviderOptions = computed(() => {
+  const options = [];
+  const providers = props.file?.documentPreview?.providers || {};
+
+  for (const [key, url] of Object.entries(providers)) {
+    options.push({
+      key,
+      label: key,
+      url,
+    });
+  }
+
+  return options;
+});
+
+watch(
+  officeProviderOptions,
+  (options) => {
+    if (!options.length) {
+      selectedOfficeProvider.value = "";
+      return;
+    }
+    // 当当前选中值为空或不在 options 中时，默认选中第一个
+    const exists = options.some((opt) => opt.key === selectedOfficeProvider.value);
+    if (!exists) {
+      selectedOfficeProvider.value = options[0].key;
+    }
+  },
+  { immediate: true },
+);
+
+// Office 类型显示名称
+const officeTypeDisplayName = computed(() => {
+  const filename = props.file?.name || "";
+  const ext = filename.split(".").pop()?.toLowerCase();
+
+  // Word 文档
+  if (["doc", "docx", "odt", "rtf"].includes(ext)) {
+    return t("mount.filePreview.wordPreview");
+  }
+  // Excel 表格
+  if (["xls", "xlsx", "ods", "csv"].includes(ext)) {
+    return t("mount.filePreview.excelPreview");
+  }
+  // PowerPoint 演示文稿
+  if (["ppt", "pptx", "odp"].includes(ext)) {
+    return t("mount.filePreview.powerpointPreview");
+  }
+
+  return t("mount.filePreview.officePreview");
+});
+
+// 当前 Office 预览 URL
+const currentOfficePreviewUrl = computed(() => {
+  const options = officeProviderOptions.value;
+  if (!options.length) return "";
+  const current = options.find((opt) => opt.key === selectedOfficeProvider.value) || options[0];
+  return current.url || "";
+});
 
 // 使用文件保存composable
 const { isSaving, saveFile } = useFileSave();

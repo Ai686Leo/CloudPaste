@@ -14,31 +14,32 @@ export async function generateFileLink(fs, path, userIdOrInfo, userType, options
   const request = options.request || null;
   const forceDownload = options.forceDownload || false;
   const forceProxy = options.forceProxy || false;
+  const channel = "web";
 
-  // 显式要求代理，或挂载层开启 web_proxy 时，统一走代理能力
-  const shouldUseProxy = forceProxy || !!mount?.web_proxy;
+  // 三段式决策：
+  // 1）强制代理挂载（web_proxy 等价 MustProxy）→ 一律走代理能力
+  const mustProxy = !!mount?.web_proxy || forceProxy;
 
-  // 若需要代理且驱动实现了 generateProxyUrl，则优先走代理
-  if (shouldUseProxy && typeof driver.generateProxyUrl === "function") {
+  if (mustProxy && typeof driver.generateProxyUrl === "function") {
     const proxy = await driver.generateProxyUrl(path, {
       mount,
       subPath,
       request,
       download: forceDownload,
       db,
-      forceProxy: true,
+      channel,
     });
 
     return {
       url: proxy?.url || null,
       type: proxy?.type || "proxy",
       expiresIn: proxy?.expiresIn || null,
-      proxyPolicy: proxy?.policy || null,
+      proxyPolicy: null,
     };
   }
 
-  // 未强制代理时：具备预签名能力的驱动优先走预签名
-  if (driver.hasCapability(CAPABILITIES.PRESIGNED)) {
+  // 2）非强制代理挂载：优先使用直链能力（custom_host / 预签名等）
+  if (!mustProxy && driver.hasCapability(CAPABILITIES.DIRECT_LINK)) {
     const result = await driver.generateDownloadUrl(path, {
       mount,
       subPath,
@@ -49,20 +50,19 @@ export async function generateFileLink(fs, path, userIdOrInfo, userType, options
       forceDownload,
     });
 
-    const url =
-      typeof result === "string"
-        ? result
-        : result?.url || result?.presignedUrl || result?.downloadUrl || result?.previewUrl || null;
+    // 约定：驱动在 generateDownloadUrl 边界统一输出 canonical 字段 result.url
+    // 此处仅消费 canonical url，不再读取驱动返回的任何 legacy 链接字段
+    const url = typeof result === "string" ? result : result?.url || null;
 
     return {
       url,
-      type: result?.type || "presigned",
+      type: result?.type || "native_direct",
       expiresIn: result?.expiresIn || options.expiresIn || null,
       proxyPolicy: null,
     };
   }
 
-  // 不具备预签名能力时：若驱动实现了 generateProxyUrl，则走代理（允许驱动内部根据 custom_host / 策略决定最终URL类型）
+  // 3）无任何直链能力时：若驱动实现了 generateProxyUrl，则兜底走代理
   if (typeof driver.generateProxyUrl === "function") {
     const proxy = await driver.generateProxyUrl(path, {
       mount,
@@ -70,15 +70,14 @@ export async function generateFileLink(fs, path, userIdOrInfo, userType, options
       request,
       download: forceDownload,
       db,
-      // 未强制代理时，允许驱动根据自身策略（例如 WebDAV 的 custom_host）决定是否使用直链
-      forceProxy: false,
+      channel,
     });
 
     return {
       url: proxy?.url || null,
       type: proxy?.type || "proxy",
       expiresIn: proxy?.expiresIn || null,
-      proxyPolicy: proxy?.policy || null,
+      proxyPolicy: null,
     };
   }
 

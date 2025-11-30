@@ -792,6 +792,25 @@ const closeModal = () => {
               <p v-else class="mt-1 text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">可选：配置CDN加速域名或自定义域名，留空使用原始S3端点</p>
             </div>
 
+            <!-- 代理入口 URL（S3 共享，与 WebDAV 语义一致） -->
+            <div>
+              <label for="s3_url_proxy" class="block text-sm font-medium mb-1" :class="darkMode ? 'text-gray-200' : 'text-gray-700'"> 代理 URL </label>
+              <input
+                type="text"
+                id="s3_url_proxy"
+                v-model="formData.url_proxy"
+                @blur="formatUrl('url_proxy')"
+                class="block w-full px-3 py-2 rounded-md text-sm transition-colors duration-200"
+                :class="[
+                  darkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300 text-gray-900 placeholder-gray-500',
+                  formData.url_proxy && !isValidUrl(formData.url_proxy) ? 'border-red-500' : '',
+                ]"
+                placeholder="https://worker.example.com"
+              />
+              <p v-if="formData.url_proxy && !isValidUrl(formData.url_proxy)" class="mt-1 text-xs text-red-500">请输入有效的URL格式，如 https://xxx.com</p>
+              <p v-else class="mt-1 text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">可选：配置存储所使用的代理入口，留空时仅支持本地代理/直链。</p>
+            </div>
+
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <!-- 签名有效期 -->
               <div>
@@ -813,22 +832,23 @@ const closeModal = () => {
           <div class="space-y-4" v-if="isWebDavType">
             <h3 class="text-sm font-medium border-b pb-2" :class="darkMode ? 'text-gray-200 border-gray-600' : 'text-gray-700 border-gray-200'">高级配置</h3>
 
+            <!-- WebDAV 仅支持 url_proxy / native_proxy，不再支持 custom_host 直链 -->
             <div>
-              <label for="webdav_custom_host" class="block text-sm font-medium mb-1" :class="darkMode ? 'text-gray-200' : 'text-gray-700'"> 自定义 HOST/外链域名 </label>
+              <label for="webdav_url_proxy" class="block text-sm font-medium mb-1" :class="darkMode ? 'text-gray-200' : 'text-gray-700'"> 代理 URL </label>
               <input
                 type="text"
-                id="webdav_custom_host"
-                v-model="formData.custom_host"
-                @blur="formatUrl('custom_host')"
+                id="webdav_url_proxy"
+                v-model="formData.url_proxy"
+                @blur="formatUrl('url_proxy')"
                 class="block w-full px-3 py-2 rounded-md text-sm transition-colors duration-200"
                 :class="[
                   darkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300 text-gray-900 placeholder-gray-500',
-                  formData.custom_host && !isValidUrl(formData.custom_host) ? 'border-red-500' : '',
+                  formData.url_proxy && !isValidUrl(formData.url_proxy) ? 'border-red-500' : '',
                 ]"
-                placeholder="https://files.example.com"
+                placeholder="https://webdav-proxy.example.com"
               />
-              <p v-if="formData.custom_host && !isValidUrl(formData.custom_host)" class="mt-1 text-xs text-red-500">请输入有效的URL格式，如 https://xxx.com</p>
-              <p v-else class="mt-1 text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">可选：用于展示直链/代理外链，留空使用原端点。</p>
+              <p v-if="formData.url_proxy && !isValidUrl(formData.url_proxy)" class="mt-1 text-xs text-red-500">请输入有效的URL格式，如 https://xxx.com</p>
+              <p v-else class="mt-1 text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">可选：配置存储所使用的代理入口，留空时仅支持本地代理/直链。</p>
             </div>
           </div>
 

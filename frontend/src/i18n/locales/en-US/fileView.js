@@ -19,8 +19,8 @@ export default {
       accessCount: "Access Count",
       expiresAt: "Expires At",
       accessMode: "Access Mode",
-      proxyAccess: "Worker Proxy Access",
-      directAccess: "Storage/CDN Direct Access",
+      proxyAccess: "Local Proxy Access",
+      directAccess: "Direct Link/URL Proxy Access",
       limit: "limit",
     },
 
@@ -106,7 +106,7 @@ export default {
       // Text preview
       text: {
         title: "Text File Preview",
-        loading: "Loading text content...",
+        loading: "Loading...",
         error: "Failed to load text content",
         tooLarge: "File is too large, please download to view complete content for performance reasons",
         truncated: "Content has been truncated, please download to view complete file",
@@ -115,26 +115,26 @@ export default {
       // Code preview
       code: {
         title: "Code Preview",
-        loading: "Loading code content...",
+        loading: "Loading...",
       },
 
       // Config file preview
       config: {
         title: "Config File Preview",
-        loading: "Loading config file...",
+        loading: "Loading...",
       },
 
       // Markdown preview
       markdown: {
         title: "Markdown Preview",
-        loading: "Loading Markdown content...",
+        loading: "Loading...",
         error: "Markdown preview load failed",
       },
 
       // HTML preview
       html: {
         title: "HTML Preview",
-        loading: "Loading HTML content...",
+        loading: "Loading...",
         loadingSource: "Loading HTML source...",
         error: "HTML load failed",
         viewSource: "View Source",
@@ -144,29 +144,34 @@ export default {
       // PDF preview
       pdf: {
         title: "PDF Preview",
-        loading: "Loading PDF...",
+        loading: "Loading...",
         error: "PDF load failed",
+        browserNative: "Browser Native",
+        pdfjsLabel: "PDF.js",
       },
 
       // Image preview
       image: {
         title: "Image Preview",
-        loading: "Loading image...",
+        loading: "Loading...",
         error: "Image load failed",
       },
 
       // Video preview
       video: {
         title: "Video Preview",
-        loading: "Loading video...",
+        loading: "Loading...",
         error: "Video load failed",
         notSupported: "Your browser does not support video tag",
       },
 
+      // Direct preview hint
+      directNotSupported: "Current storage does not support direct-link preview, please switch to proxy mode.",
+
       // Audio preview
       audio: {
         title: "Audio Preview",
-        loading: "Loading audio...",
+        loading: "Loading...",
         error: "Audio load failed",
         notSupported: "Your browser does not support audio tag",
       },
@@ -174,7 +179,7 @@ export default {
       // Office preview
       office: {
         title: "Office Preview",
-        loading: "Loading preview...",
+        loading: "Loading...",
         loadingDetail: "Loading Office preview, please wait...",
         error: "Office preview load failed",
         useMicrosoft: "Use Microsoft Preview",
@@ -195,6 +200,8 @@ export default {
         microsoftService: "Using Microsoft Office service",
         proxyMode: " (Worker proxy mode)",
         directMode: " (Direct access mode)",
+        providerMicrosoft: "Microsoft Office Online",
+        providerGoogle: "Google Docs",
       },
     },
 

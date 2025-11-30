@@ -226,12 +226,8 @@ export function useFileManagement(userType = "admin") {
     }
 
     try {
-      let fileWithUrls = file;
-      if (!fileWithUrls.urls || !fileWithUrls.urls.proxyDownloadUrl) {
-        fileWithUrls = await fileshareService.fetchById(file.id);
-      }
-
-      const permanentDownloadUrl = fileshareService.getPermanentDownloadUrl(fileWithUrls);
+      // 使用统一的 Down 路由构造永久下载链接
+      const permanentDownloadUrl = fileshareService.getPermanentDownloadUrl(file);
       if (!permanentDownloadUrl) {
         throw new Error("无法获取文件的下载链接");
       }

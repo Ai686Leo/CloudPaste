@@ -78,7 +78,7 @@ export default {
       },
       webdavPolicyOptions: {
         "302_redirect": "302重定向",
-        use_proxy_url: "自定义HOST代理",
+        use_proxy_url: "代理URL",
         native_proxy: "本地代理",
       },
       webdavPolicyDescription: "只作用于项目作为 WebDAV 挂载时的下载/预览操作",

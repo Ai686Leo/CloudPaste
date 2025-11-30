@@ -123,11 +123,11 @@ const fetchHtmlContent = async () => {
     const fileData = {
       name: "html-file.html",
       filename: "html-file.html",
-      previewUrl: props.previewUrl,
+      rawUrl: props.previewUrl,
       contentType: "text/html",
     };
 
-    const result = await fetchText(props.previewUrl, fileData);
+    const result = await fetchText(fileData.rawUrl, fileData);
 
     if (result.success) {
       htmlContent.value = result.text;

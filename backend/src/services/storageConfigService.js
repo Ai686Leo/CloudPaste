@@ -13,14 +13,14 @@ import { AppError, ValidationError, NotFoundError, DriverError } from "../http/e
 function computeWebDavSupportedPolicies(cfg) {
   const policies = [];
   const type = cfg?.storage_type;
-  const hasCustomHost = !!cfg?.custom_host;
+  const hasUrlProxy = !!cfg?.url_proxy;
 
   switch (type) {
     case "S3": {
       // S3 驱动实现了 generateDownloadUrl，支持存储直链重定向
       policies.push("302_redirect");
-      // 配置了 custom_host 时支持 use_proxy_url（下游自定义 HOST/CDN）
-      if (hasCustomHost) {
+      // 配置了 url_proxy 时支持 use_proxy_url（下游 Proxy/Worker/CDN 入口）
+      if (hasUrlProxy) {
         policies.push("use_proxy_url");
       }
       // 永远支持 native_proxy（由 WebDAV 层本地代理到底层 S3）
@@ -28,9 +28,9 @@ function computeWebDavSupportedPolicies(cfg) {
       break;
     }
     case "WEBDAV": {
-      // WebDAV 驱动当前不实现 generateDownloadUrl，因此不提供 302_redirect
-      // 仅在配置了 custom_host 时支持 use_proxy_url
-      if (hasCustomHost) {
+      // WebDAV 驱动不支持 DirectLink，因此不提供 302_redirect
+      // 仅在配置了 url_proxy 时支持 use_proxy_url
+      if (hasUrlProxy) {
         policies.push("use_proxy_url");
       }
       // 永远支持 native_proxy（由 WebDAV 层本地代理到底层 WebDAV 服务器）
@@ -184,7 +184,6 @@ export async function createStorageConfig(db, configData, adminId, encryptionSec
       password: encryptedPassword,
       default_folder: defaultFolder,
       tls_insecure_skip_verify: configData.tls_insecure_skip_verify ? 1 : 0,
-      custom_host: configData.custom_host || null,
       total_storage_bytes: totalStorageBytes,
     };
   } else {
@@ -198,6 +197,8 @@ export async function createStorageConfig(db, configData, adminId, encryptionSec
     admin_id: adminId,
     is_public: configData.is_public ? 1 : 0,
     is_default: configData.is_default ? 1 : 0,
+     remark: configData.remark ?? null,
+     url_proxy: configData.url_proxy || null,
     status: "ENABLED",
     config_json: JSON.stringify(configJson),
   };
@@ -221,6 +222,8 @@ export async function updateStorageConfig(db, id, updateData, adminId, encryptio
   if (updateData.is_public !== undefined) topPatch.is_public = updateData.is_public ? 1 : 0;
   if (updateData.is_default !== undefined) topPatch.is_default = updateData.is_default ? 1 : 0;
   if (updateData.status) topPatch.status = updateData.status;
+  if (updateData.remark !== undefined) topPatch.remark = updateData.remark;
+  if (updateData.url_proxy !== undefined) topPatch.url_proxy = updateData.url_proxy || null;
 
   let cfg = {};
   if (exists?.__config_json__ && typeof exists.__config_json__ === "object") {
@@ -229,7 +232,7 @@ export async function updateStorageConfig(db, id, updateData, adminId, encryptio
   // 合并驱动 JSON 字段
   const boolKeys = new Set(["path_style", "tls_insecure_skip_verify"]);
   for (const [k, v] of Object.entries(updateData)) {
-    if (["name", "storage_type", "is_public", "is_default", "status"].includes(k)) continue;
+    if (["name", "storage_type", "is_public", "is_default", "status", "remark", "url_proxy"].includes(k)) continue;
     if (k === "access_key_id") {
       cfg.access_key_id = await encryptValue(v, encryptionSecret);
     } else if (k === "secret_access_key") {

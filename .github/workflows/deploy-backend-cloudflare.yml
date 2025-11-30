@@ -1,4 +1,4 @@
-name: Deploy Backend to Cloudflare Workers
+name: Deploy Backend CF Workers[Worker后端分离部署]
 
 on:
   push:
@@ -6,11 +6,55 @@ on:
     paths:
       - "backend/**"
   workflow_dispatch:
+    inputs:
+      from_panel:
+        description: "是否由部署控制面板触发 / triggered from deployment control panel"
+        required: false
+        default: "false"
   repository_dispatch:
     types: [deploy-button]
 
 jobs:
+  check-config:
+    runs-on: ubuntu-latest
+    outputs:
+      should_deploy: ${{ steps.check.outputs.should_deploy }}
+    steps:
+      - name: 📥 检出代码
+        uses: actions/checkout@v4
+
+      - name: 🔍 检查部署配置
+        id: check
+        run: |
+          # 手动触发时（workflow_dispatch / repository_dispatch），总是部署，忽略自动部署开关
+          if [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+            echo "✅ 手动触发（repository_dispatch），忽略开关，允许部署"
+            exit 0
+          fi
+
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ github.event.inputs.from_panel }}" != "true" ]]; then
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+            echo "✅ 手动触发（workflow_dispatch），忽略开关，允许部署"
+            exit 0
+          fi
+
+          # 自动触发（push 或控制面板触发）根据仓库级变量决定是否部署
+          BACKEND_ENABLED="${{ vars.BACKEND_DEPLOY }}"
+          # 默认行为：如果仓库变量未设置，视为已开启自动部署（向下兼容旧逻辑）
+          [ -z "$BACKEND_ENABLED" ] && BACKEND_ENABLED="true"
+
+          if [ "$BACKEND_ENABLED" = "true" ]; then
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+            echo "✅ 后端自动部署已开启，允许部署"
+          else
+            echo "should_deploy=false" >> $GITHUB_OUTPUT
+            echo "⏸️ 后端自动部署已关闭，跳过部署"
+          fi
+
   deploy-backend:
+    needs: check-config
+    if: needs.check-config.outputs.should_deploy == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:

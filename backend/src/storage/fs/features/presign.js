@@ -5,14 +5,14 @@ import { generateFileLink as fsGenerateFileLink } from "../utils/FsLinkStrategy.
 
 /**
  * 严格的预签名上传URL生成功能：
- * - 仅在驱动具备 PRESIGNED 能力时可用
+ * - 仅在驱动具备直链能力（DIRECT_LINK，通常包含预签名能力）时可用
  * - 不再回退到代理逻辑
  * - 主要用于 S3 等具备预签名能力的存储
  */
 export async function generateUploadUrl(fs, path, userIdOrInfo, userType, options = {}) {
   const { driver, mount, subPath } = await fs.mountManager.getDriverByPath(path, userIdOrInfo, userType);
 
-  if (!driver.hasCapability(CAPABILITIES.PRESIGNED)) {
+  if (!driver.hasCapability(CAPABILITIES.DIRECT_LINK)) {
     throw new DriverError(`存储驱动 ${driver.getType()} 不支持预签名URL`, {
       status: ApiStatus.NOT_IMPLEMENTED,
       code: "DRIVER_ERROR.NOT_IMPLEMENTED",

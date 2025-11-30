@@ -3,24 +3,20 @@ import { ref, computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { useAuthStore } from "@/stores/authStore";
 import { useAdminAccountService } from "@/modules/admin/services/accountService.js";
+import { useThemeMode } from "@/composables/core/useThemeMode.js";
+import { useGlobalMessage } from "@/composables/core/useGlobalMessage.js";
 
 // 使用i18n和认证Store
 const { t } = useI18n();
 const authStore = useAuthStore();
 const { changePassword } = useAdminAccountService();
+const { isDarkMode: darkMode } = useThemeMode();
+const { showSuccess, showError } = useGlobalMessage();
 
 // 检测用户类型
 const isAdmin = computed(() => authStore.isAdmin);
 const isApiKeyUser = computed(() => authStore.authType === "apikey");
 const isGuest = computed(() => authStore.isGuest);
-
-// 定义props，接收父组件传递的darkMode
-const props = defineProps({
-  darkMode: {
-    type: Boolean,
-    required: true,
-  },
-});
 
 // 定义事件，用于通知父组件需要退出登录
 const emit = defineEmits(["logout"]);
@@ -32,17 +28,10 @@ const passwordForm = ref({
   newUsername: "",
 });
 
-// 密码更改状态
+// 密码更改状态（仅用于控制加载状态）
 const passwordChangeStatus = ref({
   loading: false,
-  success: false,
-  error: "",
 });
-
-// 倒计时计数器
-const countdown = ref(3);
-// 倒计时定时器ID
-let countdownTimer = null;
 
 // 更改密码
 const handleChangePassword = async (event) => {
@@ -50,38 +39,27 @@ const handleChangePassword = async (event) => {
 
   // 验证表单
   if (!passwordForm.value.currentPassword) {
-    passwordChangeStatus.value.error = t("admin.account.messages.passwordRequired");
-    // 设置3秒后自动清除错误信息
-    setTimeout(() => {
-      passwordChangeStatus.value.error = "";
-    }, 3000);
+    const message = t("admin.account.messages.passwordRequired");
+    showError(message);
     return;
   }
 
   // 确保新密码或新用户名至少填写一个
   if (!passwordForm.value.newPassword && !passwordForm.value.newUsername) {
-    passwordChangeStatus.value.error = t("admin.account.messages.newFieldRequired");
-    // 设置3秒后自动清除错误信息
-    setTimeout(() => {
-      passwordChangeStatus.value.error = "";
-    }, 3000);
+    const message = t("admin.account.messages.newFieldRequired");
+    showError(message);
     return;
   }
 
   // 如果新密码与当前密码相同，给出提示（虽然后端也会验证，但前端提前验证可以减少无效请求）
   if (passwordForm.value.newPassword && passwordForm.value.newPassword === passwordForm.value.currentPassword) {
-    passwordChangeStatus.value.error = t("admin.account.messages.samePassword");
-    // 设置3秒后自动清除错误信息
-    setTimeout(() => {
-      passwordChangeStatus.value.error = "";
-    }, 3000);
+    const message = t("admin.account.messages.samePassword");
+    showError(message);
     return;
   }
 
   passwordChangeStatus.value = {
     loading: true,
-    success: false,
-    error: "",
   };
 
   try {
@@ -89,39 +67,22 @@ const handleChangePassword = async (event) => {
     await changePassword(passwordForm.value.currentPassword, passwordForm.value.newPassword, passwordForm.value.newUsername);
 
     // 更新成功
-    passwordChangeStatus.value.success = true;
+    showSuccess(t("admin.account.messages.updateSuccess"));
+    showSuccess(t("admin.account.messages.updateSuccess"));
     passwordForm.value = {
       currentPassword: "",
       newPassword: "",
       newUsername: "",
     };
 
-    // 重置倒计时
-    countdown.value = 3;
-
-    // 清除之前的倒计时
-    if (countdownTimer) {
-      clearInterval(countdownTimer);
-    }
-
-    // 启动倒计时
-    countdownTimer = setInterval(() => {
-      countdown.value -= 1;
-      if (countdown.value <= 0) {
-        clearInterval(countdownTimer);
-        passwordChangeStatus.value.success = false;
-        // 由于后端会删除所有token，所以自动触发登出
-        emit("logout");
-      }
-    }, 1000);
+    // 由于后端会删除所有token，3秒后自动触发登出
+    setTimeout(() => {
+      emit("logout");
+    }, 3000);
   } catch (error) {
     // 发生错误时，仅显示错误消息，不执行登出
-    passwordChangeStatus.value.error = error.message || t("admin.account.messages.updateFailed");
-
-    // 3秒后自动清除错误消息
-    setTimeout(() => {
-      passwordChangeStatus.value.error = "";
-    }, 3000);
+    const message = error.message || t("admin.account.messages.updateFailed");
+    showError(message);
   } finally {
     passwordChangeStatus.value.loading = false;
   }
@@ -168,48 +129,6 @@ const handleChangePassword = async (event) => {
               {{ t("admin.account.apiKeyInfo.guestBannerDescription") }}
             </p>
           </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 状态消息 -->
-    <div v-if="passwordChangeStatus.success || passwordChangeStatus.error" class="mb-6">
-      <div
-        v-if="passwordChangeStatus.success"
-        class="rounded-lg p-4 border"
-        :class="darkMode ? 'bg-green-900/20 border-green-800/40 text-green-200' : 'bg-green-50 border-green-200 text-green-800'"
-      >
-        <div class="flex items-center">
-          <svg class="h-5 w-5 mr-2 flex-shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-            <path
-              fill-rule="evenodd"
-              d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-              clip-rule="evenodd"
-            />
-          </svg>
-          <p class="text-sm font-medium">
-            管理员信息更新成功，即将自动退出登录
-            <span class="ml-1 inline-flex items-center justify-center bg-green-100 dark:bg-green-800 text-green-800 dark:text-green-200 rounded-full h-5 w-5 text-xs font-bold">{{
-              countdown
-            }}</span>
-          </p>
-        </div>
-      </div>
-
-      <div
-        v-if="passwordChangeStatus.error"
-        class="rounded-lg p-4 border"
-        :class="darkMode ? 'bg-red-900/20 border-red-800/40 text-red-200' : 'bg-red-50 border-red-200 text-red-800'"
-      >
-        <div class="flex items-center">
-          <svg class="h-5 w-5 mr-2 flex-shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-            <path
-              fill-rule="evenodd"
-              d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-              clip-rule="evenodd"
-            />
-          </svg>
-          <p class="text-sm font-medium">{{ passwordChangeStatus.error }}</p>
         </div>
       </div>
     </div>

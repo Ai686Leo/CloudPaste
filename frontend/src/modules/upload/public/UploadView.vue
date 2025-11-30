@@ -105,6 +105,7 @@ import { useAuthStore } from "@/stores/authStore.js";
 import { useStorageConfigsStore } from "@/stores/storageConfigsStore.js";
 import { useUploadService } from "@/modules/upload/services/uploadService.js";
 import { useGlobalMessage } from "@/composables/core/useGlobalMessage.js";
+import { useThemeMode } from "@/composables/core/useThemeMode.js";
 
 const { t } = useI18n(); // 初始化i18n
 const { getRecentFiles } = useUploadService();
@@ -114,12 +115,7 @@ const { showSuccess, showError, showWarning } = useGlobalMessage();
 const authStore = useAuthStore();
 const { isAdmin, hasFileSharePermission, hasFileManagePermission } = storeToRefs(authStore);
 
-const props = defineProps({
-  darkMode: {
-    type: Boolean,
-    default: false,
-  },
-});
+const { isDarkMode: darkMode } = useThemeMode();
 
 // 数据状态
 const storageConfigsStore = useStorageConfigsStore();

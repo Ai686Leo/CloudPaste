@@ -367,15 +367,15 @@ const uploadModes = computed(() => {
     },
     {
       value: "stream",
-      label: "流式上传",
-      modeLabel: "流式模式",
-      tooltip: "通过后端流式中转上传",
+      label: t("mount.uppy.streamUpload"),
+      modeLabel: t("mount.uppy.streamMode"),
+      tooltip: t("mount.uppy.streamModeTooltip"),
     },
     {
       value: "form",
-      label: "表单上传",
-      modeLabel: "表单模式",
-      tooltip: "使用表单(multipart/form-data)上传",
+      label: t("mount.uppy.formUpload"),
+      modeLabel: t("mount.uppy.formMode"),
+      tooltip: t("mount.uppy.formModeTooltip"),
     },
     {
       value: "multipart",
