@@ -29,7 +29,7 @@ adminRoutes.post("/api/admin/login", async (c) => {
   const db = c.env.DB;
   const repositoryFactory = c.get("repos");
   const { username, password } = await c.req.json();
-  const loginResult = await login(db, username, password, repositoryFactory);
+  const loginResult = await login(db, username, password, repositoryFactory, c.env);
 
   return jsonOk(c, loginResult, "登录成功");
 });

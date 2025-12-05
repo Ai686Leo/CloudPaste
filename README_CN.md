@@ -65,9 +65,9 @@
 
 ### 📤 文件上传与管理
 
-- **多存储支持**：兼容多种 S3 存储服务 (Cloudflare R2、Backblaze B2、AWS S3 等)
+- **多存储支持**：兼容多种 S3(R2、B2等)/WebDav/本地存储(Docker) 等存储聚合服务
 - **存储配置**：可视化界面配置多个存储空间，灵活切换默认存储源
-- **高效上传**：通过预签名 URL 直接上传至 S3 存储，多文件上传
+- **高效上传**：通过预签名 URL/分片断点续传 上传至S3存储，其余存储则流式上传
 - **实时反馈**：上传进度实时显示
 - **自定义限制**：单次上传限制和最大容量限制
 - **元数据管理**：文件备注、密码、过期时间、访问限制
@@ -88,7 +88,7 @@
 - **灵活的挂载点**：支持创建多个挂载点，连接不同的存储服务
 - **权限控制**：精细的挂载点访问权限管理
 - **API 密钥集成**：通过 API 密钥授权 WebDAV 访问
-- **大文件支持**：自动使用分片上传机制处理大文件
+- **多文件支持**：自动使用流式上传机制处理多文件
 - **目录操作**：完整支持目录创建、上传、删除、重命名等操作
 
 ### 🔐 轻量权限管理
@@ -756,6 +756,7 @@ services:
       - NODE_ENV=production
       - PORT=8787
       - ENCRYPTION_SECRET=自定义密钥 # 请修改为您自己的安全密钥
+      - TASK_WORKER_POOL_SIZE=2 # 任务工作池大小
     volumes:
       - ./sql_data:/data # 数据持久化
     ports:
@@ -852,11 +853,16 @@ server {
 
         # 处理大文件
         client_max_body_size 0;
+        client_body_buffer_size 128k;
 
-        # 超时设置
-        proxy_connect_timeout 3600s;
-        proxy_send_timeout 3600s;
-        proxy_read_timeout 3600s;
+        # WebDAV 上传/下载优化
+        proxy_buffering off;           # 关闭代理缓冲，减少延迟
+        proxy_request_buffering off;   # 关闭请求缓冲，让数据流式传输
+        proxy_max_temp_file_size 0;    # 不生成临时文件
+        send_timeout 3600;             # 上传超时时间
+        proxy_read_timeout 3600;       # 读取超时
+        proxy_send_timeout 3600;       # 发送超时
+        proxy_connect_timeout 300;     # 连接超时
     }
 }
 ```

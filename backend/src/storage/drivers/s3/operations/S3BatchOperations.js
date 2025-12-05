@@ -4,17 +4,20 @@
  */
 
 import { ApiStatus } from "../../../../constants/index.js";
+/**
+ * 模块说明：
+ * - 作用域：单一 S3 挂载内的批量删除、复制、伪原子重命名，以及目录层级元数据维护。
+ * - 输入：仅接受 FS 视图路径，内部统一规范化为 S3 Key；跨挂载/跨存储 orchestrator 由 FS 层处理。
+ * - 错误：统一经 S3DriverError / handleFsError 封装，尽量不直接抛出底层 SDK 原始错误。
+ */
 import { AppError, ValidationError, NotFoundError, ConflictError, AuthenticationError, AuthorizationError, S3DriverError } from "../../../../http/errors.js";
 import { S3Client, DeleteObjectCommand, CopyObjectCommand, ListObjectsV2Command, HeadObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { normalizeS3SubPath } from "../utils/S3PathUtils.js";
 import { updateMountLastUsed } from "../../../fs/utils/MountResolver.js";
-import { generateDownloadUrl, generateUploadUrl, createS3Client, getDirectoryPresignedUrls } from "../utils/s3Utils.js";
-import { getMimeTypeFromFilename } from "../../../../utils/fileUtils.js";
 import { findMountPointByPath } from "../../../fs/utils/MountResolver.js";
 import { updateParentDirectoriesModifiedTime } from "../utils/S3DirectoryUtils.js";
 import { handleFsError } from "../../../fs/utils/ErrorHandler.js";
 import { normalizePath } from "../../../fs/utils/PathResolver.js";
-import { shouldUseRandomSuffix, generateShortId } from "../../../../utils/common.js";
 import { StorageConfigUtils } from "../../../utils/StorageConfigUtils.js";
 
 const DEFAULT_STORAGE_TYPE = "S3";
@@ -212,7 +215,7 @@ export class S3BatchOperations {
    * @returns {Promise<Object>} 复制结果
    */
   async copyItem(sourcePath, targetPath, options = {}) {
-    const { db, findMountPointByPath, userIdOrInfo, userType } = options;
+    const { mount, subPath, db } = options;
 
     return handleFsError(
       async () => {
@@ -235,29 +238,13 @@ export class S3BatchOperations {
           throw new ValidationError("复制文件时，目标路径不能是目录格式");
         }
 
-        // 查找源路径挂载点
-        const sourceMountResult = await findMountPointByPath(db, sourcePath, userIdOrInfo, userType);
-        if (sourceMountResult.error) {
-          throw this._errorFromStatus(sourceMountResult.error.status, sourceMountResult.error.message);
-        }
+        // 计算目标子路径：用目标路径替换源路径前缀后的部分
+        const sourcePrefix = sourcePath.substring(0, sourcePath.length - subPath.length);
+        const targetSubPath = targetPath.substring(sourcePrefix.length);
 
-        // 查找目标路径挂载点
-        const targetMountResult = await findMountPointByPath(db, targetPath, userIdOrInfo, userType);
-        if (targetMountResult.error) {
-          throw this._errorFromStatus(targetMountResult.error.status, targetMountResult.error.message);
-        }
-
-        const { mount: sourceMount, subPath: sourceSubPath } = sourceMountResult;
-        const { mount: targetMount, subPath: targetSubPath } = targetMountResult;
-
-        // 检查是否为跨存储复制
-        if (sourceMount.storage_config_id !== targetMount.storage_config_id) {
-          // 跨存储复制，返回预签名URL信息
-          return await this.handleCrossStorageCopy(db, sourcePath, targetPath, userIdOrInfo, userType);
-        }
-
-        // 同存储复制
-        return await this._handleSameStorageCopy(db, sourcePath, targetPath, sourceMount, targetMount, sourceSubPath, targetSubPath);
+        // 同存储复制：使用传入的挂载上下文（FS 层已验证 sameMount）
+        const { skipExisting = false, _skipExistingChecked = false } = options;
+        return await this._handleSameStorageCopy(db, sourcePath, targetPath, mount, mount, subPath, targetSubPath, { skipExisting, _skipExistingChecked });
       },
       "复制项目",
       "复制项目失败"
@@ -265,111 +252,15 @@ export class S3BatchOperations {
   }
 
   /**
-   * 批量复制文件或目录
-   * @param {Array<Object>} items - 要复制的项目数组
-   * @param {Object} options - 选项参数
-   * @returns {Promise<Object>} 复制结果
-   */
-  async batchCopyItems(items, options = {}) {
-    const { db, findMountPointByPath, userIdOrInfo, userType } = options;
-
-    // 结果统计
-    const result = {
-      success: 0,
-      failed: [],
-      details: [],
-      crossStorageResults: [],
-      hasCrossStorageOperations: false,
-    };
-
-    // 逐个处理每个复制项
-    for (const item of items) {
-      try {
-        // 检查路径是否为空或无效
-        if (!item.sourcePath || !item.targetPath) {
-          const errorMessage = "源路径或目标路径不能为空";
-          console.error(errorMessage, item);
-          result.failed.push({
-            sourcePath: item.sourcePath || "未指定",
-            targetPath: item.targetPath || "未指定",
-            error: errorMessage,
-          });
-          continue;
-        }
-
-        // 检查并修正路径格式：如果源路径是目录（以"/"结尾），确保目标路径也是目录格式
-        let { sourcePath, targetPath } = item;
-        const sourceIsDirectory = sourcePath.endsWith("/");
-
-        // 如果源是目录但目标不是目录格式，自动添加斜杠
-        if (sourceIsDirectory && !targetPath.endsWith("/")) {
-          targetPath = targetPath + "/";
-          console.log(`自动修正目录路径格式: ${item.sourcePath} -> ${targetPath}`);
-        }
-
-        // 查找源路径挂载点
-        const sourceMountResult = await findMountPointByPath(db, sourcePath, userIdOrInfo, userType);
-        if (sourceMountResult.error) {
-          result.failed.push({
-            sourcePath,
-            targetPath,
-            error: sourceMountResult.error.message,
-          });
-          continue;
-        }
-
-        // 查找目标路径挂载点
-        const targetMountResult = await findMountPointByPath(db, targetPath, userIdOrInfo, userType);
-        if (targetMountResult.error) {
-          result.failed.push({
-            sourcePath,
-            targetPath,
-            error: targetMountResult.error.message,
-          });
-          continue;
-        }
-
-        const { mount: sourceMount, subPath: sourceSubPath } = sourceMountResult;
-        const { mount: targetMount, subPath: targetSubPath } = targetMountResult;
-
-        // 检查是否为跨存储复制
-        if (sourceMount.storage_config_id !== targetMount.storage_config_id) {
-          // 跨存储复制，生成预签名URL
-          const crossStorageResult = await this._handleCrossStorageCopy(db, sourcePath, targetPath, userIdOrInfo, userType);
-
-          result.crossStorageResults.push(crossStorageResult);
-          result.hasCrossStorageOperations = true;
-          continue;
-        }
-
-        // 同存储复制
-        const copyResult = await this._handleSameStorageCopy(db, sourcePath, targetPath, sourceMount, targetMount, sourceSubPath, targetSubPath);
-
-        // 根据复制结果更新统计
-        if (copyResult.status === "skipped" || copyResult.skipped === true) {
-          result.skipped++;
-        } else {
-          result.success++;
-        }
-        result.details.push(copyResult);
-      } catch (error) {
-        console.error(`复制失败:`, error);
-        result.failed.push({
-          sourcePath: item.sourcePath,
-          targetPath: item.targetPath,
-          error: error.message || "复制失败",
-        });
-      }
-    }
-
-    return result;
-  }
-
-  /**
    * 处理同存储复制
    * @private
+   * @param {Object} copyOptions - 复制选项
+   * @param {boolean} [copyOptions.skipExisting=false] - 是否跳过已存在的文件
+   * @param {boolean} [copyOptions._skipExistingChecked=false] - 入口层是否已检查
    */
-  async _handleSameStorageCopy(db, sourcePath, targetPath, sourceMount, targetMount, sourceSubPath, targetSubPath) {
+  async _handleSameStorageCopy(db, sourcePath, targetPath, sourceMount, targetMount, sourceSubPath, targetSubPath, copyOptions = {}) {
+    const { skipExisting = false, _skipExistingChecked = false } = copyOptions;
+
     // 获取源和目标的S3配置
     const sourceS3Config = await loadStorageConfigById(db, sourceMount.storage_config_id, sourceMount.storage_type);
     const targetS3Config = await loadStorageConfigById(db, targetMount.storage_config_id, targetMount.storage_type);
@@ -402,28 +293,36 @@ export class S3BatchOperations {
     }
 
     if (isDirectory) {
-      // 目录复制
-      return await this._copyDirectory(sourceS3Config, s3SourcePath, s3TargetPath, sourcePath, targetPath, db);
+      // 目录复制（目录中每个文件需要单独检查，不传递 _skipExistingChecked）
+      return await this._copyDirectory(sourceS3Config, s3SourcePath, s3TargetPath, sourcePath, targetPath, db, { skipExisting });
     } else {
-      // 文件复制
-      return await this._copyFile(sourceS3Config, s3SourcePath, s3TargetPath, sourcePath, targetPath, db);
+      // 文件复制（传递 _skipExistingChecked 避免重复检查）
+      return await this._copyFile(sourceS3Config, s3SourcePath, s3TargetPath, sourcePath, targetPath, db, { skipExisting, _skipExistingChecked });
     }
   }
 
   /**
    * 复制单个文件
    * @private
+   * @param {Object} copyOptions - 复制选项
+   * @param {boolean} [copyOptions.skipExisting=false] - 是否跳过已存在的文件
+   * @param {boolean} [copyOptions._skipExistingChecked=false] - 入口层是否已检查
    */
-  async _copyFile(s3Config, s3SourcePath, s3TargetPath, sourcePath, targetPath, db = null) {
-    // 检查目标文件是否已存在，如果存在则跳过
-    if (await this._checkItemExists(s3Config.bucket_name, s3TargetPath)) {
+  async _copyFile(s3Config, s3SourcePath, s3TargetPath, sourcePath, targetPath, db = null, copyOptions = {}) {
+    const { skipExisting = false, _skipExistingChecked = false } = copyOptions;
+
+    // 根据 skipExisting 参数决定是否检查目标文件存在
+    // 如果入口层已检查（_skipExistingChecked=true），跳过重复检查
+    if (skipExisting && !_skipExistingChecked && await this._checkItemExists(s3Config.bucket_name, s3TargetPath)) {
       console.log(`[S3BatchOps] 同存储复制目标文件已存在，跳过: ${sourcePath} -> ${targetPath}`);
       return {
         source: sourcePath,
         target: targetPath,
         status: "skipped",
         skipped: true,
+        reason: "target_exists",
         message: "文件已存在，跳过复制",
+        contentLength: 0,
       };
     }
 
@@ -475,9 +374,10 @@ export class S3BatchOperations {
     await updateParentDirectoriesModifiedTime(this.s3Client, s3Config.bucket_name, s3TargetPath, rootPrefix);
 
     return {
+      status: "success",
+      success: true,
       source: sourcePath,
       target: targetPath,
-      status: "success",
       message: "文件复制成功",
     };
   }
@@ -678,254 +578,6 @@ export class S3BatchOperations {
     }
   }
 
-  /**
-   * 处理跨存储复制
-   * @param {D1Database} db - 数据库实例
-   * @param {string} sourcePath - 源路径
-   * @param {string} targetPath - 目标路径
-   * @param {string|Object} userIdOrInfo - 用户ID或API密钥信息
-   * @param {string} userType - 用户类型
-   * @returns {Promise<Object>} 跨存储复制结果
-   */
-  async handleCrossStorageCopy(db, sourcePath, targetPath, userIdOrInfo, userType) {
-    return handleFsError(
-      async () => {
-        // 规范化路径
-        sourcePath = normalizePath(sourcePath, sourcePath.endsWith("/"));
-        targetPath = normalizePath(targetPath, targetPath.endsWith("/"));
-
-        // 检查路径类型 (都是文件或都是目录)
-        const sourceIsDirectory = sourcePath.endsWith("/");
-        let targetIsDirectory = targetPath.endsWith("/");
-
-        // 如果源是目录但目标不是目录格式，自动添加斜杠
-        if (sourceIsDirectory && !targetIsDirectory) {
-          targetPath = targetPath + "/";
-          targetIsDirectory = true;
-        }
-
-        // 对于文件复制，确保目标路径也是文件路径格式
-        if (!sourceIsDirectory && targetIsDirectory) {
-          throw new ValidationError("复制文件时，目标路径不能是目录格式");
-        }
-
-        // 查找源路径挂载点
-        const sourceMountResult = await findMountPointByPath(db, sourcePath, userIdOrInfo, userType);
-        if (sourceMountResult.error) {
-          throw this._errorFromStatus(sourceMountResult.error.status, sourceMountResult.error.message);
-        }
-
-        // 查找目标路径挂载点
-        const targetMountResult = await findMountPointByPath(db, targetPath, userIdOrInfo, userType);
-        if (targetMountResult.error) {
-          throw this._errorFromStatus(targetMountResult.error.status, targetMountResult.error.message);
-        }
-
-        const { mount: sourceMount, subPath: sourceSubPath } = sourceMountResult;
-        const { mount: targetMount, subPath: targetSubPath } = targetMountResult;
-
-        // 获取源和目标S3配置
-        const sourceS3Config = await loadStorageConfigById(db, sourceMount.storage_config_id, sourceMount.storage_type);
-        const targetS3Config = await loadStorageConfigById(db, targetMount.storage_config_id, targetMount.storage_type);
-
-        // 创建源S3客户端
-        const sourceS3Client = await createS3Client(sourceS3Config, this.encryptionSecret);
-
-        // 判断是否为目录
-        const isDirectory = sourcePath.endsWith("/");
-
-        // 规范化S3子路径
-        const s3SourcePath = normalizeS3SubPath(sourceSubPath, isDirectory);
-        const s3TargetPath = normalizeS3SubPath(targetSubPath, isDirectory);
-
-        // 检查源路径是否存在
-        try {
-          const sourceExists = await this._checkS3ObjectExists(sourceS3Config.bucket_name, s3SourcePath);
-          if (!sourceExists) {
-            // 如果是目录，尝试列出目录内容确认存在性
-            if (isDirectory) {
-              const listResponse = await this._listS3Directory(sourceS3Config.bucket_name, s3SourcePath);
-
-              // 如果没有内容，说明目录不存在或为空
-              if (!listResponse.Contents || listResponse.Contents.length === 0) {
-                throw new NotFoundError("源路径不存在或为空目录");
-              }
-            } else {
-              throw new NotFoundError("源文件不存在");
-            }
-          }
-        } catch (error) {
-          if (error instanceof AppError) {
-            throw error;
-          }
-          throw new S3DriverError("检查源路径存在性失败", { details: { cause: error?.message } });
-        }
-
-        if (isDirectory) {
-          // 实现跨存储目录复制的自动重命名逻辑
-          let finalS3TargetPath = s3TargetPath;
-          let finalTargetPath = targetPath;
-          let wasRenamed = false;
-
-          // 创建目标存储的S3客户端用于检查文件存在性
-          const targetS3Client = await createS3Client(targetS3Config, this.encryptionSecret);
-
-          // 提取目标目录的父目录和名称（与同存储复制保持一致的逻辑）
-          const targetPathParts = s3TargetPath.split("/").filter((part) => part.length > 0);
-          const targetDirName = targetPathParts.pop(); // 获取目标目录名称
-          const targetParentDir = targetPathParts.length > 0 ? "/" + targetPathParts.join("/") + "/" : "/";
-
-          // 使用 _parseFileName 函数正确处理已有的数字后缀
-          const { baseName } = this._parseFileName(targetDirName);
-
-          // 检查目标目录是否已存在，如果存在则自动重命名
-          let counter = 1;
-
-          // 首先检查原始目标路径是否存在
-          if (await this._checkDirectoryExistsWithClient(targetS3Client, targetS3Config.bucket_name, s3TargetPath)) {
-            // 原始目标存在，需要重命名
-            let newDirName = `${baseName}(${counter})`;
-            finalS3TargetPath = `${targetParentDir}${newDirName}/`;
-
-            // 检查重命名后的目录是否存在，如果存在则继续递增计数器
-            while (await this._checkDirectoryExistsWithClient(targetS3Client, targetS3Config.bucket_name, finalS3TargetPath)) {
-              counter++;
-              newDirName = `${baseName}(${counter})`;
-              finalS3TargetPath = `${targetParentDir}${newDirName}/`;
-            }
-            wasRenamed = true;
-          } else {
-            // 原始目标不存在，直接使用原始路径
-            finalS3TargetPath = s3TargetPath;
-          }
-
-          // 更新逻辑路径
-          const targetPathWithoutTrailingSlash = targetPath.endsWith("/") ? targetPath.slice(0, -1) : targetPath;
-          const targetPathParts2 = targetPathWithoutTrailingSlash.split("/");
-          targetPathParts2.pop(); // 移除原始目录名
-          const targetParentPath = targetPathParts2.join("/");
-          finalTargetPath = `${targetParentPath}/${baseName}(${counter})/`;
-
-          // 目录跨存储复制，获取目录中所有文件的预签名URL（使用重命名后的路径）
-          const items = await getDirectoryPresignedUrls(sourceS3Client, sourceS3Config, targetS3Config, s3SourcePath, finalS3TargetPath, this.encryptionSecret);
-
-          return {
-            crossStorage: true,
-            isDirectory: true,
-            source: sourcePath,
-            target: finalTargetPath,
-            status: "success",
-            sourceMount: sourceMount.id,
-            targetMount: targetMount.id,
-            items,
-            renamed: wasRenamed,
-            originalTarget: targetPath,
-            message: wasRenamed
-              ? `目录将重命名为 ${finalTargetPath.split("/").slice(-2, -1)[0]} 并进行跨存储复制，共 ${items.length} 个文件`
-              : `跨存储目录复制请求已生成，共 ${items.length} 个文件`,
-          };
-        } else {
-          // 文件跨存储复制，生成预签名URL
-
-          // 实现跨存储复制的自动重命名逻辑
-          let finalS3TargetPath = s3TargetPath;
-          let finalTargetPath = targetPath;
-          let wasRenamed = false;
-
-          // 创建目标存储的S3客户端用于检查文件存在性
-          const targetS3Client = await createS3Client(targetS3Config, this.encryptionSecret);
-
-          // 检查目标文件是否已存在（支持skipExisting逻辑）
-          try {
-            const targetExists = await this._checkItemExistsWithClient(targetS3Client, targetS3Config.bucket_name, s3TargetPath);
-            if (targetExists) {
-              console.log(`[S3BatchOps] 跨存储复制目标文件已存在，跳过: ${sourcePath} -> ${targetPath}`);
-              return {
-                crossStorage: true,
-                isDirectory: false,
-                source: sourcePath,
-                target: targetPath,
-                status: "skipped",
-                skipped: true,
-                sourceMount: sourceMount.id,
-                targetMount: targetMount.id,
-                message: "目标文件已存在，跳过跨存储复制",
-              };
-            }
-          } catch (error) {
-            console.warn(`[S3BatchOps] 检查目标文件存在性失败，继续复制: ${error.message}`);
-            // 检查失败时继续复制，避免因为权限问题阻止正常操作
-          }
-
-          // 根据系统设置决定冲突处理策略
-          const database = db || this.db;
-          let useRandomSuffix = false;
-
-          if (database) {
-            try {
-              useRandomSuffix = await shouldUseRandomSuffix(database);
-            } catch (error) {
-              console.warn("获取文件命名策略失败，使用默认覆盖模式:", error);
-              useRandomSuffix = false;
-            }
-          }
-
-          if (useRandomSuffix) {
-            // 随机后缀模式：检查冲突，如果存在则添加随机后缀
-            if (await this._checkItemExistsWithClient(targetS3Client, targetS3Config.bucket_name, finalS3TargetPath)) {
-              const { baseName: s3BaseName, extension: s3Ext, directory: s3Dir } = this._parseFileName(s3TargetPath);
-              const { baseName: logicalBaseName, extension: logicalExt, directory: logicalDir } = this._parseFileName(targetPath);
-
-              const shortId = generateShortId();
-              finalS3TargetPath = `${s3Dir}${s3BaseName}-${shortId}${s3Ext}`;
-              finalTargetPath = `${logicalDir}${logicalBaseName}-${shortId}${logicalExt}`;
-              wasRenamed = true;
-            }
-          }
-          // 覆盖模式：不检查冲突，直接使用原始路径覆盖
-
-          // 生成源文件的下载预签名URL
-          const expiresIn = 3600; // 1小时
-          const rawUrl = await generateDownloadUrl(sourceS3Config, s3SourcePath, this.encryptionSecret, expiresIn, false);
-
-          // 生成目标文件的上传预签名URL（使用重命名后的路径）
-          const fileName = sourcePath.split("/").filter(Boolean).pop() || "file";
-          const contentType = getMimeTypeFromFilename(fileName);
-
-          const uploadUrl = await generateUploadUrl(targetS3Config, finalS3TargetPath, contentType, this.encryptionSecret, expiresIn);
-
-          return {
-            crossStorage: true,
-            isDirectory: false,
-            source: sourcePath,
-            target: finalTargetPath,
-            status: "success",
-            sourceMount: sourceMount.id,
-            targetMount: targetMount.id,
-            sourceS3Path: s3SourcePath,
-            storagePath: finalS3TargetPath,
-            fileName,
-            contentType,
-            rawUrl,
-            uploadUrl,
-            renamed: wasRenamed,
-            originalTarget: targetPath,
-            message: wasRenamed ? `文件将重命名为 ${finalTargetPath.split("/").pop()} 并进行跨存储复制` : "已生成跨存储文件复制的预签名URL",
-          };
-        }
-      },
-      "跨存储复制",
-      "跨存储复制请求处理失败"
-    );
-  }
-
-  /**
-   * 处理跨存储复制（私有方法）
-   * @private
-   */
-  async _handleCrossStorageCopy(db, sourcePath, targetPath, userIdOrInfo, userType) {
-    return await this.handleCrossStorageCopy(db, sourcePath, targetPath, userIdOrInfo, userType);
-  }
 
   /**
    * 单个项目重命名（文件或目录）
@@ -1033,8 +685,8 @@ export class S3BatchOperations {
 
         return {
           success: true,
-          oldPath,
-          newPath,
+          source: oldPath,
+          target: newPath,
           message: oldIsDirectory ? "目录重命名成功" : "文件重命名成功",
         };
       },
@@ -1215,71 +867,6 @@ export class S3BatchOperations {
     return { baseName, extension, directory };
   }
 
-  /**
-   * 使用指定的S3客户端检查文件是否存在
-   * @private
-   * @param {S3Client} s3Client - S3客户端实例
-   * @param {string} bucketName - 存储桶名称
-   * @param {string} key - 文件路径
-   * @returns {Promise<boolean>} 是否存在
-   */
-  async _checkItemExistsWithClient(s3Client, bucketName, key) {
-    try {
-      const listParams = {
-        Bucket: bucketName,
-        Prefix: key,
-        MaxKeys: 1,
-      };
 
-      const listCommand = new ListObjectsV2Command(listParams);
-      const listResponse = await s3Client.send(listCommand);
 
-      // 检查是否找到精确匹配的对象
-      const exactMatch = listResponse.Contents?.find((item) => item.Key === key);
-      return !!exactMatch;
-    } catch (error) {
-      return false;
-    }
-  }
-
-  /**
-   * 使用指定的S3客户端检查目录是否存在
-   * @private
-   * @param {S3Client} s3Client - S3客户端实例
-   * @param {string} bucketName - 存储桶名称
-   * @param {string} dirPath - 目录路径
-   * @returns {Promise<boolean>} 是否存在
-   */
-  async _checkDirectoryExistsWithClient(s3Client, bucketName, dirPath) {
-    try {
-      // 首先尝试检查目录标记对象是否存在
-      const headParams = {
-        Bucket: bucketName,
-        Key: dirPath,
-      };
-      const headCommand = new HeadObjectCommand(headParams);
-      await s3Client.send(headCommand);
-      return true;
-    } catch (error) {
-      if (error.$metadata && error.$metadata.httpStatusCode === 404) {
-        // 目录标记对象不存在，检查是否有以此路径为前缀的对象
-        try {
-          const listParams = {
-            Bucket: bucketName,
-            Prefix: dirPath,
-            MaxKeys: 1,
-          };
-          const listCommand = new ListObjectsV2Command(listParams);
-          const result = await s3Client.send(listCommand);
-
-          // 如果有任何对象以此路径为前缀，则认为目录存在
-          return result.Contents && result.Contents.length > 0;
-        } catch (listError) {
-          console.error(`检查目录存在性时出错: ${listError.message}`);
-          return false;
-        }
-      }
-      throw error;
-    }
-  }
 }

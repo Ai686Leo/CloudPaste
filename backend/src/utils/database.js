@@ -321,6 +321,60 @@ async function createSystemTables(db) {
     .run();
 }
 
+/**
+ * 创建任务编排相关表
+ * @param {D1Database} db - D1数据库实例
+ */
+async function createTasksTables(db) {
+  console.log("创建任务编排相关表...");
+
+  // 创建 tasks 表 - 通用任务编排表（支持 Workers + Docker）
+  await db
+    .prepare(
+      `
+      CREATE TABLE IF NOT EXISTS ${DbTables.TASKS} (
+        -- 核心标识
+        task_id TEXT PRIMARY KEY,
+        task_type TEXT NOT NULL,           -- 'copy' | 'upload' | 'download' | 'delete' | 'archive'
+
+        -- 通用状态
+        status TEXT NOT NULL,              -- 'pending' | 'running' | 'completed' | 'partial' | 'failed' | 'cancelled'
+
+        -- 任务负载（JSON格式）
+        payload TEXT NOT NULL,             -- JSON: { items: [...], options: {...} }
+
+        -- 统计信息（JSON格式）
+        stats TEXT NOT NULL DEFAULT '{}',  -- JSON: { totalItems, processedItems, successCount, failedCount, skippedCount }
+
+        -- 错误信息（可选）
+        error_message TEXT,
+
+        -- 用户信息
+        user_id TEXT NOT NULL,
+        user_type TEXT NOT NULL,           -- 'admin' | 'apikey'
+
+        -- Workflows 关联（仅 Workers 运行时使用，可选）
+        workflow_instance_id TEXT,
+
+        -- 时间戳（Unix timestamp in milliseconds）
+        created_at INTEGER NOT NULL,
+        started_at INTEGER,
+        updated_at INTEGER NOT NULL,
+        finished_at INTEGER
+      )
+    `
+    )
+    .run();
+
+  // 创建复合索引
+  await db.prepare(`CREATE INDEX IF NOT EXISTS idx_tasks_status_created ON ${DbTables.TASKS} (status, created_at DESC)`).run();
+  await db.prepare(`CREATE INDEX IF NOT EXISTS idx_tasks_type_status ON ${DbTables.TASKS} (task_type, status)`).run();
+  await db.prepare(`CREATE INDEX IF NOT EXISTS idx_tasks_user ON ${DbTables.TASKS} (user_id, created_at DESC)`).run();
+  await db.prepare(`CREATE INDEX IF NOT EXISTS idx_tasks_workflow ON ${DbTables.TASKS} (workflow_instance_id) WHERE workflow_instance_id IS NOT NULL`).run();
+
+  console.log("任务编排表创建完成");
+}
+
 // ==================== 索引创建 ====================
 
 /**
@@ -497,9 +551,10 @@ export async function initDatabase(db) {
   await createFileTables(db);
   await createFsMetaTables(db);
   await createSystemTables(db);
+  await createTasksTables(db);
 
   // 创建索引
-  await createIndexes(db);
+  await createIndexes(db)
 
   // 初始化完整的默认设置
   await initDefaultSettings(db); // 基础设置 (4个)
@@ -806,6 +861,13 @@ async function executeMigrationForVersion(db, version) {
       console.log("版本24：为 storage_configs 表添加 url_proxy 字段...");
       await addTableField(db, DbTables.STORAGE_CONFIGS, "url_proxy", "url_proxy TEXT");
       console.log("版本24：storage_configs.url_proxy 字段检查/创建完成。");
+      break;
+
+    case 25:
+      // 版本25：创建通用 tasks 表用于跨运行时任务编排（Workers + Docker）
+      console.log("版本25：检查并创建 tasks 表...");
+      await createTasksTables(db);
+      console.log("版本25：tasks 表及索引创建完成。");
       break;
 
     default:
@@ -1611,6 +1673,7 @@ export async function checkAndInitDatabase(db) {
       DbTables.FILE_PASSWORDS,
       DbTables.SYSTEM_SETTINGS,
       DbTables.STORAGE_MOUNTS,
+      DbTables.TASKS,
     ];
 
     for (const tableName of requiredTables) {
@@ -1631,7 +1694,7 @@ export async function checkAndInitDatabase(db) {
     const versionSetting = await db.prepare(`SELECT value FROM ${DbTables.SYSTEM_SETTINGS} WHERE key = 'schema_version'`).first();
 
     const currentVersion = versionSetting ? parseInt(versionSetting.value) : 0;
-    const targetVersion = 24; // 当前最新版本
+    const targetVersion = 25; // 当前最新版本
 
     if (currentVersion < targetVersion) {
       console.log(`需要更新数据库结构，当前版本:${currentVersion}，目标版本:${targetVersion}`);

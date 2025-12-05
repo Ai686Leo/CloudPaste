@@ -91,11 +91,10 @@
         :api-key-info="apiKeyInfo"
         @close="handleCloseCopyModal"
         @copy-started="handleCopyStarted"
-        @copy-complete="handleCopyComplete"
       />
 
-      <!-- 任务管理弹窗 -->
-      <TasksModal :is-open="isTasksModalOpen" :dark-mode="darkMode" @close="handleCloseTasksModal" />
+      <!-- 任务列表弹窗 -->
+      <TaskListModal :is-open="isTasksModalOpen" :dark-mode="darkMode" @close="handleCloseTasksModal" @task-completed="handleTaskCompleted" />
 
       <!-- 新建文件夹弹窗 -->
       <InputDialog
@@ -334,7 +333,7 @@ import FileOperations from "@/modules/fs/components/shared/FileOperations.vue";
 import FilePreview from "@/modules/fs/components/preview/FilePreview.vue";
 import UppyUploadModal from "@/modules/fs/components/shared/modals/UppyUploadModal.vue";
 import CopyModal from "@/modules/fs/components/shared/modals/CopyModal.vue";
-import TasksModal from "@/modules/fs/components/shared/modals/TasksModal.vue";
+import TaskListModal from "@/modules/fs/components/shared/modals/TaskListModal.vue";
 import SearchModal from "@/modules/fs/components/shared/modals/SearchModal.vue";
 import PathPasswordDialog from "@/modules/fs/components/shared/modals/PathPasswordDialog.vue";
 import ConfirmDialog from "@/components/common/dialogs/ConfirmDialog.vue";
@@ -819,24 +818,28 @@ const handleCopyStarted = (event) => {
   toggleCheckboxMode(false);
 };
 
-const handleCopyComplete = async (event) => {
-  // 复制完成后刷新目录
-  // 注意：我们已经在copy-started事件中显示了开始消息，这里不再重复显示
-
-  // 只有在模态框未关闭时才关闭模态框
-  if (!event?.modalAlreadyClosed) {
-    closeCopyModal();
-  }
-
-  await refreshDirectory();
-};
-
 const handleOpenTasksModal = () => {
   openTasksModal();
 };
 
 const handleCloseTasksModal = () => {
   closeTasksModal();
+};
+
+/**
+ * 处理任务完成事件 - 自动刷新当前目录
+ */
+const handleTaskCompleted = async (event) => {
+  console.log('[MountExplorer] 任务完成，自动刷新目录:', event?.tasks?.length || 0, '个任务');
+  // 延迟一小段时间再刷新，确保后端数据已同步
+  setTimeout(async () => {
+    try {
+      await refreshDirectory();
+      showMessage('success', t('mount.taskManager.taskCompletedRefresh'));
+    } catch (error) {
+      console.error('[MountExplorer] 刷新目录失败:', error);
+    }
+  }, 500);
 };
 
 /**

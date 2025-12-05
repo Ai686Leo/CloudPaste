@@ -3,3 +3,4 @@
  */
 
 export { useAdminBase } from "./useAdminBase.js";
+export { useCreatorBadge, creatorBadgeUtils, CreatorType } from "./useCreatorBadge.js";

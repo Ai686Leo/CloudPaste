@@ -29,6 +29,8 @@ services:
       - ENCRYPTION_SECRET=xxxxxxx
       # 管理员Token过期天数，默认7天
       - ADMIN_TOKEN_EXPIRY_DAYS=7
+      # 任务并发数 (默认 2)
+      - TASK_WORKER_POOL_SIZE=2
     volumes:
       - ./sql_data:/data # 将当前目录下的sql_data映射到容器的/data目录
     ports:

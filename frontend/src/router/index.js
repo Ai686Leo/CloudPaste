@@ -170,6 +170,15 @@ const routes = [
         },
       },
       {
+        path: "tasks",
+        name: "AdminTasks",
+        component: createOfflineAwareImport(() => import("../modules/admin/views/AdminTasksView.vue"), "任务管理"),
+        meta: {
+          title: "任务管理 - CloudPaste",
+          requiredPermissions: ["mount"],
+        },
+      },
+      {
         path: "settings",
         children: [
           {
@@ -599,6 +608,12 @@ router.afterEach(async (to, from) => {
         break;
       case "AdminSiteSettings":
         title = `${t("pageTitle.adminModules.siteSettings")} - ${siteTitle}`;
+        break;
+      case "AdminBackup":
+        title = `${t("pageTitle.adminModules.backup")} - ${siteTitle}`;
+        break;
+      case "AdminTasks":
+        title = `${t("pageTitle.adminModules.tasks")} - ${siteTitle}`;
         break;
       case "PasteView":
         title = `${t("pageTitle.pasteViewSubtitle")} - ${siteTitle}`;

@@ -33,6 +33,7 @@ export class S3StorageDriver extends BaseDriver {
     this.s3Client = null;
     this.customHost = config.custom_host || null;
 
+
     // S3存储驱动支持所有能力
     this.capabilities = [
       CAPABILITIES.READER, // 读取能力：list, get, getInfo
@@ -41,6 +42,7 @@ export class S3StorageDriver extends BaseDriver {
       CAPABILITIES.MULTIPART, // 分片上传能力：multipart upload
       CAPABILITIES.ATOMIC, // 原子操作能力：rename, copy
       CAPABILITIES.PROXY, // 代理能力：generateProxyUrl
+      CAPABILITIES.SEARCH, // 搜索能力：search(query, options)
     ];
 
     // 操作模块实例
@@ -195,7 +197,7 @@ export class S3StorageDriver extends BaseDriver {
    * 下载文件
    * @param {string} path - 文件路径
    * @param {Object} options - 选项参数
-   * @returns {Promise<Response>} 文件内容响应
+   * @returns {Promise<import('../../streaming/types.js').StorageStreamDescriptor>} 流描述对象
    */
   async downloadFile(path, options = {}) {
     this._ensureInitialized();
@@ -409,25 +411,6 @@ export class S3StorageDriver extends BaseDriver {
   }
 
   /**
-   * 批量复制文件
-   * @param {Array<Object>} items - 复制项数组
-   * @param {Object} options - 选项参数
-   * @returns {Promise<Object>} 批量复制结果
-   */
-  async batchCopyItems(items, options = {}) {
-    this._ensureInitialized();
-    try {
-      // 委托给批量操作模块
-      return await this.batchOps.batchCopyItems(items, {
-        ...options,
-        findMountPointByPath,
-      });
-    } catch (error) {
-      throw this._rethrow(error, "批量复制失败");
-    }
-  }
-
-  /**
    * 生成预签名下载URL
    * @param {string} path - 文件路径
    * @param {Object} options - 选项参数
@@ -584,22 +567,6 @@ export class S3StorageDriver extends BaseDriver {
     return result;
   }
 
-  /**
-   * 处理跨存储复制
-   * @param {string} sourcePath - 源路径
-   * @param {string} targetPath - 目标路径
-   * @param {Object} options - 选项参数
-   * @returns {Promise<Object>} 跨存储复制结果
-   */
-  async handleCrossStorageCopy(sourcePath, targetPath, options = {}) {
-    this._ensureInitialized();
-    try {
-      // 委托给批量操作模块
-      return await this.batchOps.handleCrossStorageCopy(options.db, sourcePath, targetPath, options.userIdOrInfo, options.userType);
-    } catch (error) {
-      throw this._rethrow(error, "跨存储复制失败");
-    }
-  }
 
   /**
    * 检查路径是否存在

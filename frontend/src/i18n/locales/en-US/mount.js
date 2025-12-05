@@ -19,8 +19,10 @@ export default {
     operations: {
       upload: "Upload",
       createFolder: "New Folder",
-      tasks: "Tasks",
       refresh: "Refresh",
+      viewMode: "View Mode",
+      batchOperations: "Batch Operations",
+      tasks: "Task List",
     },
     createFolder: {
       enterName: "Please enter folder name",
@@ -178,6 +180,8 @@ export default {
       cancel: "Cancel",
       confirmCopy: "Confirm Copy",
       copying: "Copying...",
+      skipExisting: "Skip existing files",
+      skipExistingTooltip: "Skip copying if a file with the same name already exists at the target location",
       warnings: {
         recursiveCopy: "Warning: Cannot copy folder to itself or its subdirectories, this may cause infinite recursion.",
         selfCopy: "Warning: Cannot copy folder to itself.",
@@ -204,6 +208,24 @@ export default {
     },
     textPreview: {
       loadingText: "Loading...",
+    },
+    taskList: {
+      title: "Task List",
+      loading: "Loading tasks...",
+      empty: "No tasks",
+      status: {
+        pending: "Pending",
+        failed: "Failed",
+        cancelled: "Cancelled",
+      },
+      cancel: "Cancel",
+      itemsFailed: " failed",
+      unknownFile: "Unknown file",
+      viewFullManagement: "View Full Task Management",
+      retry: {
+        retryCount: "Retried {count} times",
+        withRetry: "(retried {count}x)",
+      },
     },
     taskManager: {
       title: "Task Manager",
@@ -257,6 +279,7 @@ export default {
       unknownTime: "Unknown time",
       copyTaskName: "Copy {count} items to {path}",
       copyStarted: "Started copying {count} items to {path}, check progress in task manager",
+      taskCompletedRefresh: "Task completed, directory refreshed",
       // File status
       fileStatus: {
         pending: "Pending",

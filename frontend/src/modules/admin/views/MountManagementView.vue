@@ -1,9 +1,13 @@
 <script setup>
 import { onMounted } from "vue";
+import { useI18n } from "vue-i18n";
 import MountForm from "@/modules/admin/components/MountForm.vue";
 import CommonPagination from "@/components/common/CommonPagination.vue";
+import ConfirmDialog from "@/components/common/dialogs/ConfirmDialog.vue";
+import ViewModeToggle from "@/components/common/ViewModeToggle.vue";
 import { useMountManagement } from "@/modules/admin/storage/useMountManagement.js";
 import { useThemeMode } from "@/composables/core/useThemeMode.js";
+import { useConfirmDialog } from "@/composables/core/useConfirmDialog.js";
 
 /**
  * 挂载管理视图
@@ -20,6 +24,24 @@ const props = defineProps({
 
 
 const { isDarkMode: darkMode } = useThemeMode();
+
+// 国际化
+const { t } = useI18n();
+
+// 确认对话框
+const { dialogState, confirm, handleConfirm, handleCancel } = useConfirmDialog();
+
+// 创建适配确认函数，用于传递给 composable
+const confirmFn = async ({ title, message, confirmType }) => {
+  return await confirm({
+    title,
+    message,
+    confirmType,
+    confirmText: t("common.dialogs.deleteButton"),
+    darkMode: darkMode.value,
+  });
+};
+
 const {
   // 状态
   loading,
@@ -56,7 +78,13 @@ const {
   formatCreator,
   getCreatorClass,
   formatStorageType,
-} = useMountManagement();
+} = useMountManagement({ confirmFn });
+
+// 视图模式选项配置
+const viewModeOptions = [
+  { value: "grid", icon: "grid", titleKey: "admin.mount.viewMode.grid" },
+  { value: "list", icon: "list", titleKey: "admin.mount.viewMode.list" },
+];
 
 // 组件挂载时加载数据
 onMounted(() => {
@@ -151,51 +179,12 @@ onMounted(() => {
         </div>
 
         <!-- 视图切换按钮组 -->
-        <div class="inline-flex rounded-md shadow-sm" role="group">
-          <!-- 网格视图按钮 -->
-          <button
-            @click="toggleViewMode('grid')"
-            type="button"
-            :class="[
-              'px-3 py-1.5 text-sm font-medium rounded-l-md border transition-colors',
-              viewMode === 'grid'
-                ? darkMode
-                  ? 'bg-blue-600 text-white border-blue-600'
-                  : 'bg-blue-500 text-white border-blue-500'
-                : darkMode
-                  ? 'bg-gray-700 text-gray-300 border-gray-600 hover:bg-gray-600'
-                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-            ]"
-            :title="$t('admin.mount.viewMode.grid')"
-          >
-            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-            </svg>
-          </button>
-
-          <!-- 列表视图按钮 -->
-          <button
-            @click="toggleViewMode('list')"
-            type="button"
-            :class="[
-              'px-3 py-1.5 text-sm font-medium rounded-r-md border-t border-r border-b transition-colors',
-              viewMode === 'list'
-                ? darkMode
-                  ? 'bg-blue-600 text-white border-blue-600'
-                  : 'bg-blue-500 text-white border-blue-500'
-                : darkMode
-                  ? 'bg-gray-700 text-gray-300 border-gray-600 hover:bg-gray-600'
-                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-            ]"
-            :title="$t('admin.mount.viewMode.list')"
-          >
-            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-            </svg>
-          </button>
-        </div>
+        <ViewModeToggle
+          v-model="viewMode"
+          :options="viewModeOptions"
+          :dark-mode="darkMode"
+          size="md"
+        />
       </div>
     </div>
 
@@ -707,6 +696,13 @@ onMounted(() => {
 
     <!-- 新建/编辑挂载点表单 -->
     <MountForm v-if="showForm" :dark-mode="darkMode" :mount="currentMount" :user-type="userType" @close="closeForm" @save-success="handleFormSaveSuccess" />
+
+    <!-- 确认对话框 -->
+    <ConfirmDialog
+      v-bind="dialogState"
+      @confirm="handleConfirm"
+      @cancel="handleCancel"
+    />
   </div>
 </template>
 

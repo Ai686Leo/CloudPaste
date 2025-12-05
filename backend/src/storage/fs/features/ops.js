@@ -27,29 +27,82 @@ export async function renameItem(fs, oldPath, newPath, userIdOrInfo, userType) {
 }
 
 export async function copyItem(fs, sourcePath, targetPath, userIdOrInfo, userType, options = {}) {
-  const { driver, mount, subPath } = await fs.mountManager.getDriverByPath(sourcePath, userIdOrInfo, userType);
+  // 先解析源与目标挂载与驱动，在 FS 层统一做跨存储决策
+  const sourceCtx = await fs.mountManager.getDriverByPath(sourcePath, userIdOrInfo, userType);
+  const targetCtx = await fs.mountManager.getDriverByPath(targetPath, userIdOrInfo, userType);
 
-  if (!driver.hasCapability(CAPABILITIES.ATOMIC)) {
-    throw new DriverError(`存储驱动 ${driver.getType()} 不支持原子操作`, {
-      status: ApiStatus.NOT_IMPLEMENTED,
-      code: "DRIVER_ERROR.NOT_IMPLEMENTED",
-      expose: true,
-    });
+  const { driver: sourceDriver, mount: sourceMount, subPath: sourceSubPath } = sourceCtx;
+  const { driver: targetDriver, mount: targetMount, subPath: targetSubPath } = targetCtx;
+
+  // 目录判断：用于决定是否走目录级 orchestrator
+  const sourceIsDirectory = sourcePath.endsWith("/");
+
+  const sameMount = sourceMount.id === targetMount.id;
+
+  // ========== 统一 skipExisting 检查（单文件级别） ==========
+  // 对于单文件复制，在入口层统一检查目标是否存在，避免下游重复检查
+  // 对于目录复制，每个子文件需要单独检查，交由下游 orchestrator 处理
+  const { skipExisting = false } = options;
+  if (skipExisting && !sourceIsDirectory) {
+    try {
+      const targetExists = await targetDriver.exists(targetSubPath, {
+        mount: targetMount,
+        subPath: targetSubPath,
+        db: fs.mountManager.db,
+        userIdOrInfo,
+        userType,
+      });
+      if (targetExists) {
+        return {
+          status: "skipped",
+          skipped: true,
+          reason: "target_exists",
+          source: sourcePath,
+          target: targetPath,
+          contentLength: 0,
+        };
+      }
+    } catch (checkError) {
+      // exists 检查失败时继续复制（降级处理）
+      console.warn(`[copyItem] skipExisting 检查失败 for ${targetPath}:`, checkError?.message || checkError);
+    }
+    // 标记已检查，下游无需重复检查
+    options = { ...options, _skipExistingChecked: true };
   }
 
-  const result = await driver.copyItem(sourcePath, targetPath, {
-    mount,
-    subPath,
-    db: fs.mountManager.db,
-    userIdOrInfo,
-    userType,
-    findMountPointByPath,
-    encryptionSecret: fs.mountManager.encryptionSecret,
-    ...options,
-  });
+  // 1）同挂载：保持现有语义，完全交给单一驱动处理（可以是 S3 或 WebDAV 等）
+  if (sameMount) {
+    if (!sourceDriver.hasCapability(CAPABILITIES.ATOMIC)) {
+      throw new DriverError(`存储驱动 ${sourceDriver.getType()} 不支持原子操作`, {
+        status: ApiStatus.NOT_IMPLEMENTED,
+        code: "DRIVER_ERROR.NOT_IMPLEMENTED",
+        expose: true,
+      });
+    }
 
-  fs.emitCacheInvalidation({ mount, paths: [sourcePath, targetPath], reason: "copy" });
-  return result;
+    const result = await sourceDriver.copyItem(sourcePath, targetPath, {
+      mount: sourceMount,
+      subPath: sourceSubPath,
+      db: fs.mountManager.db,
+      userIdOrInfo,
+      userType,
+      findMountPointByPath,
+      encryptionSecret: fs.mountManager.encryptionSecret,
+      ...options,
+    });
+
+    fs.emitCacheInvalidation({ mount: sourceMount, paths: [sourcePath, targetPath], reason: "copy" });
+    return result;
+  }
+
+  // 2）跨挂载：走通用 orchestrator，支持文件和目录
+  if (sourceIsDirectory) {
+    // 目录：使用目录级 orchestrator，递归复制目录下所有文件
+    return await copyDirectoryBetweenDrivers(fs, sourceCtx, targetCtx, sourcePath, targetPath, userIdOrInfo, userType, options);
+  }
+
+  // 文件：使用单文件 orchestrator
+  return await copyBetweenDrivers(fs, sourceCtx, targetCtx, sourcePath, targetPath, userIdOrInfo, userType, options);
 }
 
 export async function batchRemoveItems(fs, paths, userIdOrInfo, userType) {
@@ -80,161 +133,327 @@ export async function batchRemoveItems(fs, paths, userIdOrInfo, userType) {
   return result;
 }
 
-export async function batchCopyItems(fs, items, userIdOrInfo, userType) {
-  const result = {
-    success: 0,
-    skipped: 0,
-    failed: [],
-    details: [],
-    crossStorageResults: [],
-  };
+/**
+ * 创建字节计数 TransformStream（用于跨存储复制进度监控）
+ *
+ * @param {function} onProgress - 进度回调 (bytesTransferred: number) => void
+ * @returns {TransformStream} 透传流，同时统计字节数
+ */
+function createProgressStream(onProgress) {
+  let bytesTransferred = 0;
 
-  if (!items || items.length === 0) {
-    return result;
-  }
+  return new TransformStream({
+    transform(chunk, controller) {
+      bytesTransferred += chunk.byteLength || chunk.length || 0;
+      controller.enqueue(chunk);
 
-  for (const item of items) {
-    try {
-      if (!item.sourcePath || !item.targetPath) {
-        const errorMessage = "源路径或目标路径不能为空";
-        console.error(errorMessage, item);
-        result.failed.push({
-          sourcePath: item.sourcePath || "未指定",
-          targetPath: item.targetPath || "未指定",
-          error: errorMessage,
-        });
-        continue;
+      // 调用进度回调
+      if (typeof onProgress === "function") {
+        onProgress(bytesTransferred);
       }
-
-      let { sourcePath, targetPath } = item;
-      const sourceIsDirectory = sourcePath.endsWith("/");
-      if (sourceIsDirectory && !targetPath.endsWith("/")) {
-        targetPath = targetPath + "/";
-        console.log(`自动修正目录路径格式: ${item.sourcePath} -> ${targetPath}`);
-      }
-
-      const skipExisting = item.skipExisting !== undefined ? item.skipExisting : true;
-      const copyResult = await fs.copyItem(sourcePath, targetPath, userIdOrInfo, userType, { skipExisting });
-
-      if (copyResult.crossStorage) {
-        result.crossStorageResults.push(copyResult);
-        continue;
-      }
-
-      const isSuccess = copyResult.status === "success" || copyResult.success === true;
-      const isSkipped = copyResult.skipped === true || copyResult.status === "skipped";
-
-      if (isSuccess || isSkipped) {
-        if (isSkipped) {
-          result.skipped++;
-          console.log(`文件已存在，跳过复制: ${item.sourcePath} -> ${item.targetPath}`);
-        } else {
-          result.success++;
-          console.log(`文件复制成功: ${item.sourcePath} -> ${item.targetPath}`);
-        }
-
-        if (copyResult.stats) {
-          result.success += copyResult.stats.success || 0;
-          result.skipped += copyResult.stats.skipped || 0;
-
-          if (copyResult.stats.failed > 0 && copyResult.details) {
-            copyResult.details.forEach((detail) => {
-              if (detail.status === "failed") {
-                result.failed.push({
-                  sourcePath: detail.source,
-                  targetPath: detail.target,
-                  error: detail.error,
-                });
-                console.error(`复制子项失败: ${detail.source} -> ${detail.target}, 错误: ${detail.error}`);
-              }
-            });
-          }
-
-          if (copyResult.details) {
-            result.details = result.details.concat(copyResult.details);
-          }
-        } else if (copyResult.details && typeof copyResult.details === "object") {
-          const details = copyResult.details;
-          if (details.success !== undefined) {
-            result.success += details.success;
-            console.log(`目录复制统计 - 成功: ${details.success}, 跳过: ${details.skipped}, 失败: ${details.failed}`);
-          }
-          if (details.skipped !== undefined) {
-            result.skipped += details.skipped;
-          }
-          if (details.failed && details.failed > 0) {
-            console.warn(`目录复制中有 ${details.failed} 个文件失败`);
-          }
-        }
-      } else {
-        const errorMessage = copyResult.message || copyResult.error || "复制失败";
-        console.error(`复制失败: ${item.sourcePath} -> ${item.targetPath}, 错误: ${errorMessage}`);
-        result.failed.push({
-          sourcePath: item.sourcePath,
-          targetPath: item.targetPath,
-          error: errorMessage,
-        });
-      }
-    } catch (error) {
-      const errorMessage = error instanceof AppError ? error.message : error.message || "未知错误";
-      console.error(`复制失败: ${item.sourcePath} -> ${item.targetPath}, 错误: ${errorMessage}`, error);
-      result.failed.push({
-        sourcePath: item.sourcePath,
-        targetPath: item.targetPath,
-        error: errorMessage,
-      });
-    }
-  }
-
-  if (result.crossStorageResults.length > 0) {
-    result.hasCrossStorageOperations = true;
-  }
-
-  return result;
+    },
+  });
 }
 
-export async function handleCrossStorageCopy(fs, sourcePath, targetPath, userIdOrInfo, userType) {
-  const { driver } = await fs.mountManager.getDriverByPath(sourcePath, userIdOrInfo, userType);
+/**
+ * 通用跨存储复制 orchestrator（单文件粒度）
+ * - 仅依赖 READER/WRITER 能力与 downloadFile/uploadFile 方法
+ * - 后端流式复制: downloadFile → uploadFile
+ * - 支持字节级进度监控 (options.onProgress 回调)
+ *
+ * @param {object} options.onProgress - 可选进度回调 (bytesTransferred: number) => void
+ */
+async function copyBetweenDrivers(fs, sourceCtx, targetCtx, sourcePath, targetPath, userIdOrInfo, userType, options = {}) {
+  const { driver: sourceDriver, mount: sourceMount, subPath: sourceSubPath } = sourceCtx;
+  const { driver: targetDriver, mount: targetMount, subPath: targetSubPath } = targetCtx;
+  const { skipExisting = true, _skipExistingChecked = false } = options;
 
-  if (!driver.hasCapability(CAPABILITIES.ATOMIC)) {
-    throw new DriverError(`存储驱动 ${driver.getType()} 不支持原子操作`, {
+  if (!sourceDriver.hasCapability(CAPABILITIES.READER)) {
+    throw new DriverError(`存储驱动 ${sourceDriver.getType()} 不支持读取操作`, {
       status: ApiStatus.NOT_IMPLEMENTED,
       code: "DRIVER_ERROR.NOT_IMPLEMENTED",
       expose: true,
     });
   }
 
-  return await driver.handleCrossStorageCopy(sourcePath, targetPath, {
-    db: fs.mountManager.db,
-    userIdOrInfo,
-    userType,
-  });
-}
-
-export async function commitCrossStorageCopy(fs, mount, files) {
-  const results = { success: [], failed: [] };
-
-  if (!Array.isArray(files) || files.length === 0) {
-    return results;
+  if (!targetDriver.hasCapability(CAPABILITIES.WRITER)) {
+    throw new DriverError(`存储驱动 ${targetDriver.getType()} 不支持写入操作`, {
+      status: ApiStatus.NOT_IMPLEMENTED,
+      code: "DRIVER_ERROR.NOT_IMPLEMENTED",
+      expose: true,
+    });
   }
 
-  for (const file of files) {
+  // skipExisting 检查：在下载前检查目标文件是否已存在
+  // 如果入口层已检查（_skipExistingChecked=true），跳过重复检查
+  if (skipExisting && !_skipExistingChecked) {
     try {
-      const { targetPath, storagePath } = file || {};
-      if (!targetPath || !storagePath) {
-        results.failed.push({
-          targetPath: targetPath || "未指定",
-          error: "目标路径和存储路径不能为空",
-        });
-        continue;
+      const targetExists = await targetDriver.exists(targetSubPath, {
+        mount: targetMount,
+        subPath: targetSubPath,
+        db: fs.mountManager.db,
+        userIdOrInfo,
+        userType,
+      });
+      if (targetExists) {
+        return {
+          status: "skipped",
+          skipped: true,
+          reason: "target_exists",
+          source: sourcePath,
+          target: targetPath,
+          contentLength: 0,
+        };
       }
-      const fileName = targetPath.split("/").filter(Boolean).pop();
-      results.success.push({ targetPath, fileName });
-    } catch (err) {
-      results.failed.push({ targetPath: file?.targetPath || "未知路径", error: err?.message || "处理文件时出错" });
+    } catch (checkError) {
+      // exists 检查失败时继续复制（降级处理）
+      console.warn(`[copyBetweenDrivers] skipExisting 检查失败 for ${targetPath}:`, checkError?.message || checkError);
     }
   }
 
-  fs.emitCacheInvalidation({ mount, reason: "batch-copy-commit", db: fs.mountManager.db });
-  return results;
+  // 用于在 finally 中关闭流
+  let streamHandle = null;
+
+  try {
+    // 1. 从源驱动以流方式下载
+    // downloadFile 返回 StorageStreamDescriptor
+    const downloadResult = await sourceDriver.downloadFile(sourcePath, {
+      mount: sourceMount,
+      subPath: sourceSubPath,
+      db: fs.mountManager.db,
+      userIdOrInfo,
+      userType,
+      request: null,
+    });
+
+    // 所有驱动现在都返回 StorageStreamDescriptor
+    if (typeof downloadResult?.getStream !== "function") {
+      throw new DriverError("源存储驱动返回了无效的 StorageStreamDescriptor 结构", {
+        status: ApiStatus.INTERNAL_ERROR,
+        code: "DRIVER_ERROR.INVALID_STREAM_DESCRIPTOR",
+        expose: false,
+      });
+    }
+
+    streamHandle = await downloadResult.getStream();
+    const body = streamHandle.stream;
+    const contentType = downloadResult.contentType;
+    const contentLength = downloadResult.size;
+
+    if (!body) {
+      throw new DriverError("源存储驱动未返回可用的数据流", {
+        status: ApiStatus.INTERNAL_ERROR,
+        code: "DRIVER_ERROR.CROSS_STORAGE_NO_BODY",
+        expose: false,
+      });
+    }
+
+    // 推导文件名：优先使用目标路径
+    const targetSegments = targetPath.split("/").filter(Boolean);
+    const sourceSegments = sourcePath.split("/").filter(Boolean);
+    const filename = targetSegments[targetSegments.length - 1] || sourceSegments[sourceSegments.length - 1] || "file";
+
+    // 2. 如果提供了进度回调，包装流以监控字节传输
+    let streamToUpload = body;
+    if (typeof options.onProgress === "function" && body && typeof body.pipeThrough === "function") {
+      const progressStream = createProgressStream(options.onProgress);
+      streamToUpload = body.pipeThrough(progressStream);
+    }
+
+    // 3. 将流写入目标驱动
+    const uploadResult = await targetDriver.uploadFile(targetPath, streamToUpload, {
+      mount: targetMount,
+      subPath: targetSubPath,
+      db: fs.mountManager.db,
+      userIdOrInfo,
+      userType,
+      filename,
+      contentType: options.contentType || contentType || undefined,
+      contentLength: options.contentLength || contentLength || undefined,
+    });
+
+    // 4. 只对目标挂载做缓存失效即可（源挂载未发生写操作）
+    fs.emitCacheInvalidation({ mount: targetMount, paths: [targetPath], reason: "cross-storage-copy" });
+
+    return {
+      status: "success",
+      source: sourcePath,
+      target: targetPath,
+      uploadResult,
+      // 新增: 返回文件大小信息供任务统计使用
+      contentLength: contentLength || 0,
+    };
+  } catch (error) {
+    if (error instanceof AppError) {
+      throw error;
+    }
+
+    throw new DriverError("跨存储复制失败", {
+      status: ApiStatus.INTERNAL_ERROR,
+      code: "DRIVER_ERROR.CROSS_STORAGE_FAILED",
+      expose: false,
+      details: {
+        cause: error?.message,
+        sourcePath,
+        targetPath,
+        sourceDriverType: sourceDriver.getType?.() ?? sourceDriver.type,
+        targetDriverType: targetDriver.getType?.() ?? targetDriver.type,
+      },
+    });
+  } finally {
+    // 确保关闭流句柄
+    if (streamHandle && typeof streamHandle.close === "function") {
+      try {
+        await streamHandle.close();
+      } catch (closeError) {
+        console.warn(`[copyBetweenDrivers] 关闭流句柄失败:`, closeError?.message || closeError);
+      }
+    }
+  }
+}
+
+/**
+ * 通用跨存储目录复制 orchestrator
+ * - 基于 FileSystem.listDirectory 递归列出源目录下的所有文件
+ * - 通过 copyBetweenDrivers 按文件级别执行复制
+ */
+async function copyDirectoryBetweenDrivers(fs, sourceCtx, targetCtx, sourcePath, targetPath, userIdOrInfo, userType, options = {}) {
+  const sourceBase = sourcePath.endsWith("/") ? sourcePath : `${sourcePath}/`;
+  const targetBase = targetPath.endsWith("/") ? targetPath : `${targetPath}/`;
+
+  let successCount = 0;
+  let skippedCount = 0;
+  const failedDetails = [];
+
+  // 确保目标根目录存在（忽略“已存在”等非致命错误）
+  try {
+    await fs.createDirectory(targetBase, userIdOrInfo, userType);
+  } catch (e) {
+    // 目录已存在或不支持创建目录时忽略，由后续文件写入自行处理
+    console.warn(`跨存储目录复制：创建目标根目录失败 ${targetBase}，错误: ${e?.message || e}`);
+  }
+
+  // 使用栈进行深度优先遍历目录
+  const stack = [sourceBase];
+
+  while (stack.length > 0) {
+    const currentDir = stack.pop();
+    try {
+      const dirResult = await fs.listDirectory(currentDir, userIdOrInfo, userType, { refresh: true });
+      const items = Array.isArray(dirResult.items) ? dirResult.items : [];
+
+      for (const item of items) {
+        if (!item || !item.path) {
+          continue;
+        }
+
+        if (item.isDirectory) {
+          // 目录：继续递归
+          const dirPath = item.path.endsWith("/") ? item.path : `${item.path}/`;
+          if (!dirPath.startsWith(sourceBase)) {
+            continue;
+          }
+
+          // 计算对应的目标目录路径，并尝试创建
+          const relativeDirPath = dirPath.slice(sourceBase.length);
+          const dirTargetPath = `${targetBase}${relativeDirPath}`;
+          try {
+            await fs.createDirectory(dirTargetPath, userIdOrInfo, userType);
+          } catch (e) {
+            // 创建失败时记录错误并跳过该子目录
+            failedDetails.push({
+              source: dirPath,
+              target: dirTargetPath,
+              status: "failed",
+              error: e?.message || "创建目标目录失败",
+            });
+            continue;
+          }
+
+          stack.push(dirPath);
+        } else {
+          // 文件：计算相对路径并复制
+          const fileSourcePath = item.path;
+          if (!fileSourcePath.startsWith(sourceBase)) {
+            // 理论上不应出现，作为安全防护
+            continue;
+          }
+          const relativePath = fileSourcePath.slice(sourceBase.length);
+          const fileTargetPath = `${targetBase}${relativePath}`;
+
+          try {
+            // 对每一个文件重新解析挂载与子路径，避免沿用目录级上下文导致子路径错误
+            const fileSourceCtx = await fs.mountManager.getDriverByPath(fileSourcePath, userIdOrInfo, userType);
+            const fileTargetCtx = await fs.mountManager.getDriverByPath(fileTargetPath, userIdOrInfo, userType);
+
+            const fileResult = await copyBetweenDrivers(
+              fs,
+              fileSourceCtx,
+              fileTargetCtx,
+              fileSourcePath,
+              fileTargetPath,
+              userIdOrInfo,
+              userType,
+              options
+            );
+
+            // 处理复制结果：成功、跳过、失败
+            if (fileResult?.status === "skipped" || fileResult?.skipped === true) {
+              // 文件已存在，被跳过
+              skippedCount++;
+            } else if (fileResult?.status === "success" || fileResult?.success === true) {
+              // 复制成功
+              successCount++;
+            } else {
+              // 复制失败
+              failedDetails.push({
+                source: fileSourcePath,
+                target: fileTargetPath,
+                status: fileResult?.status || "failed",
+                error: fileResult?.error || fileResult?.message || "复制失败",
+              });
+            }
+          } catch (err) {
+            failedDetails.push({
+              source: fileSourcePath,
+              target: fileTargetPath,
+              status: "failed",
+              error: err?.message || "复制失败",
+            });
+          }
+        }
+      }
+    } catch (err) {
+      failedDetails.push({
+        source: currentDir,
+        target: targetBase,
+        status: "failed",
+        error: err?.message || "列出目录失败",
+      });
+    }
+  }
+
+  const failedCount = failedDetails.length;
+  const totalProcessed = successCount + skippedCount + failedCount;
+
+  // 状态判定：
+  // - 全部成功（含跳过）：success
+  // - 部分成功：partial
+  // - 全部失败：failed
+  let status = "success";
+  if (failedCount > 0) {
+    status = successCount > 0 || skippedCount > 0 ? "partial" : "failed";
+  }
+
+  return {
+    status,
+    stats: {
+      success: successCount,
+      skipped: skippedCount,
+      failed: failedCount,
+    },
+    details: failedDetails,
+    source: sourcePath,
+    target: targetPath,
+  };
 }

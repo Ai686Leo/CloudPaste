@@ -22,7 +22,7 @@ export default {
       refresh: "刷新",
       viewMode: "视图模式",
       batchOperations: "批量操作",
-      tasks: "任务管理",
+      tasks: "任务列表",
     },
     createFolder: {
       enterName: "请输入文件夹名称",
@@ -182,6 +182,24 @@ export default {
       loadingText: "加载中...",
     },
 
+    taskList: {
+      title: "任务列表",
+      loading: "加载任务中...",
+      empty: "暂无任务",
+      status: {
+        pending: "待处理",
+        failed: "失败",
+        cancelled: "已取消",
+      },
+      cancel: "取消",
+      itemsFailed: "项失败",
+      unknownFile: "未知文件",
+      viewFullManagement: "查看完整任务管理",
+      retry: {
+        retryCount: "已重试 {count} 次",
+        withRetry: "(重试 {count} 次)",
+      },
+    },
     taskManager: {
       title: "任务管理",
       noTasks: "暂无任务",
@@ -234,6 +252,7 @@ export default {
       unknownTime: "未知时间",
       copyTaskName: "复制 {count} 个项目到 {path}",
       copyStarted: "开始复制 {count} 个项目到 {path}，可在任务管理中查看进度",
+      taskCompletedRefresh: "任务已完成，目录已刷新",
       // 文件状态
       fileStatus: {
         pending: "等待",
@@ -255,6 +274,8 @@ export default {
       cancel: "取消",
       confirmCopy: "确认复制",
       copying: "复制中...",
+      skipExisting: "跳过已存在的文件",
+      skipExistingTooltip: "如果目标位置已存在同名文件，则跳过复制",
       warnings: {
         recursiveCopy: "警告：不能将文件夹复制到其自身或其子目录中，这可能导致无限递归。",
         selfCopy: "警告：不能将文件夹复制到其自身。",

@@ -613,6 +613,7 @@ const visibleMenuItems = computed(() => {
       { id: "storage", name: t("admin.sidebar.storageConfig"), icon: "cloud", type: "item", routeName: "AdminStorage" },
       { id: "mount-management", name: t("admin.sidebar.mountManagement"), icon: "server", type: "item", routeName: "AdminMountManagement" },
       { id: "fs-meta-management", name: t("admin.sidebar.fsMetaManagement"), icon: "information-circle", type: "item", routeName: "AdminFsMetaManagement" },
+      { id: "tasks", name: t("admin.sidebar.tasks"), icon: "clipboard-list", type: "item", routeName: "AdminTasks" },
       { id: "key-management", name: t("admin.sidebar.keyManagement"), icon: "key", type: "item", routeName: "AdminKeyManagement" },
       { id: "account-management", name: t("admin.sidebar.accountManagement"), icon: "user", type: "item", routeName: "AdminAccountManagement" },
       { id: "backup", name: t("admin.sidebar.backup"), icon: "circle-stack", type: "item", routeName: "AdminBackup" },
@@ -644,6 +645,11 @@ const visibleMenuItems = computed(() => {
 
   if (props.permissions.mount) {
     items.push({ id: "mount-management", name: t("admin.sidebar.mountManagement"), icon: "server", type: "item", routeName: "AdminMountManagement" });
+  }
+
+  // 任务管理：有挂载权限即可访问，具体任务根据权限类型在列表内过滤
+  if (props.permissions.mount) {
+    items.push({ id: "tasks", name: t("admin.sidebar.tasks"), icon: "clipboard-list", type: "item", routeName: "AdminTasks" });
   }
 
   // 所有API密钥用户都可以访问账户管理（用于查看信息和登出）
@@ -716,6 +722,8 @@ const getIconPath = (iconName) => {
       return "M5 8a2 2 0 012-2h6a2 2 0 012 2v1a2 2 0 002 2h2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2h2a2 2 0 002-2V8z";
     case "circle-stack":
       return "M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375";
+    case "clipboard-list":
+      return "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01";
     default:
       return "";
   }

@@ -310,45 +310,22 @@ export async function commitPresignedUpload(uploadInfo, etag, contentType, fileS
  ******************************************************************************/
 
 /**
- * 批量复制文件或目录
+ * 批量复制文件或目录（统一任务模式）
+ *
+ * 所有复制操作统一创建任务，由后端 CopyTaskHandler 负责执行。
+ * 复制策略（同存储/跨存储/S3优化）由后端内部决策。
+ *
  * @param {Array<{sourcePath: string, targetPath: string}>} items 要复制的项目数组，每项包含源路径和目标路径
- * @param {boolean} skipExisting 是否跳过已存在的文件，默认为true
- * @param {Object} options 额外选项
- * @param {Function} [options.onProgress] 进度回调函数
- * @param {Function} [options.onCancel] 取消检查函数
- * @returns {Promise<Object>} 批量复制结果响应对象
+ * @param {Object} options 选项参数
+ * @param {boolean} [options.skipExisting=true] 是否跳过已存在的文件
+ * @returns {Promise<Object>} 批量复制结果响应对象 { success, data: { jobId, taskType, status, stats, createdAt } }
  */
-export async function batchCopyItems(items, skipExisting = true, options = {}) {
-  const { onProgress, onCancel } = options;
+export async function batchCopyItems(items, options = {}) {
+  const skipExisting = options.skipExisting !== false;
 
-  // 首先调用服务器批量复制API
-  const result = await post(`/fs/batch-copy`, { items, skipExisting });
-
-  // 检查是否需要客户端处理的跨存储复制
-  if (result.success && result.data && result.data.requiresClientSideCopy) {
-    console.log("检测到需要客户端处理的批量跨存储复制", result.data);
-
-    // 执行客户端复制流程
-    return performClientSideCopy({
-      copyResult: result.data,
-      onProgress,
-      onCancel,
-    });
-  }
-
-  // 正常的服务器端复制，直接返回结果
-  return result;
-}
-
-/**
- * 提交批量复制完成
- * @param {Object} data 批量复制完成数据
- * @param {string} data.targetMountId 目标挂载点ID
- * @param {Array<Object>} data.files 文件列表，每个对象包含 {targetPath, storagePath, contentType?, fileSize?, etag?}
- * @returns {Promise<Object>} 提交结果响应对象
- */
-export async function commitBatchCopy(data) {
-  return post(`/fs/batch-copy-commit`, data);
+  // 统一任务模式：调用 batch-copy API，始终返回 jobId
+  // 复制策略由后端 CopyTaskHandler 内部决策
+  return post(`/fs/batch-copy`, { items, skipExisting });
 }
 
 /**
@@ -358,50 +335,6 @@ export async function commitBatchCopy(data) {
  */
 export async function createShareFromFileSystem(path) {
   return post(`/fs/create-share`, { path });
-}
-
-/**
- * 复制文件或目录
- * @param {string} sourcePath 源路径
- * @param {string} targetPath 目标路径
- * @param {boolean} skipExisting 是否跳过已存在的文件，默认为true
- * @param {Object} options 额外选项
- * @param {Function} [options.onProgress] 进度回调函数
- * @param {Function} [options.onCancel] 取消检查函数
- * @returns {Promise<Object>} 复制结果响应对象
- */
-export async function copyItem(sourcePath, targetPath, skipExisting = true, options = {}) {
-  // 将单文件复制转换为批量复制格式
-  const items = [{ sourcePath, targetPath }];
-  return batchCopyItems(items, skipExisting, options);
-}
-
-/**
- * 提交复制完成信息
- * @param {Object} data 复制完成数据
- * @param {string} data.sourcePath 源文件路径
- * @param {string} data.targetPath 目标文件路径
- * @param {string} data.targetMountId 目标挂载点ID
- * @param {string} data.storagePath 存储路径
- * @param {string} [data.etag] 文件ETag（可选）
- * @param {string} [data.contentType] 文件MIME类型（可选）
- * @param {number} [data.fileSize] 文件大小（字节）（可选）
- * @returns {Promise<Object>} 提交结果响应对象
- */
-export async function commitCopy(data) {
-  // 将单文件提交转换为批量提交格式
-  return commitBatchCopy({
-    targetMountId: data.targetMountId,
-    files: [
-      {
-        targetPath: data.targetPath,
-        storagePath: data.storagePath,
-        contentType: data.contentType,
-        fileSize: data.fileSize,
-        etag: data.etag,
-      },
-    ],
-  });
 }
 
 /******************************************************************************
@@ -578,290 +511,6 @@ export async function uploadToPresignedUrl(options) {
   return uploadWithPresignedUrl(url, data, contentType, onProgress, onCancel, setXhr);
 }
 
-/**
- * 执行客户端复制流程
- * @param {Object} options 复制选项
- * @param {Object} options.copyResult 初始复制请求的结果，包含下载URL和上传URL等信息
- * @param {Function} [options.onProgress] 进度回调，参数为(phase, progress)，phase可能是"downloading"或"uploading"
- * @param {Function} [options.onCancel] 取消检查函数，返回true时中止操作
- * @returns {Promise<Object>} 复制结果
- */
-export async function performClientSideCopy(options) {
-  const { copyResult, onProgress, onCancel } = options;
-
-  console.log(`开始客户端复制流程`, copyResult);
-
-  // 设置下载和上传的XHR引用，用于可能的取消操作
-  let downloadXhr = null;
-  let uploadXhr = null;
-
-  try {
-    // 检查是否为单文件复制
-    if (!copyResult.crossStorageResults || copyResult.crossStorageResults.length === 0) {
-      throw new Error("没有找到跨存储复制项目");
-    }
-
-    // 处理目录复制：如果有目录复制项目且包含 items 数组，需要展开处理
-    let allCopyItems = [];
-    let targetMountId = null;
-
-    for (const result of copyResult.crossStorageResults) {
-      // 检查是否为跳过的项目
-      if (result.status === "skipped" || result.skipped === true) {
-        console.log(`[客户端复制] 跳过已存在的文件: ${result.source} -> ${result.target}`);
-        continue; // 跳过已存在的文件，不添加到复制列表
-      }
-
-      if (result.isDirectory && result.items && result.items.length > 0) {
-        // 目录复制：将 items 数组中的文件添加到复制列表，并添加必要的元数据
-        const itemsWithMetadata = result.items.map((item) => {
-          // 正确构建目标路径，避免重复斜杠
-          let targetPath = result.target;
-
-          // 确保 targetPath 以斜杠结尾
-          if (!targetPath.endsWith("/")) {
-            targetPath += "/";
-          }
-
-          // 添加相对目录路径（如果存在）
-          if (item.relativeDir) {
-            targetPath += item.relativeDir + "/";
-          }
-
-          // 添加文件名
-          targetPath += item.fileName;
-
-          const resolvedTargetKey = item.targetKey || item.storagePath || null;
-          return {
-            ...item,
-            targetMount: result.targetMount,
-            targetPath: targetPath,
-            targetKey: resolvedTargetKey,
-          };
-        });
-        allCopyItems.push(...itemsWithMetadata);
-
-        // 记录目标挂载点ID
-        if (!targetMountId) {
-          targetMountId = result.targetMount;
-        }
-      } else if (!result.isDirectory) {
-        // 文件复制
-        const resolvedTargetKey = result.storagePath || result.targetKey || null;
-        const fileItem = {
-          ...result,
-          targetPath: result.target,
-          targetKey: resolvedTargetKey,
-        };
-        allCopyItems.push(fileItem);
-
-        // 记录目标挂载点ID
-        if (!targetMountId) {
-          targetMountId = result.targetMount;
-        }
-      }
-    }
-
-    // 统计跳过的文件数量
-    const skippedCount = copyResult.crossStorageResults.filter((result) => result.status === "skipped" || result.skipped === true).length;
-
-    if (allCopyItems.length === 0) {
-      // 如果所有文件都被跳过
-      if (skippedCount > 0) {
-        return {
-          success: true,
-          message: "FILE_COPY_SUCCESS",
-          data: {
-            crossStorage: true, // 标记为跨存储复制
-            skipped: skippedCount,
-            success: 0,
-            failed: 0,
-          },
-        };
-      }
-      throw new Error("没有找到需要复制的文件");
-    }
-
-    // 处理单文件复制
-    if (allCopyItems.length === 1) {
-      const singleFileCopy = allCopyItems[0];
-
-      // 下载源文件
-      console.log(`下载源文件: ${singleFileCopy.sourceS3Path || singleFileCopy.sourceKey}`);
-      const fileContent = await fetchFileContent({
-        url: singleFileCopy.rawUrl,
-        onProgress: (progress, loaded, total) => {
-          if (onProgress) {
-            onProgress("downloading", progress, {
-              loaded,
-              total,
-              percentage: progress,
-            });
-          }
-        },
-        onCancel,
-        setXhr: (xhr) => {
-          downloadXhr = xhr;
-        },
-      });
-
-      // 检查是否被取消
-      if (onCancel && onCancel()) {
-        throw new Error("操作已取消");
-      }
-
-      // 上传文件内容到目标位置
-      const targetKey = singleFileCopy.targetKey || singleFileCopy.storagePath;
-      console.log(`上传到目标位置: ${targetKey}`);
-      const uploadResult = await uploadToPresignedUrl({
-        url: singleFileCopy.uploadUrl,
-        data: fileContent,
-        contentType: singleFileCopy.contentType || "application/octet-stream",
-        onProgress: (progress, loaded, total) => {
-          if (onProgress) {
-            onProgress("uploading", progress, {
-              loaded,
-              total,
-              percentage: progress,
-            });
-          }
-        },
-        onCancel,
-        setXhr: (xhr) => {
-          uploadXhr = xhr;
-        },
-      });
-
-      // 提交复制完成信息
-      const commitResult = await commitBatchCopy({
-        targetMountId: targetMountId,
-        files: [
-          {
-            targetPath: singleFileCopy.targetPath,
-            storagePath: targetKey,
-            contentType: singleFileCopy.contentType,
-            fileSize: fileContent.byteLength,
-            etag: uploadResult.etag,
-          },
-        ],
-      });
-
-      return {
-        success: true,
-        message: "FILE_COPY_SUCCESS",
-        data: {
-          ...commitResult.data,
-          crossStorage: true, // 标记为跨存储复制
-        },
-      };
-    }
-
-    // 处理批量文件复制
-    const totalItems = allCopyItems.length;
-    let completedItems = 0;
-    const completedFiles = [];
-
-    for (const item of allCopyItems) {
-      // 检查是否被取消
-      if (onCancel && onCancel()) {
-        throw new Error("操作已取消");
-      }
-
-      // 下载源文件
-      console.log(`下载源文件: ${item.sourceS3Path || item.sourceKey}`);
-      const fileContent = await fetchFileContent({
-        url: item.rawUrl,
-        onProgress: (progress) => {
-          if (onProgress) {
-            const itemProgress = (completedItems / totalItems) * 100;
-            onProgress("downloading", progress, {
-              currentFile: item.fileName || item.sourceKey,
-              currentFileProgress: progress,
-              totalProgress: itemProgress + progress / totalItems / 2,
-              processedFiles: completedItems,
-              totalFiles: totalItems,
-              percentage: Math.round(itemProgress + progress / totalItems / 2),
-            });
-          }
-        },
-        setXhr: (xhr) => {
-          downloadXhr = xhr;
-        },
-      });
-
-      // 检查是否被取消
-      if (onCancel && onCancel()) {
-        throw new Error("操作已取消");
-      }
-
-      // 上传文件内容
-      const targetKey = item.targetKey || item.storagePath;
-      console.log(`上传到目标位置: ${targetKey}`);
-      const uploadResult = await uploadToPresignedUrl({
-        url: item.uploadUrl,
-        data: fileContent,
-        contentType: item.contentType || "application/octet-stream",
-        onProgress: (progress) => {
-          if (onProgress) {
-            const itemProgress = (completedItems / totalItems) * 100;
-            onProgress("uploading", progress, {
-              currentFile: item.fileName || item.sourceKey,
-              currentFileProgress: progress,
-              totalProgress: itemProgress + (50 + progress) / totalItems / 2,
-              processedFiles: completedItems,
-              totalFiles: totalItems,
-              percentage: Math.round(itemProgress + (50 + progress) / totalItems / 2),
-            });
-          }
-        },
-        setXhr: (xhr) => {
-          uploadXhr = xhr;
-        },
-      });
-
-      // 记录完成的文件
-      completedFiles.push({
-        targetPath: item.targetPath,
-        storagePath: targetKey,
-        contentType: item.contentType,
-        fileSize: fileContent.byteLength,
-        etag: uploadResult.etag,
-      });
-
-      completedItems++;
-    }
-
-    // 提交批量复制完成信息
-    const commitResult = await commitBatchCopy({
-      targetMountId: targetMountId,
-      files: completedFiles,
-    });
-
-    return {
-      success: true,
-      message: "FILE_COPY_SUCCESS",
-      data: {
-        ...commitResult.data,
-        crossStorage: true, // 标记为跨存储复制
-        skipped: skippedCount,
-        success: completedItems,
-        failed: 0,
-      },
-    };
-  } catch (error) {
-    // 如果有正在进行的请求，尝试取消它们
-    if (downloadXhr) {
-      downloadXhr.abort();
-    }
-    if (uploadXhr) {
-      uploadXhr.abort();
-    }
-
-    console.error("客户端复制流程失败:", error);
-    throw error;
-  }
-}
-
 /******************************************************************************
  * 高级功能API函数
  ******************************************************************************/
@@ -877,4 +526,82 @@ export async function performClientSideCopy(options) {
  * @returns {Promise<Object>} 上传结果
  */
 /** @deprecated 旧版 FS 预签名上传流程，已被 Uppy + StorageAdapter 方案取代 */
+
+
+/******************************************************************************
+ * 通用作业（Generic Jobs）API函数
+ ******************************************************************************/
+
+/**
+ * 创建通用作业（支持多种任务类型的异步后台处理）
+ * @param {string} taskType 任务类型（'copy', 'scheduled-sync', 'cleanup' 等）
+ * @param {Object} payload 任务载荷（由具体任务类型决定）
+ * @param {Object} options 选项参数
+ * @param {boolean} [options.skipExisting=true] 是否跳过已存在的文件（适用于复制任务）
+ * @param {number} [options.maxConcurrency=10] 最大并发数
+ * @param {Object} [options.retryPolicy] 重试策略
+ * @returns {Promise<Object>} 作业描述符 { jobId, taskType, status, stats, createdAt }
+ */
+export async function createJob(taskType, payload, options = {}) {
+  return post('/fs/jobs', {
+    taskType,
+    items: payload.items || payload, // 兼容直接传 items 数组的情况
+    skipExisting: options.skipExisting !== false,
+    maxConcurrency: options.maxConcurrency || 10,
+    retryPolicy: options.retryPolicy,
+  });
+}
+
+/**
+ * 获取作业状态
+ * @param {string} jobId 作业ID
+ * @returns {Promise<Object>} 作业状态 { jobId, taskType, status, stats, createdAt, startedAt?, finishedAt?, errorMessage? }
+ */
+export async function getJobStatus(jobId) {
+  return get(`/fs/jobs/${jobId}`);
+}
+
+/**
+ * 取消作业
+ * @param {string} jobId 作业ID
+ * @returns {Promise<Object>} 取消结果
+ */
+export async function cancelJob(jobId) {
+  return post(`/fs/jobs/${jobId}/cancel`);
+}
+
+/**
+ * 列出作业
+ * @param {Object} filter 过滤条件
+ * @param {string} [filter.taskType] 任务类型（'copy', 'scheduled-sync' 等）
+ * @param {string} [filter.status] 作业状态（pending/running/completed/partial/failed/cancelled）
+ * @param {number} [filter.limit=20] 返回数量限制
+ * @param {number} [filter.offset=0] 偏移量
+ * @returns {Promise<Object>} 作业列表 { jobs, total, limit, offset }
+ */
+export async function listJobs(filter = {}) {
+  const params = {
+    limit: (filter.limit || 20).toString(),
+    offset: (filter.offset || 0).toString(),
+  };
+
+  if (filter.taskType) {
+    params.taskType = filter.taskType;
+  }
+
+  if (filter.status) {
+    params.status = filter.status;
+  }
+
+  return get('/fs/jobs', { params });
+}
+
+/**
+ * 删除作业
+ * @param {string} jobId 作业ID
+ * @returns {Promise<Object>} 删除结果
+ */
+export async function deleteJob(jobId) {
+  return del(`/fs/jobs/${jobId}`);
+}
 

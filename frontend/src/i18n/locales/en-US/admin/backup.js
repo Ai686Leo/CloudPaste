@@ -67,6 +67,10 @@ export default {
         name: "FS Meta Management",
         description: "Directory README, hide rules and path passwords",
       },
+      task_management: {
+        name: "Task Management",
+        description: "Async task execution records and status",
+      },
     },
 
     // Logs and status messages

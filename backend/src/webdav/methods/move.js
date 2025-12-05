@@ -1,7 +1,6 @@
 /**
  * WebDAV MOVE方法实现
  * 基于RFC 4918标准和SabreDAV实现模式，采用"复制-删除"机制
- * - 复用COPY方法的跨存储传输逻辑
  * - 基于FileSystem抽象层的统一实现
  */
 
@@ -14,176 +13,6 @@ import { invalidateFsCache } from "../../cache/invalidation.js";
 import { lockManager } from "../utils/LockManager.js";
 import { checkLockPermission } from "../utils/lockUtils.js";
 import { parseDestinationPath } from "../utils/webdavUtils.js";
-
-/**
- * 同步跨存储传输函数
- * 支持文件和目录的跨存储传输
- */
-async function performSyncCrossStorageTransfer(crossStorageResult) {
-  // 检查是否为目录复制
-  if (crossStorageResult.isDirectory) {
-    return await performDirectoryCrossStorageTransfer(crossStorageResult);
-  } else {
-    return await performFileCrossStorageTransfer(crossStorageResult);
-  }
-}
-
-/**
- * 执行目录的跨存储传输
- */
-async function performDirectoryCrossStorageTransfer(dirResult) {
-  const { items, targetPath } = dirResult;
-
-  try {
-    console.log(`开始目录跨存储传输: ${targetPath}, 包含 ${items.length} 个文件`);
-
-    // 配置并发传输参数
-    const CONCURRENT_TRANSFERS = 3; // 限制同时传输3个文件，平衡性能和资源消耗
-    const results = [];
-    let successCount = 0;
-    let failedCount = 0;
-
-    // 分批并行处理文件
-    for (let i = 0; i < items.length; i += CONCURRENT_TRANSFERS) {
-      const batch = items.slice(i, i + CONCURRENT_TRANSFERS);
-      console.log(`处理第 ${Math.floor(i / CONCURRENT_TRANSFERS) + 1} 批文件，包含 ${batch.length} 个文件`);
-
-      // 并行传输当前批次的文件
-      const batchPromises = batch.map(async (item) => {
-        try {
-          console.log(`开始传输文件: ${item.fileName}`);
-          const result = await performFileCrossStorageTransfer(item);
-
-          if (result.success) {
-            console.log(`✅ 文件传输成功: ${item.fileName}`);
-          } else {
-            console.error(`❌ 文件传输失败: ${item.fileName} - ${result.error}`);
-          }
-
-          return {
-            fileName: item.fileName,
-            success: result.success,
-            error: result.error,
-          };
-        } catch (error) {
-          console.error(`❌ 文件传输异常: ${item.fileName} - ${error.message}`);
-          return {
-            fileName: item.fileName,
-            success: false,
-            error: error.message,
-          };
-        }
-      });
-
-      // 等待当前批次完成
-      const batchResults = await Promise.allSettled(batchPromises);
-
-      // 处理批次结果
-      batchResults.forEach((promiseResult, index) => {
-        if (promiseResult.status === "fulfilled") {
-          const transferResult = promiseResult.value;
-          results.push(transferResult);
-
-          if (transferResult.success) {
-            successCount++;
-          } else {
-            failedCount++;
-          }
-        } else {
-          // Promise被拒绝的情况
-          const item = batch[index];
-          console.error(`❌ 文件传输Promise失败: ${item.fileName} - ${promiseResult.reason}`);
-          results.push({
-            fileName: item.fileName,
-            success: false,
-            error: promiseResult.reason?.message || "未知错误",
-          });
-          failedCount++;
-        }
-      });
-
-      console.log(
-        `第 ${Math.floor(i / CONCURRENT_TRANSFERS) + 1} 批完成: 成功 ${batchResults.filter((r) => r.status === "fulfilled" && r.value.success).length} 个，失败 ${
-          batchResults.filter((r) => r.status === "rejected" || (r.status === "fulfilled" && !r.value.success)).length
-        } 个`
-      );
-    }
-
-    console.log(`目录跨存储传输完成: 成功 ${successCount} 个，失败 ${failedCount} 个`);
-
-    // 根据结果判断整体成功性
-    if (failedCount === 0) {
-      return {
-        success: true,
-        message: `目录复制成功，共传输 ${successCount} 个文件`,
-        details: results,
-      };
-    } else if (successCount === 0) {
-      return {
-        success: false,
-        error: `目录复制失败，共 ${failedCount} 个文件传输失败`,
-        details: results,
-      };
-    } else {
-      // 部分成功的情况
-      return {
-        success: false,
-        error: `目录复制部分成功，${successCount} 个成功，${failedCount} 个失败`,
-        details: results,
-      };
-    }
-  } catch (error) {
-    console.error(`目录跨存储传输异常: ${error.message}`, error);
-    return { success: false, error: `目录传输异常: ${error.message}` };
-  }
-}
-
-/**
- * 执行单文件的跨存储传输
- */
-async function performFileCrossStorageTransfer(fileItem) {
-  const { rawUrl, uploadUrl, contentType, fileName } = fileItem;
-
-  try {
-    // 1. 从源存储下载文件
-    console.log(`下载文件: ${rawUrl}`);
-    const downloadResponse = await fetch(rawUrl);
-    if (!downloadResponse.ok) {
-      throw new DriverError(`下载失败: ${downloadResponse.status} ${downloadResponse.statusText}`);
-    }
-
-    // 2. 获取文件内容长度
-    const contentLength = downloadResponse.headers.get("Content-Length");
-    console.log(`文件大小: ${contentLength} bytes`);
-
-    // 3. 上传到目标存储
-    console.log(`上传文件: ${uploadUrl}`);
-    const uploadHeaders = {
-      "Content-Type": contentType || "application/octet-stream",
-    };
-
-    // 如果有Content-Length，添加到上传头部
-    if (contentLength) {
-      uploadHeaders["Content-Length"] = contentLength;
-    }
-
-    const uploadResponse = await fetch(uploadUrl, {
-      method: "PUT",
-      body: downloadResponse.body, // 直接流式传输，避免内存占用
-      headers: uploadHeaders,
-    });
-
-    if (!uploadResponse.ok) {
-      throw new DriverError(`上传失败: ${uploadResponse.status} ${uploadResponse.statusText}`);
-    }
-
-    console.log(`文件跨存储传输成功: ${fileName}`);
-    return { success: true };
-  } catch (error) {
-    console.error(`文件跨存储传输失败: ${fileName} - ${error.message}`, error);
-    return { success: false, error: error.message };
-  }
-}
 
 /**
  * 处理WebDAV MOVE请求
@@ -272,43 +101,7 @@ export async function handleMove(c, path, userId, userType, db) {
 
     console.log(`WebDAV MOVE - 复制结果:`, copyResult);
 
-    // 10. 处理跨存储复制结果
-    if (copyResult.crossStorage) {
-      console.log(`WebDAV MOVE - 检测到跨存储移动，执行同步传输`);
-
-      try {
-        // 执行同步跨存储传输
-        const transferResult = await performSyncCrossStorageTransfer(copyResult);
-
-        if (transferResult.success) {
-          console.log(`WebDAV MOVE - 跨存储复制成功: ${path} -> ${destPath}`);
-
-          // 跨存储复制成功后，立即清理缓存
-          try {
-            const { mount: sourceMountResult } = await mountManager.getDriverByPath(path, userId, userType);
-            const { mount: destMountResult } = await mountManager.getDriverByPath(destPath, userId, userType);
-
-            if (sourceMountResult) {
-              invalidateFsCache({ mountId: sourceMountResult.id, reason: "webdav-move-cross", db });
-            }
-
-            if (destMountResult) {
-              invalidateFsCache({ mountId: destMountResult.id, reason: "webdav-move-cross", db });
-            }
-          } catch (cacheError) {
-            console.warn(`WebDAV MOVE - 跨存储复制后缓存清理失败: ${cacheError.message}`);
-          }
-        } else {
-          console.error(`WebDAV MOVE - 跨存储复制失败: ${transferResult.error}`);
-          return createWebDAVErrorResponse(`跨存储复制失败: ${transferResult.error}`, 500, false);
-        }
-      } catch (error) {
-        console.error(`WebDAV MOVE - 跨存储复制异常: ${error.message}`, error);
-        return createWebDAVErrorResponse(`跨存储复制失败: ${error.message}`, 500, false);
-      }
-    }
-
-    // 11. 第二步：删除源文件/目录（SabreDAV的"复制-删除"机制）
+    // 10. 第二步：删除源文件/目录（SabreDAV的"复制-删除"机制）
     console.log(`WebDAV MOVE - 第二步：删除源文件 ${path}`);
 
     try {
@@ -343,22 +136,20 @@ export async function handleMove(c, path, userId, userType, db) {
       return createWebDAVErrorResponse(`移动失败：删除源文件异常 - ${deleteError.message}`, 500, false);
     }
 
-    // 12. 同存储移动的缓存清理（跨存储移动已在上面处理）
-    if (!copyResult.crossStorage) {
-      try {
-        const { mount: sourceMountResult } = await mountManager.getDriverByPath(path, userId, userType);
-        const { mount: destMountResult } = await mountManager.getDriverByPath(destPath, userId, userType);
+    // 12. 缓存清理
+    try {
+      const { mount: sourceMountResult } = await mountManager.getDriverByPath(path, userId, userType);
+      const { mount: destMountResult } = await mountManager.getDriverByPath(destPath, userId, userType);
 
-        if (sourceMountResult) {
-          invalidateFsCache({ mountId: sourceMountResult.id, reason: "webdav-move", db });
-        }
-
-        if (destMountResult) {
-          invalidateFsCache({ mountId: destMountResult.id, reason: "webdav-move", db });
-        }
-      } catch (cacheError) {
-        console.warn(`WebDAV MOVE - 缓存清理失败: ${cacheError.message}`);
+      if (sourceMountResult) {
+        invalidateFsCache({ mountId: sourceMountResult.id, reason: "webdav-move", db });
       }
+
+      if (destMountResult) {
+        invalidateFsCache({ mountId: destMountResult.id, reason: "webdav-move", db });
+      }
+    } catch (cacheError) {
+      console.warn(`WebDAV MOVE - 缓存清理失败: ${cacheError.message}`);
     }
 
     // 13. 根据RFC 4918标准返回适当的状态码
@@ -390,4 +181,3 @@ export async function handleMove(c, path, userId, userType, db) {
     }
   }, { includeDetails: false, useXmlResponse: false });
 }
-import { DriverError } from "../../http/errors.js";

@@ -45,6 +45,20 @@ export class StorageConfigRepository extends BaseRepository {
   }
 
   /**
+   * 展开 LOCAL 专用字段
+   * @private
+   * @param {object} cfg - config_json 解析后的对象
+   * @param {object} merged - 合并目标对象
+   */
+  _inflateLocalFields(cfg, merged) {
+    merged.root_path = cfg?.root_path;
+    merged.auto_create_root = cfg?.auto_create_root;
+    merged.readonly = cfg?.readonly;
+    merged.trash_path = cfg?.trash_path;
+    merged.dir_permission = cfg?.dir_permission;
+  }
+
+  /**
    * 通用展开方法（策略模式）
    * 根据 storage_type 自动选择对应的字段展开策略
    * @param {object} row - 数据库原始行
@@ -72,6 +86,9 @@ export class StorageConfigRepository extends BaseRepository {
             break;
           case "WEBDAV":
             this._inflateWebDavFields(cfg, merged, { withSecrets });
+            break;
+          case "LOCAL":
+            this._inflateLocalFields(cfg, merged);
             break;
           default:
             console.warn(`Unknown storage_type: ${row.storage_type}`);

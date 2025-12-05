@@ -48,5 +48,21 @@ export async function deleteMount(id) {
   return del(`/mount/${id}`);
 }
 
-// 兼容性导出 - 保持向后兼容
+/**
+ * 获取所有支持的存储类型及其能力与配置元数据
+ * 映射后端 /api/storage-types
+ */
+export async function getStorageTypes() {
+  return get("/storage-types");
+}
 
+/**
+ * 获取挂载点配置Schema
+ * 用于前端动态表单渲染
+ * @returns {Promise<Object>} Schema配置对象
+ */
+export async function getMountSchema() {
+  return get("/mount-schema");
+}
+
+// 兼容性导出 - 保持向后兼容

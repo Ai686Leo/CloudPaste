@@ -22,7 +22,7 @@
         <div class="rounded-lg flex-1 flex flex-col" :class="darkMode ? 'bg-gray-800' : 'bg-white border border-gray-200'">
           <!-- 页面内容 -->
           <div class="p-2 md:p-4 flex-1 flex flex-col">
-            <router-view :permissions="userPermissions" @logout="handleLogout" />
+            <router-view :permissions="userPermissions" :dark-mode="darkMode" @logout="handleLogout" />
           </div>
         </div>
       </div>

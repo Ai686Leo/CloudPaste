@@ -101,6 +101,46 @@
           </div>
         </div>
 
+        <!-- 复制选项 -->
+        <div class="mb-4 flex items-center">
+          <label class="flex items-center cursor-pointer select-none">
+            <input
+              type="checkbox"
+              v-model="skipExisting"
+              class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 dark:focus:ring-blue-400 dark:bg-gray-700"
+            />
+            <span class="ml-2 text-sm" :class="darkMode ? 'text-gray-300' : 'text-gray-700'">
+              {{ t("mount.copyModal.skipExisting") }}
+            </span>
+          </label>
+          <div class="ml-2 group relative">
+            <svg
+              class="w-4 h-4 text-gray-400 dark:text-gray-500 cursor-help"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+            <div
+              class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 text-xs rounded-md shadow-lg whitespace-nowrap opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-10"
+              :class="darkMode ? 'bg-gray-700 text-gray-200' : 'bg-gray-800 text-white'"
+            >
+              {{ t("mount.copyModal.skipExistingTooltip") }}
+              <div
+                class="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent"
+                :class="darkMode ? 'border-t-gray-700' : 'border-t-gray-800'"
+              ></div>
+            </div>
+          </div>
+        </div>
+
         <!-- 操作按钮 -->
         <div class="flex justify-end space-x-3">
           <button
@@ -121,17 +161,31 @@
         </div>
       </div>
     </div>
+
+    <!-- 确认对话框 -->
+    <ConfirmDialog
+      v-bind="dialogState"
+      @confirm="handleConfirm"
+      @cancel="handleCancel"
+    />
   </div>
 </template>
 
 <script setup>
   import { ref, watch, computed, shallowRef } from "vue";
   import { useI18n } from "vue-i18n";
-  import { useTaskManager, TaskType, TaskStatus } from "@/utils/taskManager.js";
+  import { useTaskManager, TaskType } from "@/utils/taskManager.js";
   import { useFsService } from "@/modules/fs";
-  
+  import { useGlobalMessage } from "@/composables/core/useGlobalMessage.js";
+  import { useConfirmDialog } from "@/composables/core/useConfirmDialog.js";
+  import ConfirmDialog from "@/components/common/dialogs/ConfirmDialog.vue";
+
   const { t } = useI18n();
   const fsApi = useFsService();
+  const { showError } = useGlobalMessage();
+
+// 确认对话框
+const { dialogState, confirm, handleConfirm, handleCancel } = useConfirmDialog();
 
 // 注册递归组件
 import { h } from "vue";
@@ -421,7 +475,7 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(["close", "copy-started", "copy-complete"]);
+const emit = defineEmits(["close", "copy-started"]);
 
 // 计算用户的基本路径
 const userBasicPath = computed(() => {
@@ -451,6 +505,7 @@ const rootDirectories = shallowRef([]);
 const loading = ref(false);
 const copying = ref(false);
 const pathWarning = ref(""); // 添加路径警告状态
+const skipExisting = ref(true); // 默认跳过已存在的文件
 
 // 清除目录缓存的函数，在模态窗口关闭时调用
 const clearDirectoryCache = () => {
@@ -563,197 +618,37 @@ const validateDestinationPath = () => {
 
 // 准备复制项目
 const prepareCopyItems = () => {
-  return props.selectedItems.map((item) => ({
-    sourcePath: item.path,
-    targetPath: `${currentPath.value}${item.name}`,
-  }));
+  return props.selectedItems.map((item) => {
+    // 确保目标路径正确拼接，避免双斜杠
+    const basePath = currentPath.value.endsWith('/') ? currentPath.value : currentPath.value + '/';
+    return {
+      sourcePath: item.path,
+      targetPath: `${basePath}${item.name}`,
+    };
+  });
 };
 
+
 // 创建复制任务
-const createCopyTask = (itemCount) => {
+const createCopyTask = (itemCount, jobId = null) => {
   const taskManager = useTaskManager();
   const taskId = taskManager.addTask(TaskType.COPY, t("mount.taskManager.copyTaskName", { count: itemCount, path: currentPath.value }), itemCount);
 
-  // 更新任务状态为运行中
-  taskManager.updateTaskProgress(taskId, 0, {
-    total: itemCount,
-    processed: 0,
-  });
-
-  return { taskManager, taskId };
-};
-
-// 创建进度回调函数
-const createProgressCallback = (taskManager, taskId, itemCount) => {
-  return (phase, progress, details = {}) => {
-    // 更新任务进度
-    // phase可能是"downloading"或"uploading"或普通数值
-    let progressValue = progress;
-
-    // 如果是跨S3复制，phase会提供阶段信息
-    if (typeof phase === "string") {
-      // 根据阶段调整进度显示
-      if (phase === "downloading") {
-        // 下载阶段占总进度的40%
-        progressValue = progress * 0.4;
-      } else if (phase === "uploading") {
-        // 上传阶段占总进度的40%，加上之前的40%
-        progressValue = 40 + progress * 0.4;
-      }
-    }
-
-    // 确保进度在0-100之间
-    progressValue = Math.min(Math.max(progressValue, 0), 100);
-
-    // 准备任务详情
-    const taskDetails = {
-      total: itemCount,
-      processed: Math.ceil((itemCount * progressValue) / 100),
-      phase: phase,
-    };
-
-    // 如果有details参数，合并到taskDetails中
-    if (details && typeof details === "object") {
-      // 选择性合并，保留重要的任务信息
-      if (details.currentFile) taskDetails.currentFile = details.currentFile;
-      if (details.currentFileProgress) taskDetails.currentFileProgress = details.currentFileProgress;
-
-      // 确保processed和total值在合理范围内
-      if (details.processedFiles !== undefined && details.totalFiles !== undefined) {
-        // 优先使用文件计数而非字节计数
-        taskDetails.processed = details.processedFiles;
-        taskDetails.total = details.totalFiles;
-
-        // 动态更新任务的总数，确保进度显示一致
-        const currentTask = taskManager.getTasks().find((t) => t.id === taskId);
-        if (currentTask && currentTask.total !== details.totalFiles) {
-          // 更新任务的总数为实际文件数量
-          currentTask.total = details.totalFiles;
-        }
-      }
-
-      // 如果details中包含percentage字段，优先使用它作为进度值
-      if (details.percentage !== undefined) {
-        progressValue = details.percentage;
-      }
-    }
-
-    taskManager.updateTaskProgress(taskId, progressValue, taskDetails);
-  };
-};
-
-// 创建取消检查函数
-const createCancelCallback = (taskManager, taskId) => {
-  return () => {
-    const task = taskManager.getTasks().find((t) => t.id === taskId);
-    if (task && task.status === TaskStatus.CANCELLED) {
-      // 检测到取消状态后，立即主动中止所有进行中的操作
-      return true;
-    }
-    return false;
-  };
-};
-
-// 处理复制完成
-const handleCopyCompletion = (taskManager, taskId, response) => {
-  // 检查响应数据
-  const data = response.data || {};
-
-  const successCount = Array.isArray(data.success) ? data.success.length : data.success || 0;
-  const failedCount = Array.isArray(data.failed) ? data.failed.length : data.failed || 0;
-  const skippedCount = data.skipped || 0;
-  const totalProcessed = successCount + failedCount + skippedCount;
-
-  // 根据操作类型生成统一的消息
-  let operationMessage;
-  if (data.crossStorage === true || data.requiresClientSideCopy === true) {
-    operationMessage = "跨存储复制完成";
-  } else {
-    operationMessage = "同存储复制完成";
-  }
-
   // 准备任务详情
   const taskDetails = {
-    total: totalProcessed, // 使用实际处理的文件数量
-    processed: totalProcessed,
-    successCount,
-    failedCount,
-    skippedCount,
-    message: operationMessage,
+    total: itemCount,
+    processed: 0,
   };
 
-  // 如果是跨S3复制，添加相关信息
-  if (data.requiresClientSideCopy) {
-    taskDetails.crossStorage = true;
+  // 如果是作业模式，记录 jobId 到任务详情中
+  if (jobId) {
+    taskDetails.jobId = jobId;
   }
 
-  // 根据结果状态决定任务状态
-  if (response.success) {
-    // 完全成功 - 没有失败项
-    taskManager.completeTask(taskId, taskDetails);
-  } else if (successCount > 0) {
-    // 部分成功 - 有成功的项目，但也有失败的
-    taskManager.completeTask(taskId, {
-      ...taskDetails,
-      partialSuccess: true,
-      status: t("mount.taskManager.partialComplete"),
-    });
-  } else {
-    // 完全失败 - 没有成功的项目
-    taskManager.failTask(taskId, response.message, taskDetails);
-  }
+  // 更新任务状态为运行中
+  taskManager.updateTaskProgress(taskId, 0, taskDetails);
 
-  // 在复制完成后发出事件，触发父组件刷新目录
-  // 注意：模态框已经在任务创建时关闭，这里只需要触发目录刷新
-  emit("copy-complete", {
-    success: response.success,
-    message: response.success ? operationMessage : response.message,
-    targetPath: currentPath.value,
-    taskId: taskId,
-    showTaskManager: true,
-    successCount,
-    failedCount,
-    skippedCount,
-    modalAlreadyClosed: true, // 标记模态框已经关闭
-  });
-};
-
-// 处理复制错误
-const handleCopyError = (error) => {
-  // 获取任务管理器并更新任务状态为失败
-  try {
-    const taskManager = useTaskManager();
-    const tasks = taskManager.getTasks().filter((t) => t.type === TaskType.COPY && t.status !== TaskStatus.COMPLETED && t.status !== TaskStatus.FAILED);
-
-    if (tasks.length > 0) {
-      // 找到最近的复制任务并标记为失败
-      const latestTask = tasks.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
-
-      taskManager.failTask(latestTask.id, error.message || t("mount.messages.copyFailed", { message: t("common.unknown") }));
-    }
-  } catch (e) {
-    console.error("Update task status failed:", e);
-  }
-};
-
-// 异步执行复制任务
-const executeCopyTask = async (taskManager, taskId, copyItems) => {
-  try {
-    // 创建回调函数
-    const onProgress = createProgressCallback(taskManager, taskId, props.selectedItems.length);
-    const onCancel = createCancelCallback(taskManager, taskId);
-
-    // 调用批量复制API
-    const response = await fsApi.batchCopyItems(copyItems, false, {
-      onProgress,
-      onCancel,
-    });
-
-    // 处理复制完成
-    handleCopyCompletion(taskManager, taskId, response);
-  } catch (error) {
-    handleCopyError(error);
-  }
+  return { taskManager, taskId };
 };
 
 // 确认复制
@@ -765,7 +660,14 @@ const confirmCopy = async () => {
 
   // 如果有警告，需要用户确认
   if (pathWarning.value) {
-    if (!confirm(t("mount.copyModal.confirmPotentialIssue", { warning: pathWarning.value }))) {
+    const confirmed = await confirm({
+      title: t("mount.copyModal.warningTitle", "复制警告"),
+      message: t("mount.copyModal.confirmPotentialIssue", { warning: pathWarning.value }),
+      confirmType: "warning",
+      confirmText: t("mount.copyModal.continueCopy", "继续复制"),
+      darkMode: props.darkMode,
+    });
+    if (!confirmed) {
       return;
     }
   }
@@ -776,10 +678,27 @@ const confirmCopy = async () => {
     // 准备复制项目
     const copyItems = prepareCopyItems();
 
-    // 创建任务
-    const { taskManager, taskId } = createCopyTask(props.selectedItems.length);
+    // ========== 统一任务模式 ==========
+    // 所有复制操作统一走任务系统，无条件分支
+    // 复制策略（同存储/跨存储/S3优化）由后端 CopyTaskHandler 内部决策
+    console.log(`[CopyModal] 创建复制任务，共 ${copyItems.length} 项`);
 
-    // 任务创建成功后立即发出复制开始事件
+    // 调用后端 batch-copy API（现在始终返回 jobId）
+    const response = await fsApi.batchCopyItems(copyItems, {
+      skipExisting: skipExisting.value,
+    });
+
+    if (!response.success || !response.data?.jobId) {
+      throw new Error(response.message || '创建复制作业失败');
+    }
+
+    const jobId = response.data.jobId;
+    console.log(`[CopyModal] 作业已创建，jobId: ${jobId}`);
+
+    // 创建前端任务追踪，并在 details 中记录 jobId
+    const { taskManager, taskId } = createCopyTask(props.selectedItems.length, jobId);
+
+    // 发出复制开始事件
     emit("copy-started", {
       message: t("mount.taskManager.copyStarted", {
         count: props.selectedItems.length,
@@ -788,19 +707,17 @@ const confirmCopy = async () => {
       taskId: taskId,
       itemCount: props.selectedItems.length,
       targetPath: currentPath.value,
+      jobId: jobId,
     });
 
-    // 任务创建成功后立即关闭模态框，让任务在后台执行
+    // 立即关闭模态框
     emit("close");
-
-    // 重置 copying 状态，因为模态框已关闭
     copying.value = false;
-
-    // 异步执行复制任务，不阻塞模态框关闭
-    executeCopyTask(taskManager, taskId, copyItems);
   } catch (error) {
-    // 如果任务创建失败，保持模态框打开并显示错误
-    handleCopyError(error);
+    // 如果 API 请求失败，保持模态框打开并显示错误
+    // 注意：此时尚未创建前端任务，无需标记任何任务为失败
+    console.error('[CopyModal] 复制启动失败:', error);
+    showError(error.message || t('mount.copyModal.copyFailed'));
     copying.value = false;
   }
 };

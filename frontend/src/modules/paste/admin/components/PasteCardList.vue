@@ -1,6 +1,10 @@
 <script setup>
 import { computed } from "vue";
+import { useCreatorBadge } from "@/composables/admin-management/useCreatorBadge.js";
+
 // 移动端的卡片列表视图
+// 创建者徽章统一逻辑
+const { formatCreator } = useCreatorBadge();
 
 /**
  * 组件接收的属性定义
@@ -132,39 +136,6 @@ const isExpired = (paste) => {
   return isExpiredUtil(paste.expires_at);
 };
 
-/**
- * 格式化创建者信息
- * @param {Object} paste - 文本分享对象
- * @returns {string} 格式化后的创建者信息
- */
-const formatCreator = (paste) => {
-  if (!paste.created_by) {
-    return "系统";
-  }
-
-  // 处理API密钥创建者
-  if (paste.created_by.startsWith("apikey:")) {
-    // 如果有key_name，显示密钥名称
-    if (paste.key_name) {
-      return `密钥：${paste.key_name}`;
-    }
-    // 否则显示密钥ID的缩略形式
-    const keyPart = paste.created_by.substring(7); // 移除"apikey:"前缀
-    return `密钥：${keyPart.substring(0, 5)}...`;
-  }
-
-  // 处理管理员创建者
-  if (paste.created_by === "admin") {
-    return "管理员";
-  }
-
-  // 如果是UUID格式，视为管理员创建的内容
-  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(paste.created_by)) {
-    return "管理员";
-  }
-
-  return paste.created_by;
-};
 </script>
 
 <template>

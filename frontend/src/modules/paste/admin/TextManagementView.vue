@@ -1,7 +1,10 @@
 <script setup>
 import { onMounted, ref } from "vue";
+import { useI18n } from "vue-i18n";
 import { usePasteManagement } from "@/modules/paste";
 import { useThemeMode } from "@/composables/core/useThemeMode.js";
+import { useCreatorBadge } from "@/composables/admin-management/useCreatorBadge.js";
+import { useConfirmDialog } from "@/composables/core/useConfirmDialog.js";
 
 // 导入子组件
 import PasteTable from "@/modules/paste/admin/components/PasteTable.vue";
@@ -12,11 +15,33 @@ import PasteEditModal from "@/modules/paste/admin/components/PasteEditModal.vue"
 import CommonPagination from "@/components/common/CommonPagination.vue";
 import QRCodeModal from "@/modules/fileshare/admin/components/QRCodeModal.vue";
 import GlobalSearchBox from "@/components/common/GlobalSearchBox.vue";
+import ConfirmDialog from "@/components/common/dialogs/ConfirmDialog.vue";
+import ViewModeToggle from "@/components/common/ViewModeToggle.vue";
 
 /**
  * 使用主题模式 composable
  */
 const { isDarkMode: darkMode } = useThemeMode();
+
+// 国际化
+const { t } = useI18n();
+
+// 创建者徽章统一逻辑
+const { formatCreator } = useCreatorBadge();
+
+// 确认对话框
+const { dialogState, confirm, handleConfirm, handleCancel } = useConfirmDialog();
+
+// 创建适配确认函数，用于传递给 composable
+const confirmFn = async ({ title, message, confirmType }) => {
+  return await confirm({
+    title,
+    message,
+    confirmType,
+    confirmText: confirmType === "warning" ? t("common.dialogs.cleanupButton") : t("common.dialogs.deleteButton"),
+    darkMode: darkMode.value,
+  });
+};
 
 // 使用文本管理composable
 const {
@@ -37,6 +62,10 @@ const {
   qrCodeSlug,
   copiedTexts,
   copiedRawTexts,
+
+  // 视图模式
+  viewMode,
+  switchViewMode,
 
   // 权限状态
   isAdmin,
@@ -65,11 +94,17 @@ const {
   toggleSelectAll,
   toggleVisibility,
   clearSelection,
-} = usePasteManagement();
+} = usePasteManagement({ confirmFn });
 
 // 别名映射，用于模板中的方法调用
 const goToPage = handleOffsetChange;
 const deleteSelectedPastes = batchDeletePastes;
+
+// 视图模式选项配置
+const viewModeOptions = [
+  { value: "table", icon: "table", title: "表格视图" },
+  { value: "masonry", icon: "masonry", title: "瀑布流视图" },
+];
 
 // 全局搜索状态
 const globalSearchValue = ref("");
@@ -79,19 +114,7 @@ const isSearchMode = ref(false);
 const searchResults = ref([]);
 const searchLoading = ref(false);
 
-// 视图模式状态 ('table' | 'masonry')
-const VIEW_MODE_KEY = "paste-admin-view-mode";
-const viewMode = ref(localStorage.getItem(VIEW_MODE_KEY) || "table");
 
-/**
- * 切换视图模式
- * @param {string} mode - 视图模式 ('table' | 'masonry')
- */
-const switchViewMode = (mode) => {
-  viewMode.value = mode;
-  localStorage.setItem(VIEW_MODE_KEY, mode);
-  console.log(`视图模式已切换至: ${mode}`);
-};
 
 // 搜索处理函数 - 使用服务端搜索
 const handleGlobalSearch = async (searchValue) => {
@@ -195,26 +218,6 @@ const handlePageSizeChange = (newPageSize) => {
   }
 };
 
-// 格式化创建者信息的工具函数
-const formatCreator = (paste) => {
-  if (!paste.created_by) {
-    return "系统";
-  }
-
-  // 处理API密钥创建者
-  if (paste.created_by.startsWith("apikey:")) {
-    const keyPart = paste.created_by.substring(7); // 移除"apikey:"前缀
-    return `API密钥 (${keyPart})`;
-  }
-
-  // 处理UUID格式的创建者
-  if (paste.created_by.length === 36 && paste.created_by.includes("-")) {
-    return `用户 (${paste.created_by.substring(0, 8)})`;
-  }
-
-  return paste.created_by;
-};
-
 // 组件挂载时加载数据
 onMounted(() => {
   console.log("TextManagement组件挂载");
@@ -237,87 +240,22 @@ onMounted(() => {
         <h2 class="text-lg sm:text-xl font-medium" :class="darkMode ? 'text-white' : 'text-gray-900'">文本管理</h2>
 
         <div class="flex items-center space-x-2">
-          <!-- 视图模式切换按钮组 - 桌面端(表格/瀑布流) -->
-          <div class="hidden md:flex items-center rounded-md shadow-sm" role="group">
-            <!-- 表格视图按钮 -->
-            <button
-              type="button"
-              :class="[
-                'inline-flex items-center justify-center px-3 py-2 text-sm font-medium border focus:z-10 focus:outline-none focus:ring-2 focus:ring-primary-500 rounded-l-md',
-                viewMode === 'table'
-                  ? 'bg-primary-600 text-white border-primary-600 hover:bg-primary-700'
-                  : darkMode
-                  ? 'bg-gray-700 text-gray-300 border-gray-600 hover:bg-gray-600'
-                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50',
-              ]"
-              @click="switchViewMode('table')"
-              title="表格视图"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
-            </button>
-
-            <!-- 瀑布流视图按钮 -->
-            <button
-              type="button"
-              :class="[
-                'inline-flex items-center justify-center px-3 py-2 text-sm font-medium border focus:z-10 focus:outline-none focus:ring-2 focus:ring-primary-500 rounded-r-md',
-                viewMode === 'masonry'
-                  ? 'bg-primary-600 text-white border-primary-600 hover:bg-primary-700'
-                  : darkMode
-                  ? 'bg-gray-700 text-gray-300 border-gray-600 hover:bg-gray-600'
-                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50',
-              ]"
-              @click="switchViewMode('masonry')"
-              title="瀑布流视图"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zM14 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
-              </svg>
-            </button>
-          </div>
-
-          <!-- 视图模式切换按钮组 - 移动端(列表/瀑布流) -->
-          <div class="md:hidden flex items-center rounded-md shadow-sm" role="group">
-            <!-- 列表视图按钮 -->
-            <button
-              type="button"
-              :class="[
-                'inline-flex items-center justify-center px-2 py-1.5 text-xs font-medium border focus:z-10 focus:outline-none focus:ring-2 focus:ring-primary-500 rounded-l-md',
-                viewMode === 'table'
-                  ? 'bg-primary-600 text-white border-primary-600 hover:bg-primary-700'
-                  : darkMode
-                  ? 'bg-gray-700 text-gray-300 border-gray-600 hover:bg-gray-600'
-                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50',
-              ]"
-              @click="switchViewMode('table')"
-              title="列表视图"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
-            </button>
-
-            <!-- 瀑布流视图按钮 -->
-            <button
-              type="button"
-              :class="[
-                'inline-flex items-center justify-center px-2 py-1.5 text-xs font-medium border focus:z-10 focus:outline-none focus:ring-2 focus:ring-primary-500 rounded-r-md',
-                viewMode === 'masonry'
-                  ? 'bg-primary-600 text-white border-primary-600 hover:bg-primary-700'
-                  : darkMode
-                  ? 'bg-gray-700 text-gray-300 border-gray-600 hover:bg-gray-600'
-                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50',
-              ]"
-              @click="switchViewMode('masonry')"
-              title="瀑布流视图"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zM14 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
-              </svg>
-            </button>
-          </div>
+          <!-- 视图模式切换按钮组 - 移动端 -->
+          <ViewModeToggle
+            v-model="viewMode"
+            :options="viewModeOptions"
+            :dark-mode="darkMode"
+            size="sm"
+            class="md:hidden"
+          />
+          <!-- 视图模式切换按钮组 - 桌面端 -->
+          <ViewModeToggle
+            v-model="viewMode"
+            :options="viewModeOptions"
+            :dark-mode="darkMode"
+            size="md"
+            class="hidden md:inline-flex"
+          />
 
           <!-- 刷新按钮 - 在所有屏幕尺寸显示 -->
           <button
@@ -537,5 +475,12 @@ onMounted(() => {
 
     <!-- 二维码弹窗组件 -->
     <QRCodeModal v-if="showQRCodeModal" :qr-code-url="qrCodeDataURL" :file-slug="qrCodeSlug" :dark-mode="darkMode" @close="showQRCodeModal = false" />
+
+    <!-- 确认对话框 -->
+    <ConfirmDialog
+      v-bind="dialogState"
+      @confirm="handleConfirm"
+      @cancel="handleCancel"
+    />
   </div>
 </template>

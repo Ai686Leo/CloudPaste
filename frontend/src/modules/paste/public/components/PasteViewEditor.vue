@@ -370,19 +370,18 @@ const triggerImportFile = () => {
 };
 
 // 清空编辑器内容
+// 注意：VditorUnified 工具栏已经在 emit clear-content 前执行了 confirm()，此处无需重复确认
 const clearEditorContent = () => {
-  if (confirm("确定要清空所有内容吗？此操作不可撤销。")) {
-    if (isPlainTextMode.value) {
-      plainTextContent.value = "";
-      originalPlainTextContent.value = "";
-    } else {
-      editorContent.value = "";
-      if (editorRef.value) {
-        editorRef.value.setValue("");
-      }
+  if (isPlainTextMode.value) {
+    plainTextContent.value = "";
+    originalPlainTextContent.value = "";
+  } else {
+    editorContent.value = "";
+    if (editorRef.value) {
+      editorRef.value.setValue("");
     }
-    handleStatusMessage({ type: "success", message: "内容已清空" });
   }
+  handleStatusMessage({ type: "success", message: "内容已清空" });
 };
 
 // 根据当前工具栏按钮位置更新复制格式菜单的位置

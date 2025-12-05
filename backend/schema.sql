@@ -77,7 +77,8 @@ CREATE TABLE storage_configs (
   admin_id TEXT,                       -- 归属管理员（允许NULL以兼容/预留）
   is_public INTEGER NOT NULL DEFAULT 0,
   is_default INTEGER NOT NULL DEFAULT 0,
-  remark TEXT,
+  remark TEXT,                         -- 备注说明
+  url_proxy TEXT,                      -- 代理入口 URL（例如 Worker/CDN 反代入口）
   status TEXT NOT NULL DEFAULT 'ENABLED',
   config_json TEXT NOT NULL,           -- 驱动私有配置（JSON，敏感字段加密后存入）
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -223,6 +224,44 @@ CREATE INDEX idx_storage_mounts_created_by ON storage_mounts(created_by);
 CREATE INDEX idx_storage_mounts_is_active ON storage_mounts(is_active);
 CREATE INDEX idx_storage_mounts_sort_order ON storage_mounts(sort_order);
 
+
+CREATE TABLE tasks (
+  -- 核心标识
+  task_id TEXT PRIMARY KEY,
+  task_type TEXT NOT NULL,           -- 'copy' | 'upload' | 'download' | 'delete' | 'archive'
+
+  -- 通用状态
+  status TEXT NOT NULL,              -- 'pending' | 'running' | 'completed' | 'partial' | 'failed' | 'cancelled'
+
+  -- 任务负载（JSON格式）
+  payload TEXT NOT NULL,             -- JSON: { items: [...], options: {...} }
+
+  -- 统计信息（JSON格式）
+  stats TEXT NOT NULL DEFAULT '{}',  -- JSON: { totalItems, processedItems, successCount, failedCount, skippedCount }
+
+  -- 错误信息（可选）
+  error_message TEXT,
+
+  -- 用户信息
+  user_id TEXT NOT NULL,
+  user_type TEXT NOT NULL,           -- 'admin' | 'apikey'
+
+  -- Workflows 关联（仅 Workers 运行时使用，可选）
+  workflow_instance_id TEXT,
+
+  -- 时间戳（Unix timestamp in milliseconds）
+  created_at INTEGER NOT NULL,
+  started_at INTEGER,
+  updated_at INTEGER NOT NULL,
+  finished_at INTEGER
+)
+
+CREATE INDEX IF NOT EXISTS idx_tasks_status_created ON ${DbTables.TASKS} (status, created_at DESC)
+CREATE INDEX IF NOT EXISTS idx_tasks_type_status ON ${DbTables.TASKS} (task_type, status)
+CREATE INDEX IF NOT EXISTS idx_tasks_user ON ${DbTables.TASKS} (user_id, created_at DESC)
+CREATE INDEX IF NOT EXISTS idx_tasks_workflow ON ${DbTables.TASKS} (workflow_instance_id) WHERE workflow_instance_id IS NOT NULL
+
+
 -- 创建初始管理员账户
 -- 默认账户: admin/admin123
 -- 注意: 这是SHA-256哈希后的密码，实际部署时应更改
@@ -246,13 +285,13 @@ VALUES (
 
 -- 插入示例S3配置（加密密钥仅作示例，实际应用中应当由系统加密存储）
 INSERT INTO storage_configs (
-  id, name, storage_type, admin_id, is_public, is_default, remark, status, config_json, created_at, updated_at, last_used
+  id, name, storage_type, admin_id, is_public, is_default, remark, url_proxy, status, config_json, created_at, updated_at, last_used
 ) VALUES (
   '22222222-2222-2222-2222-222222222222',
   'Cloudflare R2存储',
   'S3',
   '00000000-0000-0000-0000-000000000000',
-  0, 0, NULL, 'ENABLED',
+  0, 0, NULL, NULL, 'ENABLED',
   '{"provider_type":"Cloudflare R2","endpoint_url":"https://account-id.r2.cloudflarestorage.com","bucket_name":"my-cloudpaste-bucket","region":"auto","path_style":0,"default_folder":"uploads/","custom_host":null,"signature_expires_in":3600,"total_storage_bytes":null,"access_key_id":"encrypted:access-key-id-placeholder","secret_access_key":"encrypted:secret-access-key-placeholder"}',
   CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL
 );

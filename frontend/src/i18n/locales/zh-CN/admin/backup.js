@@ -67,6 +67,10 @@ export default {
         name: "目录元信息管理",
         description: "目录元信息配置",
       },
+      task_management: {
+        name: "任务管理",
+        description: "异步任务执行记录和状态",
+      },
     },
 
     // 日志和状态消息

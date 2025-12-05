@@ -172,13 +172,22 @@
 
     <!-- 二维码弹窗 -->
     <QRCodeModal v-if="showQRCodeModal" :qr-code-url="qrCodeDataURL" :file-slug="qrCodeSlug" :dark-mode="darkMode" @close="showQRCodeModal = false" />
+
+    <!-- 确认对话框 -->
+    <ConfirmDialog
+      v-bind="dialogState"
+      @confirm="handleConfirm"
+      @cancel="handleCancel"
+    />
   </div>
 </template>
 
 <script setup>
 import { onMounted, ref } from "vue";
+import { useI18n } from "vue-i18n";
 import { useFileManagement } from "@/modules/fileshare/admin/useFileManagement.js";
 import { useThemeMode } from "@/composables/core/useThemeMode.js";
+import { useConfirmDialog } from "@/composables/core/useConfirmDialog.js";
 
 // 导入子组件
 import FileTable from "@/modules/fileshare/admin/components/FileTable.vue";
@@ -187,6 +196,7 @@ import FileEditModal from "@/components/file/FileEditModal.vue";
 import FilePreviewModal from "@/modules/fileshare/admin/components/FilePreviewModal.vue";
 import QRCodeModal from "@/modules/fileshare/admin/components/QRCodeModal.vue";
 import GlobalSearchBox from "@/components/common/GlobalSearchBox.vue";
+import ConfirmDialog from "@/components/common/dialogs/ConfirmDialog.vue";
 
 /**
  * 组件接收的属性定义
@@ -204,6 +214,23 @@ const props = defineProps({
  * 使用主题模式 composable
  */
 const { isDarkMode: darkMode } = useThemeMode();
+
+// 国际化
+const { t } = useI18n();
+
+// 确认对话框
+const { dialogState, confirm, handleConfirm, handleCancel } = useConfirmDialog();
+
+// 创建适配确认函数，用于传递给 composable
+const confirmFn = async ({ title, message, confirmType }) => {
+  return await confirm({
+    title,
+    message,
+    confirmType,
+    confirmText: t("common.dialogs.deleteButton"),
+    darkMode: darkMode.value,
+  });
+};
 
 // 使用文件管理composable
 const {
@@ -247,7 +274,7 @@ const {
   toggleSelectItem,
   toggleSelectAll,
   clearSelection,
-} = useFileManagement(props.userType);
+} = useFileManagement(props.userType, { confirmFn });
 
 // 需要在模板中使用的删除设置store
 import { useDeleteSettingsStore } from "@/stores/deleteSettingsStore.js";

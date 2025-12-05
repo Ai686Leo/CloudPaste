@@ -4,6 +4,10 @@ import { ref, computed, onMounted, onUnmounted, nextTick } from "vue";
 import { formatDateTime, formatRelativeTime, isExpired as isExpiredUtil } from "@/utils/timeUtils.js";
 // 导入统一的文件工具
 import { getRemainingViews as getRemainingViewsUtil } from "@/utils/fileUtils.js";
+// 导入创建者徽章统一逻辑
+import { useCreatorBadge } from "@/composables/admin-management/useCreatorBadge.js";
+
+const { getCreatorText } = useCreatorBadge();
 
 /**
  * Paste 瀑布流卡片组件
@@ -60,17 +64,7 @@ const remainingViews = computed(() => {
  * 格式化创建者信息
  */
 const creatorLabel = computed(() => {
-  if (!props.paste.created_by) return "系统";
-
-  if (props.paste.created_by.startsWith("apikey:")) {
-    return props.paste.key_name ? `密钥：${props.paste.key_name}` : "API密钥";
-  }
-
-  if (props.paste.created_by === "admin" || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(props.paste.created_by)) {
-    return "管理员";
-  }
-
-  return props.paste.created_by;
+  return getCreatorText(props.paste.created_by, props.paste.key_name);
 });
 
 /**

@@ -171,6 +171,8 @@ import AdminTable from "@/components/common/AdminTable.vue";
 
 // 导入统一的时间处理工具
 import { formatDateTime, formatExpiry as formatExpiryUtil, formatRelativeTime, parseUTCDate, isExpired as isExpiredUtil } from "@/utils/timeUtils.js";
+// 导入创建者徽章统一逻辑
+import { creatorBadgeUtils } from "@/composables/admin-management/useCreatorBadge.js";
 
 const props = defineProps({
   darkMode: {
@@ -550,30 +552,25 @@ const pasteColumns = computed(() => [
     sortable: true,
     render: (_, paste) => {
       if (!paste) return h("span", "无数据");
+      // 使用统一的创建者徽章工具
+      const badgeClass = creatorBadgeUtils.getBadgeClass(paste.created_by, paste.key_name);
+      const creatorType = creatorBadgeUtils.getCreatorType(paste.created_by, paste.key_name);
+      let text = "未知来源";
+      if (creatorType === "admin") {
+        text = "管理员";
+      } else if (creatorType === "apikey") {
+        text = paste.key_name ? `密钥：${paste.key_name}` : `密钥：${paste.created_by?.substring(7, 12) || ""}...`;
+      } else if (paste.created_by) {
+        text = paste.created_by;
+      }
       return h("div", { class: "flex items-center justify-center" }, [
-        paste.created_by && paste.created_by.startsWith("apikey:")
-          ? h(
-              "span",
-              {
-                class: "px-2 py-0.5 text-xs rounded bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-100 inline-block text-center",
-              },
-              paste.key_name ? `密钥：${paste.key_name}` : `密钥：${paste.created_by.substring(7, 12)}...`
-            )
-          : paste.created_by === "admin" || (paste.created_by && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(paste.created_by))
-          ? h(
-              "span",
-              {
-                class: "px-2 py-0.5 text-xs rounded bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100 inline-block text-center",
-              },
-              "管理员"
-            )
-          : h(
-              "span",
-              {
-                class: "px-2 py-0.5 text-xs rounded bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300 inline-block text-center",
-              },
-              paste.created_by || "未知来源"
-            ),
+        h(
+          "span",
+          {
+            class: `px-2 py-0.5 text-xs rounded inline-block text-center ${badgeClass}`,
+          },
+          text
+        ),
       ]);
     },
   },

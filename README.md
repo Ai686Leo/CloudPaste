@@ -65,9 +65,9 @@
 
 ### 📤 File Upload and Management
 
-- **Multiple Storage Support**: Compatible with various S3 storage services (Cloudflare R2, Backblaze B2, AWS S3, etc.)
+- **Multi-Storage Support**: Compatible with various S3(R2, B2, etc.)/WebDav/Local Storage(Docker) storage aggregation services
 - **Storage Configuration**: Visual interface for configuring multiple storage spaces, flexible switching of default storage sources
-- **Efficient Upload**: Direct upload to S3 storage via presigned URLs
+- **Efficient Upload**: Upload to S3 storage via pre-signed URLs/resumable chunked uploads, while other storage types use streaming uploads
 - **Real-time Feedback**: Real-time upload progress display
 - **Custom Limits**: Single upload limits and maximum capacity restrictions
 - **Metadata Management**: File notes, passwords, expiration times, access restrictions
@@ -771,6 +771,7 @@ services:
          - NODE_ENV=production
          - PORT=8787
          - ENCRYPTION_SECRET=custom-key # Please modify this to your own security key
+         - TASK_WORKER_POOL_SIZE=2
       volumes:
          - ./sql_data:/data # Data persistence
       ports:

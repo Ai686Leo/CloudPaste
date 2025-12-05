@@ -1,12 +1,15 @@
 <script setup>
-import { ref, onMounted, computed, onBeforeUnmount } from "vue";
+import { ref, onMounted, computed } from "vue";
 import { useI18n } from "vue-i18n";
 import CommonPagination from "@/components/common/CommonPagination.vue";
+import ConfirmDialog from "@/components/common/dialogs/ConfirmDialog.vue";
 import { copyToClipboard } from "@/utils/clipboard";
 import { useAdminApiKeyService } from "@/modules/admin/services/apiKeyService.js";
 import { useAdminMountService } from "@/modules/admin/services/mountService.js";
 import { useGlobalMessage } from "@/composables/core/useGlobalMessage.js";
+import { useConfirmDialog } from "@/composables/core/useConfirmDialog.js";
 import { useThemeMode } from "@/composables/core/useThemeMode.js";
+import { useAdminBase } from "@/composables/admin-management/useAdminBase.js";
 
 // 导入子组件
 import KeyForm from "@/modules/admin/components/KeyForm.vue";
@@ -19,39 +22,42 @@ const { getMountsList } = useAdminMountService();
 const { showSuccess, showError } = useGlobalMessage();
 const { isDarkMode: darkMode } = useThemeMode();
 
+// 确认对话框
+const { dialogState, confirm, handleConfirm, handleCancel } = useConfirmDialog();
+
+// 管理页面基础功能（含移动端检测 + 分页）
+const {
+  isMobile,
+  lastRefreshTime,
+  updateLastRefreshTime,
+  pagination,
+  pageSizeOptions,
+  handlePaginationChange,
+  changePageSize,
+  resetPagination,
+  updatePagination,
+} = useAdminBase('key-management', {
+  mobileDetect: { breakpoint: 768 },
+});
+
 // 状态管理
 const apiKeys = ref([]);
 const isLoading = ref(false);
 const showCreateModal = ref(false);
 const showEditModal = ref(false);
-const isMobile = ref(false);
-const lastRefreshTime = ref("");
 const selectedKeys = ref([]);
 const editingKey = ref(null);
 
-// 分页相关数据
-const pagination = ref({
-  page: 1,
-  limit: 10,
-  total: 0,
-  totalPages: 0,
-});
-
 // 计算当前页显示的密钥
 const currentPageKeys = computed(() => {
-  const start = (pagination.value.page - 1) * pagination.value.limit;
-  const end = start + pagination.value.limit;
-
-  // 更新总条数和总页数
-  pagination.value.total = apiKeys.value.length;
-  pagination.value.totalPages = Math.ceil(pagination.value.total / pagination.value.limit);
-
+  const start = (pagination.page - 1) * pagination.limit;
+  const end = start + pagination.limit;
   return apiKeys.value.slice(start, end);
 });
 
 // 处理页码变化
 const handlePageChange = (page) => {
-  pagination.value.page = page;
+  handlePaginationChange(page, 'page');
 };
 
 // 引用子组件
@@ -61,19 +67,6 @@ const keyTableRef = ref(null);
 // 可用挂载点列表
 const availableMounts = ref([]);
 
-// 导入统一的时间处理工具
-import { formatCurrentTime } from "@/utils/timeUtils.js";
-
-// 更新最后刷新时间
-const updateLastRefreshTime = () => {
-  lastRefreshTime.value = formatCurrentTime();
-};
-
-// 检查是否为移动设备
-const checkMobile = () => {
-  isMobile.value = window.innerWidth < 768; // md断点
-};
-
 // 加载所有API密钥
 const loadApiKeys = async () => {
   isLoading.value = true;
@@ -82,8 +75,9 @@ const loadApiKeys = async () => {
     const keys = await getAllApiKeys();
     apiKeys.value = Array.isArray(keys) ? keys : [];
 
-    // 重置为第一页
-    pagination.value.page = 1;
+    // 重置分页并更新总数
+    resetPagination();
+    updatePagination({ total: apiKeys.value.length }, 'page');
     // 更新最后刷新时间
     updateLastRefreshTime();
   } catch (e) {
@@ -175,7 +169,16 @@ const deleteSelectedKeys = async () => {
 
   const selectedCount = deletableIds.length;
 
-  if (!confirm(t("admin.keyManagement.bulkDeleteConfirm", { count: selectedCount }))) {
+  // 使用统一确认对话框
+  const confirmed = await confirm({
+    title: t("common.dialogs.deleteTitle"),
+    message: t("common.dialogs.deleteMultiple", { count: selectedCount }),
+    confirmType: "danger",
+    confirmText: t("common.dialogs.deleteButton") + ` (${selectedCount})`,
+    darkMode: darkMode.value,
+  });
+
+  if (!confirmed) {
     return;
   }
 
@@ -218,13 +221,6 @@ const handleSelectedKeysChange = (keys) => {
 onMounted(() => {
   loadApiKeys();
   loadMounts();
-  checkMobile();
-  window.addEventListener("resize", checkMobile);
-});
-
-// 组件卸载前清理
-onBeforeUnmount(() => {
-  window.removeEventListener("resize", checkMobile);
 });
 </script>
 
@@ -233,7 +229,7 @@ onBeforeUnmount(() => {
     <!-- 顶部操作栏 -->
     <div class="flex flex-col space-y-3 mb-4">
       <!-- 标题和操作按钮行 -->
-      <div class="flex flex-col sm:flex-row sm:justify-between gap-3">
+      <div class="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3">
         <h2 class="text-lg sm:text-xl font-medium" :class="darkMode ? 'text-white' : 'text-gray-900'">{{ $t("admin.keyManagement.title") }}</h2>
 
         <div class="flex flex-wrap gap-2">
@@ -362,5 +358,12 @@ onBeforeUnmount(() => {
         @click.stop
       />
     </div>
+
+    <!-- 确认对话框 -->
+    <ConfirmDialog
+      v-bind="dialogState"
+      @confirm="handleConfirm"
+      @cancel="handleCancel"
+    />
   </div>
 </template>

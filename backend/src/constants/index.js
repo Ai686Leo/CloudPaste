@@ -8,7 +8,7 @@ export const DbTables = {
   ADMIN_TOKENS: "admin_tokens", // 管理员令牌表
   PASTES: "pastes", // 文本表
   API_KEYS: "api_keys", // API密钥表
-  STORAGE_CONFIGS: "storage_configs", // 通用“存储配置表”
+  STORAGE_CONFIGS: "storage_configs", // 通用"存储配置表"
   PRINCIPAL_STORAGE_ACL: "principal_storage_acl", // 主体 -> 存储配置 ACL 表
   FILES: "files", // 文件表
   FILE_PASSWORDS: "file_passwords", // 文件明文密码表
@@ -16,6 +16,7 @@ export const DbTables = {
   PASTE_PASSWORDS: "paste_passwords", // 文本密码表
   STORAGE_MOUNTS: "storage_mounts", // 存储挂载表
   FS_META: "fs_meta", // 目录 Meta 配置表
+  TASKS: "tasks", // 任务编排表
 };
 
 // 默认的最大上传大小（MB）

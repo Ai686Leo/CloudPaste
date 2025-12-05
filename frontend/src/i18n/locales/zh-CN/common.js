@@ -4,6 +4,8 @@ export default {
     loading: "加载中...",
     confirm: "确认",
     cancel: "取消",
+    enabled: "启用",
+    disabled: "禁用",
     back: "返回",
     close: "关闭",
     required: "请填写必填项",
@@ -13,6 +15,7 @@ export default {
     actions: "操作",
     reset: "重置",
     selectOption: "请选择",
+    pleaseSelect: "请选择",
     pagination: {
       previousPage: "上一页",
       nextPage: "下一页",
@@ -39,6 +42,21 @@ export default {
       processing: "处理中...",
       requiredField: "此字段为必填项",
       invalidInput: "输入值无效",
+      // 通用删除确认对话框
+      deleteTitle: "确认删除",
+      deleteItem: "确定要删除{name}吗？此操作不可恢复。",
+      deleteMultiple: "确定要删除选中的 {count} 项吗？此操作不可恢复。",
+      deleteButton: "删除",
+      // 通用警告对话框
+      warningTitle: "警告",
+      // 通用清理对话框
+      cleanupTitle: "确认清理",
+      cleanupExpired: "确定要清理所有已过期的项目吗？此操作不可恢复。",
+      cleanupButton: "清理",
+      // 通用重置对话框
+      resetTitle: "确认重置",
+      resetConfirm: "确定要重置为默认设置吗？当前设置将会丢失。",
+      resetButton: "重置",
       selectUpload: {
         title: "选择要恢复的上传",
         description: "发现 {count} 个可恢复的上传，请选择一个继续：",
@@ -82,6 +100,8 @@ export default {
       accountSettings: "账号管理",
       webdavSettings: "WebDAV设置",
       siteSettings: "站点设置",
+      backup: "数据备份",
+      tasks: "任务管理",
     },
   },
   nav: {

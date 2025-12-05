@@ -26,6 +26,13 @@ binding = "DB"
 database_name = "cloudpaste-db"
 database_id = "xxxxxxxxxxxxxxxxx"
 
+# Cloudflare Workflows 绑定
+# 用于异步任务作业的持久化执行 (支持多任务类型)
+[[workflows]]
+binding = "JOB_WORKFLOW"
+name = "job-workflow"
+class_name = "JobWorkflow"
+
 # ==================== Static Assets 配置 ====================
 # 用于托管前端静态资源
 [assets]

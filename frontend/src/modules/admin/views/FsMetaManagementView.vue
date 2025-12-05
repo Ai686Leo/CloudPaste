@@ -1,6 +1,5 @@
 <script setup>
-import { onMounted, ref } from "vue";
-import { useI18n } from "vue-i18n";
+import { onMounted } from "vue";
 import { useFsMetaManagement } from "@/modules/admin/composables/useFsMetaManagement.js";
 import { useThemeMode } from "@/composables/core/useThemeMode.js";
 
@@ -14,197 +13,58 @@ import GlobalSearchBox from "@/components/common/GlobalSearchBox.vue";
  * 使用主题模式 composable
  */
 const { isDarkMode: darkMode } = useThemeMode();
-const { t } = useI18n();
+
+// 使用重构后的 FsMeta 管理 composable (已继承 useAdminBase)
 const {
-  metaList,
+  // 状态
   loading,
   error,
+  pagination,
+  pageSizeOptions,
+  lastRefreshTime,
+
+  // 业务数据
+  paginatedMetaList,
+
+  // 搜索状态
+  searchQuery,
+  isSearchMode,
+  searchLoading,
+
+  // 表单状态
+  showForm,
+  currentMeta,
+
+  // 删除确认状态
+  showDeleteConfirm,
+  metaToDelete,
+
+  // CRUD 方法
   loadMetaList,
-  createMeta,
-  updateMeta,
-  deleteMeta,
+
+  // 搜索方法
+  handleGlobalSearch,
+  clearSearch,
+
+  // 表单方法
+  openCreateForm,
+  openEditForm,
+  closeForm,
+  handleFormSave,
+
+  // 删除确认方法
+  confirmDelete,
+  handleDelete,
+  cancelDelete,
+
+  // 分页方法
+  handleOffsetChange,
+  handlePageSizeChange,
 } = useFsMetaManagement();
-// 本地状态
-const showForm = ref(false);
-const currentMeta = ref(null);
-const showDeleteConfirm = ref(false);
-const metaToDelete = ref(null);
-const lastRefreshTime = ref("");
-
-// 搜索状态
-const globalSearchValue = ref("");
-const isSearchMode = ref(false);
-const searchLoading = ref(false);
-const filteredMetaList = ref([]);
-
-// 分页状态
-const pagination = ref({
-  offset: 0,
-  limit: 20,
-  total: 0,
-  hasMore: false,
-});
-
-const pageSizeOptions = ref([10, 20, 50, 100]);
-
-// 更新分页信息
-const updatePagination = (list) => {
-  const total = list.length;
-  pagination.value.total = total;
-  pagination.value.hasMore = pagination.value.offset + pagination.value.limit < total;
-};
-
-// 获取当前页数据
-const getCurrentPageData = () => {
-  const start = pagination.value.offset;
-  const end = start + pagination.value.limit;
-  const sourceList = isSearchMode.value ? filteredMetaList.value : metaList.value;
-  return sourceList.slice(start, end);
-};
-
-// 加载数据
-const loadData = async () => {
-  loading.value = true;
-  try {
-    await loadMetaList();
-    updatePagination(metaList.value);
-    const locale = navigator.language || "zh-CN";
-    lastRefreshTime.value = new Date().toLocaleString(locale, {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    });
-  } finally {
-    loading.value = false;
-  }
-};
-
-// 全局搜索处理
-const handleGlobalSearch = (searchValue) => {
-  globalSearchValue.value = searchValue;
-
-  if (!searchValue || searchValue.trim().length < 2) {
-    // 清除搜索
-    isSearchMode.value = false;
-    filteredMetaList.value = [];
-    pagination.value.offset = 0;
-    updatePagination(metaList.value);
-    return;
-  }
-
-  try {
-    searchLoading.value = true;
-    isSearchMode.value = true;
-
-    // 客户端搜索（根据路径过滤）
-    const query = searchValue.trim().toLowerCase();
-    filteredMetaList.value = metaList.value.filter((meta) => meta.path.toLowerCase().includes(query));
-
-    // 重置分页到第一页
-    pagination.value.offset = 0;
-    updatePagination(filteredMetaList.value);
-  } finally {
-    searchLoading.value = false;
-  }
-};
-
-// 清除搜索
-const clearGlobalSearch = () => {
-  globalSearchValue.value = "";
-  isSearchMode.value = false;
-  filteredMetaList.value = [];
-  pagination.value.offset = 0;
-  updatePagination(metaList.value);
-};
-
-// 处理分页变化
-const handleOffsetChange = (newOffset) => {
-  pagination.value.offset = newOffset;
-};
-
-// 处理每页数量变化
-const handlePageSizeChange = (newPageSize) => {
-  pagination.value.limit = newPageSize;
-  pagination.value.offset = 0; // 重置到第一页
-  const sourceList = isSearchMode.value ? filteredMetaList.value : metaList.value;
-  updatePagination(sourceList);
-};
-
-// 打开创建表单
-const openCreateForm = () => {
-  currentMeta.value = null;
-  showForm.value = true;
-};
-
-// 打开编辑表单
-const openEditForm = (meta) => {
-  currentMeta.value = { ...meta };
-  showForm.value = true;
-};
-
-// 关闭表单
-const closeForm = () => {
-  showForm.value = false;
-  currentMeta.value = null;
-};
-
-// 处理表单保存
-const handleFormSave = async (data) => {
-  let success;
-  if (currentMeta.value) {
-    // 编辑模式
-    success = await updateMeta(currentMeta.value.id, data);
-  } else {
-    // 创建模式
-    success = await createMeta(data);
-  }
-
-  if (success) {
-    closeForm();
-    // 重新加载数据
-    await loadData();
-    // 如果在搜索模式，重新搜索
-    if (isSearchMode.value && globalSearchValue.value) {
-      handleGlobalSearch(globalSearchValue.value);
-    }
-  }
-};
-
-// 确认删除
-const confirmDelete = (meta) => {
-  metaToDelete.value = meta;
-  showDeleteConfirm.value = true;
-};
-
-// 执行删除
-const handleDelete = async () => {
-  if (!metaToDelete.value) return;
-
-  const success = await deleteMeta(metaToDelete.value.id);
-  if (success) {
-    showDeleteConfirm.value = false;
-    metaToDelete.value = null;
-    // 重新加载数据
-    await loadData();
-    // 如果在搜索模式，重新搜索
-    if (isSearchMode.value && globalSearchValue.value) {
-      handleGlobalSearch(globalSearchValue.value);
-    }
-  }
-};
-
-// 取消删除
-const cancelDelete = () => {
-  showDeleteConfirm.value = false;
-  metaToDelete.value = null;
-};
 
 // 组件挂载时加载数据
 onMounted(() => {
-  loadData();
+  loadMetaList();
 });
 </script>
 
@@ -234,7 +94,7 @@ onMounted(() => {
           <!-- 刷新按钮 -->
           <button
             class="inline-flex items-center px-2 py-1 sm:px-3 sm:py-1.5 md:px-4 md:py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
-            @click="loadData"
+            @click="loadMetaList"
             :disabled="loading"
           >
             <svg xmlns="http://www.w3.org/2000/svg" :class="['h-3 w-3 sm:h-4 sm:w-4 mr-1', loading ? 'animate-spin' : '']" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -262,14 +122,14 @@ onMounted(() => {
       <!-- 搜索框 -->
       <div class="w-full">
         <GlobalSearchBox
-          v-model="globalSearchValue"
+          v-model="searchQuery"
           :placeholder="$t('admin.fsMeta.search.placeholder')"
           :show-hint="true"
           :search-hint="$t('admin.fsMeta.search.hint')"
           size="md"
           :debounce-ms="300"
           @search="handleGlobalSearch"
-          @clear="clearGlobalSearch"
+          @clear="clearSearch"
         />
       </div>
 
@@ -300,7 +160,7 @@ onMounted(() => {
     </div>
 
     <!-- 加载中指示器 -->
-    <div v-if="loading && !metaList.length" class="flex justify-center my-8">
+    <div v-if="loading && !paginatedMetaList.length" class="flex justify-center my-8">
       <svg class="animate-spin h-8 w-8" :class="darkMode ? 'text-blue-400' : 'text-blue-500'" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
@@ -308,9 +168,9 @@ onMounted(() => {
     </div>
 
     <!-- 数据展示区域 -->
-    <div v-if="!loading || metaList.length" class="overflow-hidden bg-white dark:bg-gray-800 shadow-md rounded-lg flex-1">
+    <div v-if="!loading || paginatedMetaList.length" class="overflow-hidden bg-white dark:bg-gray-800 shadow-md rounded-lg flex-1">
       <div class="flex flex-col h-full">
-        <FsMetaTable :dark-mode="darkMode" :meta-list="getCurrentPageData()" :loading="loading || searchLoading" @edit="openEditForm" @delete="confirmDelete" />
+        <FsMetaTable :dark-mode="darkMode" :meta-list="paginatedMetaList" :loading="loading || searchLoading" @edit="openEditForm" @delete="confirmDelete" />
       </div>
     </div>
 
@@ -352,7 +212,7 @@ onMounted(() => {
         :pagination="pagination"
         :page-size-options="pageSizeOptions"
         :search-mode="isSearchMode"
-        :search-term="globalSearchValue"
+        :search-term="searchQuery"
         mode="offset"
         @offset-changed="handleOffsetChange"
         @limit-changed="handlePageSizeChange"

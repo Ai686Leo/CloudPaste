@@ -1,6 +1,8 @@
 /**
  * 处理WebDAV GET请求
  * 用于获取文件内容
+ *
+ * Range/条件请求由 StorageStreaming 统一处理
  */
 import { MountManager } from "../../storage/managers/MountManager.js";
 import { getEncryptionSecret } from "../../utils/environmentUtils.js";
@@ -9,6 +11,7 @@ import { createWebDAVErrorResponse, withWebDAVErrorHandling } from "../utils/err
 import { addWebDAVHeaders, getStandardWebDAVHeaders } from "../utils/headerUtils.js";
 import { getEffectiveMimeType } from "../../utils/fileUtils.js";
 import { LinkService } from "../../storage/link/LinkService.js";
+import { StorageStreaming, STREAMING_CHANNELS } from "../../storage/streaming/index.js";
 
 // Windows MiniRedir 302自动降级：
 // - 对同一路径，第一次请求按挂载策略走 302
@@ -31,38 +34,43 @@ function extractUrlFromResult(result) {
 }
 
 /**
- * 通过本地代理下载文件（native_proxy）
- * @param {FileSystem} fileSystem - 文件系统实例
+ * 通过 StorageStreaming 层下载文件（native_proxy）
+ *
+ *
+ * @param {MountManager} mountManager - 挂载管理器
  * @param {string} path - 文件路径
- * @param {string} fileName - 文件名
  * @param {Object} c - Hono 上下文
  * @param {string} userId - 用户ID
  * @param {string} userType - 用户类型
- * @param {string} contentType - 内容类型
- * @param {string} lastModifiedStr - 最后修改时间字符串
- * @param {string} etag - ETag
  * @returns {Promise<Response>} WebDAV 响应
  */
-async function downloadViaProxy(fileSystem, path, fileName, c, userId, userType, contentType, lastModifiedStr, etag) {
-  console.log(`WebDAV GET - 使用本地代理模式: ${path}`);
-  const fileResponse = await fileSystem.downloadFile(path, fileName, c.req.raw, userId, userType);
+async function downloadViaStreaming(mountManager, path, c, userId, userType) {
+  console.log(`WebDAV GET - 使用 StorageStreaming 本地代理模式: ${path}`);
 
-  const updatedHeaders = new Headers(fileResponse.headers);
-  updatedHeaders.set("Content-Type", contentType);
-  updatedHeaders.set("Last-Modified", lastModifiedStr);
-  if (etag) {
-    updatedHeaders.set("ETag", etag);
-  }
-  updatedHeaders.set("Accept-Ranges", "bytes");
-  updatedHeaders.set("Cache-Control", "max-age=3600");
+  const encryptionSecret = getEncryptionSecret(c);
+  const streaming = new StorageStreaming({
+    mountManager,
+    storageFactory: null, // FS 路径模式不需要 storageFactory
+    encryptionSecret,
+  });
 
-  const response = new Response(fileResponse.body, {
-    status: fileResponse.status,
-    headers: updatedHeaders,
+  // 获取 Range 头
+  const rangeHeader = c.req.header("Range") || null;
+
+  // 通过 StorageStreaming 创建响应
+  const response = await streaming.createResponse({
+    path,
+    channel: STREAMING_CHANNELS.WEBDAV,
+    rangeHeader,
+    request: c.req.raw,
+    userIdOrInfo: userId,
+    userType,
+    db: c.env.DB,
   });
 
   return addWebDAVHeaders(response);
 }
+
 
 /**
  * 处理GET请求
@@ -238,7 +246,7 @@ export async function handleGet(c, path, userId, userType, db) {
         }
 
         console.log(`WebDAV GET - 驱动不支持直链生成或未返回 URL，降级到本地代理`);
-        return downloadViaProxy(fileSystem, path, fileName, c, userId, userType, contentType, lastModifiedStr, etag);
+        return downloadViaStreaming(mountManager, path, c, userId, userType);
       }
 
       case "use_proxy_url": {
@@ -276,12 +284,13 @@ export async function handleGet(c, path, userId, userType, db) {
         }
 
         console.warn(`WebDAV GET - use_proxy_url 策略下未生成 url_proxy 入口，降级到本地代理`);
-        return downloadViaProxy(fileSystem, path, fileName, c, userId, userType, contentType, lastModifiedStr, etag);
+        return downloadViaStreaming(mountManager, path, c, userId, userType);
       }
 
       case "native_proxy":
       default: {
         // 策略 3：本地服务器代理（默认兜底）
+        // StorageStreaming 层统一处理
         if (isHead) {
           // HEAD 请求下只返回头信息，不传输主体内容
           const headHeaders = {
@@ -299,17 +308,7 @@ export async function handleGet(c, path, userId, userType, db) {
           return addWebDAVHeaders(response);
         }
 
-        return downloadViaProxy(
-          fileSystem,
-          path,
-          fileName,
-          c,
-          userId,
-          userType,
-          contentType,
-          lastModifiedStr,
-          etag,
-        );
+        return downloadViaStreaming(mountManager, path, c, userId, userType);
       }
     }
   });

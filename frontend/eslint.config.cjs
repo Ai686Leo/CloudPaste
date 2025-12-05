@@ -9,6 +9,8 @@ const vueParser = require("vue-eslint-parser");
 
 /** @type {import("eslint").Linter.FlatConfig[]} */
 module.exports = [
+  ...vue.configs['flat/essential'],
+
   // 通用规则：应用于 src 下所有 JS/Vue 文件
   {
     files: ["src/**/*.{js,vue}"],

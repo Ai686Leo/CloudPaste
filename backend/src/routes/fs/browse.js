@@ -7,6 +7,7 @@ import { createErrorResponse, getQueryBool, jsonOk } from "../../utils/common.js
 import { getEncryptionSecret } from "../../utils/environmentUtils.js";
 import { LinkService } from "../../storage/link/LinkService.js";
 import { resolveDocumentPreview } from "../../services/documentPreviewService.js";
+import { StorageStreaming, STREAMING_CHANNELS } from "../../storage/streaming/index.js";
 
 export const registerBrowseRoutes = (router, helpers) => {
   const { getAccessibleMounts, getServiceParams, verifyPathPasswordToken } = helpers;
@@ -197,10 +198,24 @@ export const registerBrowseRoutes = (router, helpers) => {
       return c.redirect(link.url, 302);
     }
 
-    // 未能生成任何 URL 时兜底：使用现有 FileSystem.downloadFile 做服务端流式下载
+    // 未能生成任何 URL 时兜底：使用 StorageStreaming 层做服务端流式下载
     const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
-    const fileSystem = new FileSystem(mountManager);
-    const response = await fileSystem.downloadFile(path, null, c.req.raw, userIdOrInfo, userType);
+    const streaming = new StorageStreaming({
+      mountManager,
+      storageFactory: null,
+      encryptionSecret,
+    });
+
+    const rangeHeader = c.req.header("Range") || null;
+    const response = await streaming.createResponse({
+      path,
+      channel: STREAMING_CHANNELS.FS_WEB,
+      rangeHeader,
+      request: c.req.raw,
+      userIdOrInfo,
+      userType,
+      db,
+    });
     return response;
   });
 

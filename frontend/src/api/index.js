@@ -118,7 +118,6 @@ export const api = {
     updateFile: fsService.updateFile,
     // 复制相关
     batchCopyItems: fsService.batchCopyItems,
-    commitBatchCopy: fsService.commitBatchCopy,
   },
 
   test: {
@@ -156,7 +155,6 @@ export const api = {
       updateFile: fsService.updateFile,
       // 复制相关
       batchCopyItems: fsService.batchCopyItems,
-      commitBatchCopy: fsService.commitBatchCopy,
       // 分享相关
       createShareFromFileSystem: fsService.createShareFromFileSystem,
     },

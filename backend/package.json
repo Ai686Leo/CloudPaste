@@ -1,14 +1,14 @@
 {
   "name": "cloudpaste-api",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "CloudPaste API基于Cloudflare Workers和D1数据库",
   "main": "workers.js",
   "scripts": {
     "dev": "wrangler dev --local",
     "deploy": "wrangler publish",
     "deploy:spa": "wrangler deploy --config wrangler.spa.toml",
-    "docker-dev": "cross-env PORT=8787 ENCRYPTION_SECRET=default-encryption-key DATA_DIR=./data node unified-entry.js",
-    "docker-start": "cross-env PORT=8787 DATA_DIR=/data node unified-entry.js"
+    "docker-dev": "cross-env PORT=8787 ENCRYPTION_SECRET=default-encryption-key DATA_DIR=./data tsx unified-entry.js",
+    "docker-start": "cross-env PORT=8787 DATA_DIR=/data tsx unified-entry.js"
   },
   "keywords": [
     "cloudflare",
@@ -27,6 +27,7 @@
     "@aws-sdk/lib-storage": "3.726.1",
     "@aws-sdk/s3-request-presigner": "3.726.1",
     "@hono/node-server": "^1.19.6",
+    "better-sqlite3": "^12.5.0",
     "fast-xml-parser": "^5.2.5",
     "file-type": "^21.0.0",
     "hono": "^4.10.6",
@@ -34,7 +35,11 @@
     "webdav": "^5.8.0"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.20251128.0",
+    "@types/better-sqlite3": "^7.6.13",
     "cross-env": "^7.0.3",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
     "wrangler": "^4.50.0"
   },
   "optionalDependencies": {

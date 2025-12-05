@@ -2,19 +2,20 @@
  * 文件系统代理路由
  * 处理/p/*路径的文件访问请求
  * 专门用于web_proxy功能的文件代理访问
+ * - Range/条件请求由 StorageStreaming 统一处理
  */
 
 import { Hono } from "hono";
 import { AppError, AuthenticationError, DriverError } from "../http/errors.js";
 import { ApiStatus } from "../constants/index.js";
 import { MountManager } from "../storage/managers/MountManager.js";
-import { FileSystem } from "../storage/fs/FileSystem.js";
 import { findMountPointByPathForProxy } from "../storage/fs/utils/MountResolver.js";
 import { PROXY_CONFIG, safeDecodeProxyPath } from "../constants/proxy.js";
 import { ProxySignatureService } from "../services/ProxySignatureService.js";
 import { getEncryptionSecret } from "../utils/environmentUtils.js";
 import { getQueryBool } from "../utils/common.js";
 import { CAPABILITIES } from "../storage/interfaces/capabilities/index.js";
+import { StorageStreaming, STREAMING_CHANNELS } from "../storage/streaming/index.js";
 
 // 签名代理路径不会走 RBAC，因此这里用结构化日志补充最少可观测性。
 const emitProxyAudit = (c, details) => {
@@ -117,48 +118,55 @@ fsProxyRoutes.get(`${PROXY_CONFIG.ROUTE_PREFIX}/*`, async (c) => {
       console.log(`[fsProxy] 签名验证成功: ${path}`);
     }
 
-    // 创建FileSystem实例进行文件访问
+    // 创建 MountManager 并验证驱动能力
     const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
     const driver = await mountManager.getDriver(mountResult.mount);
     if (!driver.hasCapability(CAPABILITIES.PROXY)) {
       throw new AppError("当前存储驱动不支持代理访问", { status: ApiStatus.NOT_IMPLEMENTED, code: "PROXY_NOT_SUPPORTED", expose: true });
     }
-    const fileSystem = new FileSystem(mountManager);
 
     // 获取文件名用于下载
     const fileName = path.split("/").filter(Boolean).pop() || "file";
 
-    // 代理访问使用特殊的用户类型（因为已通过挂载点配置验证）
-    const fileResponse = await fileSystem.downloadFile(path, fileName, c.req.raw, PROXY_CONFIG.USER_TYPE, PROXY_CONFIG.USER_TYPE);
+    // 使用 StorageStreaming 层统一处理内容访问
+    const streaming = new StorageStreaming({
+      mountManager,
+      storageFactory: null,
+      encryptionSecret,
+    });
 
-    // 创建新的Headers对象，确保所有重要头部都被正确传递
-    const responseHeaders = new Headers();
+    // 获取 Range 头
+    const rangeHeader = c.req.header("Range") || null;
 
-    // 复制所有原始响应头部
-    for (const [key, value] of fileResponse.headers.entries()) {
-      // 跳过一些可能冲突的头部，让Hono和CORS中间件处理
-      if (!["access-control-allow-origin", "access-control-allow-credentials", "access-control-expose-headers"].includes(key.toLowerCase())) {
-        responseHeaders.set(key, value);
-        c.header(key, value); // 同时设置到Hono context以便CORS中间件处理
-      }
-    }
+    // 通过 StorageStreaming 创建响应
+    const response = await streaming.createResponse({
+      path,
+      channel: STREAMING_CHANNELS.PROXY,
+      rangeHeader,
+      request: c.req.raw,
+      userIdOrInfo: PROXY_CONFIG.USER_TYPE,
+      userType: PROXY_CONFIG.USER_TYPE,
+      db,
+    });
 
-    // 如果是下载模式，覆盖Content-Disposition头
+    // 如果是下载模式，覆盖 Content-Disposition 头
     if (download) {
       const downloadDisposition = `attachment; filename="${encodeURIComponent(fileName)}"`;
-      responseHeaders.set("Content-Disposition", downloadDisposition);
+      response.headers.set("Content-Disposition", downloadDisposition);
       c.header("Content-Disposition", downloadDisposition);
     }
 
-    // 仅在非200状态码时记录详细信息
-    if (fileResponse.status !== 200) {
-      console.log(`[fsProxy] 响应状态: ${fileResponse.status} -> ${path}`);
+    // 复制响应头到 Hono context（用于 CORS 中间件）
+    for (const [key, value] of response.headers.entries()) {
+      if (!["access-control-allow-origin", "access-control-allow-credentials", "access-control-expose-headers"].includes(key.toLowerCase())) {
+        c.header(key, value);
+      }
     }
 
-    const response = new Response(fileResponse.body, {
-      status: fileResponse.status,
-      headers: responseHeaders, // 使用完整的响应头而不是c.res.headers
-    });
+    // 仅在非200状态码时记录详细信息
+    if (response.status !== 200 && response.status !== 206) {
+      console.log(`[fsProxy] 响应状态: ${response.status} -> ${path}`);
+    }
 
     emitProxyAudit(c, {
       path,

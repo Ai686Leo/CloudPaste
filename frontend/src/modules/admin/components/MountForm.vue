@@ -3,761 +3,685 @@ import { ref, computed, onMounted, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useAdminMountService } from "@/modules/admin/services/mountService.js";
 import { useAdminStorageConfigService } from "@/modules/admin/services/storageConfigService.js";
+import { api } from "@/api";
 
-// 初始化 i18n
 const { t } = useI18n();
 const { updateMount, createMount } = useAdminMountService();
 const { getStorageConfigs } = useAdminStorageConfigService();
 
 const props = defineProps({
-  darkMode: {
-    type: Boolean,
-    required: true,
-  },
-  // 当前编辑的挂载点，如果为null则是新建
-  mount: {
-    type: Object,
-    default: null,
-  },
-  // 用户类型，'admin'或'apikey'
-  userType: {
-    type: String,
-    default: "admin",
-    validator: (value) => ["admin", "apikey"].includes(value),
-  },
+  darkMode: { type: Boolean, required: true },
+  mount: { type: Object, default: null },
+  userType: { type: String, default: "admin", validator: (v) => ["admin", "apikey"].includes(v) },
 });
 
 const emit = defineEmits(["close", "save-success"]);
 
-// 存储配置列表
+// === 核心状态 ===
+const schema = ref(null);
 const storageConfigs = ref([]);
-// 表单数据
-const formData = ref({
-  name: "",
-  storage_type: "",
-  storage_config_id: "",
-  mount_path: "",
-  remark: "",
-  is_active: true,
-  sort_order: 0,
-  cache_ttl: 300, // 默认缓存时间5分钟
-  web_proxy: false, // 默认不启用网页代理
-  webdav_policy: "302_redirect", // 默认WebDAV策略为302重定向
-  enable_sign: false, // 默认不启用签名
-  sign_expires: null, // 默认使用全局设置
-});
-// 表单验证错误
+const formData = ref({});
 const errors = ref({});
-// 加载状态
 const loading = ref(false);
-// 提交状态
 const submitting = ref(false);
-// 表单是否已尝试提交（用于控制错误显示）
 const formSubmitted = ref(false);
-// 全局错误消息
 const globalError = ref("");
 
-// 是否为编辑模式
-const isEditMode = computed(() => {
-  return !!props.mount;
-});
+// === 计算属性 ===
+const isEditMode = computed(() => !!props.mount);
+const formTitle = computed(() => isEditMode.value ? t("admin.mount.editMount") : t("admin.mount.createMount"));
+const isAdmin = computed(() => props.userType === "admin");
 
-// 表单标题
-const formTitle = computed(() => {
-  return isEditMode.value ? t("admin.mount.editMount") : t("admin.mount.createMount");
-});
-
-const storageTypeLabelMap = computed(() => ({
-  S3: t("admin.mount.form.storageTypes.S3"),
-  WEBDAV: t("admin.mount.form.storageTypes.WEBDAV"),
-  LOCAL: t("admin.mount.form.storageTypes.LOCAL"),
-  UNKNOWN: t("admin.mount.form.storageTypes.UNKNOWN"),
-}));
-
-// 获取所有可用的存储类型（从配置列表中提取）
+// 从存储配置中提取可用的存储类型
 const availableStorageTypes = computed(() => {
-  const types = [...new Set(storageConfigs.value.map((config) => config.storage_type).filter(Boolean))];
+  const types = [...new Set(storageConfigs.value.map((c) => c.storage_type).filter(Boolean))];
   return types.map((type) => ({
     value: type,
-    label: storageTypeLabelMap.value[type] || type,
+    label: t(`admin.mount.form.storageTypes.${type}`, type),
   }));
 });
 
 // 根据选择的存储类型筛选存储配置
 const filteredStorageConfigs = computed(() => {
-  if (!formData.value.storage_type) {
-    return storageConfigs.value;
-  }
-  return storageConfigs.value.filter((config) => config.storage_type === formData.value.storage_type);
+  if (!formData.value.storage_type) return storageConfigs.value;
+  return storageConfigs.value.filter((c) => c.storage_type === formData.value.storage_type);
 });
 
 // 当前选中的存储配置
 const selectedStorageConfig = computed(() => {
   if (!formData.value.storage_config_id) return null;
-  return storageConfigs.value.find((config) => config.id === formData.value.storage_config_id) || null;
+  return storageConfigs.value.find((c) => c.id === formData.value.storage_config_id) || null;
 });
 
-// 根据存储配置上报的能力动态计算可用的 WebDAV 策略选项
+// 根据存储能力计算可用的WebDAV策略
 const availableWebdavPolicies = computed(() => {
   const cfg = selectedStorageConfig.value;
   const policies = Array.isArray(cfg?.webdav_supported_policies) ? cfg.webdav_supported_policies : null;
-
-  if (policies && policies.length > 0) {
-    return policies;
-  }
-
-  // 未选择配置或后端未声明能力时的兜底：
+  if (policies && policies.length > 0) return policies;
   return ["native_proxy"];
 });
 
-// 判断用户类型
-const isAdmin = computed(() => props.userType === "admin");
-const isApiKeyUser = computed(() => props.userType === "apikey");
+// 按分组组织的字段（支持新布局格式）
+const fieldGroups = computed(() => {
+  if (!schema.value?.layout?.groups) return [];
+  return schema.value.layout.groups.map((group) => ({
+    ...group,
+    title: group.titleKey ? t(group.titleKey) : group.id,
+    // 解析布局项（支持 row/card/full 类型）
+    layoutItems: parseLayoutItems(group),
+  }));
+});
 
-// 处理存储类型变化
-const handleStorageTypeChange = () => {
-  handleFieldChange("storage_type");
+// === 字段渲染辅助方法 ===
+const getFieldLabel = (field) => (field.labelKey ? t(field.labelKey) : field.name);
+const getFieldPlaceholder = (field) => (field.ui?.placeholderKey ? t(field.ui.placeholderKey) : "");
+const getFieldDescription = (field) => (field.ui?.descriptionKey ? t(field.ui.descriptionKey) : "");
 
-  // 如果当前选择的配置不属于新类型，清空配置选择
-  if (formData.value.storage_config_id) {
-    const selectedConfig = storageConfigs.value.find((config) => config.id === formData.value.storage_config_id);
-    if (selectedConfig && selectedConfig.storage_type !== formData.value.storage_type) {
-      formData.value.storage_config_id = "";
-    }
+// 判断是否应该显示描述（避免与placeholder冗余）
+const shouldShowDescription = (field) => {
+  // 这些字段的描述提供了额外有用信息，始终显示
+  const alwaysShowDesc = ["mount_path", "webdav_policy", "enable_sign", "sign_expires", "web_proxy"];
+  if (alwaysShowDesc.includes(field.name)) return true;
+  // 有placeholder的string/select类型，不显示描述（避免冗余）
+  if ((field.type === "string" || field.type === "select") && field.ui?.placeholderKey) {
+    return false;
   }
-
-  if (formSubmitted.value) {
-    validateField("storage_config_id");
-  }
+  return !!field.ui?.descriptionKey;
 };
 
-// 监听存储配置变化，同步存储类型（兜底逻辑）
-const handleStorageConfigChange = () => {
-  handleFieldChange("storage_config_id");
-
-  // 同步存储类型（如果配置有效）
-  if (formData.value.storage_config_id) {
-    const selectedConfig = storageConfigs.value.find((config) => config.id === formData.value.storage_config_id);
-    if (selectedConfig && selectedConfig.storage_type) {
-      formData.value.storage_type = selectedConfig.storage_type;
-    }
-  }
-
-  if (formSubmitted.value) {
-    validateField("storage_type");
-  }
+// 检查字段是否应该显示（基于dependsOn条件）
+const shouldShowField = (field) => {
+  if (!field.dependsOn) return true;
+  const { field: depField, value: depValue } = field.dependsOn;
+  return formData.value[depField] === depValue;
 };
 
-// 验证单个字段
+// === 布局解析辅助 ===
+// 解析组内的布局行（支持 { row: [...] } 和 { card: ... } 格式）
+const parseLayoutItems = (group) => {
+  if (!group?.fields) return [];
+
+  return group.fields.map((item) => {
+    // 对象形式：{ row: [...] } 或 { card: ... }
+    if (typeof item === "object" && item !== null) {
+      if (item.row) {
+        return { type: "row", fields: item.row };
+      }
+      if (item.card) {
+        return { type: "card", ...item };
+      }
+    }
+    // 字符串形式：单个字段全宽显示
+    if (typeof item === "string") {
+      return { type: "full", field: item };
+    }
+    return null;
+  }).filter(Boolean);
+};
+
+// 判断卡片是否应该显示
+const shouldShowCard = (card) => {
+  if (!card.dependsOn) return true;
+  return formData.value[card.dependsOn.field] === card.dependsOn.value;
+};
+
+// 检查字段是否属于卡片内部（不在常规循环中显示）
+const isCardChildField = (fieldName, groups) => {
+  if (!groups) return false;
+  for (const group of groups) {
+    if (!group.fields) continue;
+    for (const item of group.fields) {
+      if (typeof item === "object" && item?.card && item.fields?.includes(fieldName)) {
+        return true;
+      }
+    }
+  }
+  return false;
+};
+
+// 根据字段名获取字段定义
+const getFieldByName = (fieldName) => {
+  return schema.value?.fields?.find((f) => f.name === fieldName) || null;
+};
+
+// 获取字段的动态选项
+const getFieldOptions = (field) => {
+  const dynamicOpts = field.ui?.dynamicOptions;
+  
+  // 存储类型选择（从已有配置中提取）
+  if (field.name === "storage_type" || dynamicOpts === "storageTypes") {
+    return availableStorageTypes.value;
+  }
+  
+  // 存储配置选择
+  if (field.name === "storage_config_id" || dynamicOpts === "storageConfigs") {
+    return filteredStorageConfigs.value.map((c) => ({
+      value: c.id,
+      label: `${c.name} (${c.provider_type || c.storage_type})`,
+    }));
+  }
+  
+  // WebDAV策略
+  if (field.name === "webdav_policy" || dynamicOpts === "webdavPolicies") {
+    return availableWebdavPolicies.value.map((p) => ({
+      value: p,
+      label: t(`admin.mount.form.webdavPolicyOptions.${p}`, p),
+    }));
+  }
+  
+  return [];
+};
+
+// 检查select字段是否禁用
+const isSelectDisabled = (field) => {
+  if (loading.value) return true;
+  if (field.name === "storage_config_id") {
+    return !formData.value.storage_type || filteredStorageConfigs.value.length === 0;
+  }
+  if (field.name === "storage_type") {
+    return availableStorageTypes.value.length === 0;
+  }
+  return false;
+};
+
+// === 验证逻辑 ===
 const validateField = (fieldName) => {
+  const field = schema.value?.fields.find((f) => f.name === fieldName);
+  if (!field) return true;
+
+  const value = formData.value[fieldName];
   const newErrors = { ...errors.value };
 
-  switch (fieldName) {
-    case "name":
-      if (!formData.value.name.trim()) {
-        newErrors.name = t("admin.mount.validation.nameRequired");
-      } else if (formData.value.name.trim().length > 50) {
-        newErrors.name = t("admin.mount.validation.nameLength");
-      } else {
-        delete newErrors.name;
-      }
-      break;
-
-    case "storage_type":
-      if (!formData.value.storage_type) {
-        newErrors.storage_type = t("admin.mount.validation.storageTypeRequired");
-      } else {
-        delete newErrors.storage_type;
-      }
-      break;
-
-    case "storage_config_id":
-      if (!formData.value.storage_config_id) {
-        newErrors.storage_config_id = t("admin.mount.validation.storageConfigRequired");
-      } else {
-        delete newErrors.storage_config_id;
-      }
-      break;
-
-    case "mount_path":
-      const mountPath = formData.value.mount_path.trim();
-      if (!mountPath) {
-        newErrors.mount_path = t("admin.mount.validation.mountPathRequired");
-      } else if (!mountPath.startsWith("/")) {
-        newErrors.mount_path = t("admin.mount.validation.mountPathFormat");
-      } else if (mountPath === "/") {
-        // 不允许单独的"/"，必须是"/xxx"格式
-        newErrors.mount_path = t("admin.mount.validation.mountPathInvalid");
-      } else {
-        // 检查挂载路径格式，必须是"/xxx"格式
-        // 只允许字母、数字、下划线、连字符，中文和斜杠，且"/"后必须有内容
-        const validPathRegex = /^\/(?:[A-Za-z0-9_\-\/]|[\u4e00-\u9fa5]|[\u0080-\uFFFF])+$/;
-        if (!validPathRegex.test(mountPath)) {
-          newErrors.mount_path = t("admin.mount.validation.mountPathInvalid");
-        } else {
-          // 检查不允许的系统路径
-          const forbiddenPaths = ["/bin", "/etc", "/lib", "/root", "/sys", "/proc", "/dev"];
-          let isForbidden = false;
-          for (const path of forbiddenPaths) {
-            if (mountPath === path || mountPath.startsWith(`${path}/`)) {
-              newErrors.mount_path = t("admin.mount.validation.mountPathSystemReserved");
-              isForbidden = true;
-              break;
-            }
-          }
-          if (!isForbidden) {
-            delete newErrors.mount_path;
-          }
-        }
-      }
-      break;
-
-    case "cache_ttl":
-      const cacheTtl = Number(formData.value.cache_ttl);
-      if (formData.value.cache_ttl !== null) {
-        if (!Number.isInteger(cacheTtl)) {
-          newErrors.cache_ttl = t("admin.mount.validation.cacheTTLInteger");
-        } else if (cacheTtl < 0) {
-          newErrors.cache_ttl = t("admin.mount.validation.cacheTTLNonNegative");
-        } else if (cacheTtl > 86400) {
-          newErrors.cache_ttl = t("admin.mount.validation.cacheTTLTooLarge");
-        } else {
-          delete newErrors.cache_ttl;
-        }
-      } else {
-        delete newErrors.cache_ttl;
-      }
-      break;
-
-    case "sort_order":
-      const sortOrder = Number(formData.value.sort_order);
-      if (formData.value.sort_order !== null) {
-        if (!Number.isInteger(sortOrder)) {
-          newErrors.sort_order = t("admin.mount.validation.sortOrderInteger");
-        } else {
-          delete newErrors.sort_order;
-        }
-      } else {
-        delete newErrors.sort_order;
-      }
-      break;
+  // 必填验证
+  if (field.required) {
+    const isEmpty = value === undefined || value === null || String(value).trim() === "";
+    if (isEmpty) {
+      newErrors[fieldName] = t("admin.mount.validation.required", { field: getFieldLabel(field) });
+      errors.value = newErrors;
+      return false;
+    }
   }
 
+  // 自定义验证规则
+  const validation = field.validation;
+  if (validation && value !== undefined && value !== null && value !== "") {
+    // 最大长度
+    if (validation.maxLength && String(value).length > validation.maxLength) {
+      newErrors[fieldName] = t("admin.mount.validation.maxLength", { max: validation.maxLength });
+      errors.value = newErrors;
+      return false;
+    }
+    // 正则模式
+    if (validation.pattern) {
+      const regex = new RegExp(validation.pattern);
+      if (!regex.test(String(value))) {
+        newErrors[fieldName] = validation.patternMessageKey 
+          ? t(validation.patternMessageKey) 
+          : t("admin.mount.validation.invalidFormat");
+        errors.value = newErrors;
+        return false;
+      }
+    }
+    // 数值范围
+    if (field.type === "number") {
+      const numVal = Number(value);
+      if (validation.min !== undefined && numVal < validation.min) {
+        newErrors[fieldName] = t("admin.mount.validation.min", { min: validation.min });
+        errors.value = newErrors;
+        return false;
+      }
+      if (validation.max !== undefined && numVal > validation.max) {
+        newErrors[fieldName] = t("admin.mount.validation.max", { max: validation.max });
+        errors.value = newErrors;
+        return false;
+      }
+    }
+  }
+
+  // 挂载路径特殊验证（保持与原版一致的完整逻辑）
+  if (fieldName === "mount_path" && value) {
+    const mountPath = String(value).trim();
+    if (!mountPath.startsWith("/")) {
+      newErrors[fieldName] = t("admin.mount.validation.mountPathFormat");
+      errors.value = newErrors;
+      return false;
+    }
+    if (mountPath === "/") {
+      // 不允许单独的"/"，必须是"/xxx"格式
+      newErrors[fieldName] = t("admin.mount.validation.mountPathInvalid");
+      errors.value = newErrors;
+      return false;
+    }
+    // 检查挂载路径格式，必须是"/xxx"格式
+    // 只允许字母、数字、下划线、连字符、中文和斜杠，且"/"后必须有内容
+    const validPathRegex = /^\/(?:[A-Za-z0-9_\-\/]|[\u4e00-\u9fa5]|[\u0080-\uFFFF])+$/;
+    if (!validPathRegex.test(mountPath)) {
+      newErrors[fieldName] = t("admin.mount.validation.mountPathInvalid");
+      errors.value = newErrors;
+      return false;
+    }
+    // 检查不允许的系统路径
+    const forbiddenPaths = ["/bin", "/etc", "/lib", "/root", "/sys", "/proc", "/dev"];
+    for (const path of forbiddenPaths) {
+      if (mountPath === path || mountPath.startsWith(`${path}/`)) {
+        newErrors[fieldName] = t("admin.mount.validation.mountPathSystemReserved");
+        errors.value = newErrors;
+        return false;
+      }
+    }
+  }
+
+  delete newErrors[fieldName];
   errors.value = newErrors;
-  return !newErrors[fieldName];
+  return true;
 };
 
-// 验证表单
 const validateForm = () => {
-  // 验证所有字段
-  validateField("name");
-  validateField("storage_type");
-  validateField("storage_config_id");
-  validateField("mount_path");
-  validateField("cache_ttl");
-  validateField("sort_order");
-
-  // 检查是否有错误
-  const hasErrors = Object.keys(errors.value).length > 0;
-
-  // 设置全局错误消息
-  if (hasErrors) {
+  if (!schema.value?.fields) return false;
+  
+  let isValid = true;
+  for (const field of schema.value.fields) {
+    if (shouldShowField(field)) {
+      if (!validateField(field.name)) {
+        isValid = false;
+      }
+    }
+  }
+  
+  if (!isValid) {
     globalError.value = t("common.required");
   } else {
     globalError.value = "";
   }
-
-  return !hasErrors;
+  
+  return isValid;
 };
 
-// 处理字段变化
+// === 事件处理 ===
 const handleFieldChange = (fieldName) => {
-  // 如果表单已提交过或该字段有错误，验证该字段
+  // 存储类型变化时清空不匹配的配置
+  if (fieldName === "storage_type" && formData.value.storage_config_id) {
+    const selectedConfig = storageConfigs.value.find((c) => c.id === formData.value.storage_config_id);
+    if (selectedConfig && selectedConfig.storage_type !== formData.value.storage_type) {
+      formData.value.storage_config_id = "";
+    }
+  }
+  
+  // 存储配置变化时同步存储类型
+  if (fieldName === "storage_config_id" && formData.value.storage_config_id) {
+    const selectedConfig = storageConfigs.value.find((c) => c.id === formData.value.storage_config_id);
+    if (selectedConfig?.storage_type) {
+      formData.value.storage_type = selectedConfig.storage_type;
+    }
+  }
+  
   if (formSubmitted.value || errors.value[fieldName]) {
     validateField(fieldName);
   }
 };
 
-// 提交表单
+// === 表单提交 ===
 const submitForm = async () => {
   formSubmitted.value = true;
-
-  if (!validateForm()) {
-    // 不再关闭弹窗，而是显示错误信息
-    return;
-  }
+  if (!validateForm()) return;
 
   submitting.value = true;
   globalError.value = "";
 
   try {
-    const formPayload = { ...formData.value };
-
+    const payload = { ...formData.value };
+    
     // 转换数字字段
-    formPayload.sort_order = Number(formPayload.sort_order);
-    formPayload.cache_ttl = Number(formPayload.cache_ttl);
-
-    // 处理签名过期时间字段
-    if (formPayload.sign_expires !== null && formPayload.sign_expires !== undefined && formPayload.sign_expires !== "") {
-      formPayload.sign_expires = Number(formPayload.sign_expires);
+    if (payload.sort_order !== undefined) payload.sort_order = Number(payload.sort_order);
+    if (payload.cache_ttl !== undefined) payload.cache_ttl = Number(payload.cache_ttl);
+    if (payload.sign_expires !== undefined && payload.sign_expires !== null && payload.sign_expires !== "") {
+      payload.sign_expires = Number(payload.sign_expires);
     } else {
-      formPayload.sign_expires = null; // 使用全局设置
+      payload.sign_expires = null;
     }
 
-    // 只有管理员可以创建和更新挂载点
-    if (isApiKeyUser.value) {
+    if (props.userType === "apikey") {
       globalError.value = t("admin.mount.error.apiKeyCannotManage");
       return;
     }
 
     if (isEditMode.value) {
-      // 更新挂载点
-      await updateMount(props.mount.id, formPayload);
+      await updateMount(props.mount.id, payload);
     } else {
-      // 创建挂载点
-      await createMount(formPayload);
+      await createMount(payload);
     }
 
-    // 不抛异常即视为成功，由父组件决定成功提示文案
     emit("save-success");
   } catch (err) {
     console.error("保存挂载点错误:", err);
-    // 显示捕获的错误
     globalError.value = err.message || t("admin.mount.error.saveFailed");
   } finally {
     submitting.value = false;
   }
 };
 
-// 加载存储配置列表
-const loadStorageConfigs = async () => {
-  loading.value = true;
+// === 初始化 ===
+const initFormData = () => {
+  if (!schema.value?.fields) return;
 
+  const data = {};
+  for (const field of schema.value.fields) {
+    if (props.mount && props.mount[field.name] !== undefined) {
+      // 编辑模式：复制现有值
+      if (field.type === "boolean") {
+        data[field.name] = !!props.mount[field.name];
+      } else {
+        data[field.name] = props.mount[field.name];
+      }
+    } else {
+      // 新建模式：使用默认值
+      data[field.name] = field.defaultValue !== undefined ? field.defaultValue : (field.type === "boolean" ? false : "");
+    }
+  }
+
+  // 编辑模式下，根据已选择的存储配置推断 storage_type
+  if (props.mount?.storage_config_id && !data.storage_type) {
+    const selectedConfig = storageConfigs.value.find((c) => c.id === props.mount.storage_config_id);
+    if (selectedConfig?.storage_type) {
+      data.storage_type = selectedConfig.storage_type;
+    }
+  }
+
+  formData.value = data;
+};
+
+const loadData = async () => {
+  loading.value = true;
   try {
-    // useAdminStorageConfigService 已经做了解包与错误抛出
-    const { items } = await getStorageConfigs({ page: 1, limit: 100 });
-    storageConfigs.value = Array.isArray(items) ? items : [];
+    // 并行加载Schema和存储配置
+    const [schemaResp, configsResp] = await Promise.all([
+      api.mount.getMountSchema(),
+      getStorageConfigs({ page: 1, limit: 100 }),
+    ]);
+    
+    schema.value = schemaResp?.data || schemaResp;
+    storageConfigs.value = Array.isArray(configsResp?.items) ? configsResp.items : [];
+    
+    initFormData();
   } catch (err) {
-    console.error("加载存储配置错误:", err);
-    globalError.value = err?.message || t("admin.mount.error.loadStorageConfigs");
+    console.error("加载数据错误:", err);
+    globalError.value = err?.message || t("admin.mount.error.loadFailed");
   } finally {
     loading.value = false;
   }
 };
 
-// 关闭表单
-const closeForm = () => {
-  emit("close");
-};
+const closeForm = () => emit("close");
 
-// 组件挂载时初始化数据
-onMounted(async () => {
-  // 加载存储配置
-  await loadStorageConfigs();
+// === 生命周期 ===
+onMounted(loadData);
 
-  // 如果是编辑模式，复制现有数据到表单
-  if (isEditMode.value) {
-    initializeFormData();
-  }
-
-  // 重置表单提交状态
+watch(() => props.mount, () => {
+  initFormData();
   formSubmitted.value = false;
   globalError.value = "";
-});
+  errors.value = {};
+}, { deep: true });
 
-// 添加watch钩子监视props.mount的变化
-watch(
-  () => props.mount,
-  (newMount) => {
-    if (newMount) {
-      initializeFormData();
-    } else {
-      // 如果mount为null，重置表单数据为默认值
-      resetFormData();
-    }
-
-    // 重置表单提交状态
-    formSubmitted.value = false;
-    globalError.value = "";
-    errors.value = {};
-  },
-  { deep: true }
-);
-
-watch(
-  storageConfigs,
-  (configs) => {
-    if (!configs || configs.length === 0) {
-      formData.value.storage_config_id = "";
-      formData.value.storage_type = "";
-      return;
-    }
-
-    // 仅验证当前选择的配置是否仍然存在，不自动选择
-    if (formData.value.storage_config_id && !configs.some((config) => config.id === formData.value.storage_config_id)) {
-      formData.value.storage_config_id = "";
-    }
-  },
-  { immediate: true }
-);
-
-// 当存储类型或存储配置变化时，确保 WebDAV 策略始终是可用选项之一
-watch(
-  () => [formData.value.storage_type, formData.value.storage_config_id],
-  () => {
-    const allowed = availableWebdavPolicies.value;
-    if (!allowed.includes(formData.value.webdav_policy)) {
-      formData.value.webdav_policy = allowed[0] || "native_proxy";
-    }
+// 确保WebDAV策略始终是可用选项
+watch([() => formData.value.storage_type, () => formData.value.storage_config_id], () => {
+  const allowed = availableWebdavPolicies.value;
+  if (formData.value.webdav_policy && !allowed.includes(formData.value.webdav_policy)) {
+    formData.value.webdav_policy = allowed[0] || "native_proxy";
   }
-);
-
-// 初始化表单数据的函数
-const initializeFormData = () => {
-  if (!props.mount) return;
-
-  // 复制所有属性
-  Object.keys(formData.value).forEach((key) => {
-    if (props.mount[key] !== undefined) {
-      // 特殊处理布尔值字段，确保它们正确转换
-      if (key === "is_active" || key === "web_proxy" || key === "enable_sign") {
-        formData.value[key] = !!props.mount[key]; // 确保是布尔类型
-      } else {
-        formData.value[key] = props.mount[key];
-      }
-    }
-  });
-
-};
-
-// 重置表单数据为默认值
-const resetFormData = () => {
-  formData.value = {
-    name: "",
-    storage_type: "",
-    storage_config_id: "",
-    mount_path: "",
-    remark: "",
-    is_active: true, // 默认启用
-    sort_order: 0,
-    cache_ttl: 300, // 默认缓存时间5分钟
-    web_proxy: false, // 默认不启用网页代理
-    webdav_policy: "302_redirect", // 默认WebDAV策略为302重定向
-    enable_sign: false, // 默认不启用签名
-    sign_expires: null, // 默认使用全局设置
-  };
-};
+});
 </script>
 
 <template>
-  <!-- 模态框背景 -->
   <div class="fixed inset-0 z-[60] flex items-center justify-center p-2 sm:p-4 pt-20 sm:pt-4 bg-black bg-opacity-50 overflow-y-auto" @click.self="closeForm">
     <div
-      class="w-full max-w-sm sm:max-w-lg rounded-lg shadow-xl overflow-hidden transition-colors max-h-[95vh] sm:max-h-[85vh] flex flex-col"
+      class="w-full max-w-sm sm:max-w-lg rounded-lg shadow-xl overflow-hidden transition-colors max-h-[80vh] sm:max-h-[75vh] flex flex-col"
       :class="darkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'"
       @click.stop
     >
       <!-- 表单标题 -->
       <div class="px-3 sm:px-6 py-2 sm:py-4 border-b" :class="darkMode ? 'border-gray-700' : 'border-gray-200'">
         <div class="flex justify-between items-center">
-          <h3 class="text-base sm:text-lg font-semibold" id="modal-title">{{ formTitle }}</h3>
-          <!-- 添加关闭按钮，方便移动端操作 -->
-          <button @click="closeForm" class="rounded-md text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-500">
-            <span class="sr-only">关闭</span>
-            <svg class="h-5 w-5 sm:h-6 sm:w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <h3 class="text-base sm:text-lg font-semibold">{{ formTitle }}</h3>
+          <button @click="closeForm" class="rounded-md text-gray-400 hover:text-gray-500 focus:outline-none">
+            <svg class="h-5 w-5 sm:h-6 sm:w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
         </div>
       </div>
 
-      <!-- 表单内容区域 -->
+      <!-- 表单内容 -->
       <div class="p-3 sm:p-6 space-y-2 sm:space-y-4 flex-1 overflow-y-auto">
-        <!-- 全局错误提示 -->
-        <div v-if="globalError" class="p-2 sm:p-3 rounded-md bg-red-100 border border-red-300 text-red-700 text-sm">
-          {{ globalError }}
+        <!-- 加载状态 -->
+        <div v-if="loading" class="flex justify-center items-center py-8">
+          <svg class="animate-spin h-8 w-8 text-primary-500" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+          </svg>
         </div>
 
-        <!-- 表单内容 -->
-        <form @submit.prevent="submitForm" class="space-y-2 sm:space-y-5">
-          <!-- 挂载点名称 -->
-          <div>
-            <label for="name" class="block text-sm font-medium mb-1" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">
-              {{ t("admin.mount.form.name") }} <span class="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              id="name"
-              v-model="formData.name"
-              @input="handleFieldChange('name')"
-              @blur="validateField('name')"
-              class="block w-full px-3 py-1.5 sm:py-2 rounded-md text-sm transition-colors duration-200"
-              :class="[
-                darkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300 text-gray-900 placeholder-gray-500',
-                errors.name ? 'border-red-500' : '',
-              ]"
-              :placeholder="t('admin.mount.form.namePlaceholder')"
-            />
-            <p v-if="errors.name" class="mt-1 text-sm text-red-500">{{ errors.name }}</p>
+        <template v-else-if="schema">
+          <!-- 全局错误 -->
+          <div v-if="globalError" class="p-2 sm:p-3 rounded-md bg-red-100 border border-red-300 text-red-700 text-sm">
+            {{ globalError }}
           </div>
 
-          <!-- 存储类型 -->
-          <div>
-            <label for="storage_type" class="block text-sm font-medium mb-1" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">
-              {{ t("admin.mount.form.storageType") }} <span class="text-red-500">*</span>
-            </label>
-            <select
-              id="storage_type"
-              v-model="formData.storage_type"
-              @change="handleStorageTypeChange"
-              @blur="validateField('storage_type')"
-              class="block w-full px-3 py-1.5 sm:py-2 rounded-md text-sm transition-colors duration-200"
-              :class="[darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300 text-gray-900', errors.storage_type ? 'border-red-500' : '']"
-              :disabled="loading || availableStorageTypes.length === 0"
-            >
-              <option value="">{{ t("admin.mount.form.selectStorageType") }}</option>
-              <option v-for="type in availableStorageTypes" :key="type.value" :value="type.value">
-                {{ type.label }}
-              </option>
-            </select>
-            <p class="mt-1 text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">{{ t("admin.mount.form.storageTypeHint") }}</p>
-            <p v-if="errors.storage_type" class="mt-1 text-sm text-red-500">{{ errors.storage_type }}</p>
-          </div>
+          <form @submit.prevent="submitForm" class="space-y-4">
+            <!-- 动态渲染字段组 -->
+            <template v-for="group in fieldGroups" :key="group.id">
+              <div class="space-y-2">
+                <h4 v-if="group.titleKey" class="text-sm font-medium border-b pb-1 mt-2" :class="darkMode ? 'text-gray-300 border-gray-600' : 'text-gray-700 border-gray-200'">
+                  {{ group.title }}
+                </h4>
+                
+                <!-- 基于布局项动态渲染 -->
+                <template v-for="(layoutItem, idx) in group.layoutItems" :key="`${group.id}-${idx}`">
+                  
+                  <!-- === 全宽字段 === -->
+                  <template v-if="layoutItem.type === 'full'">
+                    <template v-for="field in [getFieldByName(layoutItem.field)].filter(f => f && shouldShowField(f) && !isCardChildField(f.name, schema?.layout?.groups))" :key="field.name">
+                      <div>
+                        <!-- 渲染单个字段（复用字段渲染组件） -->
+                        <template v-if="field.type === 'string'">
+                          <label :for="field.name" class="block text-sm font-medium mb-1" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">
+                            {{ getFieldLabel(field) }}
+                            <span v-if="field.required" class="text-red-500">*</span>
+                          </label>
+                          <div class="relative">
+                            <span v-if="field.ui?.prefix" class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">{{ field.ui.prefix }}</span>
+                            <input :id="field.name" type="text" v-model="formData[field.name]" @input="handleFieldChange(field.name)" @blur="validateField(field.name)" :placeholder="getFieldPlaceholder(field)" :maxlength="field.ui?.maxLength" class="block w-full px-3 py-1.5 sm:py-2 rounded-md text-sm transition-colors border" :class="[darkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300 text-gray-900 placeholder-gray-500', errors[field.name] ? 'border-red-500' : '', field.ui?.prefix ? 'pl-6' : '']" />
+                          </div>
+                          <p v-if="errors[field.name]" class="mt-1 text-sm text-red-500">{{ errors[field.name] }}</p>
+                          <p v-if="shouldShowDescription(field)" class="mt-0.5 text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">{{ getFieldDescription(field) }}</p>
+                        </template>
+                        <template v-else-if="field.type === 'textarea'">
+                          <label :for="field.name" class="block text-sm font-medium mb-1" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">{{ getFieldLabel(field) }}</label>
+                          <textarea :id="field.name" v-model="formData[field.name]" :rows="field.ui?.rows || 2" :placeholder="getFieldPlaceholder(field)" class="block w-full px-3 py-1.5 sm:py-2 rounded-md text-sm transition-colors border" :class="darkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300 text-gray-900 placeholder-gray-500'"></textarea>
+                        </template>
+                        <template v-else-if="field.type === 'number'">
+                          <label :for="field.name" class="block text-sm font-medium mb-1" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">{{ getFieldLabel(field) }}</label>
+                          <div class="relative">
+                            <input :id="field.name" type="number" v-model="formData[field.name]" @input="handleFieldChange(field.name)" @blur="validateField(field.name)" :placeholder="getFieldPlaceholder(field)" :min="field.ui?.min" :max="field.ui?.max" class="block w-full px-3 py-1.5 sm:py-2 rounded-md text-sm transition-colors border" :class="[darkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300 text-gray-900 placeholder-gray-500', errors[field.name] ? 'border-red-500' : '']" />
+                            <span v-if="field.ui?.suffix" class="absolute right-3 top-1/2 -translate-y-1/2 text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">{{ field.ui.suffix.startsWith('admin.') ? t(field.ui.suffix) : field.ui.suffix }}</span>
+                          </div>
+                          <p v-if="errors[field.name]" class="mt-1 text-sm text-red-500">{{ errors[field.name] }}</p>
+                          <p v-if="shouldShowDescription(field)" class="mt-0.5 text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">{{ getFieldDescription(field) }}</p>
+                        </template>
+                        <template v-else-if="field.type === 'select'">
+                          <label :for="field.name" class="block text-sm font-medium mb-1" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">
+                            {{ getFieldLabel(field) }}
+                            <span v-if="field.required" class="text-red-500">*</span>
+                          </label>
+                          <select :id="field.name" v-model="formData[field.name]" @change="handleFieldChange(field.name)" @blur="validateField(field.name)" :disabled="isSelectDisabled(field)" class="block w-full px-3 py-1.5 sm:py-2 rounded-md text-sm transition-colors border" :class="[darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300 text-gray-900', errors[field.name] ? 'border-red-500' : '']">
+                            <option value="">{{ getFieldPlaceholder(field) || t('common.pleaseSelect') }}</option>
+                            <option v-for="opt in getFieldOptions(field)" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+                          </select>
+                          <p v-if="errors[field.name]" class="mt-1 text-sm text-red-500">{{ errors[field.name] }}</p>
+                          <p v-if="shouldShowDescription(field)" class="mt-0.5 text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">{{ getFieldDescription(field) }}</p>
+                          <p v-if="field.name === 'storage_config_id' && !formData.storage_type" class="mt-1 text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">{{ t('admin.mount.form.selectStorageTypeFirst') }}</p>
+                          <p v-if="field.name === 'storage_config_id' && formData.storage_type && filteredStorageConfigs.length === 0" class="mt-1 text-xs text-yellow-600 dark:text-yellow-400">{{ t('admin.mount.form.noConfigsForType') }}</p>
+                        </template>
+                        <template v-else-if="field.type === 'boolean'">
+                          <div class="flex items-center">
+                            <input :id="field.name" type="checkbox" v-model="formData[field.name]" class="h-4 w-4 sm:h-5 sm:w-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500" :class="darkMode ? 'bg-gray-700 border-gray-600' : ''" />
+                            <div class="ml-2 sm:ml-3">
+                              <label :for="field.name" class="text-sm font-medium" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">{{ getFieldLabel(field) }}</label>
+                              <p v-if="shouldShowDescription(field)" class="text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">{{ getFieldDescription(field) }}</p>
+                            </div>
+                          </div>
+                        </template>
+                      </div>
+                    </template>
+                  </template>
 
-          <!-- 存储配置选择 -->
-          <div>
-            <label for="storage_config_id" class="block text-sm font-medium mb-1" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">
-              {{ t("admin.mount.form.storageConfig") }} <span class="text-red-500">*</span>
-            </label>
-            <select
-              id="storage_config_id"
-              v-model="formData.storage_config_id"
-              @change="handleStorageConfigChange"
-              @blur="validateField('storage_config_id')"
-              class="block w-full px-3 py-1.5 sm:py-2 rounded-md text-sm transition-colors duration-200"
-              :class="[darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300 text-gray-900', errors.storage_config_id ? 'border-red-500' : '']"
-              :disabled="loading || !formData.storage_type || filteredStorageConfigs.length === 0"
-            >
-              <option value="">{{ t("admin.mount.form.selectStorageConfig") }}</option>
-              <option v-for="config in filteredStorageConfigs" :key="config.id" :value="config.id">
-                {{ config.name }} ({{ config.provider_type || config.storage_type }})
-              </option>
-            </select>
-            <p v-if="errors.storage_config_id" class="mt-1 text-sm text-red-500">{{ errors.storage_config_id }}</p>
-            <p v-if="!formData.storage_type" class="mt-1 text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">请先选择存储类型</p>
-            <p v-else-if="filteredStorageConfigs.length === 0 && !loading" class="mt-1 text-xs text-yellow-600 dark:text-yellow-400">该类型暂无可用的存储配置</p>
-          </div>
+                  <!-- === 双列布局 === -->
+                  <div v-else-if="layoutItem.type === 'row'" class="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-4">
+                    <template v-for="fieldName in layoutItem.fields" :key="fieldName">
+                      <template v-for="field in [getFieldByName(fieldName)].filter(f => f && shouldShowField(f))" :key="field.name">
+                        <div>
+                          <label :for="field.name" class="block text-sm font-medium mb-1" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">{{ getFieldLabel(field) }}</label>
+                          <div class="relative">
+                            <input v-if="field.type === 'number'" :id="field.name" type="number" v-model="formData[field.name]" @input="handleFieldChange(field.name)" @blur="validateField(field.name)" :placeholder="getFieldPlaceholder(field)" :min="field.ui?.min" :max="field.ui?.max" class="block w-full px-3 py-1.5 sm:py-2 rounded-md text-sm transition-colors border" :class="[darkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300 text-gray-900 placeholder-gray-500', errors[field.name] ? 'border-red-500' : '']" />
+                            <input v-else :id="field.name" type="text" v-model="formData[field.name]" @input="handleFieldChange(field.name)" @blur="validateField(field.name)" :placeholder="getFieldPlaceholder(field)" class="block w-full px-3 py-1.5 sm:py-2 rounded-md text-sm transition-colors border" :class="[darkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300 text-gray-900 placeholder-gray-500', errors[field.name] ? 'border-red-500' : '']" />
+                            <span v-if="field.ui?.suffix" class="absolute right-3 top-1/2 -translate-y-1/2 text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">{{ field.ui.suffix.startsWith('admin.') ? t(field.ui.suffix) : field.ui.suffix }}</span>
+                          </div>
+                          <p v-if="errors[field.name]" class="mt-1 text-sm text-red-500">{{ errors[field.name] }}</p>
+                          <p v-if="shouldShowDescription(field)" class="mt-0.5 text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">{{ getFieldDescription(field) }}</p>
+                        </div>
+                      </template>
+                    </template>
+                  </div>
 
-          <!-- 挂载路径 -->
-          <div>
-            <label for="mount_path" class="block text-sm font-medium mb-1" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">
-              {{ t("admin.mount.form.mountPath") }} <span class="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              id="mount_path"
-              v-model="formData.mount_path"
-              @input="handleFieldChange('mount_path')"
-              @blur="validateField('mount_path')"
-              class="block w-full px-3 py-1.5 sm:py-2 rounded-md text-sm transition-colors duration-200"
-              :class="[
-                darkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300 text-gray-900 placeholder-gray-500',
-                errors.mount_path ? 'border-red-500' : '',
-              ]"
-              :placeholder="t('admin.mount.form.mountPathPlaceholder')"
-            />
-            <p v-if="errors.mount_path" class="mt-1 text-sm text-red-500">{{ errors.mount_path }}</p>
-            <p class="mt-0.5 text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">{{ t("admin.mount.form.mountPathHint") }}</p>
-          </div>
+                  <!-- === 卡片布局（代理签名配置） === -->
+                  <Transition
+                    v-else-if="layoutItem.type === 'card'"
+                    enter-active-class="transition-all duration-200 ease-out"
+                    enter-from-class="opacity-0 -translate-y-1"
+                    enter-to-class="opacity-100 translate-y-0"
+                    leave-active-class="transition-all duration-150 ease-in"
+                    leave-from-class="opacity-100 translate-y-0"
+                    leave-to-class="opacity-0 -translate-y-1"
+                  >
+                    <div
+                      v-if="shouldShowCard(layoutItem)"
+                      class="mt-3 sm:mt-4 p-3 rounded-md border"
+                      :class="darkMode ? 'bg-gray-800/50 border-gray-600' : 'bg-gray-50 border-gray-200'"
+                    >
+                      <!-- 卡片标题 -->
+                      <h4
+                        v-if="layoutItem.titleKey"
+                        class="text-sm font-medium mb-3"
+                        :class="darkMode ? 'text-gray-200' : 'text-gray-700'"
+                      >
+                        {{ t(layoutItem.titleKey) }}
+                      </h4>
 
-          <!-- 备注说明 -->
-          <div>
-            <label for="remark" class="block text-sm font-medium mb-1" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">{{ t("admin.mount.form.remark") }}</label>
-            <textarea
-              id="remark"
-              v-model="formData.remark"
-              rows="2"
-              class="block w-full px-3 py-1.5 sm:py-2 rounded-md text-sm transition-colors duration-200"
-              :class="[darkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300 text-gray-900 placeholder-gray-500']"
-              :placeholder="t('admin.mount.form.remarkPlaceholder')"
-            ></textarea>
-          </div>
+                      <!-- 卡片内字段 -->
+                      <div class="space-y-3">
+                        <template v-for="cardFieldName in layoutItem.fields" :key="cardFieldName">
+                          <template v-for="cardField in [getFieldByName(cardFieldName)].filter(Boolean)" :key="cardField.name">
+                            <!-- enable_sign checkbox -->
+                            <div v-if="cardField.type === 'boolean'" class="flex items-center">
+                              <input
+                                :id="cardField.name"
+                                type="checkbox"
+                                v-model="formData[cardField.name]"
+                                class="h-4 w-4 sm:h-5 sm:w-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                                :class="darkMode ? 'bg-gray-700 border-gray-600' : ''"
+                              />
+                              <div class="ml-2 sm:ml-3">
+                                <label :for="cardField.name" class="text-sm font-medium" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">
+                                  {{ getFieldLabel(cardField) }}
+                                </label>
+                                <p v-if="shouldShowDescription(cardField)" class="text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
+                                  {{ getFieldDescription(cardField) }}
+                                </p>
+                              </div>
+                            </div>
 
-          <!-- 缓存时间和排序顺序 -->
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-4">
-            <!-- 缓存时间 -->
-            <div>
-              <label for="cache_ttl" class="block text-sm font-medium mb-1" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">{{ t("admin.mount.form.cacheTtl") }}</label>
-              <input
-                type="number"
-                id="cache_ttl"
-                v-model="formData.cache_ttl"
-                @input="handleFieldChange('cache_ttl')"
-                @blur="validateField('cache_ttl')"
-                class="block w-full px-3 py-1.5 sm:py-2 rounded-md text-sm transition-colors duration-200"
-                :class="[
-                  darkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300 text-gray-900 placeholder-gray-500',
-                  errors.cache_ttl ? 'border-red-500' : '',
-                ]"
-                :placeholder="t('admin.mount.form.cacheTtlPlaceholder')"
-                min="0"
-                step="1"
-              />
-              <p v-if="errors.cache_ttl" class="mt-1 text-sm text-red-500">{{ errors.cache_ttl }}</p>
-              <p class="mt-0.5 text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">{{ t("admin.mount.form.cacheTtlHint") }}</p>
-            </div>
+                            <!-- sign_expires 数字输入（平级显示，根据 enable_sign 禁用） -->
+                            <div v-else-if="cardField.type === 'number'">
+                              <label
+                                :for="cardField.name"
+                                class="block text-sm font-medium mb-1"
+                                :class="[
+                                  darkMode ? 'text-gray-200' : 'text-gray-700',
+                                  cardField.name === 'sign_expires' && !formData.enable_sign ? 'opacity-50' : ''
+                                ]"
+                              >
+                                {{ getFieldLabel(cardField) }}
+                              </label>
+                              <div class="relative">
+                                <input
+                                  :id="cardField.name"
+                                  type="number"
+                                  v-model="formData[cardField.name]"
+                                  :disabled="cardField.name === 'sign_expires' && !formData.enable_sign"
+                                  :placeholder="getFieldPlaceholder(cardField)"
+                                  :min="cardField.ui?.min"
+                                  :max="cardField.ui?.max"
+                                  class="block w-full px-3 py-1.5 sm:py-2 rounded-md text-sm transition-colors border"
+                                  :class="[
+                                    darkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300 text-gray-900 placeholder-gray-500',
+                                    cardField.name === 'sign_expires' && !formData.enable_sign ? 'opacity-50 cursor-not-allowed' : ''
+                                  ]"
+                                />
+                                <span
+                                  v-if="cardField.ui?.suffix"
+                                  class="absolute right-3 top-1/2 -translate-y-1/2 text-xs"
+                                  :class="darkMode ? 'text-gray-400' : 'text-gray-500'"
+                                >
+                                  {{ cardField.ui.suffix.startsWith('admin.') ? t(cardField.ui.suffix) : cardField.ui.suffix }}
+                                </span>
+                              </div>
+                              <p
+                                v-if="shouldShowDescription(cardField)"
+                                class="mt-0.5 text-xs"
+                                :class="[
+                                  darkMode ? 'text-gray-400' : 'text-gray-500',
+                                  cardField.name === 'sign_expires' && !formData.enable_sign ? 'opacity-50' : ''
+                                ]"
+                              >
+                                {{ getFieldDescription(cardField) }}
+                              </p>
+                            </div>
+                          </template>
+                        </template>
+                      </div>
+                    </div>
+                  </Transition>
 
-            <!-- 排序顺序 -->
-            <div>
-              <label for="sort_order" class="block text-sm font-medium mb-1" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">{{ t("admin.mount.form.sortOrder") }}</label>
-              <input
-                type="number"
-                id="sort_order"
-                v-model="formData.sort_order"
-                @input="handleFieldChange('sort_order')"
-                @blur="validateField('sort_order')"
-                class="block w-full px-3 py-1.5 sm:py-2 rounded-md text-sm transition-colors duration-200"
-                :class="[
-                  darkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300 text-gray-900 placeholder-gray-500',
-                  errors.sort_order ? 'border-red-500' : '',
-                ]"
-                :placeholder="t('admin.mount.form.sortOrderPlaceholder')"
-                step="1"
-              />
-              <p v-if="errors.sort_order" class="mt-1 text-sm text-red-500">{{ errors.sort_order }}</p>
-              <p class="mt-0.5 text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">{{ t("admin.mount.form.sortOrderHint") }}</p>
-            </div>
-          </div>
-
-          <!-- 网页代理设置 -->
-          <div class="mt-1 sm:mt-2">
-            <div class="flex items-center">
-              <div class="flex items-center h-5">
-                <input
-                  id="web_proxy"
-                  type="checkbox"
-                  v-model="formData.web_proxy"
-                  class="h-4 w-4 sm:h-5 sm:w-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                  :class="darkMode ? 'bg-gray-700 border-gray-600' : ''"
-                />
+                </template>
               </div>
-              <div class="ml-2 sm:ml-3">
-                <label for="web_proxy" class="text-sm font-medium" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">{{ t("admin.mount.form.webProxy") }}</label>
-                <p class="text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">{{ t("admin.mount.form.webProxyHint") }}</p>
-              </div>
-            </div>
-          </div>
-
-          <!-- 代理签名配置 -->
-          <div v-show="formData.web_proxy" class="mt-3 sm:mt-4 p-3 rounded-md border" :class="darkMode ? 'bg-gray-800/50 border-gray-600' : 'bg-gray-50 border-gray-200'">
-            <h4 class="text-sm font-medium mb-3" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">{{ t("admin.mount.form.proxySign.title") }}</h4>
-
-            <!-- 启用签名开关 -->
-            <div class="mb-3">
-              <div class="flex items-center">
-                <div class="flex items-center h-5">
-                  <input
-                    id="enable_sign"
-                    type="checkbox"
-                    v-model="formData.enable_sign"
-                    class="h-4 w-4 sm:h-5 sm:w-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                    :class="darkMode ? 'bg-gray-700 border-gray-600' : ''"
-                  />
-                </div>
-                <div class="ml-2 sm:ml-3">
-                  <label for="enable_sign" class="text-sm font-medium" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">{{
-                    t("admin.mount.form.proxySign.enableSign")
-                  }}</label>
-                  <p class="text-xs mt-0.5" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">{{ t("admin.mount.form.proxySign.enableSignHint") }}</p>
-                </div>
-              </div>
-            </div>
-
-            <!-- 签名过期时间设置 -->
-            <div v-show="formData.enable_sign" class="transition-all duration-200">
-              <label for="sign_expires" class="block text-sm font-medium mb-1" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">{{
-                t("admin.mount.form.proxySign.signExpires")
-              }}</label>
-              <input
-                id="sign_expires"
-                type="number"
-                v-model.number="formData.sign_expires"
-                min="0"
-                :placeholder="t('admin.mount.form.proxySign.signExpiresPlaceholder')"
-                class="block w-full px-3 py-1.5 sm:py-2 rounded-md text-sm transition-colors duration-200 border"
-                :class="darkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'"
-              />
-              <p class="mt-1 text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">{{ t("admin.mount.form.proxySign.signExpiresHint") }}</p>
-            </div>
-          </div>
-
-          <!-- WebDAV策略 -->
-          <div>
-            <label for="webdav_policy" class="block text-sm font-medium mb-1" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">{{ t("admin.mount.form.webdavPolicy") }}</label>
-            <select
-              id="webdav_policy"
-              v-model="formData.webdav_policy"
-              class="block w-full px-3 py-1.5 sm:py-2 rounded-md text-sm transition-colors duration-200"
-              :class="[darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300 text-gray-900']"
-            >
-              <option
-                v-for="policy in availableWebdavPolicies"
-                :key="policy"
-                :value="policy"
-              >
-                {{ t(`admin.mount.form.webdavPolicyOptions.${policy}`) }}
-              </option>
-            </select>
-            <p class="mt-0.5 text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
-              {{ t("admin.mount.form.webdavPolicyDescription") }}
-            </p>
-          </div>
-
-          <!-- 是否启用 - 优化移动端显示 -->
-          <div class="mt-1 sm:mt-2">
-            <div class="flex items-center">
-              <div class="flex items-center h-5">
-                <input
-                  id="is_active"
-                  type="checkbox"
-                  v-model="formData.is_active"
-                  class="h-4 w-4 sm:h-5 sm:w-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                  :class="darkMode ? 'bg-gray-700 border-gray-600' : ''"
-                />
-              </div>
-              <div class="ml-2 sm:ml-3">
-                <label for="is_active" class="text-sm font-medium" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">{{ t("admin.mount.form.isActive") }}</label>
-                <p class="text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">{{ t("admin.mount.form.isActiveHint") }}</p>
-              </div>
-            </div>
-          </div>
-        </form>
+            </template>
+          </form>
+        </template>
       </div>
 
-      <!-- 操作按钮 - 优化移动端布局 -->
+      <!-- 操作按钮 -->
       <div
-        class="px-3 sm:px-4 py-2 sm:py-3 border-t transition-colors duration-200 flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-3 space-y-2 space-y-reverse sm:space-y-0"
+        class="px-3 sm:px-4 py-2 sm:py-3 border-t flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-3 space-y-2 space-y-reverse sm:space-y-0"
         :class="darkMode ? 'border-gray-700 bg-gray-800' : 'border-gray-200 bg-gray-50'"
       >
         <button
           @click="closeForm"
-          class="w-full sm:w-auto px-4 py-2 rounded-md text-sm font-medium transition-colors duration-200"
+          class="w-full sm:w-auto px-4 py-2 rounded-md text-sm font-medium transition-colors"
           :class="darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-200 hover:bg-gray-300 text-gray-700'"
           :disabled="submitting"
         >
           {{ t("admin.mount.form.cancel") }}
         </button>
-
         <button
           type="button"
           @click="submitForm"
-          :disabled="submitting"
-          class="w-full sm:w-auto flex justify-center items-center px-4 py-2 rounded-md text-sm font-medium transition-colors duration-200"
-          :class="[submitting ? 'opacity-75 cursor-not-allowed' : 'hover:bg-primary-600', darkMode ? 'bg-primary-600' : 'bg-primary-500', 'text-white']"
+          :disabled="submitting || loading"
+          class="w-full sm:w-auto flex justify-center items-center px-4 py-2 rounded-md text-sm font-medium transition-colors text-white"
+          :class="[submitting ? 'opacity-75 cursor-not-allowed' : 'hover:bg-primary-600', darkMode ? 'bg-primary-600' : 'bg-primary-500']"
         >
-          <svg v-if="submitting" class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <svg v-if="submitting" class="animate-spin -ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24">
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
           </svg>
           {{ submitting ? t("admin.mount.form.saving") : isEditMode ? t("admin.mount.form.save") : t("admin.mount.form.create") }}
         </button>

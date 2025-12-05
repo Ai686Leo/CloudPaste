@@ -141,12 +141,12 @@ export function useFsService() {
   /**
    * 批量复制文件/目录
    * @param {Array<{sourcePath:string,targetPath:string}>} items
-   * @param {boolean} [skipExisting=true]
    * @param {Object} [options]
+   * @param {boolean} [options.skipExisting=true] 是否跳过已存在的文件
    * @returns {Promise<Object>} 原始复制结果，由后端定义结构
    */
-  const batchCopyItems = async (items, skipExisting = true, options = {}) => {
-    return api.fs.batchCopyItems(items, skipExisting, options);
+  const batchCopyItems = async (items, options = {}) => {
+    return api.fs.batchCopyItems(items, options);
   };
 
   /**
@@ -189,6 +189,53 @@ export function useFsService() {
     await downloadFileWithAuth(endpoint, filename, headers ? { headers } : {});
   };
 
+  /**
+   * 创建通用作业（支持多种任务类型）
+   * @param {string} taskType 任务类型（'copy', 'scheduled-sync', 'cleanup' 等）
+   * @param {Object} payload 任务载荷
+   * @param {Object} [options] 选项参数
+   * @returns {Promise<Object>} 作业描述符
+   */
+  const createJob = async (taskType, payload, options = {}) => {
+    return api.fs.createJob(taskType, payload, options);
+  };
+
+  /**
+   * 获取作业状态
+   * @param {string} jobId 作业ID
+   * @returns {Promise<Object>} 作业状态信息
+   */
+  const getJobStatus = async (jobId) => {
+    return api.fs.getJobStatus(jobId);
+  };
+
+  /**
+   * 取消作业
+   * @param {string} jobId 作业ID
+   * @returns {Promise<Object>} 取消操作结果
+   */
+  const cancelJob = async (jobId) => {
+    return api.fs.cancelJob(jobId);
+  };
+
+  /**
+   * 列出作业
+   * @param {Object} [filter] 过滤条件
+   * @returns {Promise<Object>} 作业列表
+   */
+  const listJobs = async (filter = {}) => {
+    return api.fs.listJobs(filter);
+  };
+
+  /**
+   * 删除作业
+   * @param {string} jobId 作业ID
+   * @returns {Promise<Object>} 删除结果
+   */
+  const deleteJob = async (jobId) => {
+    return api.fs.deleteJob(jobId);
+  };
+
   return {
     getDirectoryList,
     getFileInfo,
@@ -198,5 +245,10 @@ export function useFsService() {
     batchCopyItems,
     getFileLink,
     downloadFile,
+    createJob,
+    getJobStatus,
+    cancelJob,
+    listJobs,
+    deleteJob,
   };
 }

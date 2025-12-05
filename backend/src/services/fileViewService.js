@@ -8,6 +8,8 @@ import { verifyPassword } from "../utils/crypto.js";
 import { getEffectiveMimeType, getContentTypeAndDisposition } from "../utils/fileUtils.js";
 import { getFileBySlug, isFileAccessible } from "./fileService.js";
 import { ObjectStore } from "../storage/object/ObjectStore.js";
+import { StorageStreaming, STREAMING_CHANNELS } from "../storage/streaming/index.js";
+import { StorageFactory } from "../storage/factory/StorageFactory.js";
 
 /**
  * 文件查看服务类
@@ -127,20 +129,29 @@ export class FileViewService {
       const useProxyFlag = fileRecord.use_proxy ?? 0;
 
       // 抽取本地代理下载逻辑，便于在直链失败时复用
+      // 使用 StorageStreaming 层统一处理
       const proxyDownload = async () => {
-        // 获取文件的MIME类型（用于覆盖/统一 Content-Type）
-        const contentType = getEffectiveMimeType(fileRecord.mimetype, fileRecord.filename);
-
-        // 处理 Range 请求（透传给底层驱动）
+        // 处理 Range 请求
         const rangeHeader = request.headers.get("Range");
         if (rangeHeader) {
           console.log(`🎬 分享下载 - 代理 Range 请求: ${rangeHeader}`);
         }
 
-        // 通过 ObjectStore 封装的 storage-first 视图进行下载代理
-        const objectStore = new ObjectStore(this.db, this.encryptionSecret, this.repositoryFactory);
-        const driverResponse = await objectStore.downloadByStoragePath(fileRecord.storage_config_id, fileRecord.storage_path, {
+        // 使用 StorageStreaming 层统一处理内容访问
+        const streaming = new StorageStreaming({
+          mountManager: null, // 存储路径模式不需要 mountManager
+          storageFactory: StorageFactory,
+          encryptionSecret: this.encryptionSecret,
+        });
+
+        const response = await streaming.createResponse({
+          path: fileRecord.storage_path,
+          channel: STREAMING_CHANNELS.SHARE,
+          storageConfigId: fileRecord.storage_config_id,
+          rangeHeader,
           request,
+          db: this.db,
+          repositoryFactory: this.repositoryFactory,
         });
 
         // 基于文件记录重新计算 Content-Type / Content-Disposition，保持分享层一致性
@@ -150,21 +161,17 @@ export class FileViewService {
           { forceDownload }
         );
 
-        const responseHeaders = new Headers(driverResponse.headers || {});
-        responseHeaders.set("Content-Type", finalContentType);
-        responseHeaders.set("Content-Disposition", contentDisposition);
+        // 更新响应头
+        response.headers.set("Content-Type", finalContentType);
+        response.headers.set("Content-Disposition", contentDisposition);
 
         // 设置CORS头部
-        responseHeaders.set("Access-Control-Allow-Origin", "*");
-        responseHeaders.set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
-        responseHeaders.set("Access-Control-Allow-Headers", "Range, Content-Type");
-        responseHeaders.set("Access-Control-Expose-Headers", "Content-Length, Content-Range, Accept-Ranges");
+        response.headers.set("Access-Control-Allow-Origin", "*");
+        response.headers.set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+        response.headers.set("Access-Control-Allow-Headers", "Range, Content-Type");
+        response.headers.set("Access-Control-Expose-Headers", "Content-Length, Content-Range, Accept-Ranges");
 
-        return new Response(driverResponse.body, {
-          status: driverResponse.status,
-          statusText: driverResponse.statusText,
-          headers: responseHeaders,
-        });
+        return response;
       };
 
       // use_proxy = 1 时，走本地代理访问

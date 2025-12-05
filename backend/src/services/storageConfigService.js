@@ -1,6 +1,7 @@
 // 统一的存储配置服务（单表 + JSON）
 import { ensureRepositoryFactory } from "../utils/repositories.js";
 import { StorageFactory } from "../storage/factory/StorageFactory.js";
+import { MountManager } from "../storage/managers/MountManager.js";
 import { ApiStatus } from "../constants/index.js";
 import { AppError, ValidationError, NotFoundError, DriverError } from "../http/errors.js";
 
@@ -15,36 +16,20 @@ function computeWebDavSupportedPolicies(cfg) {
   const type = cfg?.storage_type;
   const hasUrlProxy = !!cfg?.url_proxy;
 
-  switch (type) {
-    case "S3": {
-      // S3 驱动实现了 generateDownloadUrl，支持存储直链重定向
-      policies.push("302_redirect");
-      // 配置了 url_proxy 时支持 use_proxy_url（下游 Proxy/Worker/CDN 入口）
-      if (hasUrlProxy) {
-        policies.push("use_proxy_url");
-      }
-      // 永远支持 native_proxy（由 WebDAV 层本地代理到底层 S3）
-      policies.push("native_proxy");
-      break;
-    }
-    case "WEBDAV": {
-      // WebDAV 驱动不支持 DirectLink，因此不提供 302_redirect
-      // 仅在配置了 url_proxy 时支持 use_proxy_url
-      if (hasUrlProxy) {
-        policies.push("use_proxy_url");
-      }
-      // 永远支持 native_proxy（由 WebDAV 层本地代理到底层 WebDAV 服务器）
-      policies.push("native_proxy");
-      break;
-    }
-    default: {
-      // 其他类型：兜底只声明 native_proxy
-      policies.push("native_proxy");
-      break;
-    }
+  // 所有存储类型统一支持本地代理（native_proxy）
+  policies.push("native_proxy");
+
+  // 只要配置了 url_proxy，就支持 URL 代理（use_proxy_url），与 storage_type 无关
+  if (hasUrlProxy) {
+    policies.push("use_proxy_url");
   }
 
-  //去重
+  // 仅具备直链能力的类型暴露 302_redirect，目前是 S3
+  if (type === "S3") {
+    policies.push("302_redirect");
+  }
+
+  // 去重
   return Array.from(new Set(policies));
 }
 import { encryptValue, buildSecretView } from "../utils/crypto.js";
@@ -273,7 +258,11 @@ export async function updateStorageConfig(db, id, updateData, adminId, encryptio
   if (topPatch.is_default === 1) {
     await repo.setAsDefault(id, adminId);
   }
-  return;
+
+  try {
+    const mountManager = new MountManager(db, encryptionSecret, factory);
+    await mountManager.clearConfigCache(exists.storage_type, id);
+  } catch {}
 }
 
 export async function deleteStorageConfig(db, id, adminId, repositoryFactory = null) {

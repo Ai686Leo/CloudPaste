@@ -206,6 +206,13 @@
         </div>
       </div>
     </div>
+
+    <!-- 确认对话框 -->
+    <ConfirmDialog
+      v-bind="dialogState"
+      @confirm="handleConfirm"
+      @cancel="handleCancel"
+    />
   </div>
 </template>
 
@@ -215,12 +222,17 @@ import { useI18n } from "vue-i18n";
 import { useAdminSystemService } from "@/modules/admin/services/systemService.js";
 import { useThemeMode } from "@/composables/core/useThemeMode.js";
 import { useGlobalMessage } from "@/composables/core/useGlobalMessage.js";
+import { useConfirmDialog } from "@/composables/core/useConfirmDialog.js";
+import ConfirmDialog from "@/components/common/dialogs/ConfirmDialog.vue";
 
 // 使用i18n
 const { t } = useI18n();
 const { getPreviewSettings, updatePreviewSettings } = useAdminSystemService();
 const { isDarkMode: darkMode } = useThemeMode();
 const { showSuccess, showError } = useGlobalMessage();
+
+// 确认对话框
+const { dialogState, confirm, handleConfirm, handleCancel } = useConfirmDialog();
 
 // 状态管理（仅用于控制加载状态）
 const status = ref({
@@ -331,10 +343,18 @@ const handleSaveSettings = async (event) => {
 };
 
 // 重置为默认设置
-const handleResetToDefaults = () => {
-  if (confirm(t("admin.preview.resetConfirm"))) {
-    Object.assign(settings.value, defaultSettings);
+const handleResetToDefaults = async () => {
+  const confirmed = await confirm({
+    title: t("common.dialogs.resetTitle"),
+    message: t("common.dialogs.resetConfirm"),
+    confirmType: "warning",
+    confirmText: t("common.dialogs.resetButton"),
+    darkMode: darkMode.value,
+  });
+  if (!confirmed) {
+    return;
   }
+  Object.assign(settings.value, defaultSettings);
 };
 
 // 组件挂载时加载设置

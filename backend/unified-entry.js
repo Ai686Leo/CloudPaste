@@ -6,6 +6,10 @@
 import app from "./src/index.js";
 import { ApiStatus } from "./src/constants/index.js";
 import { checkAndInitDatabase } from "./src/utils/database.js";
+import { registerTaskHandlers } from "./src/storage/fs/tasks/registerHandlers.js";
+
+// 在模块加载时注册所有任务处理器
+registerTaskHandlers();
 
 // 运行时环境检测：通过 caches.default 判断是否为 Cloudflare Workers
 const isCloudflareWorkers = (() => {
@@ -15,6 +19,18 @@ const isCloudflareWorkers = (() => {
     return false;
   }
 })();
+
+// Cloudflare Workflows 条件导出（仅在 Workers 环境下实际使用）
+export const JobWorkflow = isCloudflareWorkers
+  ? (await import("./src/workflows/JobWorkflow.ts")).JobWorkflow
+  : class JobWorkflow {
+      constructor() {
+        console.warn('JobWorkflow 在 Node 环境下不可用');
+      }
+      async run() {
+        throw new Error('JobWorkflow 仅在 Cloudflare Workers 环境下可用');
+      }
+    };
 
 // ============ Cloudflare Workers 环境导出 ============ 
 // 默认导出 fetch，只在 Workers 环境下由 Cloudflare 调用；
@@ -92,6 +108,8 @@ if (!isCloudflareWorkers) {
     const bindings = {
       DB: sqliteAdapter,
       ENCRYPTION_SECRET: process.env.ENCRYPTION_SECRET,
+      TASK_DATABASE_PATH: dbPath,
+      TASK_WORKER_POOL_SIZE: Number(process.env.TASK_WORKER_POOL_SIZE) || 10,
     };
 
     if (!bindings.ENCRYPTION_SECRET) {

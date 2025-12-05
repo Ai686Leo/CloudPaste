@@ -4,6 +4,8 @@ export default {
     loading: "Loading...",
     confirm: "Confirm",
     cancel: "Cancel",
+    enabled: "Enabled",
+    disabled: "Disabled",
     back: "Back",
     close: "Close",
     required: "Please fill in required fields",
@@ -11,6 +13,8 @@ export default {
     contactAdmin: "Contact Administrator",
     permissionDenied: "Permission Denied",
     actions: "Actions",
+    selectOption: "Please select",
+    pleaseSelect: "Please select",
     pagination: {
       previousPage: "Previous",
       nextPage: "Next",
@@ -37,6 +41,21 @@ export default {
       processing: "Processing...",
       requiredField: "This field is required",
       invalidInput: "Invalid input",
+      // Common delete confirmation dialogs
+      deleteTitle: "Confirm Delete",
+      deleteItem: "Are you sure you want to delete {name}? This action cannot be undone.",
+      deleteMultiple: "Are you sure you want to delete {count} selected items? This action cannot be undone.",
+      deleteButton: "Delete",
+      // Common warning dialogs
+      warningTitle: "Warning",
+      // Common cleanup dialogs
+      cleanupTitle: "Confirm Cleanup",
+      cleanupExpired: "Are you sure you want to clean up all expired items? This action cannot be undone.",
+      cleanupButton: "Clean Up",
+      // Common reset dialogs
+      resetTitle: "Confirm Reset",
+      resetConfirm: "Are you sure you want to reset to default settings? Current settings will be lost.",
+      resetButton: "Reset",
       selectUpload: {
         title: "Select Upload to Resume",
         description: "Found {count} resumable uploads, please select one to continue:",
@@ -80,6 +99,8 @@ export default {
       accountSettings: "Account Management",
       webdavSettings: "WebDAV Settings",
       siteSettings: "Site Settings",
+      backup: "Backup",
+      tasks: "Task Management",
     },
   },
   nav: {

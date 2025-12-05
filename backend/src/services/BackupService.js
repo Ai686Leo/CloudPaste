@@ -21,6 +21,7 @@ export class BackupService {
       account_management: ["admins", "admin_tokens"],
       system_settings: ["system_settings"],
       fs_meta_management: ["fs_meta"],
+      task_management: ["tasks"],
     };
 
     // 表的依赖关系（用于确定导入顺序）
@@ -31,6 +32,7 @@ export class BackupService {
       admin_tokens: ["admins"],
       storage_configs: ["admins"], // storage_configs.admin_id -> admins.id
       storage_mounts: ["storage_configs"], // storage_mounts.storage_config_id -> storage_configs.id
+      tasks: ["api_keys"], // tasks.user_id -> api_keys.id (当 user_type='apikey' 时)
     };
   }
 

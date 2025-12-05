@@ -149,6 +149,13 @@
           {{ t("fileBasket.actions.clear") }}
         </button>
       </div>
+
+      <!-- 确认对话框 -->
+      <ConfirmDialog
+        v-bind="dialogState"
+        @confirm="handleConfirm"
+        @cancel="handleCancel"
+      />
     </div>
   </div>
 </template>
@@ -158,8 +165,10 @@ import { ref, computed, watch, onUnmounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { storeToRefs } from "pinia";
 import { useFileBasket } from "@/composables/file-system/useFileBasket.js";
+import { useConfirmDialog } from "@/composables/core/useConfirmDialog.js";
 import { formatFileSize } from "@/utils/fileUtils.js";
 import { getFileIcon } from "@/utils/fileTypeIcons.js";
+import ConfirmDialog from "@/components/common/dialogs/ConfirmDialog.vue";
 
 const { t } = useI18n();
 
@@ -178,6 +187,9 @@ const emit = defineEmits(["close", "task-created", "show-message"]);
 
 // 使用文件篮composable
 const fileBasket = useFileBasket();
+
+// 确认对话框
+const { dialogState, confirm, handleConfirm, handleCancel } = useConfirmDialog();
 
 // 直接从store获取计算属性，避免storeToRefs的问题
 const filesByDirectory = computed(() => fileBasket.filesByDirectory.value);
@@ -306,10 +318,17 @@ const handlePackDownload = async () => {
 };
 
 // 处理清空篮子
-const handleClearBasket = () => {
+const handleClearBasket = async () => {
   if (isProcessing.value) return;
 
-  const confirmed = confirm(t("fileBasket.confirmations.clearBasket"));
+  // 使用统一确认对话框
+  const confirmed = await confirm({
+    title: t("fileBasket.confirmations.clearTitle", "确认清空"),
+    message: t("fileBasket.confirmations.clearBasket"),
+    confirmType: "warning",
+    confirmText: t("fileBasket.actions.clear"),
+    darkMode: props.darkMode,
+  });
   if (!confirmed) return;
 
   try {

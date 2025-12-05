@@ -1,4 +1,5 @@
 import { ref, reactive, computed } from "vue";
+import { useI18n } from "vue-i18n";
 import { copyToClipboard } from "@/utils/clipboard.js";
 import { useDeleteSettingsStore } from "@/stores/deleteSettingsStore.js";
 import { useAdminBase } from "@/modules/admin";
@@ -9,10 +10,17 @@ import { useFileShareStore } from "@/modules/fileshare/fileShareStore.js";
 /**
  * 文件管理专用composable
  * 基于useAdminBase，添加文件管理特有的逻辑
+ * @param {string} userType - 用户类型 'admin' 或 'apikey'
+ * @param {Object} options - 配置选项
+ * @param {Function} options.confirmFn - 确认对话框函数（可选，不提供则使用原生confirm）
  */
-export function useFileManagement(userType = "admin") {
+export function useFileManagement(userType = "admin", { confirmFn } = {}) {
   // 继承基础管理功能
   const base = useAdminBase();
+
+  // 国际化
+  const { t } = useI18n();
+
   const fileshareService = useFileshareService();
   const fileShareStore = useFileShareStore();
   // 文件管理特有状态（列表统一由 fileshare store 提供）
@@ -71,7 +79,19 @@ export function useFileManagement(userType = "admin") {
    * 删除单个文件
    */
   const handleFileDelete = async (file) => {
-    if (!confirm("确定要删除此文件吗？此操作不可恢复。")) {
+    // 使用传入的确认函数或默认的 window.confirm
+    let confirmed;
+    if (confirmFn) {
+      confirmed = await confirmFn({
+        title: t("common.dialogs.deleteTitle"),
+        message: t("common.dialogs.deleteItem", { name: `"${file.filename}"` }),
+        confirmType: "danger",
+      });
+    } else {
+      confirmed = confirm(t("common.dialogs.deleteItem", { name: `"${file.filename}"` }));
+    }
+
+    if (!confirmed) {
       return;
     }
 
@@ -93,7 +113,19 @@ export function useFileManagement(userType = "admin") {
       return;
     }
 
-    if (!confirm(`确定要删除选中的 ${selectedCount} 个文件吗？此操作不可恢复。`)) {
+    // 使用传入的确认函数或默认的 window.confirm
+    let confirmed;
+    if (confirmFn) {
+      confirmed = await confirmFn({
+        title: t("common.dialogs.deleteTitle"),
+        message: t("common.dialogs.deleteMultiple", { count: selectedCount }),
+        confirmType: "danger",
+      });
+    } else {
+      confirmed = confirm(t("common.dialogs.deleteMultiple", { count: selectedCount }));
+    }
+
+    if (!confirmed) {
       return;
     }
 

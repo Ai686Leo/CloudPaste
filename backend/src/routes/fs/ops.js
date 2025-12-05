@@ -43,7 +43,7 @@ const copyItemsResolver = (c) => {
 };
 
 export const registerOpsRoutes = (router, helpers) => {
-  const { getServiceParams, getStorageConfigByUserType } = helpers;
+  const { getServiceParams } = helpers;
 
   router.post("/api/fs/rename", parseJsonBody, usePolicy("fs.rename", { pathResolver: renamePathResolver }), async (c) => {
     const db = c.env.DB;
@@ -104,82 +104,151 @@ export const registerOpsRoutes = (router, helpers) => {
     }
 
     const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
-    const fileSystem = new FileSystem(mountManager);
-    const copyItems = items.map((item) => ({ ...item, skipExisting }));
-    const result = await fileSystem.batchCopyItems(copyItems, userIdOrInfo, userType);
 
-    const totalSuccess = result.success || 0;
-    const totalSkipped = result.skipped || 0;
-    const totalFailed = (result.failed && result.failed.length) || 0;
-    const allDetails = result.details || [];
-    const allFailedItems = result.failed || [];
-    const hasCrossStorageOperations = result.hasCrossStorageOperations || false;
-    const crossStorageResults = result.crossStorageResults || [];
-
-    if (hasCrossStorageOperations) {
-      return jsonOk(
-        c,
-        {
-          crossStorage: true,
-          requiresClientSideCopy: true,
-          standardCopyResults: {
-            success: totalSuccess,
-            skipped: totalSkipped,
-            failed: totalFailed,
-          },
-          crossStorageResults,
-          failed: allFailedItems,
-          details: allDetails,
-        },
-        "FILE_COPY_SUCCESS"
-      );
-    }
+    // ========== 统一任务模式 ==========
+    // 所有复制操作统一创建任务，无条件分支
+    // 复制策略由 CopyTaskHandler 内部决策
+    const fileSystem = new FileSystem(mountManager, c.env);
+    const jobDescriptor = await fileSystem.createJob(
+      'copy',
+      { items, options: { skipExisting } },
+      userIdOrInfo,
+      userType
+    );
 
     return jsonOk(
       c,
       {
-        crossStorage: false,
-        success: totalSuccess,
-        skipped: totalSkipped,
-        failed: totalFailed,
-        details: allDetails,
+        jobId: jobDescriptor.jobId,
+        taskType: jobDescriptor.taskType,
+        status: jobDescriptor.status,
+        stats: jobDescriptor.stats,
+        createdAt: jobDescriptor.createdAt,
       },
-      "FILE_COPY_SUCCESS"
+      "复制作业已创建"
     );
   });
 
-  router.post("/api/fs/batch-copy-commit", parseJsonBody, usePolicy("fs.copy", { pathCheck: false }), async (c) => {
+  // ========== 通用作业 API (Generic Job System) ==========
+
+  router.post("/api/fs/jobs", parseJsonBody, usePolicy("fs.copy", { pathResolver: copyItemsResolver }), async (c) => {
     const db = c.env.DB;
     const userInfo = c.get("userInfo");
     const { userIdOrInfo, userType } = getServiceParams(userInfo);
-    const body = c.get("jsonBody");
-    const { targetMountId, files } = body;
-
-    if (!targetMountId || !Array.isArray(files) || files.length === 0) {
-      throw new ValidationError("请提供有效的目标挂载点ID和文件列表");
-    }
-
-    const repositoryFactory = useRepositories(c);
-    const mountRepository = repositoryFactory.getMountRepository();
-    const mount = await mountRepository.findById(targetMountId);
-    if (!mount) {
-      throw new NotFoundError("目标挂载点不存在");
-    }
-
     const { getEncryptionSecret } = await import("../../utils/environmentUtils.js");
-    const storageConfig = await getStorageConfigByUserType(db, mount.storage_config_id, userIdOrInfo, userType, getEncryptionSecret(c));
-    if (!storageConfig) {
-      throw new NotFoundError("存储配置不存在");
+    const encryptionSecret = getEncryptionSecret(c);
+    const repositoryFactory = c.get("repos");
+    const body = c.get("jsonBody");
+
+    // 支持动态任务类型 (默认 'copy' 保持向后兼容)
+    const taskType = body.taskType || 'copy';
+    const items = body.items;
+    const options = {
+      skipExisting: body.skipExisting !== false,
+      maxConcurrency: body.maxConcurrency || 10,
+      retryPolicy: body.retryPolicy,
+    };
+
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      throw new ValidationError("请提供有效的复制项数组");
     }
 
-    const mountManager = new MountManager(db, getEncryptionSecret(c), repositoryFactory);
-    const fsForCommit = new FileSystem(mountManager);
-    const results = await fsForCommit.commitCrossStorageCopy(mount, files);
+    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
+    const fileSystem = new FileSystem(mountManager, c.env);
+    const jobDescriptor = await fileSystem.createJob(taskType, { items, options }, userIdOrInfo, userType);
 
-    const hasFailures = results.failed.length > 0;
-    const hasSuccess = results.success.length > 0;
-    const overallSuccess = hasSuccess;
+    return jsonOk(c, jobDescriptor, "作业已创建");
+  });
 
-    return jsonOk(c, { ...results, crossStorage: true }, "FILE_COPY_SUCCESS");
+  // 注意：权限检查已移至 FileSystem 业务层，此处仅需基础挂载权限
+  router.get("/api/fs/jobs/:jobId", usePolicy("fs.base", { pathCheck: false }), async (c) => {
+    const db = c.env.DB;
+    const userInfo = c.get("userInfo");
+    const { userIdOrInfo, userType } = getServiceParams(userInfo);
+    const { getEncryptionSecret } = await import("../../utils/environmentUtils.js");
+    const encryptionSecret = getEncryptionSecret(c);
+    const repositoryFactory = c.get("repos");
+    const jobId = c.req.param("jobId");
+
+    if (!jobId) {
+      throw new ValidationError("请提供作业ID");
+    }
+
+    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
+    const fileSystem = new FileSystem(mountManager, c.env);
+    const jobStatus = await fileSystem.getJobStatus(jobId, userIdOrInfo, userType);
+
+    return jsonOk(c, jobStatus);
+  });
+
+  // 注意：权限检查已移至 FileSystem 业务层，此处仅需基础挂载权限
+  router.post("/api/fs/jobs/:jobId/cancel", usePolicy("fs.base", { pathCheck: false }), async (c) => {
+    const db = c.env.DB;
+    const userInfo = c.get("userInfo");
+    const { userIdOrInfo, userType } = getServiceParams(userInfo);
+    const { getEncryptionSecret } = await import("../../utils/environmentUtils.js");
+    const encryptionSecret = getEncryptionSecret(c);
+    const repositoryFactory = c.get("repos");
+    const jobId = c.req.param("jobId");
+
+    if (!jobId) {
+      throw new ValidationError("请提供作业ID");
+    }
+
+    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
+    const fileSystem = new FileSystem(mountManager, c.env);
+    await fileSystem.cancelJob(jobId, userIdOrInfo, userType);
+
+    return jsonOk(c, undefined, "作业已取消");
+  });
+
+  router.get("/api/fs/jobs", usePolicy("fs.base", { pathCheck: false }), async (c) => {
+    const db = c.env.DB;
+    const userInfo = c.get("userInfo");
+    const { userIdOrInfo, userType } = getServiceParams(userInfo);
+    const { getEncryptionSecret } = await import("../../utils/environmentUtils.js");
+    const encryptionSecret = getEncryptionSecret(c);
+    const repositoryFactory = c.get("repos");
+
+    // 解析查询参数 (新增 taskType 支持)
+    const taskType = c.req.query("taskType");
+    const status = c.req.query("status");
+    const limit = parseInt(c.req.query("limit") || "20", 10);
+    const offset = parseInt(c.req.query("offset") || "0", 10);
+
+    const filter = {
+      taskType,
+      status,
+      // 不在此处设置 userId，交由 FileSystem 层根据 userType 判断
+      limit: Math.min(limit, 100), // 最大 100 条
+      offset: Math.max(offset, 0),
+    };
+
+    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
+    const fileSystem = new FileSystem(mountManager, c.env);
+    const jobs = await fileSystem.listJobs(filter, userIdOrInfo, userType);
+
+    return jsonOk(c, { jobs, total: jobs.length, limit: filter.limit, offset: filter.offset });
+  });
+
+  // 注意：权限检查已移至 FileSystem 业务层，此处仅需基础挂载权限
+  router.delete("/api/fs/jobs/:jobId", usePolicy("fs.base", { pathCheck: false }), async (c) => {
+    const db = c.env.DB;
+    const userInfo = c.get("userInfo");
+    const { userIdOrInfo, userType } = getServiceParams(userInfo);
+    const { getEncryptionSecret } = await import("../../utils/environmentUtils.js");
+    const encryptionSecret = getEncryptionSecret(c);
+    const repositoryFactory = c.get("repos");
+    const jobId = c.req.param("jobId");
+
+    if (!jobId) {
+      throw new ValidationError("请提供作业ID");
+    }
+
+    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
+    const fileSystem = new FileSystem(mountManager, c.env);
+    await fileSystem.deleteJob(jobId, userIdOrInfo, userType);
+
+    return jsonOk(c, undefined, "作业已删除");
   });
 };

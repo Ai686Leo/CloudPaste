@@ -55,16 +55,16 @@ export function getStandardWebDAVHeaders(options = {}) {
  */
 export function addWebDAVHeaders(response, options = {}) {
   const webdavHeaders = getStandardWebDAVHeaders(options);
-  const newResponse = new Response(response.body, response);
+  const res = response;
 
   // 只添加还没有的响应头，避免覆盖已有的头部
   for (const [key, value] of Object.entries(webdavHeaders)) {
-    if (!newResponse.headers.has(key)) {
-      newResponse.headers.set(key, value);
+    if (!res.headers.has(key)) {
+      res.headers.set(key, value);
     }
   }
 
-  return newResponse;
+  return res;
 }
 
 /**

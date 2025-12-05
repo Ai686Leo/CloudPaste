@@ -9,10 +9,19 @@ import { useAdminApiKeyService } from "@/modules/admin/services/apiKeyService.js
 
 /**
  * 挂载点管理专用composable
+ * @param {Object} options - 可选配置
+ * @param {Function} options.confirmFn - 自定义确认函数，接收 {title, message, confirmType} 参数，返回 Promise<boolean>
  */
-export function useMountManagement() {
-  // 继承基础管理功能独立的页面标识符
-  const base = useAdminBase("mount");
+export function useMountManagement(options = {}) {
+  const { confirmFn } = options;
+
+  // 继承基础管理功能（含视图模式切换）
+  const base = useAdminBase("mount", {
+    viewMode: {
+      storageKey: 'mount-view-mode',
+      defaultMode: 'grid',
+    },
+  });
   const { getMountsList, updateMount, createMount, deleteMount } = useAdminMountService();
   const { getAllApiKeys } = useAdminApiKeyService();
 
@@ -32,9 +41,8 @@ export function useMountManagement() {
   const currentMount = ref(null);
   const searchQuery = ref("");
 
-  // 视图模式状态管理
-  const VIEW_MODE_KEY = 'mount-view-mode';
-  const viewMode = ref(localStorage.getItem(VIEW_MODE_KEY) || 'grid');
+  // 从 base 获取视图模式（别名 toggleViewMode 保持兼容）
+  const { viewMode, switchViewMode: toggleViewMode } = base;
 
   // 挂载管理专用分页配置：每页默认 6 条，自定义可选项
   const pageSizeOptions = [6, 12, 24, 48, 96];
@@ -274,7 +282,19 @@ export function useMountManagement() {
    * 删除挂载点
    */
   const confirmDelete = async (id) => {
-    if (!confirm(t("admin.mount.confirmDelete.message", { name: "此挂载点" }))) {
+    // 使用传入的确认函数或默认的 window.confirm
+    let confirmed;
+    if (confirmFn) {
+      confirmed = await confirmFn({
+        title: t("common.dialogs.deleteTitle"),
+        message: t("common.dialogs.deleteItem", { name: t("admin.mount.item", "此挂载点") }),
+        confirmType: "danger",
+      });
+    } else {
+      confirmed = confirm(t("common.dialogs.deleteItem", { name: t("admin.mount.item", "此挂载点") }));
+    }
+
+    if (!confirmed) {
       return;
     }
 
@@ -485,15 +505,6 @@ export function useMountManagement() {
     }
 
     return storageConfigsStore.getStorageTypeLabel(mount.storage_type) || mount.storage_type || "-";
-  };
-
-  /**
-   * 切换视图模式
-   * @param {string} mode - 'grid' 或 'list'
-   */
-  const toggleViewMode = (mode) => {
-    viewMode.value = mode;
-    localStorage.setItem(VIEW_MODE_KEY, mode);
   };
 
   return {

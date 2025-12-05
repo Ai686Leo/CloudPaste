@@ -5,7 +5,15 @@
 
 import { AppError, NotFoundError, ConflictError, ValidationError, S3DriverError } from "../../../../http/errors.js";
 import { generateDownloadUrl, createS3Client } from "../utils/s3Utils.js";
-import { S3Client, GetObjectCommand, PutObjectCommand, DeleteObjectCommand, ListObjectsV2Command, CopyObjectCommand } from "@aws-sdk/client-s3";
+import {
+  S3Client,
+  GetObjectCommand,
+  PutObjectCommand,
+  DeleteObjectCommand,
+  ListObjectsV2Command,
+  CopyObjectCommand,
+  HeadObjectCommand,
+} from "@aws-sdk/client-s3";
 import { getMimeTypeFromFilename } from "../../../../utils/fileUtils.js";
 import { handleFsError } from "../../../fs/utils/ErrorHandler.js";
 import { updateParentDirectoriesModifiedTime } from "../utils/S3DirectoryUtils.js";
@@ -29,101 +37,133 @@ export class S3FileOperations {
   }
 
   /**
-   * 从S3获取文件内容
+   * 从S3获取文件内容（返回 StorageStreamDescriptor）
    * @param {Object} s3Config - S3配置对象
    * @param {string} s3SubPath - S3子路径
    * @param {string} fileName - 文件名
-   * @param {boolean} forceDownload - 是否强制下载
+   * @param {boolean} forceDownload - 是否强制下载（已废弃，由上层处理）
    * @param {string} encryptionSecret - 加密密钥
-   * @param {Request} request - 请求对象，用于获取Range头
-   * @returns {Promise<Response>} 文件内容响应
+   * @param {Request} request - 请求对象（已废弃，Range 由上层处理）
+   * @returns {Promise<import('../../../streaming/types.js').StorageStreamDescriptor>} 流描述对象
    */
   async getFileFromS3(s3Config, s3SubPath, fileName, forceDownload = false, encryptionSecret, request = null) {
+    const s3Client = await createS3Client(s3Config, encryptionSecret);
+    const key = s3SubPath.startsWith("/") ? s3SubPath.slice(1) : s3SubPath;
+
+    // 先获取文件元数据
+    let metadata;
     try {
-      const s3Client = await createS3Client(s3Config, encryptionSecret);
-
-      // 构建GetObject参数
-      const getParams = {
+      const headCommand = new HeadObjectCommand({
         Bucket: s3Config.bucket_name,
-        Key: s3SubPath.startsWith("/") ? s3SubPath.slice(1) : s3SubPath,
-      };
-
-      // 处理Range请求（用于视频流等）
-      if (request) {
-        const rangeHeader = request.headers.get("range");
-        if (rangeHeader) {
-          getParams.Range = rangeHeader;
-          console.log(`[S3FileOperations] Range请求: ${rangeHeader} -> ${s3SubPath}`);
-        }
-      }
-
-      // 使用AWS SDK v3的GetObjectCommand
-      const getCommand = new GetObjectCommand(getParams);
-      const response = await s3Client.send(getCommand);
-
-      // 获取内容类型
-      const contentType = response.ContentType || getMimeTypeFromFilename(fileName);
-
-      // 构建响应头
-      const headers = new Headers();
-      headers.set("Content-Type", contentType);
-      headers.set("Content-Length", response.ContentLength?.toString() || "0");
-
-      // 检查是否为Range请求响应
-      const contentRange = response.ContentRange;
-      const isRangeResponse = !!contentRange;
-
-      // 设置缓存控制 - Range请求使用较短的缓存时间
-      if (isRangeResponse) {
-        headers.set("Cache-Control", "public, max-age=3600"); // Range请求1小时缓存
-      }
-
-      // 处理下载
-      if (forceDownload) {
-        headers.set("Content-Disposition", `attachment; filename="${encodeURIComponent(fileName)}"`);
-      } else {
-        // 对于某些文件类型，设置为inline显示
-        if (contentType.startsWith("image/") || contentType.startsWith("video/") || contentType === "application/pdf") {
-          headers.set("Content-Disposition", `inline; filename="${encodeURIComponent(fileName)}"`);
-        }
-      }
-
-      // 处理Range响应 - 确保传递所有Range相关头部
-      if (contentRange) {
-        headers.set("Content-Range", contentRange);
-        console.log(`[S3FileOperations] Range响应: ${contentRange}`);
-      }
-
-      // 始终设置Accept-Ranges以支持Range请求
-      headers.set("Accept-Ranges", "bytes");
-
-      // 设置ETag
-      if (response.ETag) {
-        headers.set("ETag", response.ETag);
-      }
-
-      // 设置Last-Modified
-      if (response.LastModified) {
-        headers.set("Last-Modified", response.LastModified.toUTCString());
-      }
-
-      // 返回Response，AWS SDK v3成功响应状态码为200或206
-      const statusCode = isRangeResponse ? 206 : 200;
-      return new Response(response.Body, {
-        status: statusCode,
-        headers,
+        Key: key,
       });
+      metadata = await s3Client.send(headCommand);
     } catch (error) {
-      console.error("从S3获取文件失败:", error);
-
-      if (error instanceof AppError) {
-        throw error;
-      }
       if (error?.$metadata?.httpStatusCode === 404) {
         throw new NotFoundError("文件不存在");
       }
-      throw new S3DriverError("获取文件失败", { details: { cause: error?.message } });
+      throw new S3DriverError("获取文件元数据失败", { details: { cause: error?.message } });
     }
+
+    const contentType = metadata.ContentType || getMimeTypeFromFilename(fileName);
+    const size = metadata.ContentLength ?? null;
+    const etag = metadata.ETag ?? null;
+    const lastModified = metadata.LastModified ? new Date(metadata.LastModified) : null;
+
+    // 返回 StorageStreamDescriptor
+    return {
+      size,
+      contentType,
+      etag,
+      lastModified,
+
+      /**
+       * 获取完整文件流
+       * @param {{ signal?: AbortSignal }} [streamOptions]
+       * @returns {Promise<{ stream: ReadableStream, close: () => Promise<void> }>}
+       */
+      async getStream(streamOptions = {}) {
+        const { signal } = streamOptions;
+        try {
+          const getCommand = new GetObjectCommand({
+            Bucket: s3Config.bucket_name,
+            Key: key,
+          });
+          const response = await s3Client.send(getCommand, signal ? { abortSignal: signal } : undefined);
+
+          // AWS SDK v3 返回的 Body 是 Web ReadableStream
+          const stream = response.Body;
+
+          return {
+            stream,
+            async close() {
+              // AWS SDK 的流会自动关闭，但我们可以尝试取消
+              if (stream && typeof stream.cancel === "function") {
+                try {
+                  await stream.cancel();
+                } catch {
+                  // 忽略取消错误
+                }
+              }
+            },
+          };
+        } catch (error) {
+          if (error instanceof AppError) {
+            throw error;
+          }
+          if (error?.$metadata?.httpStatusCode === 404) {
+            throw new NotFoundError("文件不存在");
+          }
+          throw new S3DriverError("获取文件流失败", { details: { cause: error?.message } });
+        }
+      },
+
+      /**
+       * 获取指定范围的流（S3 原生支持 Range）
+       * @param {{ start: number, end?: number }} range
+       * @param {{ signal?: AbortSignal }} [streamOptions]
+       * @returns {Promise<{ stream: ReadableStream, close: () => Promise<void> }>}
+       */
+      async getRange(range, streamOptions = {}) {
+        const { signal } = streamOptions;
+        const { start, end } = range;
+
+        // 构建 Range 头
+        const rangeHeader = end !== undefined ? `bytes=${start}-${end}` : `bytes=${start}-`;
+
+        try {
+          const getCommand = new GetObjectCommand({
+            Bucket: s3Config.bucket_name,
+            Key: key,
+            Range: rangeHeader,
+          });
+          const response = await s3Client.send(getCommand, signal ? { abortSignal: signal } : undefined);
+
+          const stream = response.Body;
+
+          return {
+            stream,
+            async close() {
+              if (stream && typeof stream.cancel === "function") {
+                try {
+                  await stream.cancel();
+                } catch {
+                  // 忽略取消错误
+                }
+              }
+            },
+          };
+        } catch (error) {
+          if (error instanceof AppError) {
+            throw error;
+          }
+          if (error?.$metadata?.httpStatusCode === 404) {
+            throw new NotFoundError("文件不存在");
+          }
+          throw new S3DriverError("获取文件范围流失败", { details: { cause: error?.message } });
+        }
+      },
+    };
   }
 
   /**
@@ -240,8 +280,8 @@ export class S3FileOperations {
    * 下载文件
    * @param {string} s3SubPath - S3子路径
    * @param {string} fileName - 文件名
-   * @param {Request} request - 请求对象
-   * @returns {Promise<Response>} 文件响应
+   * @param {Request} request - 请求对象（已废弃，Range 由上层处理）
+   * @returns {Promise<import('../../../streaming/types.js').StorageStreamDescriptor>} 流描述对象
    */
   async downloadFile(s3SubPath, fileName, request = null) {
     return handleFsError(
@@ -309,20 +349,46 @@ export class S3FileOperations {
    * @returns {Promise<boolean>} 是否存在
    */
   async exists(s3SubPath) {
+    const key = s3SubPath.startsWith("/") ? s3SubPath.slice(1) : s3SubPath;
+    const isDirectory = key === "" || key.endsWith("/");
+
+    // 文件优先使用 HEAD，避免 List 前缀误判
+    if (!isDirectory) {
+      try {
+        const headCommand = new HeadObjectCommand({
+          Bucket: this.config.bucket_name,
+          Key: key,
+        });
+        await this.s3Client.send(headCommand);
+        return true;
+      } catch (error) {
+        const status = error?.$metadata?.httpStatusCode;
+        const code = error?.name || error?.Code;
+        const notFound = status === 404 || code === "NotFound" || code === "NoSuchKey";
+        if (!notFound) {
+          // 非 404 级错误时降级为前缀检查，避免硬失败
+          console.warn("[S3FileOperations.exists] headObject fallback", error?.message || error);
+        }
+      }
+    }
+
+    // 目录或 Head 未命中的情况下，使用前缀列举兜底
     try {
+      const prefix = isDirectory ? key : `${key}/`;
       const listParams = {
         Bucket: this.config.bucket_name,
-        Prefix: s3SubPath,
+        Prefix: prefix,
         MaxKeys: 1,
       };
 
       const listCommand = new ListObjectsV2Command(listParams);
       const listResponse = await this.s3Client.send(listCommand);
 
-      // 检查是否找到精确匹配的文件
-      const exactMatch = listResponse.Contents?.find((item) => item.Key === s3SubPath);
-      return !!exactMatch;
+      const hasObject = (listResponse.Contents?.length || 0) > 0;
+      const hasPrefix = (listResponse.CommonPrefixes?.length || 0) > 0;
+      return hasObject || hasPrefix;
     } catch (error) {
+      console.warn("[S3FileOperations.exists] listObjects fallback failed", error?.message || error);
       return false;
     }
   }

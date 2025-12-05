@@ -2,9 +2,11 @@
 import { ref, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 import VditorUnified from "@/components/common/VditorUnified.vue";
+import ConfirmDialog from "@/components/common/dialogs/ConfirmDialog.vue";
 import { useAdminSystemService } from "@/modules/admin/services/systemService.js";
 import { useThemeMode } from "@/composables/core/useThemeMode.js";
 import { useGlobalMessage } from "@/composables/core/useGlobalMessage.js";
+import { useConfirmDialog } from "@/composables/core/useConfirmDialog.js";
 
 // 使用i18n
 const { t } = useI18n();
@@ -12,6 +14,9 @@ const { getSiteSettings, updateSiteSettings } = useAdminSystemService();
 
 const { isDarkMode: darkMode } = useThemeMode();
 const { showSuccess, showError } = useGlobalMessage();
+
+// 确认对话框
+const { dialogState, confirm, handleConfirm, handleCancel } = useConfirmDialog();
 
 // 站点设置
 const siteSettings = ref({
@@ -108,17 +113,28 @@ const handleUpdateSiteSettings = async (event) => {
 };
 
 // 重置设置
-const resetSettings = () => {
-  if (confirm(t("admin.site.messages.confirmReset"))) {
-    // 重置所有站点设置到默认值
-    siteSettings.value.site_title = "CloudPaste";
-    siteSettings.value.site_favicon_url = "";
-    siteSettings.value.site_footer_markdown = "© 2025 CloudPaste. 保留所有权利。";
-    siteSettings.value.site_announcement_enabled = false;
-    siteSettings.value.site_announcement_content = "";
+const resetSettings = async () => {
+  // 使用统一确认对话框
+  const confirmed = await confirm({
+    title: t("common.dialogs.resetTitle"),
+    message: t("common.dialogs.resetConfirm"),
+    confirmType: "warning",
+    confirmText: t("common.dialogs.resetButton"),
+    darkMode: darkMode.value,
+  });
 
-    console.log("站点设置已重置为默认值");
+  if (!confirmed) {
+    return;
   }
+
+  // 重置所有站点设置到默认值
+  siteSettings.value.site_title = "CloudPaste";
+  siteSettings.value.site_favicon_url = "";
+  siteSettings.value.site_footer_markdown = "© 2025 CloudPaste. 保留所有权利。";
+  siteSettings.value.site_announcement_enabled = false;
+  siteSettings.value.site_announcement_content = "";
+
+  console.log("站点设置已重置为默认值");
 };
 
 // 清空公告内容
@@ -330,6 +346,13 @@ const handleClearAnnouncementContent = () => {
         </form>
       </div>
     </div>
+
+    <!-- 确认对话框 -->
+    <ConfirmDialog
+      v-bind="dialogState"
+      @confirm="handleConfirm"
+      @cancel="handleCancel"
+    />
   </div>
 </template>
 

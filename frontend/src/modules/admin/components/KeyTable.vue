@@ -4,12 +4,17 @@ import { useI18n } from "vue-i18n";
 import { copyToClipboard } from "@/utils/clipboard";
 import { Permission, PermissionChecker } from "@/constants/permissions.js";
 import { useAdminApiKeyService } from "@/modules/admin/services/apiKeyService.js";
+import { useConfirmDialog } from "@/composables/core/useConfirmDialog.js";
 import AdminTable from "@/components/common/AdminTable.vue";
+import ConfirmDialog from "@/components/common/dialogs/ConfirmDialog.vue";
 import { formatDateTime } from "@/utils/timeUtils.js";
 
 // i18n
 const { t } = useI18n();
 const { deleteApiKey } = useAdminApiKeyService();
+
+// 确认对话框
+const { dialogState, confirm, handleConfirm, handleCancel } = useConfirmDialog();
 
 // Props
 const props = defineProps({
@@ -530,7 +535,16 @@ const handleDeleteKey = async (key) => {
     return;
   }
 
-  if (!confirm(t("admin.keyManagement.deleteConfirm"))) {
+  // 使用统一确认对话框
+  const confirmed = await confirm({
+    title: t("common.dialogs.deleteTitle"),
+    message: t("common.dialogs.deleteItem", { name: t("admin.keyManagement.item", "此 API 密钥") }),
+    confirmType: "danger",
+    confirmText: t("common.dialogs.deleteButton"),
+    darkMode: props.darkMode,
+  });
+
+  if (!confirmed) {
     return;
   }
 
@@ -767,5 +781,12 @@ defineExpose({
         </template>
       </AdminTable>
     </div>
+
+    <!-- 确认对话框 -->
+    <ConfirmDialog
+      v-bind="dialogState"
+      @confirm="handleConfirm"
+      @cancel="handleCancel"
+    />
   </div>
 </template>

@@ -1,5 +1,5 @@
 # 第一阶段：构建sqlite3模块
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
@@ -29,7 +29,7 @@ RUN apk add --no-cache --virtual .build-deps python3 make g++ sqlite-dev && \
     apk del .build-deps
 
 # 第二阶段：创建最终镜像
-FROM node:20-alpine
+FROM node:22-alpine
 
 WORKDIR /app
 
@@ -53,11 +53,12 @@ RUN mkdir -p /data
 ENV NODE_ENV=production
 ENV DATA_DIR=/data
 ENV PORT=8787
+ENV TASK_WORKER_POOL_SIZE=2
 # 注意：这个密钥应该在运行时通过环境变量传入，这里只是设置默认值
 ENV ENCRYPTION_SECRET=PLEASE_CHANGE_THIS_IN_PRODUCTION
 
 # 暴露端口
 EXPOSE 8787
 
-# 启动命令
-CMD ["node", "--expose-gc", "unified-entry.js"]
+# 启动命令 (--experimental-transform-types 支持 enum/namespace 语法)
+CMD ["node", "--experimental-transform-types", "--disable-warning=ExperimentalWarning", "--expose-gc", "unified-entry.js"]

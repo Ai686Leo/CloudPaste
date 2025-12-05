@@ -1,4 +1,5 @@
 import { ref, reactive, computed } from "vue";
+import { useI18n } from "vue-i18n";
 import { usePasteService } from "@/modules/paste";
 import { copyToClipboard } from "@/utils/clipboard";
 import { useAuthStore } from "@/stores/authStore.js";
@@ -11,9 +12,21 @@ import { generateQRCode as createQRCodeImage } from "@/utils/qrcodeUtils.js";
 /**
  * 文本管理 Admin composable
  * 基于 useAdminBase + usePasteService 统一管理 Admin 文本列表的加载、删除、搜索、预览、编辑等逻辑
+ * @param {Object} options - 可选配置
+ * @param {Function} options.confirmFn - 自定义确认函数，接收 {title, message, confirmType} 参数，返回 Promise<boolean>
  */
-export function usePasteManagement() {
-  const base = useAdminBase();
+export function usePasteManagement(options = {}) {
+  const { confirmFn } = options;
+
+  // 国际化
+  const { t } = useI18n();
+
+  const base = useAdminBase('paste', {
+    viewMode: {
+      storageKey: 'paste-admin-view-mode',
+      defaultMode: 'table',
+    },
+  });
   const pasteService = usePasteService();
 
   /** @type {import("vue").Ref<Paste[]>} */
@@ -79,7 +92,19 @@ export function usePasteManagement() {
       return;
     }
 
-    if (!confirm("确认要删除该文本吗？此操作不可恢复")) {
+    // 使用传入的确认函数或默认的 window.confirm
+    let confirmed;
+    if (confirmFn) {
+      confirmed = await confirmFn({
+        title: t("common.dialogs.deleteTitle"),
+        message: t("common.dialogs.deleteItem", { name: t("paste.item", "该文本") }),
+        confirmType: "danger",
+      });
+    } else {
+      confirmed = confirm(t("common.dialogs.deleteItem", { name: t("paste.item", "该文本") }));
+    }
+
+    if (!confirmed) {
       return;
     }
 
@@ -100,7 +125,19 @@ export function usePasteManagement() {
       return;
     }
 
-    if (!confirm(`确认要删除选中的 ${selectedCount} 条文本吗？此操作不可恢复`)) {
+    // 使用传入的确认函数或默认的 window.confirm
+    let confirmed;
+    if (confirmFn) {
+      confirmed = await confirmFn({
+        title: t("common.dialogs.deleteTitle"),
+        message: t("common.dialogs.deleteMultiple", { count: selectedCount }),
+        confirmType: "danger",
+      });
+    } else {
+      confirmed = confirm(t("common.dialogs.deleteMultiple", { count: selectedCount }));
+    }
+
+    if (!confirmed) {
       return;
     }
 
@@ -121,7 +158,19 @@ export function usePasteManagement() {
       return;
     }
 
-    if (!confirm("确认要清理所有已过期文本吗？此操作不可恢复")) {
+    // 使用传入的确认函数或默认的 window.confirm
+    let confirmed;
+    if (confirmFn) {
+      confirmed = await confirmFn({
+        title: t("common.dialogs.cleanupTitle"),
+        message: t("common.dialogs.cleanupExpired"),
+        confirmType: "warning",
+      });
+    } else {
+      confirmed = confirm(t("common.dialogs.cleanupExpired"));
+    }
+
+    if (!confirmed) {
       return;
     }
 
