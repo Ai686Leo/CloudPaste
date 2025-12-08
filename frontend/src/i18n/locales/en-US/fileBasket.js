@@ -1,5 +1,8 @@
 export default {
   fileBasket: {
+    // Title
+    title: "File Basket",
+    
     // Button text
     button: {
       empty: "File Basket",

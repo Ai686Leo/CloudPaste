@@ -42,9 +42,7 @@ export function usePreviewRenderers(file, emit, darkMode) {
     };
   });
 
-  /**
-   * 文件类型判断计算属性 - 直接使用后端type字段
-   */
+  // 文件类型判断计算属性 - 直接依赖后端返回的枚举类型
   const isImageFile = computed(() => file.value?.type === FileType.IMAGE);
   const isVideoFile = computed(() => file.value?.type === FileType.VIDEO);
   const isAudioFile = computed(() => file.value?.type === FileType.AUDIO);
@@ -52,9 +50,7 @@ export function usePreviewRenderers(file, emit, darkMode) {
   const isTextFile = computed(() => file.value?.type === FileType.TEXT);
 
   // 基于文件类型的判断
-  const isPdfFile = computed(() => {
-    return file.value?.type === FileType.DOCUMENT;
-  });
+  const isPdfFile = computed(() => file.value?.type === FileType.DOCUMENT);
 
   /**
    * 预览URL - 基于 Link JSON 中的 rawUrl

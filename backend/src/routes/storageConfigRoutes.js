@@ -12,9 +12,8 @@ import {
   deleteStorageConfig,
   setDefaultStorageConfig,
   testStorageConnection,
-  getStorageConfigsWithUsage,
 } from "../services/storageConfigService.js";
-import { ApiStatus, UserType } from "../constants/index.js";
+import { UserType } from "../constants/index.js";
 import { getPagination, jsonOk, jsonCreated } from "../utils/common.js";
 import { getEncryptionSecret } from "../utils/environmentUtils.js";
 import { usePolicy } from "../security/policies/policies.js";
@@ -178,7 +177,19 @@ storageConfigRoutes.post("/api/storage/:id/test", requireAdmin, async (c) => {
   const requestOrigin = c.req.header("origin");
   const repositoryFactory = useRepositories(c);
   const testResult = await testStorageConnection(db, id, adminId, encryptionSecret, requestOrigin, repositoryFactory);
-  return jsonOk(c, { success: testResult.success, result: testResult.result }, testResult.message);
+  
+  // 根据测试结果返回正确的响应
+  if (testResult.success) {
+    return jsonOk(c, testResult, testResult.message);
+  } else {
+    // 测试失败时返回 200 状态码但 success: false（前端会根据 success 字段判断）
+    return c.json({
+      success: false,
+      code: "TEST_FAILED",
+      message: testResult.message,
+      data: testResult
+    }, 200);
+  }
 });
 
 export default storageConfigRoutes;

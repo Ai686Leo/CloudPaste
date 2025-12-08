@@ -51,85 +51,6 @@
       </li>
     </ol>
 
-    <!-- 右侧操作按钮 -->
-    <div v-if="!previewFile" class="flex items-center">
-      <!-- 启用/禁用勾选框按钮 -->
-      <button
-        @click="$emit('toggle-checkbox-mode')"
-        class="inline-flex items-center px-2 sm:px-3 py-1.5 rounded-md transition-colors text-xs sm:text-sm font-medium mr-2 sm:ml-2"
-        :class="[
-          isCheckboxMode
-            ? darkMode
-              ? 'bg-primary-600 text-white hover:bg-primary-700'
-              : 'bg-primary-500 text-white hover:bg-primary-600'
-            : darkMode
-            ? 'bg-gray-700 hover:bg-gray-600 text-white'
-            : 'bg-gray-100 hover:bg-gray-200 text-gray-700',
-        ]"
-        :title="$t('breadcrumb.batchOperations')"
-      >
-        <svg class="w-4 h-4 mr-1 sm:mr-1.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path v-if="isCheckboxMode" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-          <rect v-else x="4" y="4" width="16" height="16" rx="2" stroke-width="2" />
-        </svg>
-        <span class="hidden sm:inline">{{ isCheckboxMode ? $t("breadcrumb.exitSelection") : $t("breadcrumb.enableSelection") }}</span>
-        <span class="sm:hidden">{{ isCheckboxMode ? $t("breadcrumb.mobile.exitSelection") : $t("breadcrumb.mobile.enableSelection") }}</span>
-      </button>
-
-      <!-- 复制按钮 (在勾选模式且有选中项时显示) -->
-      <button
-        v-if="isCheckboxMode && selectedCount > 0"
-        @click="$emit('batch-copy')"
-        class="inline-flex items-center px-2 sm:px-3 py-1.5 rounded-md transition-colors text-xs sm:text-sm font-medium mr-2 bg-blue-600 hover:bg-blue-700 text-white"
-      >
-        <svg class="w-4 h-4 mr-1 sm:mr-1.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-          />
-        </svg>
-        <span class="hidden sm:inline whitespace-nowrap">{{ $t("breadcrumb.copySelected") }} {{ $t("breadcrumb.selectedCount", { count: selectedCount }) }}</span>
-        <span class="sm:hidden whitespace-nowrap">{{ $t("breadcrumb.mobile.copySelected") }} ({{ selectedCount }})</span>
-      </button>
-
-      <!-- 批量添加到文件篮按钮 (在勾选模式且有选中项时显示) -->
-      <button
-        v-if="isCheckboxMode && selectedCount > 0"
-        @click="$emit('batch-add-to-basket')"
-        class="inline-flex items-center px-2 sm:px-3 py-1.5 rounded-md transition-colors text-xs sm:text-sm font-medium mr-2 bg-green-600 hover:bg-green-700 text-white"
-      >
-        <svg class="w-4 h-4 mr-1 sm:mr-1.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M12 10.5v6m3-3H9m4.06-7.19-2.12-2.12a1.5 1.5 0 0 0-1.061-.44H4.5A2.25 2.25 0 0 0 2.25 6v12a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9a2.25 2.25 0 0 0-2.25-2.25h-5.379a1.5 1.5 0 0 1-1.06-.44Z"
-          />
-        </svg>
-        <span class="hidden sm:inline whitespace-nowrap">{{ $t("fileBasket.actions.batchAdd") }}</span>
-        <span class="sm:hidden whitespace-nowrap">{{ $t("fileBasket.actions.mobile.batchAdd") }}</span>
-      </button>
-
-      <!-- 批量删除按钮 (在勾选模式且有选中项时显示) -->
-      <button
-        v-if="isCheckboxMode && selectedCount > 0"
-        @click="$emit('batch-delete')"
-        class="inline-flex items-center px-2 sm:px-3 py-1.5 rounded-md transition-colors text-xs sm:text-sm font-medium bg-red-600 hover:bg-red-700 text-white"
-      >
-        <svg class="w-4 h-4 mr-1 sm:mr-1.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-          />
-        </svg>
-        <span class="hidden sm:inline whitespace-nowrap">{{ $t("breadcrumb.deleteSelected") }} {{ $t("breadcrumb.selectedCount", { count: selectedCount }) }}</span>
-        <span class="sm:hidden whitespace-nowrap">{{ $t("breadcrumb.mobile.deleteSelected") }} ({{ selectedCount }})</span>
-      </button>
-    </div>
   </nav>
 </template>
 
@@ -153,14 +74,6 @@ const props = defineProps({
     type: Object,
     default: null,
   },
-  isCheckboxMode: {
-    type: Boolean,
-    default: false,
-  },
-  selectedCount: {
-    type: Number,
-    default: 0,
-  },
   basicPath: {
     type: String,
     default: "/",
@@ -171,7 +84,7 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(["navigate", "toggle-checkbox-mode", "batch-delete", "batch-copy", "batch-add-to-basket"]);
+const emit = defineEmits(["navigate"]);
 
 // 计算路径段
 const pathSegments = computed(() => {

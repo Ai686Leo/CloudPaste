@@ -96,6 +96,7 @@ export class ObjectStore {
       expiresIn: presign.expiresIn,
       storage_config_id,
       provider_type: storageConfig.provider_type,
+      headers: presign.headers || undefined,
     };
   }
 

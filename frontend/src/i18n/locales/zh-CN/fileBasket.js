@@ -1,5 +1,8 @@
 export default {
   fileBasket: {
+    // 标题
+    title: "文件篮",
+    
     // 按钮文本
     button: {
       empty: "文件篮",

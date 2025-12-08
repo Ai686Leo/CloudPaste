@@ -7,7 +7,7 @@
 import { ApiStatus } from "../../constants/index.js";
 import { AppError, ValidationError, NotFoundError } from "../../http/errors.js";
 import { ensureRepositoryFactory } from "../../utils/repositories.js";
-import { isCloudflareWorkerEnvironment, isNodeJSEnvironment } from "../../utils/environmentUtils.js";
+import { StorageFactory } from "../factory/StorageFactory.js";
 
 export class StorageConfigUtils {
   /**
@@ -26,30 +26,11 @@ export class StorageConfigUtils {
       throw new ValidationError("配置ID不能为空");
     }
 
-    switch (storageType) {
-      case "S3":
-        return await StorageConfigUtils._getS3Config(db, configId);
-
-      case "WEBDAV":
-        return await StorageConfigUtils._getWebDAVConfig(db, configId);
-
-      case "LOCAL":
-        return await StorageConfigUtils._getLocalConfig(db, configId);
-
-      default:
-        throw new ValidationError(`不支持的存储类型: ${storageType}`);
+    if (!StorageFactory.isTypeSupported(storageType)) {
+      throw new ValidationError(`不支持的存储类型: ${storageType}`);
     }
-  }
 
-  /**
-   * 获取S3配置
-   * @private
-   * @param {D1Database} db - 数据库实例
-   * @param {string} configId - S3配置ID
-   * @returns {Promise<Object>} S3配置对象
-   */
-  static async _getS3Config(db, configId) {
-    // 统一走新的通用存储配置表 + Repository，并且携带密钥字段
+    // 统一走 StorageConfigRepository，并依赖其内部的 StorageFactory.projectConfig 完成展平
     const factory = ensureRepositoryFactory(db);
     const repo = factory.getStorageConfigRepository();
     const config = repo.findByIdWithSecrets
@@ -57,54 +38,14 @@ export class StorageConfigUtils {
       : await repo.findById(configId); // 兜底：旧实现不带密钥
 
     if (!config) {
-      throw new NotFoundError("S3配置不存在");
+      throw new NotFoundError("存储配置不存在");
+    }
+
+    if (config.storage_type && config.storage_type !== storageType) {
+      throw new ValidationError(`存储配置类型不匹配，期望 ${storageType}，实际 ${config.storage_type}`);
     }
 
     return config;
-  }
-
-  /**
-   * 获取WebDAV配置（未来实现）
-   * @private
-   * @param {D1Database} db - 数据库实例
-   * @param {string} configId - WebDAV配置ID
-   * @returns {Promise<Object>} WebDAV配置对象
-   */
-  static async _getWebDAVConfig(db, configId) {
-    const factory = ensureRepositoryFactory(db);
-    const repo = factory.getStorageConfigRepository();
-    const config = repo.findByIdWithSecrets ? await repo.findByIdWithSecrets(configId) : await repo.findById(configId);
-
-    if (!config) {
-      throw new NotFoundError("WebDAV配置不存在");
-    }
-
-    // 将 config_json 展平，方便驱动直接使用
-    const jsonRaw = config.__config_json__ || config.config_json || {};
-    const json = typeof jsonRaw === "string" ? JSON.parse(jsonRaw || "{}") : jsonRaw;
-    return { ...json, ...config };
-  }
-
-  /**
-   * 获取本地存储配置
-   * @private
-   * @param {D1Database} db - 数据库实例
-   * @param {string} configId - 本地存储配置ID
-   * @returns {Promise<Object>} 本地存储配置对象
-   */
-  static async _getLocalConfig(db, configId) {
-    const factory = ensureRepositoryFactory(db);
-    const repo = factory.getStorageConfigRepository();
-    const config = repo.findByIdWithSecrets ? await repo.findByIdWithSecrets(configId) : await repo.findById(configId);
-
-    if (!config) {
-      throw new NotFoundError("本地存储配置不存在");
-    }
-
-    // 将 config_json 展平，方便驱动直接使用（与 WebDAV 一致）
-    const jsonRaw = config.__config_json__ || config.config_json || {};
-    const json = typeof jsonRaw === "string" ? JSON.parse(jsonRaw || "{}") : jsonRaw;
-    return { ...json, ...config };
   }
 
   /**
@@ -131,12 +72,7 @@ export class StorageConfigUtils {
    * @returns {Array<string>} 支持的存储类型
    */
   static getSupportedStorageTypes() {
-    const base = ["S3", "WEBDAV"];
-    // 仅在 Node/Docker 且非 Cloudflare Worker 环境下暴露 LOCAL
-    if (!isCloudflareWorkerEnvironment() && isNodeJSEnvironment()) {
-      base.push("LOCAL");
-    }
-    return base;
+    return StorageFactory.getSupportedTypes();
   }
 
   /**

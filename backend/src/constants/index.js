@@ -17,6 +17,7 @@ export const DbTables = {
   STORAGE_MOUNTS: "storage_mounts", // 存储挂载表
   FS_META: "fs_meta", // 目录 Meta 配置表
   TASKS: "tasks", // 任务编排表
+  UPLOAD_SESSIONS: "upload_sessions", // 通用上传会话表（前端分片/断点续传）
 };
 
 // 默认的最大上传大小（MB）
@@ -36,7 +37,7 @@ export const ApiStatus = {
   INTERNAL_ERROR: 500,
 };
 
-// alist风格的文件类型常量
+//文件类型常量
 export const FILE_TYPES = {
   UNKNOWN: 0, // 未知文件
   FOLDER: 1, // 文件夹

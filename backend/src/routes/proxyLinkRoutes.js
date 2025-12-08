@@ -1,5 +1,5 @@
 /**
- * 统一存储链接解析接口（OpenList Proxy 风格）
+ * 统一存储链接解析接口
  * POST /api/proxy/link
  *
  * - Origin（CloudPaste）只负责权限与“如何访问源”的决策

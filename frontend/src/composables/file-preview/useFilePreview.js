@@ -1,6 +1,7 @@
 /**
  * 文件预览组合式函数
  * 管理文件预览相关的状态和操作
+ * 支持请求取消机制，优化导航体验
  */
 
 import { ref, computed } from "vue";
@@ -21,6 +22,9 @@ export function useFilePreview() {
   const isPreviewMode = ref(false);
   const isLoading = ref(false);
   const error = ref(null);
+
+  // 当前正在加载的文件路径（用于防止竞态）
+  const currentLoadingFile = ref(null);
 
   // 计算属性
   const hasPreviewFile = computed(() => !!previewFile.value);
@@ -44,6 +48,7 @@ export function useFilePreview() {
 
   /**
    * 开始预览文件（直接调用API）
+   * 支持请求取消：当用户快速切换预览时，旧请求会被自动取消
    * @param {Object} file - 文件对象
    * @param {string} currentPath - 当前路径
    */
@@ -53,6 +58,10 @@ export function useFilePreview() {
         throw new Error("无效的文件对象");
       }
 
+      // 记录当前加载的文件路径
+      const filePath = file.path;
+      currentLoadingFile.value = filePath;
+
       isLoading.value = true;
       error.value = null;
       previewFile.value = file;
@@ -60,15 +69,33 @@ export function useFilePreview() {
 
       console.log("开始预览文件:", file.name);
 
-      // 通过 FS service 获取文件信息（自动附带路径密码 token 等）
-      const fileInfo = await fsService.getFileInfo(file.path);
-      previewInfo.value = fileInfo;
+      // 通过 FS service 获取文件信息（内部会自动取消之前的请求）
+      const fileInfo = await fsService.getFileInfo(filePath);
 
+      // 如果请求被取消，fileInfo 为 null，不更新状态
+      if (fileInfo === null) {
+        console.log("文件预览请求被取消:", file.name);
+        return;
+      }
+
+      // 确保响应对应当前请求的文件（防止竞态）
+      if (currentLoadingFile.value !== filePath) {
+        console.log("文件预览响应已过期，跳过更新:", file.name);
+        return;
+      }
+
+      previewInfo.value = fileInfo;
       console.log("文件预览信息获取成功:", fileInfo);
 
       // 更新URL
       updatePreviewUrl(currentPath, file.name);
     } catch (err) {
+      // 请求被取消时，静默处理，不显示错误
+      if (err?.name === "AbortError" || err?.__aborted) {
+        console.log("文件预览请求被取消，静默处理:", file?.name);
+        return;
+      }
+
       console.error("开始预览失败:", err);
       error.value = err.message || "预览失败";
       previewFile.value = null;
@@ -76,19 +103,29 @@ export function useFilePreview() {
       previewConfig.value = null;
       isPreviewMode.value = false;
     } finally {
-      isLoading.value = false;
+      // 只有当前加载文件匹配时才清除 loading 状态
+      if (currentLoadingFile.value === file?.path) {
+        isLoading.value = false;
+        currentLoadingFile.value = null;
+      }
     }
   };
 
   /**
    * 停止预览
+   * 会取消正在进行的文件信息请求
    * @param {boolean} updateUrl - 是否更新URL
    */
   const stopPreview = (updateUrl = true) => {
+    // 取消正在进行的文件信息请求
+    fsService.cancelFileInfoRequest();
+    currentLoadingFile.value = null;
+
     previewFile.value = null;
     previewInfo.value = null;
     previewConfig.value = null;
     isPreviewMode.value = false;
+    isLoading.value = false;
     error.value = null;
 
     if (updateUrl) {
@@ -101,6 +138,7 @@ export function useFilePreview() {
   /**
    * 初始化文件预览
    * 直接通过API获取文件信息，不依赖目录列表
+   * 支持请求取消：当用户快速导航时，旧请求会被自动取消
    */
   const initializeFilePreview = async (currentPath) => {
     if (!route.query.preview) {
@@ -115,33 +153,59 @@ export function useFilePreview() {
       return;
     }
 
+    // 构建完整的文件路径
+    let filePath;
+    if (currentPath === "/") {
+      filePath = "/" + previewFileName;
+    } else {
+      const normalizedPath = currentPath.replace(/\/+$/, "");
+      filePath = normalizedPath + "/" + previewFileName;
+    }
+
+    // 记录当前加载的文件路径
+    currentLoadingFile.value = filePath;
+
     try {
       // 开始加载预览内容
       isLoading.value = true;
       error.value = null;
 
-      // 构建完整的文件路径（按照原始逻辑）
-      let filePath;
-      if (currentPath === "/") {
-        filePath = "/" + previewFileName;
-      } else {
-        const normalizedPath = currentPath.replace(/\/+$/, "");
-        filePath = normalizedPath + "/" + previewFileName;
+      // 通过 FS service 获取文件信息（内部会自动取消之前的请求）
+      const fileInfo = await fsService.getFileInfo(filePath);
+
+      // 如果请求被取消，fileInfo 为 null，不更新状态
+      if (fileInfo === null) {
+        console.log("文件预览初始化请求被取消:", previewFileName);
+        return;
       }
 
-      // 通过 FS service 获取文件信息
-      const fileInfo = await fsService.getFileInfo(filePath);
+      // 确保响应对应当前请求的文件（防止竞态）
+      if (currentLoadingFile.value !== filePath) {
+        console.log("文件预览初始化响应已过期，跳过更新:", previewFileName);
+        return;
+      }
+
       previewFile.value = fileInfo;
       previewInfo.value = fileInfo;
       isPreviewMode.value = true;
 
       console.log("文件预览初始化成功:", fileInfo.name);
     } catch (err) {
+      // 请求被取消时，静默处理，不显示错误
+      if (err?.name === "AbortError" || err?.__aborted) {
+        console.log("文件预览初始化请求被取消，静默处理:", previewFileName);
+        return;
+      }
+
       console.error("初始化文件预览失败:", err);
       error.value = err.message || "预览失败";
       // 保持预览模式，显示错误状态，不自动重定向
     } finally {
-      isLoading.value = false;
+      // 只有当前加载文件匹配时才清除 loading 状态
+      if (currentLoadingFile.value === filePath) {
+        isLoading.value = false;
+        currentLoadingFile.value = null;
+      }
     }
   };
 

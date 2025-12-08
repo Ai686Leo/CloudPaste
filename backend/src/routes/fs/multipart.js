@@ -172,15 +172,19 @@ export const registerMultipartRoutes = (router, helpers) => {
 
     const fileId = generateFileId();
 
-  return jsonOk(c, {
+    return jsonOk(
+      c,
+      {
         presignedUrl: result.uploadUrl,
         fileId,
         storagePath: result.storagePath,
         publicUrl: result.publicUrl || null,
         mountId: mount.id,
         storageConfigId: mount.storage_config_id,
+        storageType: mount.storage_type || null,
         targetPath,
         contentType: result.contentType,
+        headers: result.headers || undefined,
       },
       { success: true },
     );

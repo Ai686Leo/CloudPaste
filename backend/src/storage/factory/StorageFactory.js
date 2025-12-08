@@ -8,6 +8,7 @@
 import { S3StorageDriver } from "../drivers/s3/S3StorageDriver.js";
 import { WebDavStorageDriver } from "../drivers/webdav/WebDavStorageDriver.js";
 import { LocalStorageDriver } from "../drivers/local/LocalStorageDriver.js";
+import { OneDriveStorageDriver } from "../drivers/onedrive/OneDriveStorageDriver.js";
 import {
   CAPABILITIES,
   REQUIRED_METHODS_BY_CAPABILITY,
@@ -58,6 +59,7 @@ import { isCloudflareWorkerEnvironment, isNodeJSEnvironment } from "../../utils/
  *       },
  *     },
  *     providerOptions?: Array<{ value: string, labelKey?: string }>,
+ *     configProjector?: Function,
  *   }
  */
 const registry = new Map();
@@ -83,11 +85,11 @@ function validateDriverContract(driver, entryMeta, storageType) {
 
   const driverType = typeof driver.getType === "function" ? driver.getType() : driver.type;
   const rawCaps =
-    typeof driver.getCapabilities === "function"
-      ? driver.getCapabilities() || []
-      : Array.isArray(driver.capabilities)
-      ? driver.capabilities
-      : [];
+      typeof driver.getCapabilities === "function"
+          ? driver.getCapabilities() || []
+          : Array.isArray(driver.capabilities)
+              ? driver.capabilities
+              : [];
 
   const detectedCapabilities = getObjectCapabilities(driver);
   const driverCapabilities = Array.from(new Set(rawCaps.length ? rawCaps : detectedCapabilities));
@@ -149,21 +151,23 @@ export class StorageFactory {
     S3: "S3",
     WEBDAV: "WEBDAV",
     LOCAL: "LOCAL",
+    ONEDRIVE: "ONEDRIVE",
   };
 
   // 注册驱动
   static registerDriver(
-    type,
-    {
-      ctor,
-      tester = null,
-      displayName = null,
-      validate = null,
-      capabilities = [],
-      ui = null,
-      configSchema = null,
-      providerOptions = null,
-    } = {},
+      type,
+      {
+        ctor,
+        tester = null,
+        displayName = null,
+        validate = null,
+        capabilities = [],
+        ui = null,
+        configSchema = null,
+        providerOptions = null,
+        configProjector = null,
+      } = {},
   ) {
     if (!type || !ctor) throw new ValidationError("registerDriver 需要提供 type 和 ctor");
     registry.set(type, {
@@ -175,6 +179,7 @@ export class StorageFactory {
       ui: ui || null,
       configSchema: configSchema || null,
       providerOptions: Array.isArray(providerOptions) ? providerOptions : null,
+      configProjector: typeof configProjector === "function" ? configProjector : null,
     });
   }
 
@@ -285,6 +290,30 @@ export class StorageFactory {
     return { valid: true, errors: [] };
   }
 
+  /**
+   * 使用注册表中的 configProjector 将 config_json 投影为驱动配置
+   * @param {string} storageType - 存储类型
+   * @param {object} cfg - config_json 解析后的对象
+   * @param {{ withSecrets?: boolean, row?: object }} options
+   * @returns {object} 投影后的配置对象
+   */
+  static projectConfig(storageType, cfg, { withSecrets = false, row = null } = {}) {
+    const entry = registry.get(storageType);
+    const safeCfg = cfg && typeof cfg === "object" ? cfg : {};
+
+    if (!entry) {
+      console.warn(`StorageFactory.projectConfig: 未找到存储类型注册信息: ${storageType}`);
+      return { ...safeCfg };
+    }
+
+    if (typeof entry.configProjector === "function") {
+      return entry.configProjector(safeCfg, { withSecrets, row });
+    }
+
+    // 默认：直接返回 cfg 的浅拷贝，方便逐步迁移
+    return { ...safeCfg };
+  }
+
   static _validateS3Config(config) {
     const errors = [];
     const required = ["id", "name", "provider_type", "endpoint_url", "bucket_name", "access_key_id", "secret_access_key"];
@@ -355,6 +384,70 @@ export class StorageFactory {
 
     return { valid: errors.length === 0, errors };
   }
+
+  static _validateOneDriveConfig(config) {
+    const errors = [];
+
+    // redirect_uri 必填（用于标识外部授权回调地址）
+    if (!config.redirect_uri) {
+      errors.push("OneDrive 配置缺少必填字段: redirect_uri");
+    }
+
+    // refresh_token 必填
+    if (!config.refresh_token) {
+      errors.push("OneDrive 配置缺少必填字段: refresh_token");
+    }
+
+    // 当未配置 token_renew_endpoint 时，必须提供 client_id 以便直接调用微软 OAuth 端点刷新 token
+    if (!config.token_renew_endpoint && !config.client_id) {
+      errors.push("OneDrive 配置缺少 client_id（未配置 token_renew_endpoint 时必填）");
+    }
+
+    // region 值域验证
+    const validRegions = ["global", "cn", "us", "de"];
+    if (config.region && !validRegions.includes(config.region)) {
+      errors.push(`OneDrive 配置 region 值无效，必须是: ${validRegions.join(", ")}`);
+    }
+
+    // token_renew_endpoint URL 格式验证
+    if (config.token_renew_endpoint) {
+      try {
+        const parsed = new URL(config.token_renew_endpoint);
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+          errors.push("token_renew_endpoint 必须以 http:// 或 https:// 开头");
+        }
+      } catch {
+        errors.push("token_renew_endpoint 格式无效");
+      }
+    }
+
+    // redirect_uri URL 格式验证
+    if (config.redirect_uri) {
+      try {
+        const parsed = new URL(config.redirect_uri);
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+          errors.push("redirect_uri 必须以 http:// 或 https:// 开头");
+        }
+      } catch {
+        errors.push("redirect_uri 格式无效");
+      }
+    }
+
+    // Online API 模式：必须配置 token_renew_endpoint
+    if (config.use_online_api && !config.token_renew_endpoint) {
+      errors.push("启用 use_online_api 时必须配置 token_renew_endpoint");
+    }
+
+    // default_folder 路径验证（仅作为存储内默认上传前缀）
+    if (config.default_folder) {
+      const folder = config.default_folder.toString();
+      if (folder.includes("..")) {
+        errors.push("default_folder 不允许包含 .. 段");
+      }
+    }
+
+    return { valid: errors.length === 0, errors };
+  }
 }
 
 // 默认注册 S3 驱动与 tester
@@ -376,6 +469,29 @@ StorageFactory.registerDriver(StorageFactory.SUPPORTED_TYPES.S3, {
   ui: {
     icon: "storage-s3",
     i18nKey: "admin.storage.type.s3",
+    badgeTheme: "s3",
+  },
+  configProjector(cfg, { withSecrets = false } = {}) {
+    const projected = {
+      // 通用字段
+      default_folder: cfg?.default_folder,
+      custom_host: cfg?.custom_host,
+      signature_expires_in: cfg?.signature_expires_in,
+      total_storage_bytes: cfg?.total_storage_bytes,
+      // S3 专用字段
+      provider_type: cfg?.provider_type,
+      endpoint_url: cfg?.endpoint_url,
+      bucket_name: cfg?.bucket_name,
+      region: cfg?.region,
+      path_style: cfg?.path_style,
+    };
+
+    if (withSecrets) {
+      projected.access_key_id = cfg?.access_key_id;
+      projected.secret_access_key = cfg?.secret_access_key;
+    }
+
+    return projected;
   },
   configSchema: {
     fields: [
@@ -534,6 +650,26 @@ StorageFactory.registerDriver(StorageFactory.SUPPORTED_TYPES.WEBDAV, {
   ui: {
     icon: "storage-webdav",
     i18nKey: "admin.storage.type.webdav",
+    badgeTheme: "webdav",
+  },
+  configProjector(cfg, { withSecrets = false } = {}) {
+    const projected = {
+      // 通用字段
+      default_folder: cfg?.default_folder,
+      custom_host: cfg?.custom_host,
+      signature_expires_in: cfg?.signature_expires_in,
+      total_storage_bytes: cfg?.total_storage_bytes,
+      // WebDAV 专用字段
+      endpoint_url: cfg?.endpoint_url,
+      username: cfg?.username,
+      tls_insecure_skip_verify: cfg?.tls_insecure_skip_verify,
+    };
+
+    if (withSecrets) {
+      projected.password = cfg?.password;
+    }
+
+    return projected;
   },
   configSchema: {
     fields: [
@@ -627,6 +763,22 @@ StorageFactory.registerDriver(StorageFactory.SUPPORTED_TYPES.LOCAL, {
   ui: {
     icon: "storage-local",
     i18nKey: "admin.storage.type.local",
+    badgeTheme: "local",
+  },
+  configProjector(cfg) {
+    return {
+      // 通用字段
+      default_folder: cfg?.default_folder,
+      custom_host: cfg?.custom_host,
+      signature_expires_in: cfg?.signature_expires_in,
+      total_storage_bytes: cfg?.total_storage_bytes,
+      // LOCAL 专用字段
+      root_path: cfg?.root_path,
+      auto_create_root: cfg?.auto_create_root,
+      readonly: cfg?.readonly,
+      trash_path: cfg?.trash_path,
+      dir_permission: cfg?.dir_permission,
+    };
   },
   configSchema: {
     fields: [
@@ -727,4 +879,177 @@ StorageFactory.registerDriver(StorageFactory.SUPPORTED_TYPES.LOCAL, {
       summaryFields: ["root_path", "default_folder", "readonly", "trash_path"],
     },
   },
+});
+
+// 注册 OneDrive 驱动
+import { oneDriveTestConnection } from "../drivers/onedrive/tester/OneDriveTester.js";
+StorageFactory.registerDriver(StorageFactory.SUPPORTED_TYPES.ONEDRIVE, {
+  ctor: OneDriveStorageDriver,
+  tester: oneDriveTestConnection,
+  displayName: "OneDrive 存储",
+  validate: (cfg) => StorageFactory._validateOneDriveConfig(cfg),
+  capabilities: [CAPABILITIES.READER, CAPABILITIES.WRITER, CAPABILITIES.ATOMIC, CAPABILITIES.PROXY, CAPABILITIES.SEARCH, CAPABILITIES.DIRECT_LINK],
+  ui: {
+    icon: "storage-onedrive",
+    i18nKey: "admin.storage.type.onedrive",
+    badgeTheme: "onedrive",
+  },
+  configProjector(cfg, { withSecrets = false } = {}) {
+    const projected = {
+      // 通用字段
+      default_folder: cfg?.default_folder ?? cfg?.root_folder ?? "",
+      custom_host: cfg?.custom_host,
+      url_proxy: cfg?.url_proxy,
+      signature_expires_in: cfg?.signature_expires_in,
+      total_storage_bytes: cfg?.total_storage_bytes,
+      // OneDrive 专用字段
+      region: cfg?.region,
+      client_id: cfg?.client_id,
+      token_renew_endpoint: cfg?.token_renew_endpoint,
+      redirect_uri: cfg?.redirect_uri,
+      use_online_api: cfg?.use_online_api,
+      has_refresh_token: !!(cfg?.refresh_token && String(cfg.refresh_token).trim().length > 0),
+    };
+
+    if (withSecrets) {
+      projected.client_secret = cfg?.client_secret;
+      projected.refresh_token = cfg?.refresh_token;
+    }
+
+    return projected;
+  },
+  configSchema: {
+    fields: [
+      {
+        name: "region",
+        type: "enum",
+        required: false,
+        defaultValue: "global",
+        labelKey: "admin.storage.fields.onedrive.region",
+        enumValues: [
+          { value: "global", labelKey: "admin.storage.onedrive.region.global" },
+          { value: "cn", labelKey: "admin.storage.onedrive.region.cn" },
+          { value: "us", labelKey: "admin.storage.onedrive.region.us" },
+          { value: "de", labelKey: "admin.storage.onedrive.region.de" },
+        ],
+        ui: {
+          descriptionKey: "admin.storage.description.onedrive.region",
+        },
+      },
+      {
+        name: "client_id",
+        type: "string",
+        required: false,
+        labelKey: "admin.storage.fields.onedrive.client_id",
+        ui: {
+          placeholderKey: "admin.storage.placeholder.onedrive.client_id",
+          descriptionKey: "admin.storage.description.onedrive.client_id",
+        },
+      },
+      {
+        name: "client_secret",
+        type: "secret",
+        required: false,
+        labelKey: "admin.storage.fields.onedrive.client_secret",
+        ui: {
+          placeholderKey: "admin.storage.placeholder.onedrive.client_secret",
+          descriptionKey: "admin.storage.description.onedrive.client_secret",
+        },
+      },
+      {
+        name: "refresh_token",
+        type: "secret",
+        required: true,
+        labelKey: "admin.storage.fields.onedrive.refresh_token",
+        ui: {
+          fullWidth: true,
+          placeholderKey: "admin.storage.placeholder.onedrive.refresh_token",
+          descriptionKey: "admin.storage.description.onedrive.refresh_token",
+        },
+      },
+      {
+        name: "default_folder",
+        type: "string",
+        required: false,
+        labelKey: "admin.storage.fields.default_folder",
+        ui: {
+          placeholderKey: "admin.storage.placeholder.default_folder",
+          emptyTextKey: "admin.storage.display.default_folder.root",
+          descriptionKey: "admin.storage.description.onedrive.root_folder",
+        },
+      },
+      {
+        name: "url_proxy",
+        type: "string",
+        required: false,
+        labelKey: "admin.storage.fields.url_proxy",
+        validation: { rule: "url" },
+        ui: {
+          fullWidth: true,
+          placeholderKey: "admin.storage.placeholder.url_proxy",
+          descriptionKey: "admin.storage.description.url_proxy",
+        },
+      },
+      {
+        name: "token_renew_endpoint",
+        type: "string",
+        required: false,
+        labelKey: "admin.storage.fields.onedrive.token_renew_endpoint",
+        validation: { rule: "url" },
+        ui: {
+          fullWidth: true,
+          placeholderKey: "admin.storage.placeholder.onedrive.token_renew_endpoint",
+          descriptionKey: "admin.storage.description.onedrive.token_renew_endpoint",
+        },
+      },
+      {
+        name: "redirect_uri",
+        type: "string",
+        required: true,
+        labelKey: "admin.storage.fields.onedrive.redirect_uri",
+        ui: {
+          fullWidth: true,
+          placeholderKey: "admin.storage.placeholder.onedrive.redirect_uri",
+          descriptionKey: "admin.storage.description.onedrive.redirect_uri",
+        },
+      },
+      {
+        name: "use_online_api",
+        type: "boolean",
+        required: false,
+        labelKey: "admin.storage.fields.onedrive.use_online_api",
+        ui: {
+          descriptionKey: "admin.storage.description.onedrive.use_online_api",
+          displayOptions: {
+            trueKey: "admin.storage.display.onedrive.use_online_api.enabled",
+            falseKey: "admin.storage.display.onedrive.use_online_api.disabled",
+          },
+        },
+      },
+    ],
+    layout: {
+      groups: [
+        {
+          name: "basic",
+          titleKey: "admin.storage.groups.basic",
+          fields: [["region", "default_folder"]],
+        },
+        {
+          name: "credentials",
+          titleKey: "admin.storage.groups.credentials",
+          fields: [["client_id", "client_secret"], "refresh_token"],
+        },
+        {
+          name: "advanced",
+          titleKey: "admin.storage.groups.advanced",
+          fields: ["redirect_uri", ["token_renew_endpoint", "use_online_api"], "url_proxy"],
+        },
+      ],
+      summaryFields: ["region", "default_folder", "use_online_api"],
+    },
+  },
+  providerOptions: [
+    { value: "global", labelKey: "admin.storage.onedrive.region.global" },
+    { value: "cn", labelKey: "admin.storage.onedrive.region.cn" },
+  ],
 });

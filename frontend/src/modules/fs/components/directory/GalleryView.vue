@@ -246,7 +246,7 @@
       class="masonry-wall-gallery"
     >
       <template #default="{ item, index }">
-        <div class="masonry-item" @click="handleItemClick(item.image)" v-context-menu="(event) => handleContextMenu(event, item.image)">
+        <div class="masonry-item" @click="handleItemClick(item.image)" @contextmenu.prevent="(event) => handleContextMenu(event, item.image)">
           <div class="masonry-image-container">
             <!-- 选择框 -->
             <div v-if="isCheckboxMode" class="absolute top-2 left-2 z-10" @click.stop="toggleItemSelect(item.image)">
@@ -356,10 +356,10 @@ import { ref, onMounted, onBeforeUnmount, nextTick, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useGalleryView } from "@/composables/ui-interaction/useGalleryView";
 import { usePhotoSwipe } from "@/composables/ui-interaction/usePhotoSwipe";
+import { useContextMenu } from "@/composables/useContextMenu";
 import { getFileIcon } from "@/utils/fileTypeIcons";
 import { formatFileSize } from "@/utils/fileUtils";
 import MasonryWall from "@yeger/vue-masonry-wall";
-import ContextMenu from "@imengyu/vue3-context-menu";
 
 const { t } = useI18n();
 
@@ -382,7 +382,7 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(["item-click", "item-select", "download", "getLink", "rename", "delete", "show-message"]);
+const emit = defineEmits(["item-click", "item-select", "download", "getLink", "rename", "delete", "contextmenu", "show-message"]);
 
 // 使用图廊视图组合式函数
 const {
@@ -428,6 +428,74 @@ const {
 
 // 使用PhotoSwipe图片预览组合式函数
 const { initPhotoSwipe, openPhotoSwipe, destroyPhotoSwipe } = usePhotoSwipe();
+
+// ===== 操作菜单相关方法 =====
+// 这些方法会被 useContextMenu 调用，然后通过 contextmenu 事件传递给父组件
+// 必须在 useContextMenu 初始化之前定义
+
+// 处理下载操作
+const handleDownload = (item) => {
+  emit("download", item);
+};
+
+// 处理获取链接操作
+const handleGetLink = (item) => {
+  emit("getLink", item);
+};
+
+// 处理重命名操作
+const handleRename = (item) => {
+  emit("rename", item);
+};
+
+// 处理删除操作
+const handleDelete = (items) => {
+  emit("delete", items);
+};
+
+// 处理复制操作 - 通过 contextmenu 事件传递
+const handleCopy = (items) => {
+  // 传递给父组件处理
+  emit("contextmenu", { 
+    event: null, 
+    item: Array.isArray(items) ? items[0] : items,
+    items: Array.isArray(items) ? items : [items],
+    action: 'copy'
+  });
+};
+
+// 处理添加到文件篮操作 - 通过 contextmenu 事件传递
+const handleAddToBasket = (items) => {
+  // 传递给父组件处理
+  emit("contextmenu", { 
+    event: null, 
+    item: Array.isArray(items) ? items[0] : items,
+    items: Array.isArray(items) ? items : [items],
+    action: 'add-to-basket'
+  });
+};
+
+// 处理切换勾选框显示 - 通过 contextmenu 事件传递
+const handleToggleCheckboxes = () => {
+  emit("contextmenu", { 
+    event: null, 
+    item: null,
+    items: [],
+    action: 'toggle-checkboxes'
+  });
+};
+
+// 初始化右键菜单（必须在操作函数定义之后）
+const contextMenu = useContextMenu({
+  onDownload: handleDownload,
+  onGetLink: handleGetLink,
+  onRename: handleRename,
+  onDelete: handleDelete,
+  onCopy: handleCopy,
+  onAddToBasket: handleAddToBasket,
+  onToggleCheckboxes: handleToggleCheckboxes,
+  t,
+});
 
 // 使用composable中的数据处理方法
 const { allFolders, allImages, allOtherFiles } = createImageGroups(props.items);
@@ -503,61 +571,32 @@ const getPlaceholderStyle = () => {
   };
 };
 
-// 设备检测函数已在contextMenu指令中实现，这里不需要重复定义
+// 上下文菜单处理 - 使用统一的 useContextMenu
+const handleContextMenu = (event, image) => {
+  console.log("🖱️ 右键触发上下文菜单:", image.name);
 
-// 上下文菜单处理
-const handleContextMenu = ({ x, y, isMobile }, image) => {
-  console.log(`${isMobile ? "📱 长按" : "🖱️ 右键"}触发上下文菜单:`, image.name);
+  // 获取当前已选中的项目
+  const selectedFiles = props.selectedItems || [];
+  const isImageSelected = selectedFiles.some((i) => i.path === image.path);
 
-  // 构建菜单项
-  const menuItems = [
-    {
-      label: t("mount.fileItem.download"),
-      svgIcon: "#icon-download",
-      svgProps: {
-        width: "16",
-        height: "16",
-      },
-      onClick: () => handleDownload(image),
-    },
-    {
-      label: t("mount.fileItem.getLink"),
-      svgIcon: "#icon-link",
-      svgProps: {
-        width: "16",
-        height: "16",
-      },
-      onClick: () => handleGetLink(image),
-    },
-    {
-      label: t("mount.fileItem.rename"),
-      svgIcon: "#icon-edit",
-      svgProps: {
-        width: "16",
-        height: "16",
-      },
-      onClick: () => handleRename(image),
-    },
-    {
-      label: t("mount.fileItem.delete"),
-      svgIcon: "#icon-delete",
-      svgProps: {
-        width: "16",
-        height: "16",
-      },
-      onClick: () => handleDelete(image),
-    },
-  ];
+  let itemsForMenu;
 
-  // 显示上下文菜单
-  ContextMenu.showContextMenu({
-    x,
-    y,
-    items: menuItems,
-    theme: props.darkMode ? "default dark" : "default",
-    zIndex: 9999,
-    minWidth: 160,
-  });
+  if (selectedFiles.length > 0) {
+    // 有选中项时：
+    // - 如果右键的项目已在选中列表中，操作所有选中项目
+    // - 如果右键的项目不在选中列表中，只操作当前项目
+    if (isImageSelected) {
+      itemsForMenu = selectedFiles;
+    } else {
+      itemsForMenu = [image];
+    }
+  } else {
+    // 无选中项：只操作当前右键的项目
+    itemsForMenu = [image];
+  }
+
+  // 显示右键菜单（传递当前勾选框显示状态）
+  contextMenu.showContextMenu(event, image, itemsForMenu, props.darkMode, props.isCheckboxMode);
 };
 
 // 懒加载：IntersectionObserver实现
@@ -704,28 +743,6 @@ const toggleItemSelect = (item) => {
 
 const isItemSelected = (item) => {
   return props.selectedItems.some((selected) => selected.path === item.path);
-};
-
-// ===== 操作菜单相关方法 =====
-
-// 处理下载操作
-const handleDownload = (image) => {
-  emit("download", image);
-};
-
-// 处理获取链接操作
-const handleGetLink = (image) => {
-  emit("getLink", image);
-};
-
-// 处理重命名操作
-const handleRename = (image) => {
-  emit("rename", image);
-};
-
-// 处理删除操作
-const handleDelete = (image) => {
-  emit("delete", image);
 };
 
 // 更新CSS变量以控制垂直间距（水平间距由MasonryWall的gap属性控制）

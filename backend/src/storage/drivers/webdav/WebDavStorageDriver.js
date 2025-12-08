@@ -453,18 +453,20 @@ export class WebDavStorageDriver extends BaseDriver {
         body = new ReadableStream({
           async pull(controller) {
             const { done, value } = await reader.read();
-            if (done) {
-              controller.close();
-              // 结束时再打印一次总进度
-              if (loaded > 0 && total) {
-                const percentage = ((loaded / total) * 100).toFixed(1);
-                console.log(`WebDAV 流式上传完成进度: ${loaded}/${total} (${percentage}%) -> ${davPath}`);
+              if (done) {
+                controller.close();
+                // 结束时再打印一次总进度
+                if (loaded > 0 && total) {
+                  const percentage = ((loaded / total) * 100).toFixed(1);
+                  console.log(
+                    `[StorageUpload] type=WEBDAV mode=STREAM event=completed loaded=${loaded} total=${total} percent=${percentage} path=${davPath}`
+                  );
+                }
+                try {
+                  completeUploadProgress(progressId);
+                } catch {}
+                return;
               }
-              try {
-                completeUploadProgress(progressId);
-              } catch {}
-              return;
-            }
 
             const chunkSize = value?.byteLength ?? value?.length ?? 0;
             loaded += chunkSize;
@@ -474,12 +476,14 @@ export class WebDavStorageDriver extends BaseDriver {
                 ? loaded === total || loaded - lastLogged >= LOG_INTERVAL
                 : loaded - lastLogged >= LOG_INTERVAL;
 
-            if (shouldLog) {
-              const percentage = total ? ((loaded / total) * 100).toFixed(1) : "未知";
-              const totalLabel = total ?? "未知";
-              console.log(`WebDAV 流式上传进度: ${loaded}/${totalLabel} (${percentage}%) -> ${davPath}`);
-              lastLogged = loaded;
-            }
+              if (shouldLog) {
+                const percentage = total ? ((loaded / total) * 100).toFixed(1) : "未知";
+                const totalLabel = total ?? "未知";
+                console.log(
+                  `[StorageUpload] type=WEBDAV mode=流式上传 status=进度 已传=${loaded} 总=${totalLabel} 进度=${percentage}% 路径=${davPath}`
+                );
+                lastLogged = loaded;
+              }
 
             try {
               updateUploadProgress(progressId, {
@@ -523,7 +527,9 @@ export class WebDavStorageDriver extends BaseDriver {
       if (!resp.ok && resp.status !== 201 && resp.status !== 204) {
         throw this._wrapError(new Error(`HTTP ${resp.status}`), "上传文件失败", resp.status);
       }
-      console.log(`WebDAV 流式直传成功: ${davPath}`);
+      console.log(
+        `[StorageUpload] type=WEBDAV mode=流式上传 status=成功 路径=${davPath}`
+      );
       return { success: true, storagePath: davPath, message: "WEBDAV_STREAM_UPLOAD" };
     } catch (error) {
       throw this._wrapError(error, "上传文件失败", this._statusFromError(error));
@@ -545,7 +551,9 @@ export class WebDavStorageDriver extends BaseDriver {
         contentLength: length,
         contentType,
       });
-      console.log(`WebDAV 表单直传成功: ${davPath}`);
+      console.log(
+        `[StorageUpload] type=WEBDAV mode=表单上传 status=成功 路径=${davPath} 大小=${length}`
+      );
 
       return { success: true, storagePath: davPath, message: "WEBDAV_FORM_UPLOAD" };
     } catch (error) {

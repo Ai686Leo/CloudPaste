@@ -7,6 +7,7 @@ export default {
     enabled: "启用",
     disabled: "禁用",
     back: "返回",
+    backToTop: "返回顶部",
     close: "关闭",
     required: "请填写必填项",
     noPermission: "无此功能权限，请联系管理员",

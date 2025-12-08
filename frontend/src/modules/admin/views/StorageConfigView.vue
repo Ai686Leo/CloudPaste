@@ -6,9 +6,9 @@ import ConfigForm from "@/modules/admin/components/ConfigForm.vue";
 import CommonPagination from "@/components/common/CommonPagination.vue";
 import ConfirmDialog from "@/components/common/dialogs/ConfirmDialog.vue";
 import { formatDateTimeWithSeconds } from "@/utils/timeUtils.js";
-import { api } from "@/api";
 import { useThemeMode } from "@/composables/core/useThemeMode.js";
 import { useConfirmDialog } from "@/composables/core/useConfirmDialog.js";
+import { useStorageTypePresentation } from "@/modules/admin/storage/useStorageTypePresentation.js";
 
 const { isDarkMode: darkMode } = useThemeMode();
 
@@ -62,30 +62,16 @@ const {
   STORAGE_TYPE_UNKNOWN,
 } = useStorageConfigManagement({ confirmFn });
 
-// 存储类型元数据（从后端 /api/storage-types 加载）
-const storageTypesMeta = ref([]);
+// 存储类型展示/样式 helper（统一从 /api/storage-types 加载）
+const { storageTypesMeta, getTypeMeta, getTypeLabel, getBadgeClass, ensureLoaded } = useStorageTypePresentation();
 
 const formatStorageTypeLabel = (type) => {
-  if (!type || type === STORAGE_TYPE_UNKNOWN) {
-    return "未指定类型";
-  }
-
-  const meta = storageTypesMeta.value.find((m) => m.type === type);
-
-  // 优先使用后端提供的 i18nKey，其次是 displayName，最后回退到原始类型值
-  if (meta?.ui?.i18nKey) {
-    return t(meta.ui.i18nKey);
-  }
-  if (meta?.displayName) {
-    return meta.displayName;
-  }
-
-  return type;
+  return getTypeLabel(type === STORAGE_TYPE_UNKNOWN ? null : type, t);
 };
 
 const getConfigSummaryRows = (config) => {
   if (!config) return [];
-  const meta = storageTypesMeta.value.find((m) => m.type === config.storage_type);
+  const meta = getTypeMeta(config.storage_type);
   const schema = meta?.configSchema;
   const layout = schema?.layout;
   const summaryFields = layout?.summaryFields;
@@ -99,7 +85,7 @@ const getConfigSummaryRows = (config) => {
       const labelKey = fieldMeta?.labelKey;
       const label = labelKey ? t(labelKey) : fieldName;
 
-      const rawValue = config[fieldName];
+      let rawValue = config[fieldName];
       let value = rawValue;
       const ui = fieldMeta?.ui;
 
@@ -112,6 +98,14 @@ const getConfigSummaryRows = (config) => {
           value = boolValue ? t(displayOpts.trueKey) : t(displayOpts.falseKey);
         } else {
           value = boolValue ? "是" : "否";
+        }
+      }
+
+      // 计算字段的 displayOptions 处理
+      if (fieldMeta?.type === "computed" && ui?.displayOptions) {
+        const displayKey = ui.displayOptions[rawValue];
+        if (displayKey) {
+          value = t(displayKey);
         }
       }
 
@@ -185,13 +179,7 @@ const formatDate = (isoDate) => {
 
 // 组件加载时获取存储类型元数据和配置列表
 onMounted(async () => {
-  try {
-    const resp = await api.mount.getStorageTypes();
-    storageTypesMeta.value = Array.isArray(resp?.data) ? resp.data : Array.isArray(resp) ? resp : [];
-  } catch (e) {
-    console.error("加载存储类型元数据失败:", e);
-    storageTypesMeta.value = [];
-  }
+  await ensureLoaded();
   await loadStorageConfigs();
 });
 </script>
@@ -276,8 +264,8 @@ onMounted(async () => {
       <!-- 存储配置列表 -->
       <template v-else-if="hasAnyConfig">
         <!-- 有筛选结果时显示配置列表 -->
-        <div v-if="hasFilteredResult" class="bg-white dark:bg-gray-800 shadow-md rounded-lg p-3">
-          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4">
+        <div v-if="hasFilteredResult" class="bg-white dark:bg-gray-800 shadow-md rounded-lg p-0 sm:p-3">
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-3 sm:gap-4">
             <div
               v-for="config in filteredConfigs"
               :key="config.id"
@@ -287,33 +275,51 @@ onMounted(async () => {
                 config.is_default ? (darkMode ? 'ring-3 ring-primary-500 border-primary-500 shadow-lg' : 'ring-3 ring-primary-500 border-primary-500 shadow-lg') : '',
               ]"
             >
-              <div class="px-4 py-3 flex justify-between items-center border-b" :class="darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'">
-                <div class="flex items-center">
-                  <svg class="h-5 w-5 mr-2 text-primary-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="getProviderIcon(config.provider_type)" />
+              <div class="px-2 py-2 sm:px-3 sm:py-2.5 flex flex-wrap justify-between items-center gap-2 border-b" :class="darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'">
+                <div class="flex items-center gap-1 sm:gap-2 flex-wrap min-w-0">
+                  <svg class="h-4 w-4 sm:h-5 sm:w-5 flex-shrink-0" :class="getProviderIcon(config.storage_type, config.provider_type).color" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="getProviderIcon(config.storage_type, config.provider_type).path" />
                   </svg>
                   <h3 class="font-medium text-sm" :class="[darkMode ? 'text-gray-100' : 'text-gray-900', config.is_default ? 'font-semibold' : '']">
                     {{ config.name }}
                   </h3>
                   <span
                     v-if="config.is_default"
-                    class="ml-2 text-xs px-2 py-0.5 rounded-full font-medium"
+                    class="text-xs px-1.5 sm:px-2 py-0.5 rounded-full font-medium flex-shrink-0"
                     :class="darkMode ? 'bg-primary-600 text-white' : 'bg-primary-500 text-white'"
                   >
                     默认
                   </span>
-                </div>
-                <div class="flex items-center gap-2">
-                  <span v-if="config.storage_type === 'S3'" class="text-xs px-2 py-1 rounded-full font-medium" :class="darkMode ? 'bg-primary-900/40 text-primary-200' : 'bg-primary-100 text-primary-800'">
-                    {{ config.provider_type || '未指定' }}
+                  <span
+                    v-if="config.url_proxy"
+                    class="text-xs px-1.5 sm:px-2 py-0.5 rounded-full font-medium flex items-center gap-0.5 sm:gap-1 flex-shrink-0"
+                    :class="darkMode ? 'bg-blue-600/20 text-blue-300 border border-blue-500/30' : 'bg-blue-100 text-blue-700 border border-blue-200'"
+                    :title="`代理URL: ${config.url_proxy}`"
+                  >
+                    <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                    </svg>
+                    <span class="hidden sm:inline">代理</span>
                   </span>
-                  <span class="text-xs px-2 py-1 rounded-full font-medium" :class="darkMode ? 'bg-gray-800 text-gray-200 border border-gray-600' : 'bg-gray-100 text-gray-700 border border-gray-200'">
+                </div>
+                <div class="flex items-center gap-1 sm:gap-2 flex-wrap flex-shrink-0">
+                  <span
+                    v-if="config.provider_type"
+                    class="text-xs px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full font-medium whitespace-nowrap"
+                    :class="darkMode ? 'bg-primary-900/40 text-primary-200' : 'bg-primary-100 text-primary-800'"
+                  >
+                    {{ config.provider_type }}
+                  </span>
+                  <span
+                    class="text-xs px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full font-medium whitespace-nowrap"
+                    :class="getBadgeClass(config.storage_type, darkMode)"
+                  >
                     {{ formatStorageTypeLabel(config.storage_type) }}
                   </span>
                 </div>
               </div>
 
-              <div class="p-4">
+              <div class="p-3 sm:p-4">
                 <div :class="darkMode ? 'text-gray-300' : 'text-gray-600'">
                   <!-- 类型特定字段：使用策略生成摘要 -->
                   <div v-if="getConfigSummaryRows(config).length" class="grid grid-cols-1 gap-2 text-sm">
@@ -592,17 +598,54 @@ onMounted(async () => {
           </div>
 
           <div v-if="showDetailedResults" class="space-y-4">
-            <!-- 测试说明 -->
-            <div class="mb-3 p-2 rounded bg-blue-50 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 text-xs">
-              <div class="flex items-start">
-                <svg class="h-4 w-4 mr-1 mt-0.5 flex-shrink-0 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <div v-if="selectedTestResult.result?.info && !selectedTestResult.result?.cors">
-                  WebDAV 存储测试，最终请以实际上传结果为准
-                </div>
-                <div v-else>
-                  S3 存储测试，最终请以实际上传结果为准
+            <!-- 连接信息 - OneDrive（基于 result.info） -->
+            <div
+              class="mb-3"
+              v-if="
+                selectedTestResult.result?.info &&
+                (selectedTestResult.result.info.driveName || selectedTestResult.result.info.driveType)
+              "
+            >
+              <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">连接信息</h4>
+              <div class="bg-gray-50 dark:bg-gray-900/50 rounded p-2 sm:p-3 text-xs sm:text-sm">
+                <div class="space-y-2">
+                  <div class="connection-info-item" v-if="selectedTestResult.result.info.region">
+                    <div class="text-gray-500 dark:text-gray-400 font-medium mb-0.5">区域:</div>
+                    <div class="pl-2 text-gray-900 dark:text-gray-200">{{ selectedTestResult.result.info.region }}</div>
+                  </div>
+                  <div class="connection-info-item" v-if="selectedTestResult.result.info.driveName">
+                    <div class="text-gray-500 dark:text-gray-400 font-medium mb-0.5">驱动器名称:</div>
+                    <div class="pl-2 text-gray-900 dark:text-gray-200">{{ selectedTestResult.result.info.driveName }}</div>
+                  </div>
+                  <div class="connection-info-item" v-if="selectedTestResult.result.info.defaultFolder">
+                    <div class="text-gray-500 dark:text-gray-400 font-medium mb-0.5">默认上传目录:</div>
+                    <div class="pl-2 text-gray-900 dark:text-gray-200">{{ selectedTestResult.result.info.defaultFolder }}</div>
+                  </div>
+                  <div class="connection-info-item" v-if="selectedTestResult.result.info.quota">
+                    <div class="text-gray-500 dark:text-gray-400 font-medium mb-0.5">存储配额:</div>
+                    <div class="pl-2 text-gray-900 dark:text-gray-200">
+                      <span v-if="selectedTestResult.result.info.quota.used !== null">
+                        已用: {{ (selectedTestResult.result.info.quota.used / 1024 / 1024 / 1024).toFixed(2) }} GB
+                      </span>
+                      <span
+                        v-if="
+                          selectedTestResult.result.info.quota.used !== null &&
+                          selectedTestResult.result.info.quota.total !== null
+                        "
+                      >
+                        /
+                      </span>
+                      <span v-if="selectedTestResult.result.info.quota.total !== null">
+                        总计: {{ (selectedTestResult.result.info.quota.total / 1024 / 1024 / 1024).toFixed(2) }} GB
+                      </span>
+                    </div>
+                  </div>
+                  <div class="connection-info-item" v-if="selectedTestResult.result.info.responseTime">
+                    <div class="text-gray-500 dark:text-gray-400 font-medium mb-0.5">响应时间:</div>
+                    <div class="pl-2 text-gray-900 dark:text-gray-200">
+                      {{ selectedTestResult.result.info.responseTime }}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -625,8 +668,17 @@ onMounted(async () => {
               </div>
             </div>
 
-            <!-- 连接信息 - WebDAV -->
-            <div class="mb-3" v-if="selectedTestResult.result?.info">
+            <!-- 连接信息 - WebDAV（info 存在且非 OneDrive/S3 CORS 测试形态） -->
+            <div
+              class="mb-3"
+              v-if="
+                selectedTestResult.result?.info &&
+                !selectedTestResult.result?.connectionInfo &&
+                !selectedTestResult.result?.cors &&
+                !selectedTestResult.result.info.driveName &&
+                !selectedTestResult.result.info.driveType
+              "
+            >
               <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">连接信息</h4>
               <div class="bg-gray-50 dark:bg-gray-900/50 rounded p-2 sm:p-3 text-xs sm:text-sm">
                 <div class="space-y-2">

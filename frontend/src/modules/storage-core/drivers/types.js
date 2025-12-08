@@ -21,6 +21,7 @@ export const DRIVER_TYPES = Object.freeze({
   S3: "S3",
   WEBDAV: "WEBDAV",
   LOCAL: "LOCAL",
+  ONEDRIVE: "ONEDRIVE",
 });
 
 export const DEFAULT_DRIVER_CAPABILITIES = Object.freeze({

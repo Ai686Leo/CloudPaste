@@ -210,14 +210,16 @@ const openEditModal = async () => {
     if (fileInfo.value.id) {
       const prev = fileInfo.value;
       const detail = await fileShareStore.fetchById(fileInfo.value.id, { useCache: false });
+      // 合并数据时，只保留运行时状态字段，不保留可编辑字段
       fileInfo.value = {
         ...detail,
+        // 保留运行时状态字段
         slug: prev.slug,
         type: prev.type,
         requires_password: prev.requires_password,
         passwordVerified: prev.passwordVerified,
         currentPassword: prev.currentPassword,
-        use_proxy: prev.use_proxy,
+        // 移除 use_proxy 的旧值保留，使用从后端获取的最新值
         rawUrl: prev.rawUrl,
         linkType: prev.linkType,
         documentPreview: prev.documentPreview,

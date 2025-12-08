@@ -3,12 +3,14 @@ import { DRIVER_TYPES, DriverResolutionError } from "./types.js";
 import { S3Driver } from "./s3/S3Driver.js";
 import { WebDavDriver } from "./webdav/WebDavDriver.js";
 import { LocalDriver } from "./local/LocalDriver.js";
+import { OneDriveDriver } from "./onedrive/OneDriveDriver.js";
 
 // 存储驱动工厂
 const driverFactories = new Map([
   [DRIVER_TYPES.S3, (config) => new S3Driver(config)],
   [DRIVER_TYPES.WEBDAV, (config) => new WebDavDriver(config)],
   [DRIVER_TYPES.LOCAL, (config) => new LocalDriver(config)],
+  [DRIVER_TYPES.ONEDRIVE, (config) => new OneDriveDriver(config)],
 ]);
 
 const driverCache = new Map();

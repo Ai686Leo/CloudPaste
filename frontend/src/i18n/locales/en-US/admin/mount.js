@@ -80,6 +80,7 @@ export default {
       },
       webdavPolicy: "WebDAV Policy",
       webdavPolicyHint: "Select WebDAV access policy",
+      storageConfig: "Storage Configuration",
       selectStorageConfig: "Please select a storage configuration",
       noStorageConfig: "No storage configurations available",
       storageTypes: {

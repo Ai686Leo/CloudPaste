@@ -375,6 +375,100 @@ async function createTasksTables(db) {
   console.log("任务编排表创建完成");
 }
 
+/**
+ * 创建通用上传会话相关表（跨驱动前端分片/断点续传会话管理）
+ * @param {D1Database} db - D1数据库实例
+ */
+async function createUploadSessionsTables(db) {
+  console.log("创建上传会话相关表...");
+
+  // 通用上传会话表：管理各存储驱动的前端分片/断点续传会话（S3 / OneDrive / 其他）
+  await db
+    .prepare(
+      `
+      CREATE TABLE IF NOT EXISTS ${DbTables.UPLOAD_SESSIONS} (
+        id TEXT PRIMARY KEY,
+
+        -- 主体与目标信息
+        user_id TEXT NOT NULL,
+        user_type TEXT NOT NULL,
+        storage_type TEXT NOT NULL,
+        storage_config_id TEXT NOT NULL,
+        mount_id TEXT,
+        fs_path TEXT NOT NULL,
+        source TEXT NOT NULL,
+
+        -- 文件级元数据
+        file_name TEXT NOT NULL,
+        file_size INTEGER NOT NULL,
+        mime_type TEXT,
+        checksum TEXT,
+
+        -- 文件指纹（用于跨驱动/跨会话识别同一逻辑文件）
+        fingerprint_algo TEXT,
+        fingerprint_value TEXT,
+
+        -- 策略与进度
+        strategy TEXT NOT NULL,
+        part_size INTEGER NOT NULL,
+        total_parts INTEGER NOT NULL,
+        bytes_uploaded INTEGER NOT NULL DEFAULT 0,
+        uploaded_parts INTEGER NOT NULL DEFAULT 0,
+        next_expected_range TEXT,
+
+        -- provider 会话信息（驱动私有）
+        provider_upload_id TEXT,
+        provider_upload_url TEXT,
+        provider_meta TEXT,
+
+        -- 会话状态与错误
+        status TEXT NOT NULL,
+        error_code TEXT,
+        error_message TEXT,
+
+        -- 生命周期
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        expires_at DATETIME
+      )
+    `,
+    )
+    .run();
+
+  await db
+    .prepare(
+      `CREATE INDEX IF NOT EXISTS idx_upload_sessions_user ON ${DbTables.UPLOAD_SESSIONS}(user_id, user_type)`,
+    )
+    .run();
+  await db
+    .prepare(
+      `CREATE INDEX IF NOT EXISTS idx_upload_sessions_storage ON ${DbTables.UPLOAD_SESSIONS}(storage_type, storage_config_id)`,
+    )
+    .run();
+  await db
+    .prepare(
+      `CREATE INDEX IF NOT EXISTS idx_upload_sessions_mount_path ON ${DbTables.UPLOAD_SESSIONS}(mount_id, fs_path)`,
+    )
+    .run();
+  await db
+    .prepare(
+      `CREATE INDEX IF NOT EXISTS idx_upload_sessions_status ON ${DbTables.UPLOAD_SESSIONS}(status, updated_at DESC)`,
+    )
+    .run();
+  await db
+    .prepare(
+      `CREATE INDEX IF NOT EXISTS idx_upload_sessions_source ON ${DbTables.UPLOAD_SESSIONS}(source)`,
+    )
+    .run();
+  await db
+    .prepare(
+      `CREATE INDEX IF NOT EXISTS idx_upload_sessions_fingerprint ON ${DbTables.UPLOAD_SESSIONS}(fingerprint_value)`,
+    )
+    .run();
+
+  console.log("上传会话表创建完成");
+}
+
 // ==================== 索引创建 ====================
 
 /**
@@ -552,6 +646,7 @@ export async function initDatabase(db) {
   await createFsMetaTables(db);
   await createSystemTables(db);
   await createTasksTables(db);
+  await createUploadSessionsTables(db);
 
   // 创建索引
   await createIndexes(db)
@@ -868,6 +963,13 @@ async function executeMigrationForVersion(db, version) {
       console.log("版本25：检查并创建 tasks 表...");
       await createTasksTables(db);
       console.log("版本25：tasks 表及索引创建完成。");
+      break;
+
+    case 26:
+      // 版本26：创建通用 upload_sessions 表用于跨驱动前端分片/断点续传会话管理
+      console.log("版本26：检查并创建 upload_sessions 表...");
+      await createUploadSessionsTables(db);
+      console.log("版本26：upload_sessions 表及索引检查/创建完成。");
       break;
 
     default:
@@ -1694,7 +1796,7 @@ export async function checkAndInitDatabase(db) {
     const versionSetting = await db.prepare(`SELECT value FROM ${DbTables.SYSTEM_SETTINGS} WHERE key = 'schema_version'`).first();
 
     const currentVersion = versionSetting ? parseInt(versionSetting.value) : 0;
-    const targetVersion = 25; // 当前最新版本
+    const targetVersion = 26; // 当前最新版本
 
     if (currentVersion < targetVersion) {
       console.log(`需要更新数据库结构，当前版本:${currentVersion}，目标版本:${targetVersion}`);

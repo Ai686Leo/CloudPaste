@@ -4,6 +4,7 @@ import { StorageFactory } from "../storage/factory/StorageFactory.js";
 import { MountManager } from "../storage/managers/MountManager.js";
 import { ApiStatus } from "../constants/index.js";
 import { AppError, ValidationError, NotFoundError, DriverError } from "../http/errors.js";
+import { CAPABILITIES } from "../storage/interfaces/capabilities/index.js";
 
 /**
  * 计算存储配置在 WebDAV 渠道下支持的策略列表
@@ -24,8 +25,8 @@ function computeWebDavSupportedPolicies(cfg) {
     policies.push("use_proxy_url");
   }
 
-  // 仅具备直链能力的类型暴露 302_redirect，目前是 S3
-  if (type === "S3") {
+  // 仅具备 DirectLink 能力的类型暴露 302_redirect（例如 S3、ONEDRIVE 等）
+  if (type && StorageFactory.supportsCapability(type, CAPABILITIES.DIRECT_LINK)) {
     policies.push("302_redirect");
   }
 

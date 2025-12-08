@@ -1,15 +1,15 @@
 <template>
   <AdminTable
-      :data="files"
-      :columns="fileColumns"
-      :column-classes="fileColumnClasses"
-      :manual-sorting="false"
-      :selectable="true"
-      :selected-items="selectedFiles"
-      row-id-field="id"
-      empty-text="暂无文件数据"
-      :loading="loading"
-      @selection-change="handleSelectionChange"
+    :data="files"
+    :columns="fileColumns"
+    :column-classes="fileColumnClasses"
+    :manual-sorting="false"
+    :selectable="true"
+    :selected-items="selectedFiles"
+    row-id-field="id"
+    empty-text="暂无文件数据"
+    :loading="loading"
+    @selection-change="handleSelectionChange"
   >
     <template #mobile="{ data }">
       <!-- 移动端卡片组件 - 小于中等设备显示 -->
@@ -19,10 +19,10 @@
           <div class="flex items-start">
             <div class="flex-shrink-0 mr-3 mt-1">
               <input
-                  type="checkbox"
-                  :checked="selectedFiles.includes(file.id)"
-                  @click="handleMobileSelect(file.id)"
-                  class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded cursor-pointer"
+                type="checkbox"
+                :checked="selectedFiles.includes(file.id)"
+                @click="handleMobileSelect(file.id)"
+                class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded cursor-pointer"
               />
             </div>
             <div class="flex-1">
@@ -34,9 +34,9 @@
                 <!-- 文件名 -->
                 <div class="font-medium" :class="darkMode ? 'text-white' : 'text-gray-900'" :title="file.filename">{{ truncateFilename(file.filename) }}</div>
                 <span
-                    v-if="file.has_password"
-                    :class="['ml-2', passwordBadgeBaseClass]"
-                    title="密码保护"
+                  v-if="file.has_password"
+                  :class="['ml-2', passwordBadgeBaseClass]"
+                  title="密码保护"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" class="h-3.5 w-3.5" :class="passwordIconClass">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 11V7a5 5 0 0110 0v4" />
@@ -68,9 +68,9 @@
             <div class="text-xs font-medium uppercase" :class="darkMode ? 'text-gray-500' : 'text-gray-500'">类型</div>
             <div>
               <span
-                  class="px-2 py-0.5 text-xs rounded inline-block max-w-full truncate"
-                  :class="getMimeTypeClass(file)"
-                  :title="getSimpleMimeType(file.mimetype, file.filename, file)"
+                class="px-2 py-0.5 text-xs rounded inline-block max-w-full truncate"
+                :class="getMimeTypeClass(file)"
+                :title="getSimpleMimeType(file.mimetype, file.filename, file)"
               >
                 {{ getSimpleMimeType(file.mimetype, file.filename, file) }}
               </span>
@@ -105,8 +105,8 @@
             <div class="text-xs font-medium uppercase" :class="darkMode ? 'text-gray-500' : 'text-gray-500'">创建者</div>
             <div :class="darkMode ? 'text-gray-300' : 'text-gray-700'" class="flex flex-col">
               <span
-                  v-if="file.created_by && file.created_by.startsWith('apikey:')"
-                  class="px-2 py-1 text-xs rounded bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-100 inline-block mt-1 w-fit"
+                v-if="file.created_by && file.created_by.startsWith('apikey:')"
+                class="px-2 py-1 text-xs rounded bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-100 inline-block mt-1 w-fit"
               >
                 {{ file.key_name ? `密钥：${file.key_name}` : `密钥：${file.created_by.substring(7, 12)}...` }}
               </span>
@@ -130,30 +130,30 @@
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
               <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
               />
             </svg>
           </button>
           <button @click="$emit('edit', file)" class="p-2 rounded-md" :class="darkMode ? 'bg-gray-700 text-green-400' : 'bg-gray-100 text-green-600'">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
               />
             </svg>
           </button>
           <button @click="$emit('generate-qr', file)" class="p-2 rounded-md" :class="darkMode ? 'bg-gray-700 text-indigo-400' : 'bg-gray-100 text-indigo-600'">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"
               />
             </svg>
           </button>
@@ -165,10 +165,10 @@
           <button @click="emit('copy-link', file)" class="p-2 rounded-md relative" :class="darkMode ? 'bg-gray-700 text-cyan-400' : 'bg-gray-100 text-cyan-600'">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
               />
             </svg>
             <!-- 移动端复制成功提示 -->
@@ -186,10 +186,10 @@
           <button @click="$emit('delete', file)" class="p-2 rounded-md" :class="darkMode ? 'bg-gray-700 text-red-400' : 'bg-gray-100 text-red-600'">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
               />
             </svg>
           </button>
@@ -250,13 +250,13 @@ const storageConfigsStore = useStorageConfigsStore();
 
 const getStorageConfigDisplay = (file) => {
   const typeLabel =
-      storageConfigsStore.getStorageTypeLabel(file.storage_type) ||
-      file.storage_type ||
-      "未知";
+    storageConfigsStore.getStorageTypeLabel(file.storage_type) ||
+    file.storage_type ||
+    "未知";
   const hasBoundConfig = !!file.storage_config_id;
   const primary = file.storage_config_name || typeLabel;
   const secondary =
-      file.storage_provider_type || (hasBoundConfig ? typeLabel : "未绑定配置");
+    file.storage_provider_type || (hasBoundConfig ? typeLabel : "未绑定配置");
   return { primary, secondary };
 };
 
@@ -276,32 +276,32 @@ const fileColumns = computed(() => [
             innerHTML: getFileIconClassLocal(file),
           }),
           h(
-              "span",
-              {
-                class: "font-medium truncate max-w-64",
-                title: file.filename,
-              },
-              truncateFilename(file.filename)
+            "span",
+            {
+              class: "font-medium truncate max-w-64",
+              title: file.filename,
+            },
+            truncateFilename(file.filename)
           ),
           file.has_password && renderPasswordBadge("ml-2"),
         ]),
         h(
-            "span",
-            {
-              class: `text-xs mt-1 truncate max-w-64 ${props.darkMode ? "text-gray-400" : "text-gray-500"}`,
-              title: file.slug ? `/${file.slug}` : "无短链接", // 鼠标悬停显示完整短链接
-            },
-            file.slug ? `/${file.slug}` : "无短链接"
+          "span",
+          {
+            class: `text-xs mt-1 truncate max-w-64 ${props.darkMode ? "text-gray-400" : "text-gray-500"}`,
+            title: file.slug ? `/${file.slug}` : "无短链接", // 鼠标悬停显示完整短链接
+          },
+          file.slug ? `/${file.slug}` : "无短链接"
         ),
         file.remark &&
-        h(
+          h(
             "span",
             {
               class: `text-xs mt-1 italic truncate max-w-64 ${props.darkMode ? "text-blue-400" : "text-blue-600"}`,
               title: file.remark, // 鼠标悬停显示完整备注
             },
             file.remark
-        ),
+          ),
       ]);
     },
   },
@@ -315,12 +315,12 @@ const fileColumns = computed(() => [
     render: (_, file) => {
       const mimeTypeText = getSimpleMimeType(file.mimetype, file.filename, file);
       return h(
-          "span",
-          {
-            class: `px-2 py-1 text-xs rounded ${getMimeTypeClass(file)} inline-block max-w-32 truncate`,
-            title: mimeTypeText, // 鼠标悬停显示完整MIME类型
-          },
-          mimeTypeText
+        "span",
+        {
+          class: `px-2 py-1 text-xs rounded ${getMimeTypeClass(file)} inline-block max-w-32 truncate`,
+          title: mimeTypeText, // 鼠标悬停显示完整MIME类型
+        },
+        mimeTypeText
       );
     },
   },
@@ -347,26 +347,26 @@ const fileColumns = computed(() => [
       // 只有当文件有访问次数限制时才显示已用次数
       if (file.views && file.max_views) {
         children.push(
-            h(
-                "span",
-                {
-                  class: `text-xs mt-1 ${props.darkMode ? "text-gray-400" : "text-gray-500"}`,
-                },
-                `已用: ${file.views || 0}/${file.max_views}`
-            )
+          h(
+            "span",
+            {
+              class: `text-xs mt-1 ${props.darkMode ? "text-gray-400" : "text-gray-500"}`,
+            },
+            `已用: ${file.views || 0}/${file.max_views}`
+          )
         );
       }
 
       // 只有当文件有过期时间时才显示过期时间
       if (file.expires_at) {
         children.push(
-            h(
-                "span",
-                {
-                  class: `text-xs mt-1 ${expiresClass(file.expires_at)}`,
-                },
-                formatRelativeTime(file.expires_at)
-            )
+          h(
+            "span",
+            {
+              class: `text-xs mt-1 ${expiresClass(file.expires_at)}`,
+            },
+            formatRelativeTime(file.expires_at)
+          )
         );
       }
 
@@ -385,11 +385,11 @@ const fileColumns = computed(() => [
       return h("div", { class: "flex flex-col" }, [
         h("span", {}, primary),
         h(
-            "span",
-            {
-              class: `text-xs mt-1 ${props.darkMode ? "text-gray-400" : "text-gray-500"}`,
-            },
-            secondary
+          "span",
+          {
+            class: `text-xs mt-1 ${props.darkMode ? "text-gray-400" : "text-gray-500"}`,
+          },
+          secondary
         ),
       ]);
     },
@@ -441,23 +441,23 @@ const fileColumns = computed(() => [
           event: () => emit("preview", file),
           color: "text-blue-600 hover:text-blue-900 dark:text-blue-400",
           svg: h(
-              "svg",
-              {
-                xmlns: "http://www.w3.org/2000/svg",
-                class: "h-5 w-5",
-                fill: "none",
-                viewBox: "0 0 24 24",
-                stroke: "currentColor",
-              },
-              [
-                h("path", { "stroke-linecap": "round", "stroke-linejoin": "round", "stroke-width": "2", d: "M15 12a3 3 0 11-6 0 3 3 0 016 0z" }),
-                h("path", {
-                  "stroke-linecap": "round",
-                  "stroke-linejoin": "round",
-                  "stroke-width": "2",
-                  d: "M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z",
-                }),
-              ]
+            "svg",
+            {
+              xmlns: "http://www.w3.org/2000/svg",
+              class: "h-5 w-5",
+              fill: "none",
+              viewBox: "0 0 24 24",
+              stroke: "currentColor",
+            },
+            [
+              h("path", { "stroke-linecap": "round", "stroke-linejoin": "round", "stroke-width": "2", d: "M15 12a3 3 0 11-6 0 3 3 0 016 0z" }),
+              h("path", {
+                "stroke-linecap": "round",
+                "stroke-linejoin": "round",
+                "stroke-width": "2",
+                d: "M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z",
+              }),
+            ]
           ),
         },
         {
@@ -465,22 +465,22 @@ const fileColumns = computed(() => [
           event: () => emit("edit", file),
           color: "text-green-600 hover:text-green-900 dark:text-green-400",
           svg: h(
-              "svg",
-              {
-                xmlns: "http://www.w3.org/2000/svg",
-                class: "h-5 w-5",
-                fill: "none",
-                viewBox: "0 0 24 24",
-                stroke: "currentColor",
-              },
-              [
-                h("path", {
-                  "stroke-linecap": "round",
-                  "stroke-linejoin": "round",
-                  "stroke-width": "2",
-                  d: "M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z",
-                }),
-              ]
+            "svg",
+            {
+              xmlns: "http://www.w3.org/2000/svg",
+              class: "h-5 w-5",
+              fill: "none",
+              viewBox: "0 0 24 24",
+              stroke: "currentColor",
+            },
+            [
+              h("path", {
+                "stroke-linecap": "round",
+                "stroke-linejoin": "round",
+                "stroke-width": "2",
+                d: "M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z",
+              }),
+            ]
           ),
         },
         {
@@ -488,22 +488,22 @@ const fileColumns = computed(() => [
           event: () => emit("generate-qr", file),
           color: "text-indigo-600 hover:text-indigo-900 dark:text-indigo-400",
           svg: h(
-              "svg",
-              {
-                xmlns: "http://www.w3.org/2000/svg",
-                class: "h-5 w-5",
-                fill: "none",
-                viewBox: "0 0 24 24",
-                stroke: "currentColor",
-              },
-              [
-                h("path", {
-                  "stroke-linecap": "round",
-                  "stroke-linejoin": "round",
-                  "stroke-width": "2",
-                  d: "M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z",
-                }),
-              ]
+            "svg",
+            {
+              xmlns: "http://www.w3.org/2000/svg",
+              class: "h-5 w-5",
+              fill: "none",
+              viewBox: "0 0 24 24",
+              stroke: "currentColor",
+            },
+            [
+              h("path", {
+                "stroke-linecap": "round",
+                "stroke-linejoin": "round",
+                "stroke-width": "2",
+                d: "M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z",
+              }),
+            ]
           ),
         },
         {
@@ -511,22 +511,22 @@ const fileColumns = computed(() => [
           event: () => openFileLink(file),
           color: "text-amber-600 hover:text-amber-900 dark:text-amber-400",
           svg: h(
-              "svg",
-              {
-                xmlns: "http://www.w3.org/2000/svg",
-                class: "h-5 w-5",
-                fill: "none",
-                viewBox: "0 0 24 24",
-                stroke: "currentColor",
-              },
-              [
-                h("path", {
-                  "stroke-linecap": "round",
-                  "stroke-linejoin": "round",
-                  "stroke-width": "2",
-                  d: "M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14",
-                }),
-              ]
+            "svg",
+            {
+              xmlns: "http://www.w3.org/2000/svg",
+              class: "h-5 w-5",
+              fill: "none",
+              viewBox: "0 0 24 24",
+              stroke: "currentColor",
+            },
+            [
+              h("path", {
+                "stroke-linecap": "round",
+                "stroke-linejoin": "round",
+                "stroke-width": "2",
+                d: "M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14",
+              }),
+            ]
           ),
         },
         {
@@ -534,22 +534,22 @@ const fileColumns = computed(() => [
           event: () => emit("copy-link", file),
           color: "text-cyan-600 hover:text-cyan-900 dark:text-cyan-400",
           svg: h(
-              "svg",
-              {
-                xmlns: "http://www.w3.org/2000/svg",
-                class: "h-5 w-5",
-                fill: "none",
-                viewBox: "0 0 24 24",
-                stroke: "currentColor",
-              },
-              [
-                h("path", {
-                  "stroke-linecap": "round",
-                  "stroke-linejoin": "round",
-                  "stroke-width": "2",
-                  d: "M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z",
-                }),
-              ]
+            "svg",
+            {
+              xmlns: "http://www.w3.org/2000/svg",
+              class: "h-5 w-5",
+              fill: "none",
+              viewBox: "0 0 24 24",
+              stroke: "currentColor",
+            },
+            [
+              h("path", {
+                "stroke-linecap": "round",
+                "stroke-linejoin": "round",
+                "stroke-width": "2",
+                d: "M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z",
+              }),
+            ]
           ),
         },
         {
@@ -557,18 +557,18 @@ const fileColumns = computed(() => [
           event: () => emit("copy-permanent-link", file),
           color: "text-purple-600 hover:text-purple-900 dark:text-purple-400",
           svg: h(
-              "svg",
-              {
-                xmlns: "http://www.w3.org/2000/svg",
-                class: "h-5 w-5",
-                fill: "none",
-                viewBox: "0 0 24 24",
-                stroke: "currentColor",
-              },
-              [
-                h("path", { "stroke-linecap": "round", "stroke-linejoin": "round", "stroke-width": "2", d: "M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101" }),
-                h("path", { "stroke-linecap": "round", "stroke-linejoin": "round", "stroke-width": "2", d: "M10.172 13.828a4 4 0 015.656 0l4 4a4 4 0 01-5.656 5.656l-1.102-1.101" }),
-              ]
+            "svg",
+            {
+              xmlns: "http://www.w3.org/2000/svg",
+              class: "h-5 w-5",
+              fill: "none",
+              viewBox: "0 0 24 24",
+              stroke: "currentColor",
+            },
+            [
+              h("path", { "stroke-linecap": "round", "stroke-linejoin": "round", "stroke-width": "2", d: "M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101" }),
+              h("path", { "stroke-linecap": "round", "stroke-linejoin": "round", "stroke-width": "2", d: "M10.172 13.828a4 4 0 015.656 0l4 4a4 4 0 01-5.656 5.656l-1.102-1.101" }),
+            ]
           ),
         },
       ];
@@ -579,62 +579,62 @@ const fileColumns = computed(() => [
           event: () => emit("delete", file),
           color: "text-red-600 hover:text-red-900 dark:text-red-400",
           svg: h(
-              "svg",
-              {
-                xmlns: "http://www.w3.org/2000/svg",
-                class: "h-5 w-5",
-                fill: "none",
-                viewBox: "0 0 24 24",
-                stroke: "currentColor",
-              },
-              [
-                h("path", {
-                  "stroke-linecap": "round",
-                  "stroke-linejoin": "round",
-                  "stroke-width": "2",
-                  d: "M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16",
-                }),
-              ]
+            "svg",
+            {
+              xmlns: "http://www.w3.org/2000/svg",
+              class: "h-5 w-5",
+              fill: "none",
+              viewBox: "0 0 24 24",
+              stroke: "currentColor",
+            },
+            [
+              h("path", {
+                "stroke-linecap": "round",
+                "stroke-linejoin": "round",
+                "stroke-width": "2",
+                d: "M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16",
+              }),
+            ]
           ),
         });
       }
 
       return h(
-          "div",
-          { class: "flex space-x-2" },
-          actions.map((action) =>
-              h(
-                  "button",
-                  {
-                    onClick: action.event,
-                    class: `${action.color} relative`,
-                    title: action.title,
-                  },
-                  [
-                    h("span", { class: "sr-only" }, action.title),
-                    action.svg,
-                    // 添加复制反馈提示
-                    action.title === "复制链接" && props.copiedFiles[file.id]
-                        ? h(
-                            "span",
-                            {
-                              class: "absolute -top-8 left-1/2 transform -translate-x-1/2 px-2 py-1 text-xs text-white bg-green-500 rounded whitespace-nowrap",
-                            },
-                            "已复制"
-                        )
-                        : null,
-                    action.title === "复制直链" && props.copiedPermanentFiles[file.id]
-                        ? h(
-                            "span",
-                            {
-                              class: "absolute -top-8 left-1/2 transform -translate-x-1/2 px-2 py-1 text-xs text-white bg-green-500 rounded whitespace-nowrap",
-                            },
-                            "已复制直链"
-                        )
-                        : null,
-                  ]
-              )
+        "div",
+        { class: "flex space-x-2" },
+        actions.map((action) =>
+          h(
+            "button",
+            {
+              onClick: action.event,
+              class: `${action.color} relative`,
+              title: action.title,
+            },
+            [
+              h("span", { class: "sr-only" }, action.title),
+              action.svg,
+              // 添加复制反馈提示
+              action.title === "复制链接" && props.copiedFiles[file.id]
+                ? h(
+                    "span",
+                    {
+                      class: "absolute -top-8 left-1/2 transform -translate-x-1/2 px-2 py-1 text-xs text-white bg-green-500 rounded whitespace-nowrap",
+                    },
+                    "已复制"
+                  )
+                : null,
+              action.title === "复制直链" && props.copiedPermanentFiles[file.id]
+                ? h(
+                    "span",
+                    {
+                      class: "absolute -top-8 left-1/2 transform -translate-x-1/2 px-2 py-1 text-xs text-white bg-green-500 rounded whitespace-nowrap",
+                    },
+                    "已复制直链"
+                  )
+                : null,
+            ]
           )
+        )
       );
     },
   },
@@ -728,59 +728,59 @@ const getMimeTypeClass = (file) => {
 };
 
 const passwordBadgeBaseClass = computed(
-    () =>
-        `inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${
-            props.darkMode ? "bg-amber-500/15 text-amber-100 border-amber-400/30" : "bg-amber-50 text-amber-700 border-amber-200"
-        }`
+  () =>
+    `inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${
+      props.darkMode ? "bg-amber-500/15 text-amber-100 border-amber-400/30" : "bg-amber-50 text-amber-700 border-amber-200"
+    }`
 );
 
 const passwordIconClass = computed(() => (props.darkMode ? "text-amber-200" : "text-amber-600"));
 
 const renderPasswordBadge = (extraClass = "") =>
-    h(
-        "span",
+  h(
+    "span",
+    {
+      class: `${passwordBadgeBaseClass.value} ${extraClass}`,
+      title: "密码保护",
+    },
+    [
+      h(
+        "svg",
         {
-          class: `${passwordBadgeBaseClass.value} ${extraClass}`,
-          title: "密码保护",
+          xmlns: "http://www.w3.org/2000/svg",
+          viewBox: "0 0 24 24",
+          fill: "none",
+          stroke: "currentColor",
+          class: `h-3.5 w-3.5 ${passwordIconClass.value}`,
         },
         [
-          h(
-              "svg",
-              {
-                xmlns: "http://www.w3.org/2000/svg",
-                viewBox: "0 0 24 24",
-                fill: "none",
-                stroke: "currentColor",
-                class: `h-3.5 w-3.5 ${passwordIconClass.value}`,
-              },
-              [
-                h("path", {
-                  "stroke-linecap": "round",
-                  "stroke-linejoin": "round",
-                  "stroke-width": "2",
-                  d: "M7 11V7a5 5 0 0110 0v4",
-                }),
-                h("rect", {
-                  "stroke-linecap": "round",
-                  "stroke-linejoin": "round",
-                  "stroke-width": "2",
-                  x: "6",
-                  y: "11",
-                  width: "12",
-                  height: "9",
-                  rx: "2",
-                }),
-              ]
-          ),
-          h(
-              "span",
-              {
-                class: "leading-none",
-              },
-              "加密"
-          ),
+          h("path", {
+            "stroke-linecap": "round",
+            "stroke-linejoin": "round",
+            "stroke-width": "2",
+            d: "M7 11V7a5 5 0 0110 0v4",
+          }),
+          h("rect", {
+            "stroke-linecap": "round",
+            "stroke-linejoin": "round",
+            "stroke-width": "2",
+            x: "6",
+            y: "11",
+            width: "12",
+            height: "9",
+            rx: "2",
+          }),
         ]
-    );
+      ),
+      h(
+        "span",
+        {
+          class: "leading-none",
+        },
+        "加密"
+      ),
+    ]
+  );
 
 const getFileIconClassLocal = (file) => {
   const fileItem = {

@@ -5,9 +5,10 @@ export default {
 
     // 存储类型显示
     type: {
-      s3: "S3 兼容存储",
-      webdav: "WebDAV 存储",
-      local: "本机文件存储",
+      s3: "S3兼容",
+      webdav: "WebDAV",
+      local: "本机文件",
+      onedrive: "OneDrive",
     },
 
     // 分组标题
@@ -31,7 +32,7 @@ export default {
       access_key_id: "访问密钥 ID",
       secret_access_key: "访问密钥 Secret",
       path_style: "路径样式",
-      default_folder: "默认目录",
+      default_folder: "默认上传目录",
       custom_host: "自定义 HOST",
       url_proxy: "代理 URL",
       signature_expires_in: "签名过期时间(秒)",
@@ -48,6 +49,18 @@ export default {
         trash_path: "回收站路径",
         dir_permission: "目录/文件权限",
       },
+
+      // OneDrive 特有字段
+      onedrive: {
+        region: "区域",
+        client_id: "客户端 ID",
+        client_secret: "客户端密钥",
+        refresh_token: "刷新令牌",
+        token_renew_endpoint: "Token 续期端点",
+        redirect_uri: "回调地址",
+        use_online_api: "API 类型",
+        oauth_status: "授权状态",
+      },
     },
 
     // 占位符文本
@@ -57,7 +70,7 @@ export default {
       region: "例如：us-east-1 或留空",
       access_key_id: "输入访问密钥 ID",
       secret_access_key: "输入访问密钥 Secret",
-      default_folder: "例如：uploads/ 或留空使用根目录",
+      default_folder: "例如：uploads/ 或留空表示上传到根目录",
       custom_host: "例如：https://cdn.example.com",
       url_proxy: "例如：https://proxy.example.com",
       webdav_endpoint: "例如：https://dav.example.com/dav",
@@ -66,6 +79,15 @@ export default {
       root_path: "例如：/data/storage 或 D:\\Storage",
       trash_path: "例如：.trash 或 /data/trash",
       dir_permission: "例如：0777",
+
+      // OneDrive 占位符
+      onedrive: {
+        client_id: "Azure 应用的客户端 ID",
+        client_secret: "Azure 应用的客户端密钥",
+        refresh_token: "在外部授权页面获取的刷新令牌",
+        token_renew_endpoint: "例如：https://your-token-service.com/renew",
+        redirect_uri: "例如：https://your-token-service.com/onedrive/callback",
+      },
     },
 
     // 描述文本
@@ -82,6 +104,18 @@ export default {
       readonly: "启用只读模式，禁止写入和删除操作",
       trash_path: "删除文件时移动到此目录，支持相对路径（相对于根目录）或绝对路径",
       dir_permission: "创建目录和文件时使用的权限",
+
+      // OneDrive 描述
+      onedrive: {
+        region: "选择 OneDrive 服务区域，国际版选 Global，世纪互联版选 CN",
+        client_id: "在 Azure Portal 注册应用后获取的客户端 ID",
+        client_secret: "Azure 应用的客户端密钥",
+        refresh_token: "推荐在 OpenList APIPages 等外部授权站点完成授权后，复制刷新令牌粘贴到此处",
+        root_folder: "OneDrive 中的默认上传目录路径，留空表示使用整个 OneDrive",
+        token_renew_endpoint: "可选：自定义 Token 续期服务地址，用于对接 Online API 等外部续期服务",
+        redirect_uri: "外部授权站点在 Azure 应用中配置的回调地址，通常与授权页面文档保持一致",
+        use_online_api: "启用后，CloudPaste 将按照 Online API 协议调用续期端点刷新令牌",
+      },
     },
 
     // 卡片摘要显示值
@@ -93,6 +127,12 @@ export default {
       default_folder: {
         root: "根目录",
       },
+      onedrive: {
+        use_online_api: {
+          enabled: "Online API",
+          disabled: "标准 API",
+        },
+      },
     },
 
     // S3 服务商选项
@@ -102,7 +142,17 @@ export default {
         backblaze_b2: "Backblaze B2",
         aws_s3: "AWS S3",
         aliyun_oss: "阿里云 OSS",
-        other: "其他 S3 兼容服务",
+        other: "其他S3兼容服务",
+      },
+    },
+
+    // OneDrive 区域选项
+    onedrive: {
+      region: {
+        global: "国际版 (Global)",
+        cn: "世纪互联版 (CN)",
+        us: "美国政府版 (US Gov)",
+        de: "德国版 (Germany)",
       },
     },
   },

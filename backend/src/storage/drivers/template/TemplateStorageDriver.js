@@ -210,31 +210,31 @@ export class TemplateStorageDriver extends BaseDriver {
 
   async initializeFrontendMultipartUpload(subPath, options = {}) {
     this._ensureInitialized();
-    throw new Error("TemplateStorageDriver: 如需支持前端分片上传，请实现 initializeFrontendMultipartUpload");
+    throw new Error("TemplateStorageDriver: 请在此根据目标后端实现 initializeFrontendMultipartUpload（参考 MultipartCapable 契约文档）");
   }
 
   async completeFrontendMultipartUpload(subPath, options = {}) {
     this._ensureInitialized();
-    throw new Error("TemplateStorageDriver: 如需支持前端分片上传，请实现 completeFrontendMultipartUpload");
+    throw new Error("TemplateStorageDriver: 请在此根据目标后端实现 completeFrontendMultipartUpload（参考 MultipartCapable 契约文档）");
   }
 
   async abortFrontendMultipartUpload(subPath, options = {}) {
     this._ensureInitialized();
-    throw new Error("TemplateStorageDriver: 如需支持前端分片上传，请实现 abortFrontendMultipartUpload");
+    throw new Error("TemplateStorageDriver: 请在此根据目标后端实现 abortFrontendMultipartUpload（参考 MultipartCapable 契约文档）");
   }
 
   async listMultipartUploads(subPath = "", options = {}) {
     this._ensureInitialized();
-    throw new Error("TemplateStorageDriver: 如需支持前端分片上传，请实现 listMultipartUploads");
+    throw new Error("TemplateStorageDriver: 请在此根据目标后端实现 listMultipartUploads（用于断点续传场景）");
   }
 
   async listMultipartParts(subPath, uploadId, options = {}) {
     this._ensureInitialized();
-    throw new Error("TemplateStorageDriver: 如需支持前端分片上传，请实现 listMultipartParts");
+    throw new Error("TemplateStorageDriver: 请在此根据目标后端实现 listMultipartParts（用于恢复已上传分片）");
   }
 
   async refreshMultipartUrls(subPath, uploadId, partNumbers, options = {}) {
     this._ensureInitialized();
-    throw new Error("TemplateStorageDriver: 如需支持前端分片上传，请实现 refreshMultipartUrls");
+    throw new Error("TemplateStorageDriver: 请在此根据目标后端实现 refreshMultipartUrls（刷新上传端点或会话信息）");
   }
 }

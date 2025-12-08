@@ -4,7 +4,21 @@ import { CAPABILITIES } from "../../interfaces/capabilities/index.js";
 import { findMountPointByPath } from "../utils/MountResolver.js";
 
 export async function renameItem(fs, oldPath, newPath, userIdOrInfo, userType) {
-  const { driver, mount, subPath } = await fs.mountManager.getDriverByPath(oldPath, userIdOrInfo, userType);
+  // 分别解析旧路径和新路径，确保仍在同一挂载下
+  const oldCtx = await fs.mountManager.getDriverByPath(oldPath, userIdOrInfo, userType);
+  const newCtx = await fs.mountManager.getDriverByPath(newPath, userIdOrInfo, userType);
+
+  const { driver, mount, subPath: oldSubPath } = oldCtx;
+  const { mount: newMount, subPath: newSubPath } = newCtx;
+
+  // 重命名只支持同一挂载/同一驱动内的路径
+  if (mount.id !== newMount.id || driver.getType() !== newCtx.driver.getType()) {
+    throw new DriverError("重命名仅支持同一存储挂载内的路径", {
+      status: ApiStatus.NOT_IMPLEMENTED,
+      code: "DRIVER_ERROR.CROSS_MOUNT_RENAME_NOT_SUPPORTED",
+      expose: true,
+    });
+  }
 
   if (!driver.hasCapability(CAPABILITIES.ATOMIC)) {
     throw new DriverError(`存储驱动 ${driver.getType()} 不支持原子操作`, {
@@ -16,7 +30,9 @@ export async function renameItem(fs, oldPath, newPath, userIdOrInfo, userType) {
 
   const result = await driver.renameItem(oldPath, newPath, {
     mount,
-    subPath,
+    subPath: oldSubPath,
+    oldSubPath,
+    newSubPath,
     db: fs.mountManager.db,
     userIdOrInfo,
     userType,
@@ -82,7 +98,10 @@ export async function copyItem(fs, sourcePath, targetPath, userIdOrInfo, userTyp
 
     const result = await sourceDriver.copyItem(sourcePath, targetPath, {
       mount: sourceMount,
+      // 保持旧字段，同时补充明确的源/目标子路径，方便驱动精确映射存储路径
       subPath: sourceSubPath,
+      sourceSubPath,
+      targetSubPath,
       db: fs.mountManager.db,
       userIdOrInfo,
       userType,

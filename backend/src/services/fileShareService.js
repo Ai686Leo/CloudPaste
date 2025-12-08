@@ -136,6 +136,7 @@ export class FileShareService {
       filename,
       provider_type: presign.provider_type,
       storage_config_id: presign.storage_config_id,
+      headers: presign.headers || undefined,
     };
   }
 

@@ -11,6 +11,7 @@ import { downloadFileWithAuth } from "@/api/services/fileDownloadService.js";
  *
  * - 基于 api.fs 提供的底层接口做统一封装
  * - 统一目录/文件信息/批量删除/复制/预签名链接等能力
+ * - 支持请求取消（AbortController）以优化导航体验
  *
  * 使用场景
  * - UI 侧通过 DOM 操作创建 <a> 元素触发下载或预览
@@ -18,6 +19,44 @@ import { downloadFileWithAuth } from "@/api/services/fileDownloadService.js";
 export function useFsService() {
   const authStore = useAuthStore();
   const pathPassword = usePathPassword();
+
+  // 请求取消控制器管理
+  /** @type {{ directory: AbortController | null, fileInfo: AbortController | null }} */
+  const abortControllers = {
+    directory: null,
+    fileInfo: null,
+  };
+
+  /**
+   * 取消目录列表请求
+   * 在发起新请求前调用，避免旧请求的响应覆盖新数据
+   */
+  const cancelDirectoryRequest = () => {
+    if (abortControllers.directory) {
+      abortControllers.directory.abort();
+      abortControllers.directory = null;
+    }
+  };
+
+  /**
+   * 取消文件信息请求
+   * 在发起新请求前调用，避免旧请求的响应覆盖新数据
+   */
+  const cancelFileInfoRequest = () => {
+    if (abortControllers.fileInfo) {
+      abortControllers.fileInfo.abort();
+      abortControllers.fileInfo = null;
+    }
+  };
+
+  /**
+   * 取消所有进行中的请求
+   * 用于路由切换、组件卸载等场景
+   */
+  const cancelAllRequests = () => {
+    cancelDirectoryRequest();
+    cancelFileInfoRequest();
+  };
 
   /**
    * 获取目录列表
@@ -29,8 +68,18 @@ export function useFsService() {
     const normalizedPath = path || "/";
     const isAdmin = authStore.isAdmin;
 
-    /** @type {{ refresh?: boolean; headers?: Record<string,string> }} */
-    const requestOptions = { refresh: options.refresh };
+    // 取消之前的目录请求，避免竞态条件
+    cancelDirectoryRequest();
+
+    // 创建新的 AbortController
+    const controller = new AbortController();
+    abortControllers.directory = controller;
+
+    /** @type {{ refresh?: boolean; headers?: Record<string,string>; signal?: AbortSignal }} */
+    const requestOptions = { 
+      refresh: options.refresh,
+      signal: controller.signal,
+    };
 
     // 非管理员访问时，如果已有 token，则附带在请求头中
     if (!isAdmin) {
@@ -49,6 +98,12 @@ export function useFsService() {
       }
       return /** @type {FsDirectoryResponse} */ (response.data);
     } catch (error) {
+      // 请求被取消时，静默处理，不抛出错误
+      if (error.name === "AbortError") {
+        console.log("目录请求已取消:", normalizedPath);
+        return null;
+      }
+
       // 目录路径密码缺失或失效：触发前端密码验证流程
       if (!isAdmin && error && error.code === "FS_PATH_PASSWORD_REQUIRED") {
         console.warn("目录需要路径密码，触发密码验证流程:", { path: normalizedPath, error });
@@ -64,6 +119,11 @@ export function useFsService() {
       }
 
       throw error;
+    } finally {
+      // 清理 controller 引用
+      if (abortControllers.directory === controller) {
+        abortControllers.directory = null;
+      }
     }
   };
 
@@ -75,8 +135,17 @@ export function useFsService() {
   const getFileInfo = async (path) => {
     const isAdmin = authStore.isAdmin;
 
-    /** @type {{ headers?: Record<string,string> }} */
-    const requestOptions = {};
+    // 取消之前的文件信息请求，避免竞态条件
+    cancelFileInfoRequest();
+
+    // 创建新的 AbortController
+    const controller = new AbortController();
+    abortControllers.fileInfo = controller;
+
+    /** @type {{ headers?: Record<string,string>; signal?: AbortSignal }} */
+    const requestOptions = {
+      signal: controller.signal,
+    };
 
     // 非管理员访问时，为文件路径附加路径密码 token（如果存在）
     if (!isAdmin) {
@@ -88,11 +157,25 @@ export function useFsService() {
       }
     }
 
-    const response = await api.fs.getFileInfo(path, requestOptions);
-    if (!response?.success) {
-      throw new Error(response?.message || "获取文件信息失败");
+    try {
+      const response = await api.fs.getFileInfo(path, requestOptions);
+      if (!response?.success) {
+        throw new Error(response?.message || "获取文件信息失败");
+      }
+      return /** @type {FsDirectoryItem} */ (response.data);
+    } catch (error) {
+      // 请求被取消时，静默处理，不抛出错误
+      if (error.name === "AbortError") {
+        console.log("文件信息请求已取消:", path);
+        return null;
+      }
+      throw error;
+    } finally {
+      // 清理 controller 引用
+      if (abortControllers.fileInfo === controller) {
+        abortControllers.fileInfo = null;
+      }
     }
-    return /** @type {FsDirectoryItem} */ (response.data);
   };
 
   /**
@@ -128,13 +211,16 @@ export function useFsService() {
    * @returns {Promise<{ success: true; raw: any }>}
    */
   const batchDeleteItems = async (paths) => {
-    const result = await api.fs.batchDeleteItems(paths);
-    if (result.failed && result.failed.length > 0) {
-      throw new Error(result.failed[0].error || "批量删除失败");
+    const response = await api.fs.batchDeleteItems(paths);
+    const payload = response && typeof response === "object" && "data" in response ? response.data : response;
+
+    if (payload && Array.isArray(payload.failed) && payload.failed.length > 0) {
+      throw new Error(payload.failed[0].error || "批量删除失败");
     }
+
     return {
       success: true,
-      raw: result,
+      raw: payload,
     };
   };
 
@@ -250,5 +336,9 @@ export function useFsService() {
     cancelJob,
     listJobs,
     deleteJob,
+    // 请求取消方法
+    cancelDirectoryRequest,
+    cancelFileInfoRequest,
+    cancelAllRequests,
   };
 }

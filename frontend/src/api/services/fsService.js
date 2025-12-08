@@ -15,6 +15,7 @@ import { API_BASE_URL } from "../config";
  * @param {string} path 请求路径
  * @param {Object} options 选项参数
  * @param {boolean} options.refresh 是否强制刷新，跳过缓存
+ * @param {AbortSignal} options.signal 用于取消请求的 AbortSignal
  * @returns {Promise<Object>} 目录列表响应对象
  */
 export async function getDirectoryList(path, options = {}) {
@@ -26,22 +27,30 @@ export async function getDirectoryList(path, options = {}) {
   if (options.headers) {
     requestOptions.headers = options.headers;
   }
+  // 支持请求取消
+  if (options.signal) {
+    requestOptions.signal = options.signal;
+  }
   return get("/fs/list", requestOptions);
 }
 
 /**
  * 获取文件信息
  * @param {string} path 文件路径
- * @param {{ headers?: Record<string,string> }} [options] 可选请求配置（如路径密码token等）
+ * @param {{ headers?: Record<string,string>, signal?: AbortSignal }} [options] 可选请求配置（如路径密码token、取消信号等）
  * @returns {Promise<Object>} 文件信息响应对象
  */
 export async function getFileInfo(path, options = {}) {
-  /** @type {{ params: Record<string,string>, headers?: Record<string,string> }} */
+  /** @type {{ params: Record<string,string>, headers?: Record<string,string>, signal?: AbortSignal }} */
   const requestOptions = {
     params: { path },
   };
   if (options.headers) {
     requestOptions.headers = options.headers;
+  }
+  // 支持请求取消
+  if (options.signal) {
+    requestOptions.signal = options.signal;
   }
   return get("/fs/get", requestOptions);
 }

@@ -8,9 +8,9 @@ import {
   setStorageSizeFromBytes,
   calculateStorageBytes,
   normalizeDefaultFolder,
-  normalizeEndpointForWebDav,
   isValidUrl,
 } from "@/modules/storage-core/schema/adminStorageSchemas.js";
+import { useAdminStorageTypeBehavior } from "@/modules/admin/storage/adminStorageTypeBehavior.js";
 import { api } from "@/api";
 
 const { t } = useI18n();
@@ -75,65 +75,32 @@ const success = ref("");
 
 const { getStorageConfigReveal, updateStorageConfig, createStorageConfig } = useAdminStorageConfigService();
 
-// 密钥揭示控制：none | masked | plain
-const showPlain = ref(false);
-const revealing = ref(false);
-const fetchedPlain = ref(false);
+// 行为配置 hook 依赖的辅助 ref
+const isEditRef = computed(() => props.isEdit);
+const configIdRef = computed(() => (props.config && props.config.id) || null);
 
-// WebDAV 密码显示控制
-const showWebDavPassword = ref(false);
-const revealingWebDav = ref(false);
-const fetchedWebDavPassword = ref(false);
+const {
+  currentType,
+  isSecretField,
+  isSecretVisible,
+  isSecretRevealing,
+  handleSecretToggle,
+  getSecretInputType,
+  isFieldDisabled: behaviorIsFieldDisabled,
+  isFieldRequiredOnCreate: behaviorIsFieldRequiredOnCreate,
+  formatFieldOnBlur,
+  ensureTypeDefaults,
+} = useAdminStorageTypeBehavior({
+  formData,
+  isEditRef,
+  configIdRef,
+  getStorageConfigReveal,
+  errorRef: error,
+});
 
-const toggleReveal = async () => {
-  if (!props.isEdit || !props?.config?.id) {
-    showPlain.value = !showPlain.value;
-    return;
-  }
-  if (!showPlain.value && !fetchedPlain.value) {
-    revealing.value = true;
-    try {
-      const resp = await getStorageConfigReveal(props.config.id, "plain");
-      const data = resp?.data || resp;
-      if (data) {
-        formData.value.access_key_id = data.access_key_id || "";
-        formData.value.secret_access_key = data.secret_access_key || "";
-        fetchedPlain.value = true;
-      }
-    } catch (e) {
-      error.value = e?.message || "获取密钥失败";
-    } finally {
-      revealing.value = false;
-    }
-  }
-  showPlain.value = !showPlain.value;
-};
-
-const toggleWebDavPasswordReveal = async () => {
-  if (!props.isEdit || !props?.config?.id) {
-    showWebDavPassword.value = !showWebDavPassword.value;
-    return;
-  }
-  if (!showWebDavPassword.value && !fetchedWebDavPassword.value) {
-    revealingWebDav.value = true;
-    try {
-      const resp = await getStorageConfigReveal(props.config.id, "plain");
-      const data = resp?.data || resp;
-      if (data) {
-        formData.value.password = data.password || "";
-        fetchedWebDavPassword.value = true;
-      }
-    } catch (e) {
-      error.value = e?.message || "获取WebDAV密码失败";
-    } finally {
-      revealingWebDav.value = false;
-    }
-  }
-  showWebDavPassword.value = !showWebDavPassword.value;
-};
-
-// 计算表单标题
+// 计算表单标题与类型辅助标志
 const isWebDavType = computed(() => formData.value.storage_type === "WEBDAV");
+const isOneDriveType = computed(() => currentType.value === "ONEDRIVE");
 
 const formTitle = computed(() => {
   return props.isEdit ? "编辑存储配置" : "添加存储配置";
@@ -147,17 +114,13 @@ const trimInput = (field) => {
 };
 
 const formatUrl = (field) => {
-  if (formData.value[field]) {
-    let url = formData.value[field].trim();
-
-    if (field === "endpoint_url" && isWebDavType.value) {
-      url = normalizeEndpointForWebDav(url);
-    } else {
-      url = url.replace(/\/+$/, "");
-    }
-
-    formData.value[field] = url;
+  if (!formData.value[field]) {
+    return;
   }
+  let url = formData.value[field].trim();
+  // 通用规则：先去掉尾部多余斜杠
+  url = url.replace(/\/+$/, "");
+  formData.value[field] = url;
 };
 
 const formatBucketName = () => {
@@ -178,6 +141,12 @@ const shouldRenderField = (fieldName) => {
   if (FIELDS_HANDLED_EXTERNALLY.has(fieldName)) return false;
   return !!getFieldMeta(fieldName);
 };
+
+/**
+ * 判断字段是否应该被禁用
+ * - 具体规则由 per-type 行为配置决定（如 OneDrive token_renew_endpoint）
+ */
+const isFieldDisabled = (fieldName) => behaviorIsFieldDisabled(fieldName);
 
 /**
  * 获取组内的布局行（支持新格式）
@@ -281,48 +250,16 @@ const isAbsPathField = (fieldName) => {
 const isFieldRequiredOnCreate = (fieldName) => {
   const meta = getFieldMeta(fieldName);
   if (!meta) return false;
-  // secret 类字段在新建时默认视为必填，编辑时允许留空保留原值
-  if (!props.isEdit && meta.type === "secret") {
-    return true;
-  }
-  return !!meta.required;
+  return behaviorIsFieldRequiredOnCreate(fieldName, meta);
 };
 
-// secret 字段的可见性控制（沿用原有 S3 / WebDAV 逻辑）
-const isS3SecretField = (fieldName) =>
-  formData.value.storage_type === "S3" && (fieldName === "access_key_id" || fieldName === "secret_access_key");
-
-const isWebDavPasswordField = (fieldName) => formData.value.storage_type === "WEBDAV" && fieldName === "password";
-
-const isSecretVisible = (fieldName) => {
-  if (isS3SecretField(fieldName)) {
-    return showPlain.value;
-  }
-  if (isWebDavPasswordField(fieldName)) {
-    return showWebDavPassword.value;
-  }
-  return false;
+/**
+ * 判断字段值是否为掩码（未修改的密钥）
+ * 掩码格式：以 * 开头的字符串，如 "********abcd"
+ */
+const isMaskedValue = (value) => {
+  return typeof value === "string" && value.startsWith("*");
 };
-
-const isSecretRevealing = (fieldName) => {
-  if (isS3SecretField(fieldName)) {
-    return revealing.value;
-  }
-  if (isWebDavPasswordField(fieldName)) {
-    return revealingWebDav.value;
-  }
-  return false;
-};
-
-const handleSecretToggle = async (fieldName) => {
-  if (isS3SecretField(fieldName)) {
-    await toggleReveal();
-  } else if (isWebDavPasswordField(fieldName)) {
-    await toggleWebDavPasswordReveal();
-  }
-};
-
-const getSecretInputType = (fieldName) => (isSecretVisible(fieldName) ? "text" : "password");
 
 // 字段级 blur 处理：复用已有工具逻辑
 const handleFieldBlur = (fieldName) => {
@@ -336,6 +273,8 @@ const handleFieldBlur = (fieldName) => {
   }
   if (fieldName === "endpoint_url") {
     formatUrl("endpoint_url");
+    // 针对具体类型的额外格式化逻辑（如 WebDAV endpoint 末尾追加斜杠）
+    formatFieldOnBlur("endpoint_url");
     return;
   }
   if (isUrlField(fieldName)) {
@@ -424,44 +363,13 @@ const formValid = computed(() => {
   return true;
 });
 
-// 根据提供商类型预填默认端点
-const updateEndpoint = () => {
-  const type = formData.value.provider_type;
-
-  if (formData.value.endpoint_url) {
-    return; // 如果已有值，不覆盖
-  }
-
-  switch (type) {
-    case "Cloudflare R2":
-      formData.value.endpoint_url = "https://<accountid>.r2.cloudflarestorage.com";
-      formData.value.region = "auto";
-      formData.value.path_style = false;
-      break;
-    case "Backblaze B2":
-      formData.value.endpoint_url = "https://s3.us-west-000.backblazeb2.com";
-      formData.value.region = "";
-      formData.value.path_style = true;
-      break;
-    case "AWS S3":
-      formData.value.endpoint_url = "https://s3.amazonaws.com";
-      formData.value.path_style = false;
-      break;
-    case "Aliyun OSS":
-      formData.value.endpoint_url = "https://oss-cn-hangzhou.aliyuncs.com";
-      formData.value.region = "oss-cn-hangzhou";
-      formData.value.path_style = false;
-      break;
-    default:
-      // 其他S3兼容服务使用标准设置
-      formData.value.endpoint_url = "https://your-s3-endpoint.com";
-      formData.value.path_style = false;
-      break;
-  }
-};
-
-// 监听提供商变化
-watch(() => formData.value.provider_type, updateEndpoint);
+// 监听提供商变化（S3 默认 endpoint 由 per-type 行为配置填充）
+watch(
+  () => formData.value.provider_type,
+  () => {
+    ensureTypeDefaults();
+  },
+);
 
 // 监听编辑的配置变化
 watch(
@@ -527,16 +435,27 @@ const submitForm = async () => {
     if (props.isEdit && props.config?.id) {
       const updateData = { ...buildPayload() };
 
-      if (!updateData.access_key_id || updateData.access_key_id.trim() === "") {
+      // S3 密钥字段：空值或掩码值不提交（保留原值）
+      if (!updateData.access_key_id || updateData.access_key_id.trim() === "" || isMaskedValue(updateData.access_key_id)) {
         delete updateData.access_key_id;
       }
 
-      if (!updateData.secret_access_key || updateData.secret_access_key.trim() === "") {
+      if (!updateData.secret_access_key || updateData.secret_access_key.trim() === "" || isMaskedValue(updateData.secret_access_key)) {
         delete updateData.secret_access_key;
       }
 
-      if (isWebDavType.value && (!updateData.password || updateData.password.trim() === "")) {
+      // WebDAV 密码字段：空值或掩码值不提交（保留原值）
+      if (isWebDavType.value && (!updateData.password || updateData.password.trim() === "" || isMaskedValue(updateData.password))) {
         delete updateData.password;
+      }
+
+      // OneDrive 密钥字段：空值或掩码值不提交（保留原值）
+      if (isOneDriveType.value && (!updateData.client_secret || updateData.client_secret.trim() === "" || isMaskedValue(updateData.client_secret))) {
+        delete updateData.client_secret;
+      }
+
+      if (isOneDriveType.value && (!updateData.refresh_token || updateData.refresh_token.trim() === "" || isMaskedValue(updateData.refresh_token))) {
+        delete updateData.refresh_token;
       }
 
       savedConfig = await updateStorageConfig(props.config.id, updateData);
@@ -685,9 +604,9 @@ onMounted(async () => {
                 </h3>
 
                 <!-- 遍历布局行 -->
-                <template v-for="(row, rowIndex) in getLayoutRowsForGroup(group)" :key="rowIndex">
+                <template v-for="(row, rowIndex) in getLayoutRowsForGroup(group)">
                   <!-- 并排字段行 -->
-                  <div v-if="row.type === 'row'" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div v-if="row.type === 'row'" :key="`row-${rowIndex}`" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div v-for="fieldName in row.fields" :key="fieldName">
                       <!-- 布尔类型：勾选框 -->
                       <template v-if="getFieldType(fieldName) === 'boolean'">
@@ -738,19 +657,20 @@ onMounted(async () => {
 
                       <!-- secret：密码字段 -->
                       <template v-else-if="getFieldType(fieldName) === 'secret'">
-                        <label
-                          class="block text-sm font-medium mb-1 flex items-center justify-between"
-                          :class="darkMode ? 'text-gray-200' : 'text-gray-700'"
-                        >
-                          <span>
+                        <div class="flex items-center justify-between mb-1">
+                          <label
+                            :for="fieldName"
+                            class="block text-sm font-medium"
+                            :class="darkMode ? 'text-gray-200' : 'text-gray-700'"
+                          >
                             {{ getFieldLabel(fieldName) }}
                             <span v-if="isFieldRequiredOnCreate(fieldName)" class="text-red-500">*</span>
-                          </span>
+                          </label>
                           <button
-                            v-if="isS3SecretField(fieldName) || isWebDavPasswordField(fieldName)"
+                            v-if="isSecretField(fieldName)"
                             type="button"
-                            @click="handleSecretToggle(fieldName)"
-                            class="ml-2 inline-flex items-center px-2 py-1 rounded text-xs"
+                            @click.stop="handleSecretToggle(fieldName)"
+                            class="inline-flex items-center px-2 py-1 rounded text-xs flex-shrink-0"
                             :class="darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'"
                             :disabled="isSecretRevealing(fieldName)"
                           >
@@ -780,7 +700,7 @@ onMounted(async () => {
                               <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                             </svg>
                           </button>
-                        </label>
+                        </div>
                         <input
                           :type="getSecretInputType(fieldName)"
                           :id="fieldName"
@@ -807,12 +727,14 @@ onMounted(async () => {
                           :id="fieldName"
                           v-model="formData[fieldName]"
                           :required="isFieldRequiredOnCreate(fieldName)"
+                          :disabled="isFieldDisabled(fieldName)"
                           :placeholder="getFieldPlaceholder(fieldName)"
                           @blur="handleFieldBlur(fieldName)"
                           class="block w-full px-3 py-2 rounded-md text-sm transition-colors duration-200 border"
                           :class="[
                             darkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300 text-gray-900 placeholder-gray-500',
                             isUrlField(fieldName) && formData[fieldName] && !isValidUrl(formData[fieldName]) ? 'border-red-500' : '',
+                            isFieldDisabled(fieldName) ? 'opacity-50 cursor-not-allowed' : '',
                           ]"
                         />
                         <p v-if="isUrlField(fieldName) && formData[fieldName] && !isValidUrl(formData[fieldName])" class="mt-1 text-xs text-red-500">
@@ -826,7 +748,7 @@ onMounted(async () => {
                   </div>
 
                   <!-- 全宽字段 -->
-                  <div v-else-if="row.type === 'full'" class="w-full">
+                  <div v-else-if="row.type === 'full'" :key="`full-${rowIndex}`" class="w-full">
                     <!-- 布尔类型：勾选框 -->
                     <template v-if="getFieldType(row.field) === 'boolean'">
                       <div class="flex items-center h-10 px-3 py-2 rounded-md border" :class="darkMode ? 'border-gray-600' : 'border-gray-300'">
@@ -873,19 +795,20 @@ onMounted(async () => {
 
                     <!-- secret：密码字段 -->
                     <template v-else-if="getFieldType(row.field) === 'secret'">
-                      <label
-                        class="block text-sm font-medium mb-1 flex items-center justify-between"
-                        :class="darkMode ? 'text-gray-200' : 'text-gray-700'"
-                      >
-                        <span>
+                      <div class="flex items-center justify-between mb-1">
+                        <label
+                          :for="row.field"
+                          class="block text-sm font-medium"
+                          :class="darkMode ? 'text-gray-200' : 'text-gray-700'"
+                        >
                           {{ getFieldLabel(row.field) }}
                           <span v-if="isFieldRequiredOnCreate(row.field)" class="text-red-500">*</span>
-                        </span>
+                        </label>
                         <button
-                          v-if="isS3SecretField(row.field) || isWebDavPasswordField(row.field)"
+                          v-if="isSecretField(row.field)"
                           type="button"
-                          @click="handleSecretToggle(row.field)"
-                          class="ml-2 inline-flex items-center px-2 py-1 rounded text-xs"
+                          @click.stop="handleSecretToggle(row.field)"
+                          class="inline-flex items-center px-2 py-1 rounded text-xs flex-shrink-0"
                           :class="darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'"
                           :disabled="isSecretRevealing(row.field)"
                         >
@@ -915,8 +838,10 @@ onMounted(async () => {
                             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                           </svg>
                         </button>
-                      </label>
+                      </div>
+                      <!-- OneDrive refresh_token 字段：仅输入框，由外部授权站点提供令牌 -->
                       <input
+                        v-if="row.field === 'refresh_token' && isOneDriveType"
                         :type="getSecretInputType(row.field)"
                         :id="row.field"
                         v-model="formData[row.field]"
@@ -926,7 +851,22 @@ onMounted(async () => {
                         class="block w-full px-3 py-2 rounded-md text-sm transition-colors duration-200 border"
                         :class="darkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300 text-gray-900 placeholder-gray-500'"
                       />
-                      <p v-if="getFieldDescription(row.field)" class="mt-1 text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
+                      <!-- 其他 secret 字段：普通输入框 -->
+                      <input
+                        v-else
+                        :type="getSecretInputType(row.field)"
+                        :id="row.field"
+                        v-model="formData[row.field]"
+                        :required="isFieldRequiredOnCreate(row.field) && !isEdit"
+                        :placeholder="getFieldPlaceholder(row.field)"
+                        autocomplete="new-password"
+                        class="block w-full px-3 py-2 rounded-md text-sm transition-colors duration-200 border"
+                        :class="darkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300 text-gray-900 placeholder-gray-500'"
+                      />
+                      <p v-if="row.field === 'refresh_token' && isOneDriveType" class="mt-1 text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
+                        请输入在外部授权页面（如 OpenList APIPages）获取的刷新令牌
+                      </p>
+                      <p v-else-if="getFieldDescription(row.field)" class="mt-1 text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
                         {{ getFieldDescription(row.field) }}
                       </p>
                     </template>
@@ -942,12 +882,14 @@ onMounted(async () => {
                         :id="row.field"
                         v-model="formData[row.field]"
                         :required="isFieldRequiredOnCreate(row.field)"
+                        :disabled="isFieldDisabled(row.field)"
                         :placeholder="getFieldPlaceholder(row.field)"
                         @blur="handleFieldBlur(row.field)"
                         class="block w-full px-3 py-2 rounded-md text-sm transition-colors duration-200 border"
                         :class="[
                           darkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300 text-gray-900 placeholder-gray-500',
                           isUrlField(row.field) && formData[row.field] && !isValidUrl(formData[row.field]) ? 'border-red-500' : '',
+                          isFieldDisabled(row.field) ? 'opacity-50 cursor-not-allowed' : '',
                         ]"
                       />
                       <p v-if="isUrlField(row.field) && formData[row.field] && !isValidUrl(formData[row.field])" class="mt-1 text-xs text-red-500">

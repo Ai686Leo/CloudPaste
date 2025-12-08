@@ -133,19 +133,15 @@ export function useMountExplorerController() {
     updateUrl(normalizedPath);
   };
 
-  // ==== 防止竞态的异步处理器 ====
+  // ==== 异步处理器 ====
+  // 注意：竞态条件现在由 fsService 内部的 AbortController 机制处理
+  // 这里的处理器主要用于确保操作顺序执行，避免并发问题
   const createAsyncProcessor = () => {
     let currentPromise = null;
 
     return async (asyncFn) => {
-      if (currentPromise) {
-        try {
-          await currentPromise;
-        } catch {
-          // 忽略之前操作的错误
-        }
-      }
-
+      // 不再等待之前的请求完成，因为 fsService 会自动取消旧请求
+      // 直接执行新操作
       currentPromise = asyncFn();
 
       try {

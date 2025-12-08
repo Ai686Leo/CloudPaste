@@ -60,5 +60,5 @@ ENV ENCRYPTION_SECRET=PLEASE_CHANGE_THIS_IN_PRODUCTION
 # 暴露端口
 EXPOSE 8787
 
-# 启动命令 (--experimental-transform-types 支持 enum/namespace 语法)
-CMD ["node", "--experimental-transform-types", "--disable-warning=ExperimentalWarning", "--expose-gc", "unified-entry.js"]
+# 启动命令
+CMD ["npx", "tsx", "--expose-gc", "unified-entry.js"]

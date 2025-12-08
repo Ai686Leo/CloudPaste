@@ -1,17 +1,21 @@
 /**
  * 目录排序管理 Composable
- * 处理文件列表的排序逻辑和状态管理，支持持久化
+ * 处理文件列表的排序逻辑和状态管理
+ * 
+ * 排序设置现在由 useExplorerSettings 统一管理
  */
 
-import { ref, computed } from "vue";
+import { computed } from "vue";
+import { useExplorerSettings } from "@/composables/useExplorerSettings";
 
 export function useDirectorySort() {
-  // ===== 排序状态 =====
-  const sortField = ref("name"); // 当前排序字段：'name', 'size', 'modified'
-  const sortOrder = ref("default"); // 当前排序顺序：'asc', 'desc', 'default'
+  // 获取全局设置
+  const explorerSettings = useExplorerSettings();
 
-  // 排序字段的状态循环：default -> asc -> desc -> default
-  const sortStates = ["default", "asc", "desc"];
+  // ===== 排序状态（从 explorerSettings 获取）=====
+  const sortField = computed(() => explorerSettings.settings.sortBy);
+  const sortOrder = computed(() => explorerSettings.settings.sortOrder);
+  const foldersFirst = computed(() => explorerSettings.settings.foldersFirst);
 
   // ===== 计算属性 =====
 
@@ -19,14 +23,11 @@ export function useDirectorySort() {
    * 当前排序状态的描述
    */
   const sortDescription = computed(() => {
-    if (sortOrder.value === "default") {
-      return "默认排序（目录优先，按名称）";
-    }
-    
     const fieldNames = {
       name: "名称",
       size: "大小", 
-      modified: "修改时间"
+      modified: "修改时间",
+      type: "类型"
     };
     
     const orderNames = {
@@ -40,7 +41,9 @@ export function useDirectorySort() {
   /**
    * 是否为默认排序
    */
-  const isDefaultSort = computed(() => sortOrder.value === "default");
+  const isDefaultSort = computed(() => 
+    sortField.value === 'name' && sortOrder.value === 'asc' && foldersFirst.value
+  );
 
   /**
    * 是否为自定义排序
@@ -50,54 +53,24 @@ export function useDirectorySort() {
   // ===== 持久化方法 =====
 
   /**
-   * 初始化排序状态（从localStorage恢复）
+   * 初始化排序状态（从 useExplorerSettings 加载）
    */
   const initializeSortState = () => {
-    try {
-      const savedSortField = localStorage.getItem("file_explorer_sort_field");
-      const savedSortOrder = localStorage.getItem("file_explorer_sort_order");
-
-      if (savedSortField && ["name", "size", "modified"].includes(savedSortField)) {
-        sortField.value = savedSortField;
-      }
-
-      if (savedSortOrder && sortStates.includes(savedSortOrder)) {
-        sortOrder.value = savedSortOrder;
-      }
-
-      console.log("排序状态已恢复:", {
-        field: sortField.value,
-        order: sortOrder.value,
-      });
-    } catch (error) {
-      console.warn("恢复排序状态失败:", error);
-    }
-  };
-
-  /**
-   * 保存排序状态到localStorage
-   */
-  const saveSortState = () => {
-    try {
-      localStorage.setItem("file_explorer_sort_field", sortField.value);
-      localStorage.setItem("file_explorer_sort_order", sortOrder.value);
-      
-      console.log("排序状态已保存:", {
-        field: sortField.value,
-        order: sortOrder.value,
-      });
-    } catch (error) {
-      console.warn("保存排序状态失败:", error);
-    }
+    // 排序状态已由 useExplorerSettings.loadSettings() 自动加载
+    console.log("排序状态已初始化:", {
+      field: sortField.value,
+      order: sortOrder.value,
+      foldersFirst: foldersFirst.value,
+    });
   };
 
   /**
    * 重置排序状态为默认值
    */
   const resetSortState = () => {
-    sortField.value = "name";
-    sortOrder.value = "default";
-    saveSortState();
+    explorerSettings.updateSetting('sortBy', 'name');
+    explorerSettings.updateSetting('sortOrder', 'asc');
+    explorerSettings.updateSetting('foldersFirst', true);
   };
 
   // ===== 排序控制方法 =====
@@ -107,24 +80,19 @@ export function useDirectorySort() {
    * @param {string} field - 排序字段
    */
   const handleSort = (field) => {
-    if (!["name", "size", "modified"].includes(field)) {
+    if (!["name", "size", "modified", "type"].includes(field)) {
       console.warn("无效的排序字段:", field);
       return;
     }
 
     if (sortField.value === field) {
-      // 同一字段，切换排序状态
-      const currentIndex = sortStates.indexOf(sortOrder.value);
-      const nextIndex = (currentIndex + 1) % sortStates.length;
-      sortOrder.value = sortStates[nextIndex];
+      // 同一字段，切换排序顺序
+      explorerSettings.toggleSortOrder();
     } else {
-      // 不同字段，重置为升序
-      sortField.value = field;
-      sortOrder.value = "asc";
+      // 不同字段，设置为该字段升序
+      explorerSettings.updateSetting('sortBy', field);
+      explorerSettings.updateSetting('sortOrder', 'asc');
     }
-
-    // 保存排序状态
-    saveSortState();
   };
 
   /**
@@ -133,19 +101,18 @@ export function useDirectorySort() {
    * @param {string} order - 排序顺序
    */
   const setSortState = (field, order) => {
-    if (!["name", "size", "modified"].includes(field)) {
+    if (!["name", "size", "modified", "type"].includes(field)) {
       console.warn("无效的排序字段:", field);
       return;
     }
 
-    if (!sortStates.includes(order)) {
+    if (!["asc", "desc"].includes(order)) {
       console.warn("无效的排序顺序:", order);
       return;
     }
 
-    sortField.value = field;
-    sortOrder.value = order;
-    saveSortState();
+    explorerSettings.updateSetting('sortBy', field);
+    explorerSettings.updateSetting('sortOrder', order);
   };
 
   // ===== UI辅助方法 =====
@@ -156,8 +123,8 @@ export function useDirectorySort() {
    * @returns {string} 排序图标
    */
   const getSortIcon = (field) => {
-    if (sortField.value !== field || sortOrder.value === "default") {
-      return ""; // 默认状态不显示图标
+    if (sortField.value !== field) {
+      return ""; // 非当前排序字段不显示图标
     }
     return sortOrder.value === "asc" ? "↑" : "↓";
   };
@@ -168,7 +135,7 @@ export function useDirectorySort() {
    * @returns {string} CSS类名
    */
   const getSortIconClass = (field) => {
-    if (sortField.value !== field || sortOrder.value === "default") {
+    if (sortField.value !== field) {
       return "";
     }
     return sortOrder.value === "asc" ? "sort-asc" : "sort-desc";
@@ -180,7 +147,7 @@ export function useDirectorySort() {
    * @returns {boolean} 是否为当前排序字段
    */
   const isCurrentSortField = (field) => {
-    return sortField.value === field && sortOrder.value !== "default";
+    return sortField.value === field;
   };
 
   /**
@@ -190,8 +157,8 @@ export function useDirectorySort() {
    */
   const getFieldSortState = (field) => {
     return {
-      isActive: sortField.value === field && sortOrder.value !== "default",
-      order: sortField.value === field ? sortOrder.value : "default",
+      isActive: sortField.value === field,
+      order: sortField.value === field ? sortOrder.value : null,
       icon: getSortIcon(field),
       iconClass: getSortIconClass(field),
     };
@@ -211,22 +178,12 @@ export function useDirectorySort() {
 
     let sortedItems = [...items];
 
-    // 如果是默认排序，按名称排序
-    if (sortOrder.value === "default") {
-      return sortedItems.sort((a, b) => {
-        // 先按类型排序（目录在前，文件在后）
+    return sortedItems.sort((a, b) => {
+      // 文件夹优先（如果启用）
+      if (foldersFirst.value) {
         if (a.isDirectory && !b.isDirectory) return -1;
         if (!a.isDirectory && b.isDirectory) return 1;
-        // 再按名称字母排序
-        return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
-      });
-    }
-
-    // 自定义排序
-    return sortedItems.sort((a, b) => {
-      // 文件夹始终优先（除非两个都是文件夹或都是文件）
-      if (a.isDirectory && !b.isDirectory) return -1;
-      if (!a.isDirectory && b.isDirectory) return 1;
+      }
 
       let comparison = 0;
 
@@ -249,6 +206,12 @@ export function useDirectorySort() {
           const bTime = b.isDirectory && b.isVirtual ? 0 : new Date(b.modified || 0).getTime();
           comparison = aTime - bTime;
           break;
+        case "type":
+          // 按文件扩展名排序
+          const aExt = a.isDirectory ? '' : (a.name.split('.').pop() || '').toLowerCase();
+          const bExt = b.isDirectory ? '' : (b.name.split('.').pop() || '').toLowerCase();
+          comparison = aExt.localeCompare(bExt);
+          break;
         default:
           comparison = a.name.localeCompare(b.name, undefined, { 
             numeric: true, 
@@ -269,17 +232,6 @@ export function useDirectorySort() {
     return computed(() => sortItems(itemsRef.value));
   };
 
-  // ===== 批量操作方法 =====
-
-  /**
-   * 对多个项目列表应用相同的排序
-   * @param {Array} itemsArrays - 多个项目列表的数组
-   * @returns {Array} 排序后的项目列表数组
-   */
-  const sortMultipleItemArrays = (itemsArrays) => {
-    return itemsArrays.map(items => sortItems(items));
-  };
-
   /**
    * 获取排序配置对象（用于API调用或其他用途）
    * @returns {Object} 排序配置
@@ -288,6 +240,7 @@ export function useDirectorySort() {
     return {
       field: sortField.value,
       order: sortOrder.value,
+      foldersFirst: foldersFirst.value,
       isDefault: isDefaultSort.value,
       description: sortDescription.value,
     };
@@ -297,6 +250,7 @@ export function useDirectorySort() {
     // 状态
     sortField,
     sortOrder,
+    foldersFirst,
 
     // 计算属性
     sortDescription,
@@ -305,7 +259,6 @@ export function useDirectorySort() {
 
     // 持久化方法
     initializeSortState,
-    saveSortState,
     resetSortState,
 
     // 排序控制方法
@@ -321,7 +274,6 @@ export function useDirectorySort() {
     // 排序算法
     sortItems,
     createSortedItems,
-    sortMultipleItemArrays,
 
     // 工具方法
     getSortConfig,

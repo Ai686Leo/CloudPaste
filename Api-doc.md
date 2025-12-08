@@ -1390,7 +1390,7 @@ X-Custom-Auth-Key: <api_key>
 ### 统一存储链接解析
 
 - `POST /api/proxy/link`
-  - 描述：统一存储链接解析接口（OpenList Proxy 风格）
+  - 描述：统一存储链接解析接口
   - 授权：支持管理员令牌、API 密钥或匿名访问
   - 请求体：
     ```json

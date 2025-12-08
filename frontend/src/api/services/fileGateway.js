@@ -1,5 +1,6 @@
 import * as fileService from "./fileService.js";
 import * as fileViewService from "./fileViewService.js";
+import { getFullApiUrl } from "../config.js";
 import { getFilePassword } from "@/utils/filePasswordUtils.js";
 
 function normalizeListResponse(response, limit, offset) {
@@ -75,8 +76,11 @@ export function buildPreviewUrl(file, options = {}) {
     file.slug &&
     (file.linkType === "proxy" || file.use_proxy)
   ) {
-    // 仅在本地 share 内容路由模式下才回退到 inline 模式
-    url = `/api/s/${file.slug}?mode=inline`;
+    // 使用统一的后端 API 基础地址构建 share 内容路由的预览入口
+    const base = getFullApiUrl(`/s/${file.slug}`);
+    const urlObj = new URL(base);
+    urlObj.searchParams.set("mode", "inline");
+    url = urlObj.toString();
   }
 
   if (!url) return "";

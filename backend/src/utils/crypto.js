@@ -122,7 +122,7 @@ export async function decryptIfNeeded(value, encryptionSecret) {
  * @param {object} cfg 原始配置对象（包含密钥字段）
  * @param {string} encryptionSecret
  * @param {{mode:'none'|'masked'|'plain'}} options
- * @returns {Promise<object>} 带 access_key_id/secret_access_key/password 处理后的对象
+ * @returns {Promise<object>} 带密钥字段处理后的对象
  */
 export async function buildSecretView(cfg, encryptionSecret, options = { mode: "none" }) {
   const mode = options.mode || "none";
@@ -131,18 +131,24 @@ export async function buildSecretView(cfg, encryptionSecret, options = { mode: "
     delete result.access_key_id;
     delete result.secret_access_key;
     delete result.password;
+    delete result.client_secret;
+    delete result.refresh_token;
     return result;
   }
   if (mode === "masked") {
     result.access_key_id = maskSecret(await decryptIfNeeded(cfg.access_key_id, encryptionSecret));
     result.secret_access_key = maskSecret(await decryptIfNeeded(cfg.secret_access_key, encryptionSecret));
     result.password = maskSecret(await decryptIfNeeded(cfg.password, encryptionSecret));
+    result.client_secret = maskSecret(await decryptIfNeeded(cfg.client_secret, encryptionSecret));
+    result.refresh_token = maskSecret(await decryptIfNeeded(cfg.refresh_token, encryptionSecret));
     return result;
   }
   if (mode === "plain") {
     result.access_key_id = await decryptIfNeeded(cfg.access_key_id, encryptionSecret);
     result.secret_access_key = await decryptIfNeeded(cfg.secret_access_key, encryptionSecret);
     result.password = await decryptIfNeeded(cfg.password, encryptionSecret);
+    result.client_secret = await decryptIfNeeded(cfg.client_secret, encryptionSecret);
+    result.refresh_token = await decryptIfNeeded(cfg.refresh_token, encryptionSecret);
     return result;
   }
   return result;

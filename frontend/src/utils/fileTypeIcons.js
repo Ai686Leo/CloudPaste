@@ -132,14 +132,14 @@ const fileIconsMap = {
       <!-- 文档基本形状 -->
       <path d="M14 2H6C5.46957 2 4.96086 2.21071 4.58579 2.58579C4.21071 2.96086 4 3.46957 4 4V20C4 20.5304 4.21071 21.0391 4.58579 21.4142C4.96086 21.7893 5.46957 22 6 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V8L14 2Z" 
         stroke="${darkMode ? "#f97316" : "#ea580c"}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="${darkMode ? "#f97316" : "#ea580c"}" fill-opacity="${
-    darkMode ? "0.25" : "0.35"
+    darkMode ? "0.3" : "0.4"
   }"/>
       
       <!-- 文档折角 -->
       <path d="M14 2V8H20" stroke="${darkMode ? "#f97316" : "#ea580c"}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
       
       <!-- PPT "P" 标识 - 白色 -->
-      <text x="12" y="15" font-family="Arial, sans-serif" font-size="9" font-weight="bold" text-anchor="middle" fill="white">P</text>
+      <text x="12" y="16" font-family="Arial, sans-serif" font-size="10" font-weight="bold" text-anchor="middle" fill="white">P</text>
     </svg>
   `,
 
@@ -221,20 +221,20 @@ const fileIconsMap = {
     </svg>
   `,
 
-  // Word文档文件
+  // Word文档文件 - 基于Word 2025现代设计
   word: (darkMode = false) => `
     <svg xmlns="http://www.w3.org/2000/svg" class="w-full h-full" viewBox="0 0 24 24" fill="none">
       <!-- 文档基本形状 -->
       <path d="M14 2H6C5.46957 2 4.96086 2.21071 4.58579 2.58579C4.21071 2.96086 4 3.46957 4 4V20C4 20.5304 4.21071 21.0391 4.58579 21.4142C4.96086 21.7893 5.46957 22 6 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V8L14 2Z" 
-        stroke="${darkMode ? "#2563eb" : "#1d4ed8"}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="${darkMode ? "#2563eb" : "#1d4ed8"}" fill-opacity="${
-    darkMode ? "0.25" : "0.35"
+        stroke="${darkMode ? "#3b82f6" : "#2563eb"}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="${darkMode ? "#3b82f6" : "#2563eb"}" fill-opacity="${
+    darkMode ? "0.3" : "0.4"
   }"/>
       
       <!-- 文档折角 -->
-      <path d="M14 2V8H20" stroke="${darkMode ? "#2563eb" : "#1d4ed8"}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M14 2V8H20" stroke="${darkMode ? "#3b82f6" : "#2563eb"}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
       
-      <!-- Word "W" 标识 - 白色 -->
-      <path d="M8 10.5L10 17.5M10 17.5L12 10.5M12 10.5L14 17.5M14 17.5L16 10.5" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <!-- Word "W" 标识 -->
+      <path d="M7.5 11L9.5 17L12 11L14.5 17L16.5 11" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>
   `,
 
@@ -270,6 +270,43 @@ const fileIconsMap = {
       <path d="M10 9H9H8" stroke="${darkMode ? "#94a3b8" : "#64748b"}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>
   `,
+
+  // JSON文件 - 数据格式
+  json: (darkMode = false) => `
+    <svg xmlns="http://www.w3.org/2000/svg" class="w-full h-full" viewBox="0 0 24 24" fill="none">
+      <!-- 文档基本形状 -->
+      <path d="M14 2H6C5.46957 2 4.96086 2.21071 4.58579 2.58579C4.21071 2.96086 4 3.46957 4 4V20C4 20.5304 4.21071 21.0391 4.58579 21.4142C4.96086 21.7893 5.46957 22 6 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V8L14 2Z" 
+        stroke="${darkMode ? "#fbbf24" : "#f59e0b"}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="${darkMode ? "#fbbf24" : "#f59e0b"}" fill-opacity="${
+    darkMode ? "0.3" : "0.4"
+  }"/>
+      <path d="M14 2V8H20" stroke="${darkMode ? "#fbbf24" : "#f59e0b"}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      
+      <!-- JSON花括号 -->
+      <path d="M9 11C9 11 8 11 8 12V13C8 14 7 14 7 14C7 14 8 14 8 15V16C8 17 9 17 9 17" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+      <path d="M15 11C15 11 16 11 16 12V13C16 14 17 14 17 14C17 14 16 14 16 15V16C16 17 15 17 15 17" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    </svg>
+  `,
+
+  // CSV文件 - 表格数据
+  csv: (darkMode = false) => `
+    <svg xmlns="http://www.w3.org/2000/svg" class="w-full h-full" viewBox="0 0 24 24" fill="none">
+      <!-- 文档基本形状 -->
+      <path d="M14 2H6C5.46957 2 4.96086 2.21071 4.58579 2.58579C4.21071 2.96086 4 3.46957 4 4V20C4 20.5304 4.21071 21.0391 4.58579 21.4142C4.96086 21.7893 5.46957 22 6 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V8L14 2Z" 
+        stroke="${darkMode ? "#10b981" : "#059669"}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="${darkMode ? "#10b981" : "#059669"}" fill-opacity="${
+    darkMode ? "0.3" : "0.4"
+  }"/>
+      <path d="M14 2V8H20" stroke="${darkMode ? "#10b981" : "#059669"}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      
+      <!-- CSV表格 -->
+      <rect x="7.5" y="11" width="9" height="6" fill="none" stroke="white" stroke-width="1.5"/>
+      <line x1="7.5" y1="13.5" x2="16.5" y2="13.5" stroke="white" stroke-width="1.5"/>
+      <line x1="7.5" y1="15.5" x2="16.5" y2="15.5" stroke="white" stroke-width="1.5"/>
+      <line x1="10.5" y1="11" x2="10.5" y2="17" stroke="white" stroke-width="1.5"/>
+      <line x1="13.5" y1="11" x2="13.5" y2="17" stroke="white" stroke-width="1.5"/>
+    </svg>
+  `,
+
+
 
   // 默认文件图标
   default: (darkMode = false) => `
@@ -363,6 +400,16 @@ export const getFileIcon = (item, darkMode = false) => {
 
     // TEXT 类型的细分处理
     if (iconType === "text") {
+      // JSON 文件
+      if (ext === "json") {
+        return fileIconsMap.json(darkMode);
+      }
+
+      // CSV 文件
+      if (ext === "csv") {
+        return fileIconsMap.csv(darkMode);
+      }
+
       // Markdown 文件
       if (["md", "markdown"].includes(ext)) {
         return fileIconsMap.markdown(darkMode);
@@ -415,7 +462,6 @@ export const getFileIcon = (item, darkMode = false) => {
         "ps1",
         "bat",
         "cmd",
-        "json",
         "xml",
         "yml",
         "yaml",

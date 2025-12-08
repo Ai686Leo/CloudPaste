@@ -7,60 +7,14 @@
  */
 import { BaseRepository } from "./BaseRepository.js";
 import { DbTables } from "../constants/index.js";
+import { StorageFactory } from "../storage/factory/StorageFactory.js";
 
 export class StorageConfigRepository extends BaseRepository {
   /**
-   * 展开 S3 专用字段
-   * @private
-   * @param {object} cfg - config_json 解析后的对象
-   * @param {object} merged - 合并目标对象
-   * @param {object} options - 选项
-   */
-  _inflateS3Fields(cfg, merged, { withSecrets = false }) {
-    merged.provider_type = cfg?.provider_type;
-    merged.endpoint_url = cfg?.endpoint_url;
-    merged.bucket_name = cfg?.bucket_name;
-    merged.region = cfg?.region;
-    merged.path_style = cfg?.path_style;
-    if (withSecrets) {
-      merged.access_key_id = cfg?.access_key_id;
-      merged.secret_access_key = cfg?.secret_access_key;
-    }
-  }
-
-  /**
-   * 展开 WebDAV 专用字段
-   * @private
-   * @param {object} cfg - config_json 解析后的对象
-   * @param {object} merged - 合并目标对象
-   * @param {object} options - 选项
-   */
-  _inflateWebDavFields(cfg, merged, { withSecrets = false }) {
-    merged.endpoint_url = cfg?.endpoint_url;
-    merged.username = cfg?.username;
-    merged.tls_insecure_skip_verify = cfg?.tls_insecure_skip_verify;
-    if (withSecrets) {
-      merged.password = cfg?.password;
-    }
-  }
-
-  /**
-   * 展开 LOCAL 专用字段
-   * @private
-   * @param {object} cfg - config_json 解析后的对象
-   * @param {object} merged - 合并目标对象
-   */
-  _inflateLocalFields(cfg, merged) {
-    merged.root_path = cfg?.root_path;
-    merged.auto_create_root = cfg?.auto_create_root;
-    merged.readonly = cfg?.readonly;
-    merged.trash_path = cfg?.trash_path;
-    merged.dir_permission = cfg?.dir_permission;
-  }
-
-  /**
-   * 通用展开方法（策略模式）
-   * 根据 storage_type 自动选择对应的字段展开策略
+   * 通用展开方法
+   * - 解析 config_json
+   * - 委托 StorageFactory.projectConfig 完成类型特定的配置投影
+   * - 将投影结果与行对象合并，并保留 __config_json__ 供上层复用
    * @param {object} row - 数据库原始行
    * @param {object} options - 选项
    * @returns {object|null} 展开后的配置对象
@@ -69,30 +23,18 @@ export class StorageConfigRepository extends BaseRepository {
     if (!row) return null;
     try {
       if (row.config_json) {
-        const cfg = JSON.parse(row.config_json);
+        const raw = row.config_json;
+        const cfg = typeof raw === "string" ? JSON.parse(raw) : raw || {};
+
+        const projected = StorageFactory.projectConfig(row.storage_type, cfg, {
+          withSecrets,
+          row,
+        });
+
         const merged = {
           ...row,
-          // 通用字段（所有存储类型共享）
-          default_folder: cfg?.default_folder,
-          custom_host: cfg?.custom_host,
-          signature_expires_in: cfg?.signature_expires_in,
-          total_storage_bytes: cfg?.total_storage_bytes,
+          ...(projected && typeof projected === "object" ? projected : {}),
         };
-
-        // 根据存储类型展开专用字段
-        switch (row.storage_type) {
-          case "S3":
-            this._inflateS3Fields(cfg, merged, { withSecrets });
-            break;
-          case "WEBDAV":
-            this._inflateWebDavFields(cfg, merged, { withSecrets });
-            break;
-          case "LOCAL":
-            this._inflateLocalFields(cfg, merged);
-            break;
-          default:
-            console.warn(`Unknown storage_type: ${row.storage_type}`);
-        }
 
         // 保留原始 config_json 对象（非枚举属性，避免对外暴露）
         Object.defineProperty(merged, "__config_json__", {

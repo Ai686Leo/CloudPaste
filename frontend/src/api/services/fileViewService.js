@@ -1,3 +1,5 @@
+import { getFullApiUrl } from "../config.js";
+
 /**
  * 构建文件下载URL（用于直接链接）
  * @param {string} slug - 文件短链接
@@ -5,9 +7,8 @@
  * @returns {string} 完整的下载URL
  */
 export function buildDownloadUrl(slug, password = null) {
-  // 使用 URL API 构建，避免重复 ? 与参数拼接错误
-  const baseUrl = window.location.origin;
-  const urlObj = new URL(`/api/s/${slug}`, baseUrl);
+  const base = getFullApiUrl(`/s/${slug}`);
+  const urlObj = new URL(base);
   urlObj.searchParams.set("mode", "attachment");
 
   if (password) {

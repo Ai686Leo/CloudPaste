@@ -1,146 +1,165 @@
 <template>
-  <div class="hover:cursor-pointer" :class="[darkMode ? 'hover:bg-gray-700/50' : 'hover:bg-gray-100']">
-    <div
-      class="grid items-center py-2 px-3"
-      :class="[isCheckboxMode ? 'grid-cols-[auto_auto_1fr_auto] sm:grid-cols-[auto_auto_1fr_auto_auto_auto]' : 'grid-cols-[auto_1fr_auto] sm:grid-cols-[auto_1fr_auto_auto_auto]']"
-    >
-      <!-- 勾选框 (仅在勾选模式下显示) -->
-      <div v-if="isCheckboxMode" class="mr-1.5 sm:mr-2 flex justify-center" @click.stop="toggleSelect">
-        <input
-          type="checkbox"
-          :checked="isSelected"
-          class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-          :class="darkMode ? 'bg-gray-700 border-gray-500' : ''"
-        />
-      </div>
+  <div
+    class="file-item group"
+    :class="[
+      isSelected ? 'file-item--selected' : '',
+      isContextHighlight && !isSelected ? 'file-item--context-highlight' : '',
+      isEntering && animationsEnabled ? 'file-item--entering' : '',
+      darkMode ? 'file-item--dark' : 'file-item--light'
+    ]"
+    :style="{ '--enter-delay': `${enterDelay}ms` }"
+    @click="handleClick"
+    @contextmenu.prevent="handleContextMenu"
+  >
+    <!-- 勾选框 (根据全局设置显示) -->
+    <div v-if="showCheckboxes" class="file-item__checkbox" @click.stop="toggleSelect">
+      <input
+        type="checkbox"
+        :checked="isSelected"
+        class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+        :class="darkMode ? 'bg-gray-700 border-gray-500' : ''"
+      />
+    </div>
 
-      <!-- 文件/文件夹图标 -->
-      <div class="mr-2 sm:mr-3 flex-shrink-0 w-5 sm:w-6 h-5 sm:h-6">
-        <span v-html="getFileIconSvg(item, darkMode)"></span>
-      </div>
+    <!-- 文件/文件夹图标 -->
+    <div class="file-item__icon">
+      <span v-html="fileIcon"></span>
+    </div>
 
-      <!-- 文件/文件夹名称 -->
-      <div class="flex-grow truncate" @click="handleClick">
-        <div class="font-medium truncate" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">{{ item.name }}</div>
-        <!-- 移动端文件大小显示 -->
-        <div class="text-xs block sm:hidden mt-0.5" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
-          <span v-if="item.isDirectory && item.isVirtual">-</span>
-          <span v-else>{{ formatFileSize(item.size || 0) }}</span>
-        </div>
+    <!-- 文件/文件夹名称 -->
+    <div class="file-item__info" @click="handleClick">
+      <div 
+        class="file-item__name" 
+        :class="[
+          darkMode ? 'text-gray-200' : 'text-gray-700',
+          `file-item__name--${fileNameOverflow}`
+        ]"
+        :title="fileNameOverflow === 'ellipsis' ? item.name : undefined"
+      >
+        {{ item.name }}
       </div>
-
-      <!-- 文件大小 -->
-      <div class="min-w-24 text-center text-sm hidden sm:block" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
+      <!-- 移动端文件大小显示 -->
+      <div class="file-item__size-mobile" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
         <span v-if="item.isDirectory && item.isVirtual">-</span>
         <span v-else>{{ formatFileSize(item.size || 0) }}</span>
       </div>
+    </div>
 
-      <!-- 修改时间 -->
-      <div class="min-w-36 text-center text-sm hidden sm:block" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
-        <span v-if="item.isDirectory && item.isVirtual">-</span>
-        <span v-else>{{ formatDate(item.modified) }}</span>
-      </div>
+    <!-- 文件大小（桌面端） -->
+    <div class="file-item__size" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
+      <span v-if="item.isDirectory && item.isVirtual">-</span>
+      <span v-else>{{ formatFileSize(item.size || 0) }}</span>
+    </div>
 
-      <!-- 操作按钮 - 移动端下减少按钮大小和间距 -->
-      <div class="min-w-[80px] sm:min-w-32 text-center">
-        <div class="flex justify-end sm:justify-center space-x-0.5 sm:space-x-0.5">
-          <!-- 下载按钮（只对文件显示）-->
-          <button
-            v-if="!item.isDirectory"
-            @click.stop="$emit('download', item)"
-            class="p-1 sm:p-1 rounded-full"
-            :class="darkMode ? 'hover:bg-gray-600 text-blue-400 hover:text-blue-300' : 'hover:bg-gray-200 text-blue-600 hover:text-blue-700'"
-            :title="t('mount.fileItem.download')"
-          >
-            <svg class="w-4 h-4 sm:w-5 sm:h-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-            </svg>
-          </button>
+    <!-- 修改时间（桌面端） -->
+    <div class="file-item__time" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
+      <span v-if="item.isDirectory && item.isVirtual">-</span>
+      <span v-else>{{ formatDate(item.modified) }}</span>
+    </div>
 
-          <!-- 直链按钮（只对文件显示）-->
-          <button
-            v-if="!item.isDirectory"
-            @click.stop="$emit('getLink', item)"
-            class="p-1 sm:p-1 rounded-full"
-            :class="darkMode ? 'hover:bg-gray-600 text-green-400 hover:text-green-300' : 'hover:bg-gray-200 text-green-600 hover:text-green-700'"
-            :title="t('mount.fileItem.getLink')"
-          >
-            <svg class="w-4 h-4 sm:w-5 sm:h-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101" />
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.172 13.828a4 4 0 015.656 0l4 4a4 4 0 01-5.656 5.656l-1.102-1.101" />
-            </svg>
-          </button>
+    <!-- 操作按钮 (根据设置显示/隐藏) -->
+    <div v-if="showActionButtons" class="file-item__actions">
+      <div class="file-item__actions-inner">
+        <!-- 下载按钮（只对文件显示）-->
+        <button
+          v-if="!item.isDirectory"
+          @click.stop="$emit('download', item)"
+          class="file-item__action-btn"
+          :class="darkMode ? 'file-item__action-btn--download-dark' : 'file-item__action-btn--download-light'"
+          :title="t('mount.fileItem.download')"
+        >
+          <svg class="w-4 h-4 sm:w-5 sm:h-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+        </button>
 
-          <!-- 重命名按钮 - 只对文件显示，文件夹暂时不显示重命名按钮 -->
-          <button
-            v-if="!item.isDirectory"
-            @click.stop="$emit('rename', item)"
-            class="p-1 sm:p-1 rounded-full"
-            :class="darkMode ? 'hover:bg-gray-600 text-yellow-400 hover:text-yellow-300' : 'hover:bg-gray-200 text-yellow-600 hover:text-yellow-700'"
-            :title="t('mount.fileItem.rename')"
-          >
-            <svg class="w-4 h-4 sm:w-5 sm:h-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-              />
-            </svg>
-          </button>
+        <!-- 直链按钮（只对文件显示）-->
+        <button
+          v-if="!item.isDirectory"
+          @click.stop="$emit('getLink', item)"
+          class="file-item__action-btn"
+          :class="darkMode ? 'file-item__action-btn--link-dark' : 'file-item__action-btn--link-light'"
+          :title="t('mount.fileItem.getLink')"
+        >
+          <svg class="w-4 h-4 sm:w-5 sm:h-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.172 13.828a4 4 0 015.656 0l4 4a4 4 0 01-5.656 5.656l-1.102-1.101" />
+          </svg>
+        </button>
 
-          <!-- 删除按钮 -->
-          <button
-            @click.stop="$emit('delete', item)"
-            class="p-1 sm:p-1 rounded-full"
-            :class="darkMode ? 'hover:bg-gray-600 text-red-400 hover:text-red-300' : 'hover:bg-gray-200 text-red-600 hover:text-red-700'"
-            :title="t('mount.fileItem.delete')"
-          >
-            <svg class="w-4 h-4 sm:w-5 sm:h-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-              />
-            </svg>
-          </button>
-        </div>
+        <!-- 重命名按钮 -->
+        <button
+          v-if="!item.isDirectory"
+          @click.stop="$emit('rename', item)"
+          class="file-item__action-btn"
+          :class="darkMode ? 'file-item__action-btn--rename-dark' : 'file-item__action-btn--rename-light'"
+          :title="t('mount.fileItem.rename')"
+        >
+          <svg class="w-4 h-4 sm:w-5 sm:h-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+          </svg>
+        </button>
+
+        <!-- 删除按钮 -->
+        <button
+          @click.stop="$emit('delete', item)"
+          class="file-item__action-btn"
+          :class="darkMode ? 'file-item__action-btn--delete-dark' : 'file-item__action-btn--delete-light'"
+          :title="t('mount.fileItem.delete')"
+        >
+          <svg class="w-4 h-4 sm:w-5 sm:h-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+        </button>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed } from "vue";
+import { ref, computed, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
+import { formatFileSize } from "@/utils/fileUtils.js";
+import { getFileIcon as getFileIconSvg } from "@/utils/fileTypeIcons.js";
+import { formatDateTime } from "@/utils/timeUtils.js";
 
 const { t } = useI18n();
 
 const props = defineProps({
-  item: {
-    type: Object,
-    required: true,
-  },
-  darkMode: {
-    type: Boolean,
-    default: false,
-  },
-  isCheckboxMode: {
-    type: Boolean,
-    default: false,
-  },
-  isSelected: {
-    type: Boolean,
-    default: false,
-  },
-  currentPath: {
-    type: String,
-    required: true,
-  },
+  item: { type: Object, required: true },
+  darkMode: { type: Boolean, default: false },
+  showCheckboxes: { type: Boolean, default: false },
+  isSelected: { type: Boolean, default: false },
+  // 右键菜单高亮状态（临时高亮，不是勾选选中）
+  isContextHighlight: { type: Boolean, default: false },
+  currentPath: { type: String, required: true },
+  index: { type: Number, default: 0 },
+  animationsEnabled: { type: Boolean, default: true },
+  // 文件名过长处理模式: ellipsis(省略号) | scroll(滚动) | wrap(换行)
+  fileNameOverflow: { type: String, default: 'ellipsis' },
+  // 是否显示操作按钮列
+  showActionButtons: { type: Boolean, default: true },
 });
 
-const emit = defineEmits(["click", "download", "rename", "delete", "select", "getLink", "show-message"]);
+const emit = defineEmits(["click", "download", "rename", "delete", "select", "getLink", "contextmenu"]);
+
+// 缓存文件图标 SVG，避免每次渲染重复计算
+const fileIcon = computed(() => getFileIconSvg(props.item, props.darkMode));
+
+// 入场动画状态
+const isEntering = ref(true);
+const enterDelay = computed(() => Math.min(props.index * 30, 300));
+
+// 组件挂载后移除入场动画状态
+onMounted(() => {
+  if (props.animationsEnabled) {
+    setTimeout(() => {
+      isEntering.value = false;
+    }, 300 + enterDelay.value);
+  } else {
+    isEntering.value = false;
+  }
+});
 
 // 处理点击事件
 const handleClick = () => {
@@ -152,20 +171,346 @@ const toggleSelect = () => {
   emit("select", props.item, !props.isSelected);
 };
 
-// 导入统一的工具函数
-import { formatFileSize } from "@/utils/fileUtils.js";
-import { getFileIcon as getFileIconSvg } from "@/utils/fileTypeIcons.js";
+// 处理右键菜单
+const handleContextMenu = (event) => {
+  emit("contextmenu", { event, item: props.item });
+};
 
-// 导入统一的时间处理工具
-import { formatDateTime } from "@/utils/timeUtils.js";
-
-/**
- * 格式化日期
- * @param {string} dateString - UTC 时间字符串
- * @returns {string} 格式化后的本地时间字符串
- */
+// 格式化日期
 const formatDate = (dateString) => {
   if (!dateString) return "";
   return formatDateTime(dateString);
 };
 </script>
+
+<style scoped>
+/* 基础样式 - 使用 CSS 变量 */
+/* 基础样式 - 移除左边框，只用背景高亮 */
+.file-item {
+  display: grid;
+  align-items: center;
+  height: var(--explorer-item-height, 48px);
+  padding: 0 var(--explorer-padding, 12px);
+  border-radius: var(--radius-md, 8px);
+  cursor: pointer;
+  transition: all var(--duration-fast, 150ms) var(--easing-default, cubic-bezier(0.4, 0, 0.2, 1));
+  /* 使用 CSS 变量控制文件间距 */
+  margin: var(--explorer-item-spacing, 2px) 4px;
+}
+
+/* 网格布局 - 默认无操作列 */
+.file-item {
+  grid-template-columns: var(--explorer-icon-size, 20px) 1fr;
+  gap: var(--explorer-gap, 12px);
+}
+
+@media (min-width: 640px) {
+  .file-item {
+    grid-template-columns: var(--explorer-icon-size, 20px) 1fr 6rem 9rem;
+  }
+}
+
+/* 有操作列时的网格布局 */
+.file-item:has(.file-item__actions) {
+  grid-template-columns: var(--explorer-icon-size, 20px) 1fr auto;
+}
+
+@media (min-width: 640px) {
+  .file-item:has(.file-item__actions) {
+    grid-template-columns: var(--explorer-icon-size, 20px) 1fr 6rem 9rem auto;
+  }
+}
+
+/* 显示勾选框时的网格布局 - 无操作列 */
+.file-item:has(.file-item__checkbox):not(:has(.file-item__actions)) {
+  grid-template-columns: auto var(--explorer-icon-size, 20px) 1fr;
+}
+
+@media (min-width: 640px) {
+  .file-item:has(.file-item__checkbox):not(:has(.file-item__actions)) {
+    grid-template-columns: auto var(--explorer-icon-size, 20px) 1fr 6rem 9rem;
+  }
+}
+
+/* 显示勾选框时的网格布局 - 有操作列 */
+.file-item:has(.file-item__checkbox):has(.file-item__actions) {
+  grid-template-columns: auto var(--explorer-icon-size, 20px) 1fr auto;
+}
+
+@media (min-width: 640px) {
+  .file-item:has(.file-item__checkbox):has(.file-item__actions) {
+    grid-template-columns: auto var(--explorer-icon-size, 20px) 1fr 6rem 9rem auto;
+  }
+}
+
+/* 亮色模式 hover */
+.file-item--light:hover {
+  background: var(--explorer-hover, rgba(0, 0, 0, 0.04));
+  transform: scale(1.005);
+}
+
+/* 暗色模式 hover */
+.file-item--dark:hover {
+  background: var(--explorer-hover, rgba(255, 255, 255, 0.06));
+  transform: scale(1.005);
+}
+
+/* 选中状态 - 亮色（仅背景高亮，无左边框） */
+.file-item--light.file-item--selected {
+  background: var(--explorer-selected, rgba(59, 130, 246, 0.12));
+}
+
+/* 选中状态 - 暗色（仅背景高亮，无左边框） */
+.file-item--dark.file-item--selected {
+  background: var(--explorer-selected, rgba(59, 130, 246, 0.25));
+}
+
+/* 右键菜单高亮状态 - 亮色（临时高亮，不是勾选） */
+.file-item--light.file-item--context-highlight {
+  background: var(--explorer-hover, rgba(59, 130, 246, 0.08));
+}
+
+/* 右键菜单高亮状态 - 暗色 */
+.file-item--dark.file-item--context-highlight {
+  background: var(--explorer-hover, rgba(59, 130, 246, 0.15));
+}
+
+/* 入场动画 */
+.file-item--entering {
+  animation: fadeInScale var(--explorer-animation-duration, 200ms) var(--easing-out, cubic-bezier(0, 0, 0.2, 1)) forwards;
+  animation-delay: var(--enter-delay, 0ms);
+  opacity: 0;
+}
+
+@keyframes fadeInScale {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* 勾选框 - 增加内边距扩大点击区域 */
+.file-item__checkbox {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 8px;
+  margin: -8px;
+  cursor: pointer;
+}
+
+/* 图标 */
+.file-item__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--explorer-icon-size, 20px);
+  height: var(--explorer-icon-size, 20px);
+  flex-shrink: 0;
+}
+
+.file-item__icon :deep(svg) {
+  width: 100%;
+  height: 100%;
+}
+
+/* 文件信息 */
+.file-item__info {
+  min-width: 0;
+  flex-grow: 1;
+}
+
+.file-item__name {
+  font-size: var(--explorer-font-size, 14px);
+  font-weight: 500;
+}
+
+/* 文件名过长处理模式 - 省略号（默认） */
+.file-item__name--ellipsis {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 文件名过长处理模式 - 滚动 */
+.file-item__name--scroll {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  position: relative;
+}
+
+.file-item__name--scroll:hover {
+  overflow: visible;
+}
+
+.file-item__name--scroll:hover::after {
+  content: attr(data-name);
+  position: absolute;
+  left: 0;
+  top: 0;
+  white-space: nowrap;
+  animation: scrollText 5s linear infinite;
+  background: inherit;
+  z-index: 10;
+}
+
+@keyframes scrollText {
+  0%, 10% { transform: translateX(0); }
+  90%, 100% { transform: translateX(calc(-100% + 100px)); }
+}
+
+/* 文件名过长处理模式 - 换行 */
+.file-item__name--wrap {
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.3;
+}
+
+/* 移动端文件大小 */
+.file-item__size-mobile {
+  font-size: calc(var(--explorer-font-size, 14px) - 2px);
+  margin-top: 2px;
+}
+
+@media (min-width: 640px) {
+  .file-item__size-mobile {
+    display: none;
+  }
+}
+
+/* 桌面端文件大小和时间 */
+.file-item__size,
+.file-item__time {
+  display: none;
+  font-size: calc(var(--explorer-font-size, 14px) - 1px);
+  text-align: center;
+  white-space: nowrap;
+}
+
+@media (min-width: 640px) {
+  .file-item__size,
+  .file-item__time {
+    display: block;
+  }
+}
+
+/* 操作按钮容器 */
+.file-item__actions {
+  min-width: 80px;
+}
+
+@media (min-width: 640px) {
+  .file-item__actions {
+    min-width: 120px;
+  }
+}
+
+.file-item__actions-inner {
+  display: flex;
+  justify-content: flex-end;
+  gap: 2px;
+  /* 移动端始终显示 */
+  opacity: 1;
+  transition: opacity var(--duration-fast, 150ms);
+}
+
+/* 桌面端：始终显示操作按钮 */
+@media (min-width: 640px) {
+  .file-item__actions-inner {
+    justify-content: center;
+  }
+}
+
+/* 操作按钮基础样式 */
+.file-item__action-btn {
+  padding: 4px;
+  border-radius: 9999px;
+  transition: all var(--duration-fast, 150ms);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 下载按钮 */
+.file-item__action-btn--download-light {
+  color: rgb(37, 99, 235);
+}
+.file-item__action-btn--download-light:hover {
+  background: rgb(229, 231, 235);
+  color: rgb(29, 78, 216);
+}
+.file-item__action-btn--download-dark {
+  color: rgb(96, 165, 250);
+}
+.file-item__action-btn--download-dark:hover {
+  background: rgb(75, 85, 99);
+  color: rgb(147, 197, 253);
+}
+
+/* 链接按钮 */
+.file-item__action-btn--link-light {
+  color: rgb(22, 163, 74);
+}
+.file-item__action-btn--link-light:hover {
+  background: rgb(229, 231, 235);
+  color: rgb(21, 128, 61);
+}
+.file-item__action-btn--link-dark {
+  color: rgb(74, 222, 128);
+}
+.file-item__action-btn--link-dark:hover {
+  background: rgb(75, 85, 99);
+  color: rgb(134, 239, 172);
+}
+
+/* 重命名按钮 */
+.file-item__action-btn--rename-light {
+  color: rgb(202, 138, 4);
+}
+.file-item__action-btn--rename-light:hover {
+  background: rgb(229, 231, 235);
+  color: rgb(161, 98, 7);
+}
+.file-item__action-btn--rename-dark {
+  color: rgb(250, 204, 21);
+}
+.file-item__action-btn--rename-dark:hover {
+  background: rgb(75, 85, 99);
+  color: rgb(253, 224, 71);
+}
+
+/* 删除按钮 */
+.file-item__action-btn--delete-light {
+  color: rgb(220, 38, 38);
+}
+.file-item__action-btn--delete-light:hover {
+  background: rgb(229, 231, 235);
+  color: rgb(185, 28, 28);
+}
+.file-item__action-btn--delete-dark {
+  color: rgb(248, 113, 113);
+}
+.file-item__action-btn--delete-dark:hover {
+  background: rgb(75, 85, 99);
+  color: rgb(252, 165, 165);
+}
+
+/* 禁用动画时移除所有过渡 */
+@media (prefers-reduced-motion: reduce) {
+  .file-item,
+  .file-item__actions-inner,
+  .file-item__action-btn {
+    transition: none;
+  }
+  
+  .file-item--entering {
+    animation: none;
+    opacity: 1;
+  }
+}
+</style>

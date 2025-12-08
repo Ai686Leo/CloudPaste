@@ -7,6 +7,7 @@ export default {
     enabled: "Enabled",
     disabled: "Disabled",
     back: "Back",
+    backToTop: "Back to Top",
     close: "Close",
     required: "Please fill in required fields",
     noPermission: "No permission for this feature, please contact administrator",

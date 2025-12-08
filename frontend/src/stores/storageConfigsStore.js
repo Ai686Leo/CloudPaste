@@ -23,6 +23,17 @@ const STORAGE_TYPE_SCHEMA = {
       preview: "signed-url",
     },
   },
+  ONEDRIVE: {
+    type: "ONEDRIVE",
+    label: "OneDrive 存储",
+    description: "基于 Microsoft OneDrive / Graph API 的云存储，支持预签名直传",
+    capabilities: {
+      multipart: false,
+      presigned: true,
+      requiresProxy: false,
+      preview: "signed-url",
+    },
+  },
   WEBDAV: {
     type: "WEBDAV",
     label: "WebDAV",

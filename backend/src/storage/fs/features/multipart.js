@@ -89,6 +89,8 @@ export async function listMultipartUploads(fs, path, userIdOrInfo, userType, opt
   return await driver.listMultipartUploads(subPath, {
     mount,
     db: fs.mountManager.db,
+    userIdOrInfo,
+    userType,
     ...options,
   });
 }
@@ -108,6 +110,8 @@ export async function listMultipartParts(fs, path, uploadId, fileName, userIdOrI
     mount,
     db: fs.mountManager.db,
     fileName,
+    userIdOrInfo,
+    userType,
     ...options,
   });
 }
@@ -126,6 +130,8 @@ export async function refreshMultipartUrls(fs, path, uploadId, partNumbers, user
   return await driver.refreshMultipartUrls(subPath, uploadId, partNumbers, {
     mount,
     db: fs.mountManager.db,
+    userIdOrInfo,
+    userType,
     ...options,
   });
 }

@@ -3,7 +3,9 @@ import { ensureRepositoryFactory } from "../utils/repositories.js";
 
 /**
  * 代理签名服务
- * 支持两层签名策略：全局签名所有 + 存储级签名
+ * 支持两层签名策略：
+ * - 全局签名所有：proxy_sign_all = true 时，所有代理流量都启用签名（与挂载配置无关）
+ * - 挂载级签名：enable_sign = true 且挂载开启 web_proxy 时，对该挂载下的代理流量启用签名
  */
 export class ProxySignatureService {
   constructor(db, encryptionSecret, repositoryFactory = null) {
@@ -32,7 +34,28 @@ export class ProxySignatureService {
       };
     }
 
-    // 2. 检查存储级别的签名设置
+    // 2. 挂载信息缺失时，不启用挂载级签名（仅全局策略生效）
+    if (!mount || typeof mount !== "object") {
+      return {
+        required: false,
+        reason: "mount_not_provided",
+        level: "none",
+        description: "未提供挂载配置，仅全局签名策略有效",
+      };
+    }
+
+    // 3. 仅在挂载开启 web_proxy 时才允许挂载级签名生效
+    const webProxyEnabled = mount.web_proxy === 1 || mount.web_proxy === true;
+    if (!webProxyEnabled) {
+      return {
+        required: false,
+        reason: "web_proxy_disabled",
+        level: "none",
+        description: "挂载未开启 web_proxy，忽略挂载级签名配置",
+      };
+    }
+
+    // 4. 检查挂载级别的签名设置
     if (mount.enable_sign === 1 || mount.enable_sign === true) {
       return {
         required: true,
@@ -42,7 +65,7 @@ export class ProxySignatureService {
       };
     }
 
-    // 3. 不需要签名
+    // 5. 不需要签名
     return {
       required: false,
       reason: "no_sign_required",

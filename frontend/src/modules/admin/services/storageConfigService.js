@@ -177,11 +177,7 @@ export function useAdminStorageConfigService() {
       throw new Error("测试存储配置失败");
     }
     if (typeof resp === "object" && "success" in resp) {
-      if (!resp.success) {
-        throw new Error(resp.message || "测试存储配置失败");
-      }
-      // 通常 data.result 才是真正的测试结果
-      return resp.data?.result ?? resp.data ?? {};
+      return resp.data?.result ?? resp.data ?? resp;
     }
     return resp.result ?? resp.data?.result ?? resp;
   };
@@ -196,4 +192,3 @@ export function useAdminStorageConfigService() {
     testStorageConfig,
   };
 }
-
