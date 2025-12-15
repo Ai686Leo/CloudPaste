@@ -116,6 +116,27 @@ const getThemeColor = () => {
   return props.theme;
 };
 
+// 是否应当为当前视频 URL 启用 CORS 模式
+// 说明：
+// - 同源资源：启用 CORS 模式可支持截图等高级能力
+// - 代理链路（linkType=proxy）：由我们控制，预期返回 ACAO 头，启用更安全
+// - 第三方直链（linkType=direct 且跨域）：禁用 CORS 模式，避免 PWA Service Worker 以 cors 请求导致播放失败（如 GitHub Releases 302 链）
+const shouldEnableCorsMode = (rawUrl, linkType) => {
+  if (!rawUrl) return false;
+  try {
+    const resolvedUrl = new URL(rawUrl, window.location.href);
+    if (resolvedUrl.origin === window.location.origin) {
+      return true;
+    }
+    if (linkType === "proxy") {
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+};
+
 // 初始化 Artplayer
 const initArtplayer = async () => {
   if (!artplayerContainer.value || !props.video?.url) return;
@@ -206,10 +227,15 @@ const initArtplayer = async () => {
   }
 
   // 添加跨域支持以启用截图功能
-  options.moreVideoAttr = {
-    crossOrigin: "anonymous",
-    preload: "metadata",
-  };
+  const effectiveLinkType =
+    props.video?.linkType || props.video?.originalFile?.linkType || null;
+  const enableCorsMode = shouldEnableCorsMode(
+    props.video.url,
+    effectiveLinkType
+  );
+  options.moreVideoAttr = enableCorsMode
+    ? { crossOrigin: "anonymous", preload: "metadata" }
+    : { preload: "metadata" };
 
   // 根据模式调整配置
   if (props.mode === "mini") {

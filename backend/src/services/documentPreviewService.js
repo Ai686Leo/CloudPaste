@@ -43,7 +43,7 @@ function isOfficeLike(fileMeta) {
 /**
  * 统一的 DocumentPreview 决策入口
  * @param {Object} fileMeta - 文件元信息（type/typeName/mimetype/filename/size 等）
- * @param {Object} linkJson - Link JSON 视角下的链接信息（rawUrl/linkType/use_proxy 等）
+ * @param {Object} linkJson - Link JSON 视角下的链接信息（previewUrl/linkType/use_proxy 等）
  * @returns {Promise<{providers?: Record<string,string>}>}
  */
 export async function resolveDocumentPreview(fileMeta, linkJson) {
@@ -55,7 +55,7 @@ export async function resolveDocumentPreview(fileMeta, linkJson) {
   }
 
   const link = linkJson || {};
-  const rawUrl = link.rawUrl || null;
+  const previewUrl = link.previewUrl || null;
 
   // 基于扩展名与 preview_document_apps 配置选择 DocumentApp 模板
   const filename = fileMeta.filename || "";
@@ -89,7 +89,7 @@ export async function resolveDocumentPreview(fileMeta, linkJson) {
   }
 
   const providers = buildProvidersFromTemplate(matchedEntry.providers, {
-    url: rawUrl,
+    url: previewUrl,
     name: filename,
   });
 

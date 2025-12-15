@@ -144,7 +144,8 @@ storageConfigRoutes.put("/api/storage/:id", requireAdmin, async (c) => {
   const body = await c.req.json();
   await updateStorageConfig(db, id, body, adminId, encryptionSecret, repositoryFactory);
 
-  return jsonOk(c, undefined, "存储配置已更新");
+  const updated = await getStorageConfigByIdForAdmin(db, id, adminId, repositoryFactory);
+  return jsonOk(c, updated, "存储配置已更新");
 });
 
 // 删除存储配置（管理员）

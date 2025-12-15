@@ -8,7 +8,7 @@ import { ValidationError } from "../../../../http/errors.js";
 import { listS3Directory } from "../utils/s3Utils.js";
 import { normalizeS3SubPath } from "../utils/S3PathUtils.js";
 import { getEffectiveMimeType } from "../../../../utils/fileUtils.js";
-import { GetFileType, getFileTypeName } from "../../../../utils/fileTypeDetector.js";
+import { buildFileInfo } from "../../../utils/FileInfoBuilder.js";
 import { handleFsError } from "../../../fs/utils/ErrorHandler.js";
 import { updateMountLastUsed } from "../../../fs/utils/MountResolver.js";
 
@@ -167,22 +167,21 @@ export class S3SearchOperations {
     const mountPath = mount.mount_path.replace(/\/+$/, "") || "/";
     const fullPath = mountPath + (relativePath || "/" + fileName);
 
-    // 获取文件类型信息
-    const fileType = await GetFileType(fileName, db);
-    const fileTypeName = await getFileTypeName(fileName, db);
+    const info = await buildFileInfo({
+      fsPath: fullPath.replace(/\/+/g, "/"),
+      name: fileName,
+      isDirectory: false,
+      size: item.Size,
+      modified: item.LastModified ? new Date(item.LastModified) : new Date(),
+      mimetype: getEffectiveMimeType(null, fileName),
+      mount,
+      storageType: mount.storage_type,
+      db,
+    });
 
     return {
-      name: fileName,
-      path: fullPath.replace(/\/+/g, "/"), // 规范化路径
-      size: item.Size,
-      modified: item.LastModified,
-      isDirectory: false,
-      mimetype: getEffectiveMimeType(null, fileName),
-      type: fileType,
-      typeName: fileTypeName,
-      mount_id: mount.id,
+      ...info,
       mount_name: mount.name,
-      storage_type: mount.storage_type,
       s3_key: item.Key,
     };
   }

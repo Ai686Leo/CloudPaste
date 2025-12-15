@@ -33,8 +33,13 @@
       </div>
     </div>
     <div v-if="showHtmlIframe" class="html-iframe flex-grow relative" style="height: calc(100vh - 350px); min-height: 300px">
+      <!-- 缺少内容URL -->
+      <div v-if="urlError" class="absolute inset-0 flex items-center justify-center bg-gray-100 dark:bg-gray-700">
+        <p class="text-red-600 dark:text-red-400 text-sm">{{ urlError }}</p>
+      </div>
       <iframe
-        :src="previewUrl"
+        v-else
+        :src="contentUrl"
         sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"
         frameborder="0"
         class="w-full h-full"
@@ -42,7 +47,7 @@
         v-show="!htmlLoading"
       ></iframe>
       <!-- HTML加载状态 -->
-      <div v-if="htmlLoading" class="absolute inset-0 flex items-center justify-center bg-gray-100 dark:bg-gray-700">
+      <div v-if="htmlLoading && !urlError" class="absolute inset-0 flex items-center justify-center bg-gray-100 dark:bg-gray-700">
         <div class="text-center">
           <svg class="animate-spin h-8 w-8 text-blue-500 mx-auto mb-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -57,34 +62,40 @@
       </div>
     </div>
     <div v-else class="p-4 overflow-auto flex-grow relative" style="max-height: calc(100vh - 350px); min-height: 200px">
-      <pre v-show="!textLoading" class="whitespace-pre-wrap text-sm text-gray-800 dark:text-gray-200 font-mono break-words">{{ htmlContent }}</pre>
-      <!-- HTML源码加载状态 -->
-      <div v-if="textLoading" class="absolute inset-0 flex items-center justify-center">
-        <div class="text-center">
-          <svg class="animate-spin h-8 w-8 text-blue-500 mx-auto mb-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-            <path
-              class="opacity-75"
-              fill="currentColor"
-              d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 0 0 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-            ></path>
-          </svg>
-          <p class="text-blue-600 dark:text-blue-400">{{ t("fileView.preview.html.loadingSource") }}</p>
-        </div>
+      <!-- 缺少内容URL -->
+      <div v-if="urlError" class="absolute inset-0 flex items-center justify-center">
+        <p class="text-red-600 dark:text-red-400 text-sm">{{ urlError }}</p>
       </div>
+      <template v-else>
+        <pre v-show="!textLoading" class="whitespace-pre-wrap text-sm text-gray-800 dark:text-gray-200 font-mono break-words">{{ htmlContent }}</pre>
+        <!-- HTML源码加载状态 -->
+        <div v-if="textLoading" class="absolute inset-0 flex items-center justify-center">
+          <div class="text-center">
+            <svg class="animate-spin h-8 w-8 text-blue-500 mx-auto mb-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path
+                class="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 0 0 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+              ></path>
+            </svg>
+            <p class="text-blue-600 dark:text-blue-400">{{ t("fileView.preview.html.loadingSource") }}</p>
+          </div>
+        </div>
+      </template>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from "vue";
+import { ref, computed, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useFetchText } from "@/composables/text-preview/useFetchText.js";
 
 const { t } = useI18n();
 
 const props = defineProps({
-  previewUrl: {
+  contentUrl: {
     type: String,
     required: true,
   },
@@ -97,6 +108,7 @@ const htmlLoading = ref(false);
 const textLoading = ref(false);
 const htmlContent = ref("");
 const currentEncoding = ref("utf-8");
+const urlError = ref("");
 
 // 使用文本获取 Composable
 const { fetchText, reDecodeWithEncoding, availableEncodings } = useFetchText();
@@ -114,7 +126,7 @@ const characterCount = computed(() => {
 
 // 获取HTML源码内容
 const fetchHtmlContent = async () => {
-  if (!props.previewUrl) return;
+  if (!props.contentUrl) return;
 
   try {
     textLoading.value = true;
@@ -123,11 +135,17 @@ const fetchHtmlContent = async () => {
     const fileData = {
       name: "html-file.html",
       filename: "html-file.html",
-      rawUrl: props.previewUrl,
+      contentUrl: props.contentUrl,
       contentType: "text/html",
     };
 
-    const result = await fetchText(fileData.rawUrl, fileData);
+    const effectiveUrl = fileData.contentUrl;
+    if (!effectiveUrl) {
+      console.warn("缺少可用的 HTML 预览 URL");
+      return;
+    }
+
+    const result = await fetchText(effectiveUrl, fileData);
 
     if (result.success) {
       htmlContent.value = result.text;
@@ -155,7 +173,7 @@ const toggleHtmlPreview = () => {
   showHtmlIframe.value = !showHtmlIframe.value;
   // 切换到iframe模式时重置加载状态
   if (showHtmlIframe.value) {
-    htmlLoading.value = true;
+    htmlLoading.value = !!props.contentUrl;
   } else {
     // 切换到源码模式时获取内容
     if (!htmlContent.value) {
@@ -172,7 +190,7 @@ const handleHtmlLoad = () => {
 
 // 处理编码切换
 const handleEncodingChange = async () => {
-  if (!props.previewUrl) return;
+  if (!props.contentUrl) return;
 
   try {
     textLoading.value = true;
@@ -195,9 +213,24 @@ const handleEncodingChange = async () => {
   }
 };
 
-onMounted(() => {
-  if (props.previewUrl && showHtmlIframe.value) {
-    htmlLoading.value = true;
-  }
-});
+watch(
+  () => props.contentUrl,
+  (url) => {
+    if (!url) {
+      urlError.value = "预览 URL 不可用";
+      htmlLoading.value = false;
+      textLoading.value = false;
+      htmlContent.value = "";
+      emit("error", urlError.value);
+      return;
+    }
+    urlError.value = "";
+    if (showHtmlIframe.value) {
+      htmlLoading.value = true;
+    } else if (!htmlContent.value) {
+      fetchHtmlContent();
+    }
+  },
+  { immediate: true },
+);
 </script>

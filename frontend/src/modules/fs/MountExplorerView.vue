@@ -201,7 +201,6 @@
           <BreadcrumbNav
           :current-path="currentPath"
           :dark-mode="darkMode"
-          :preview-file="isPreviewMode ? previewFile : null"
           @navigate="handleNavigate"
           :basic-path="apiKeyInfo?.basic_path || '/'"
           :user-type="isAdmin ? 'admin' : 'user'"
@@ -211,7 +210,7 @@
       <!-- 内容区域 - 根据模式显示文件列表或文件预览 -->
       <div class="card">
         <!-- 文件列表模式 -->
-        <div v-if="!hasPreviewIntent">
+        <div v-show="!showFilePreview">
           <!-- 内嵌式密码验证 -->
           <PathPasswordDialog
             v-if="pathPassword.showPasswordDialog.value"
@@ -239,7 +238,7 @@
             </div>
           </div>
 
-          <!-- 目录列表 -->
+          <!-- 目录列表 - 保持挂载状态 -->
           <DirectoryList
             ref="directoryListRef"
             v-else
@@ -270,7 +269,7 @@
         </div>
 
         <!-- 文件预览模式 -->
-        <div v-else>
+        <div v-show="showFilePreview">
           <!-- 预览加载状态 -->
           <div v-if="isPreviewLoading" class="p-8 text-center">
             <div class="flex flex-col items-center space-y-4">
@@ -334,7 +333,7 @@
       </div>
 
       <!-- 底部 README -->
-      <DirectoryReadme v-if="!hasPreviewIntent" position="bottom" :meta="directoryMeta" :dark-mode="darkMode" />
+      <DirectoryReadme v-if="!showFilePreview" position="bottom" :meta="directoryMeta" :dark-mode="darkMode" />
     </div>
 
     <!-- 搜索弹窗 -->
@@ -460,10 +459,9 @@ const {
   currentMountId,
   previewFile,
   previewInfo,
-  isPreviewMode,
   isPreviewLoading,
   previewError,
-  hasPreviewIntent,
+  showFilePreview,
   updateUrl,
   navigateTo,
   updatePreviewUrl,
@@ -1388,9 +1386,7 @@ onBeforeUnmount(() => {
   explorerSettings.cleanupDarkModeObserver();
 
   // 停止预览
-  if (isPreviewMode.value) {
-    stopPreview(false);
-  }
+  stopPreview(false);
 
   // 清理选择状态
   clearSelection();

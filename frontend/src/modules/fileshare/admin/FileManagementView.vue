@@ -95,11 +95,6 @@
       </div>
     </div>
 
-    <!-- 错误消息提示 -->
-    <div v-if="error" class="mb-4 p-3 bg-red-100 text-red-600 rounded">
-      <p>{{ error }}</p>
-    </div>
-
     <!-- 上次刷新时间显示 -->
     <div class="flex justify-between items-center mb-2 sm:mb-3" v-if="lastRefreshTime">
       <div class="text-xs sm:text-sm text-gray-500 dark:text-gray-400">
@@ -128,8 +123,6 @@
           :dark-mode="darkMode"
           :selected-files="selectedFiles"
           :user-type="props.userType"
-          :copied-files="copiedFiles"
-          :copied-permanent-files="copiedPermanentFiles"
           :loading="loading || searchLoading"
           @toggle-select="toggleSelectItem"
           @toggle-select-all="toggleSelectAll"
@@ -139,6 +132,7 @@
           @generate-qr="(file) => generateQRCode(file, darkMode)"
           @copy-link="copyFileLink"
           @copy-permanent-link="copyPermanentLink"
+          @error="showError"
         />
       </div>
     </div>
@@ -236,7 +230,6 @@ const confirmFn = async ({ title, message, confirmType }) => {
 const {
   // 状态
   loading,
-  error,
   selectedItems: selectedFiles,
   lastRefreshTime,
   pagination,
@@ -249,8 +242,6 @@ const {
   showQRCodeModal,
   qrCodeDataURL,
   qrCodeSlug,
-  copiedFiles,
-  copiedPermanentFiles,
 
   // 方法
   loadFiles,
@@ -265,6 +256,7 @@ const {
   generateQRCode,
   copyFileLink,
   copyPermanentLink,
+  showError,
   getFilePassword,
   getOfficePreviewUrl,
   previewFileInNewWindow,

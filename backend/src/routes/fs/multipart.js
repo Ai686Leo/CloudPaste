@@ -6,6 +6,34 @@ import { FileSystem } from "../../storage/fs/FileSystem.js";
 import { invalidateFsCache } from "../../cache/invalidation.js";
 import { getEncryptionSecret } from "../../utils/environmentUtils.js";
 import { usePolicy } from "../../security/policies/policies.js";
+import { findUploadSessionById } from "../../utils/uploadSessions.js";
+
+const toAbsoluteUrlIfRelative = (requestUrl, maybeUrl) => {
+  if (typeof maybeUrl !== "string" || maybeUrl.length === 0) {
+    return maybeUrl;
+  }
+  if (!maybeUrl.startsWith("/")) {
+    return maybeUrl;
+  }
+  const origin = new URL(requestUrl).origin;
+  return new URL(maybeUrl, origin).toString();
+};
+
+const ensureAbsoluteSessionUploadUrl = (c, payload) => {
+  const session = payload?.session;
+  const uploadUrl = session?.uploadUrl;
+  const absolute = toAbsoluteUrlIfRelative(c.req.url, uploadUrl);
+  if (!session || absolute === uploadUrl) {
+    return payload;
+  }
+  return {
+    ...payload,
+    session: {
+      ...session,
+      uploadUrl: absolute,
+    },
+  };
+};
 
 const parseJsonBody = async (c, next) => {
   const body = await c.req.json();
@@ -63,9 +91,17 @@ export const registerMultipartRoutes = (router, helpers) => {
 
     const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
     const fileSystem = new FileSystem(mountManager);
-    const result = await fileSystem.initializeFrontendMultipartUpload(path, fileName, fileSize, userIdOrInfo, userType, partSize, partCount);
+    const result = await fileSystem.initializeFrontendMultipartUpload(
+      path,
+      fileName,
+      fileSize,
+      userIdOrInfo,
+      userType,
+      partSize,
+      partCount,
+    );
 
-    return jsonOk(c, result, "前端分片上传初始化成功");
+    return jsonOk(c, ensureAbsoluteSessionUploadUrl(c, result), "前端分片上传初始化成功");
   });
 
   router.post("/api/fs/multipart/complete", parseJsonBody, usePolicy("fs.upload", { pathResolver: jsonPathResolver() }), async (c) => {
@@ -141,7 +177,76 @@ export const registerMultipartRoutes = (router, helpers) => {
     const fileSystem = new FileSystem(mountManager);
     const result = await fileSystem.refreshMultipartUrls(path, uploadId, partNumbers, userIdOrInfo, userType);
 
-    return jsonOk(c, result, "刷新分片上传预签名URL成功");
+    return jsonOk(c, ensureAbsoluteSessionUploadUrl(c, result), "刷新分片上传预签名URL成功");
+  });
+
+  // 前端分片上传中转端点（single_session 场景）
+  // 当前主要用于 GOOGLE_DRIVE：前端使用 Uppy + AwsS3 在浏览器中切片，
+  // 每个分片通过该端点中转到后端，再由后端转发至 Google Drive resumable 会话。
+  router.put("/api/fs/multipart/upload-chunk", usePolicy("fs.upload", { pathCheck: false }), async (c) => {
+    const { db, encryptionSecret, repositoryFactory, userIdOrInfo, userType } = requireUserContext(c);
+
+    const uploadId = c.req.query("upload_id");
+    if (!uploadId) {
+      throw new ValidationError("缺少 upload_id 参数");
+    }
+
+    const body = c.req.raw?.body;
+    if (!body) {
+      throw new ValidationError("请求体为空");
+    }
+
+    const contentRange = c.req.header("content-range") || c.req.header("Content-Range") || null;
+    if (!contentRange) {
+      throw new ValidationError("缺少 Content-Range 头部");
+    }
+
+    const contentLengthHeader = c.req.header("content-length") || c.req.header("Content-Length") || null;
+    const contentLength = contentLengthHeader ? Number.parseInt(contentLengthHeader, 10) || 0 : 0;
+
+    const sessionRow = await findUploadSessionById(db, { id: uploadId });
+    if (!sessionRow) {
+      throw new ValidationError("未找到对应的上传会话");
+    }
+
+    if (sessionRow.storage_type !== "GOOGLE_DRIVE") {
+      throw new ValidationError("当前上传会话的存储类型不支持通过该端点上传分片");
+    }
+
+    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
+    const fileSystem = new FileSystem(mountManager);
+
+    const { driver, mount } = await fileSystem.mountManager.getDriverByPath(
+      sessionRow.fs_path,
+      userIdOrInfo,
+      userType,
+    );
+
+    if (driver.getType() !== "GOOGLE_DRIVE") {
+      throw new ValidationError("上传会话对应的驱动不是 Google Drive");
+    }
+
+    // 委托给 GoogleDriveStorageDriver 进行分片转发
+    // 仅 GoogleDriveStorageDriver 实现该方法，其他驱动不会触发此逻辑
+    // @ts-ignore
+    const result = await driver.proxyFrontendMultipartChunk(sessionRow, /** @type {any} */ (body), {
+      contentRange,
+      contentLength,
+      mount,
+      db,
+      userIdOrInfo,
+      userType,
+    });
+
+    return jsonOk(
+      c,
+      {
+        success: true,
+        done: result?.done === true,
+        status: result?.status ?? 200,
+      },
+      "分片上传成功",
+    );
   });
 
   router.post("/api/fs/presign", parseJsonBody, usePolicy("fs.upload", { pathResolver: presignTargetResolver }), async (c) => {

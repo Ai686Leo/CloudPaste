@@ -2,6 +2,7 @@ import { ApiStatus } from "../../../constants/index.js";
 import { AppError, DriverError } from "../../../http/errors.js";
 import { CAPABILITIES } from "../../interfaces/capabilities/index.js";
 import { findMountPointByPath } from "../utils/MountResolver.js";
+import { isDirectoryPath, isSelfOrSubPath, normalizePath } from "../utils/PathResolver.js";
 
 export async function renameItem(fs, oldPath, newPath, userIdOrInfo, userType) {
   // 分别解析旧路径和新路径，确保仍在同一挂载下
@@ -51,9 +52,23 @@ export async function copyItem(fs, sourcePath, targetPath, userIdOrInfo, userTyp
   const { driver: targetDriver, mount: targetMount, subPath: targetSubPath } = targetCtx;
 
   // 目录判断：用于决定是否走目录级 orchestrator
-  const sourceIsDirectory = sourcePath.endsWith("/");
+  const sourceIsDirectory = isDirectoryPath(sourcePath);
 
   const sameMount = sourceMount.id === targetMount.id;
+
+  // 统一目录自复制防护：同一挂载内，禁止将目录复制到自身或其子目录
+  if (sameMount && sourceIsDirectory) {
+    const src = sourceSubPath ?? sourcePath;
+    const dst = targetSubPath ?? targetPath;
+    if (isSelfOrSubPath(src, dst)) {
+      return {
+        status: "failed",
+        source: sourcePath,
+        target: targetPath,
+        message: "无法将目录复制到自身或其子目录中",
+      };
+    }
+  }
 
   // ========== 统一 skipExisting 检查（单文件级别） ==========
   // 对于单文件复制，在入口层统一检查目标是否存在，避免下游重复检查
@@ -117,7 +132,16 @@ export async function copyItem(fs, sourcePath, targetPath, userIdOrInfo, userTyp
   // 2）跨挂载：走通用 orchestrator，支持文件和目录
   if (sourceIsDirectory) {
     // 目录：使用目录级 orchestrator，递归复制目录下所有文件
-    return await copyDirectoryBetweenDrivers(fs, sourceCtx, targetCtx, sourcePath, targetPath, userIdOrInfo, userType, options);
+    return await copyDirectoryBetweenDrivers(
+      fs,
+      sourceCtx,
+      targetCtx,
+      sourcePath,
+      targetPath,
+      userIdOrInfo,
+      userType,
+      options,
+    );
   }
 
   // 文件：使用单文件 orchestrator
@@ -267,10 +291,17 @@ async function copyBetweenDrivers(fs, sourceCtx, targetCtx, sourcePath, targetPa
       });
     }
 
-    // 推导文件名：优先使用目标路径
+    // 推导文件名：
+    // - FS 视图约定：以 "/" 结尾的是目录，其余视为文件路径
+    // - 若 targetPath 为目录路径，则自动复用源文件名；否则使用 targetPath 最后一段作为目标文件名
     const targetSegments = targetPath.split("/").filter(Boolean);
     const sourceSegments = sourcePath.split("/").filter(Boolean);
-    const filename = targetSegments[targetSegments.length - 1] || sourceSegments[sourceSegments.length - 1] || "file";
+    const sourceFileName =
+      sourceSegments[sourceSegments.length - 1] || "file";
+    const targetLeaf = targetSegments[targetSegments.length - 1] || "";
+    const targetIsDirectory = isDirectoryPath(targetPath);
+
+    const filename = targetIsDirectory ? sourceFileName : (targetLeaf || sourceFileName);
 
     // 2. 如果提供了进度回调，包装流以监控字节传输
     let streamToUpload = body;
@@ -337,8 +368,8 @@ async function copyBetweenDrivers(fs, sourceCtx, targetCtx, sourcePath, targetPa
  * - 通过 copyBetweenDrivers 按文件级别执行复制
  */
 async function copyDirectoryBetweenDrivers(fs, sourceCtx, targetCtx, sourcePath, targetPath, userIdOrInfo, userType, options = {}) {
-  const sourceBase = sourcePath.endsWith("/") ? sourcePath : `${sourcePath}/`;
-  const targetBase = targetPath.endsWith("/") ? targetPath : `${targetPath}/`;
+  const sourceBase = normalizePath(sourcePath, true);
+  const targetBase = normalizePath(targetPath, true);
 
   let successCount = 0;
   let skippedCount = 0;
@@ -368,7 +399,7 @@ async function copyDirectoryBetweenDrivers(fs, sourceCtx, targetCtx, sourcePath,
 
         if (item.isDirectory) {
           // 目录：继续递归
-          const dirPath = item.path.endsWith("/") ? item.path : `${item.path}/`;
+          const dirPath = normalizePath(item.path, true);
           if (!dirPath.startsWith(sourceBase)) {
             continue;
           }

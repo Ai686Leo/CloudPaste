@@ -28,3 +28,7 @@ database_id = "xxxxxxxxxxxxxxxxx"
 binding = "JOB_WORKFLOW"
 name = "job-workflow"
 class_name = "JobWorkflow"
+
+[triggers]
+crons = ["*/5 * * * *"]
+

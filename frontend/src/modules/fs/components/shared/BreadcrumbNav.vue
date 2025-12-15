@@ -29,7 +29,7 @@
           @click.prevent="navigateToSegment(index)"
           :class="[
             'font-medium transition-colors duration-200',
-            index === pathSegments.length - 1 && !previewFile
+            index === pathSegments.length - 1 && !previewFileName
               ? darkMode
                 ? 'text-primary-400'
                 : 'text-primary-600'
@@ -42,11 +42,11 @@
         </a>
       </li>
 
-      <!-- 文件预览项 -->
-      <li v-if="previewFile" class="flex items-center">
+      <!-- 文件预览项 - 直接从URL读取，即时显示 -->
+      <li v-if="previewFileName" class="flex items-center">
         <span :class="['mx-1', darkMode ? 'text-gray-500' : 'text-gray-400']"> / </span>
         <span :class="['font-medium', darkMode ? 'text-primary-400' : 'text-primary-600']">
-          {{ previewFile.name }}
+          {{ previewFileName }}
         </span>
       </li>
     </ol>
@@ -56,9 +56,11 @@
 
 <script setup>
 import { computed } from "vue";
+import { useRoute } from "vue-router";
 import { useI18n } from "vue-i18n";
 
 const { t } = useI18n();
+const route = useRoute();
 
 const props = defineProps({
   currentPath: {
@@ -69,10 +71,6 @@ const props = defineProps({
   darkMode: {
     type: Boolean,
     default: false,
-  },
-  previewFile: {
-    type: Object,
-    default: null,
   },
   basicPath: {
     type: String,
@@ -85,6 +83,9 @@ const props = defineProps({
 });
 
 const emit = defineEmits(["navigate"]);
+
+// 从URL直接读取预览文件名（即时响应，无需等待API）
+const previewFileName = computed(() => route.query.preview || null);
 
 // 计算路径段
 const pathSegments = computed(() => {

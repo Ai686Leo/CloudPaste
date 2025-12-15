@@ -142,8 +142,13 @@ export async function getFiles(limit = 50, offset = 0, options = {}) {
  * @param {string} id - 文件ID
  * @returns {Promise<Object>} 文件详情响应
  */
-export async function getFile(id) {
-  return await get(`files/${id}`);
+export async function getFile(id, options = {}) {
+  const params = {};
+  if (options.includeLinks) {
+    params.include = "links";
+  }
+  const hasParams = Object.keys(params).length > 0;
+  return await get(`files/${id}`, hasParams ? { params } : undefined);
 }
 
 /**
@@ -176,7 +181,7 @@ export async function batchDeleteFiles(ids, deleteMode = "both") {
  * @returns {Promise<Object>} 文件信息响应
  */
 export async function getPublicFile(slug) {
-  return await get(`public/files/${slug}`);
+  return await get(`share/get/${slug}`);
 }
 
 /**
@@ -186,6 +191,5 @@ export async function getPublicFile(slug) {
  * @returns {Promise<Object>} 验证响应
  */
 export async function verifyFilePassword(slug, password) {
-  return await post(`public/files/${slug}/verify`, { password });
+  return await post(`share/verify/${slug}`, { password });
 }
-

@@ -3,14 +3,13 @@
  * 负责目录相关操作：列出内容、创建目录、删除目录等
  */
 
-import { FILE_TYPES, FILE_TYPE_NAMES } from "../../../../constants/index.js";
 import { NotFoundError } from "../../../../http/errors.js";
 import { S3Client, ListObjectsV2Command, PutObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { checkDirectoryExists, updateParentDirectoriesModifiedTime } from "../utils/S3DirectoryUtils.js";
 import { isMountRootPath } from "../utils/S3PathUtils.js";
 import { directoryCacheManager } from "../../../../cache/index.js";
 import { handleFsError } from "../../../fs/utils/ErrorHandler.js";
-import { GetFileType, getFileTypeName } from "../../../../utils/fileTypeDetector.js";
+import { buildFileInfo } from "../../../utils/FileInfoBuilder.js";
 
 export class S3DirectoryOperations {
   /**
@@ -188,15 +187,21 @@ export class S3DirectoryOperations {
               const separator = subPath.endsWith("/") ? "" : "/";
               const dirPath = mount.mount_path + subPath + separator + dirName + "/";
 
-              result.items.push({
+              const dirInfo = await buildFileInfo({
+                fsPath: dirPath,
                 name: dirName,
-                path: dirPath,
                 isDirectory: true,
-                isVirtual: false,
                 size: directorySize,
-                modified: directoryModified,
-                type: FILE_TYPES.FOLDER, // 目录类型常量 (1)
-                typeName: FILE_TYPE_NAMES[FILE_TYPES.FOLDER], // "folder"
+                modified: new Date(directoryModified),
+                mimetype: "application/x-directory",
+                mount,
+                storageType: mount.storage_type,
+                db,
+              });
+
+              result.items.push({
+                ...dirInfo,
+                isVirtual: false,
               });
             }
           }
@@ -230,18 +235,22 @@ export class S3DirectoryOperations {
             // 构建子项路径 - 确保路径正确拼接，避免双斜杠
             const separator = subPath.endsWith("/") ? "" : "/";
             const itemPath = mount.mount_path + subPath + separator + relativePath;
-            const fileType = await GetFileType(relativePath, db);
-            const fileTypeName = await getFileTypeName(relativePath, db);
 
-            result.items.push({
+            const info = await buildFileInfo({
+              fsPath: itemPath,
               name: relativePath,
-              path: itemPath,
               isDirectory: false,
               size: content.Size,
-              modified: content.LastModified ? content.LastModified.toISOString() : new Date().toISOString(),
+              modified: content.LastModified ? content.LastModified : new Date(),
+              mimetype: null,
+              mount,
+              storageType: mount.storage_type,
+              db,
+            });
+
+            result.items.push({
+              ...info,
               etag: content.ETag ? content.ETag.replace(/"/g, "") : undefined,
-              type: fileType, // 整数类型常量 (0-6)
-              typeName: fileTypeName, // 类型名称（用于调试）
             });
           }
         }
@@ -468,18 +477,18 @@ export class S3DirectoryOperations {
     // 特殊处理：挂载点根目录（空路径）总是存在
     if (s3SubPath === "" || s3SubPath === "/") {
       console.log(`getDirectoryInfo - 挂载点根目录总是存在: ${path}`);
-      return {
-        path: path,
+      const info = await buildFileInfo({
+        fsPath: path,
         name: path.split("/").filter(Boolean).pop() || "/",
         isDirectory: true,
         size: 0,
-        modified: new Date().toISOString(),
-        contentType: "application/x-directory",
-        mount_id: mount.id,
-        storage_type: mount.storage_type,
-        type: FILE_TYPES.FOLDER, // 目录类型常量 (1)
-        typeName: FILE_TYPE_NAMES[FILE_TYPES.FOLDER], // "folder"
-      };
+        modified: new Date(),
+        mimetype: "application/x-directory",
+        mount,
+        storageType: mount.storage_type,
+        db: null,
+      });
+      return info;
     }
 
     // 尝试作为目录处理
@@ -504,18 +513,18 @@ export class S3DirectoryOperations {
         console.warn(`获取目录修改时间失败:`, error);
       }
 
-      return {
-        path: path,
+      const info = await buildFileInfo({
+        fsPath: path,
         name: path.split("/").filter(Boolean).pop() || "/",
         isDirectory: true,
         size: 0,
-        modified: directoryModified,
-        contentType: "application/x-directory",
-        mount_id: mount.id,
-        storage_type: mount.storage_type,
-        type: FILE_TYPES.FOLDER, // 目录类型常量 (1)
-        typeName: FILE_TYPE_NAMES[FILE_TYPES.FOLDER], // "folder"
-      };
+        modified: new Date(directoryModified),
+        mimetype: "application/x-directory",
+        mount,
+        storageType: mount.storage_type,
+        db: null,
+      });
+      return info;
     }
 
     throw new NotFoundError("目录不存在");

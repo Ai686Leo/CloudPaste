@@ -220,7 +220,8 @@ const openEditModal = async () => {
         passwordVerified: prev.passwordVerified,
         currentPassword: prev.currentPassword,
         // 移除 use_proxy 的旧值保留，使用从后端获取的最新值
-        rawUrl: prev.rawUrl,
+        previewUrl: prev.previewUrl,
+        downloadUrl: prev.downloadUrl,
         linkType: prev.linkType,
         documentPreview: prev.documentPreview,
       };

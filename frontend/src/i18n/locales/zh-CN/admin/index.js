@@ -7,6 +7,7 @@ import backup from "./backup.js";
 import fsMeta from "./fsMeta.js";
 import tasks from "./tasks.js";
 import storage from "./storage.js";
+import scheduledJobs from "./scheduledJobs.js";
 
 export default {
   ...common,
@@ -18,4 +19,5 @@ export default {
   ...fsMeta,
   ...tasks,
   ...storage,
+  ...scheduledJobs,
 };

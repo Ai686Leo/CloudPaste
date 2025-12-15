@@ -116,6 +116,7 @@ function isSelfRedirect(location, currentHost) {
       return true;
     }
   } catch {
+    // location 不是完整 URL 时，视为相对路径，由平台按照当前 Host 解析，这种情况也认为是“自身”
     return true;
   }
   return false;
@@ -139,9 +140,7 @@ export async function handleProxyRequest(request, env) {
 
   // 统一处理 CORS 预检请求，避免将 OPTIONS 透传到上游
   if (request.method === "OPTIONS" && path.startsWith("/proxy/")) {
-    const allowHeaders =
-      request.headers.get("Access-Control-Request-Headers") ||
-      "Range, Content-Type";
+    const allowHeaders = request.headers.get("Access-Control-Request-Headers") || "Range, Content-Type";
 
     return new Response(null, {
       status: 204,
@@ -186,10 +185,34 @@ export async function handleProxyRequest(request, env) {
       body: JSON.stringify({ type: "fs", path: fsPath }),
     });
 
-    const linkJson = await linkResp.json().catch(() => null);
+    // 日志
+    let rawBody = null;
+    let linkJson = null;
+    try {
+      rawBody = await linkResp.text();
+      linkJson = rawBody ? JSON.parse(rawBody) : null;
+    } catch {
+      linkJson = null;
+    }
+
     const code = linkJson?.code ?? linkResp.status;
     const data = linkJson?.data ?? null;
     if (code !== 200 || !data?.url) {
+      console.error(
+          JSON.stringify({
+            type: "proxy.debug",
+            scope: "fs",
+            reason: "link-resolve-failed",
+            requestPath: fsPath,
+            origin: ORIGIN,
+            controlUrl: controlUrl.toString(),
+            httpStatus: linkResp.status,
+            code,
+            // 为防止日志过大，截断响应体
+            rawBody: rawBody && rawBody.length > 2048 ? rawBody.slice(0, 2048) + "...truncated" : rawBody,
+          })
+      );
+
       return new Response(JSON.stringify({ code, message: "proxy link resolve failed" }), {
         status: 502,
         headers: { "content-type": "application/json;charset=UTF-8" },
@@ -221,10 +244,7 @@ export async function handleProxyRequest(request, env) {
     const resp = new Response(upstreamRes.body, upstreamRes);
     resp.headers.delete("set-cookie");
     resp.headers.set("Access-Control-Allow-Origin", requestOrigin);
-    resp.headers.set(
-      "Access-Control-Expose-Headers",
-      "Content-Length, Content-Range, Accept-Ranges, ETag, Last-Modified, Content-Type",
-    );
+    resp.headers.set("Access-Control-Expose-Headers", "Content-Length, Content-Range, Accept-Ranges, ETag, Last-Modified, Content-Type");
     resp.headers.append("Vary", "Origin");
     return resp;
   }
@@ -251,10 +271,33 @@ export async function handleProxyRequest(request, env) {
       body: JSON.stringify({ type: "share", slug }),
     });
 
-    const linkJson = await linkResp.json().catch(() => null);
+    // 分享视图同样增加详细调试日志，方便排查 502
+    let rawBody = null;
+    let linkJson = null;
+    try {
+      rawBody = await linkResp.text();
+      linkJson = rawBody ? JSON.parse(rawBody) : null;
+    } catch {
+      linkJson = null;
+    }
+
     const code = linkJson?.code ?? linkResp.status;
     const data = linkJson?.data ?? null;
     if (code !== 200 || !data?.url) {
+      console.error(
+          JSON.stringify({
+            type: "proxy.debug",
+            scope: "share",
+            reason: "link-resolve-failed",
+            slug,
+            origin: ORIGIN,
+            controlUrl: controlUrl.toString(),
+            httpStatus: linkResp.status,
+            code,
+            rawBody: rawBody && rawBody.length > 2048 ? rawBody.slice(0, 2048) + "...truncated" : rawBody,
+          })
+      );
+
       return new Response(JSON.stringify({ code, message: "proxy link resolve failed" }), {
         status: 502,
         headers: { "content-type": "application/json;charset=UTF-8" },
@@ -283,10 +326,7 @@ export async function handleProxyRequest(request, env) {
     const resp = new Response(upstreamRes.body, upstreamRes);
     resp.headers.delete("set-cookie");
     resp.headers.set("Access-Control-Allow-Origin", requestOrigin);
-    resp.headers.set(
-      "Access-Control-Expose-Headers",
-      "Content-Length, Content-Range, Accept-Ranges, ETag, Last-Modified, Content-Type",
-    );
+    resp.headers.set("Access-Control-Expose-Headers", "Content-Length, Content-Range, Accept-Ranges, ETag, Last-Modified, Content-Type");
     resp.headers.append("Vary", "Origin");
     return resp;
   }
@@ -300,7 +340,7 @@ export async function handleProxyRequest(request, env) {
 // - Deno Deploy       ：如果检测到 Deno.serve，则自动注册 HTTP 服务
 // - 其他 Fetch 兼容运行时：导入 handleProxyRequest 自行调用
 
-// Cloudflare Workers
+// Cloudflare Workers / workerd 风格：默认导出 fetch 处理器
 export default {
   async fetch(request, env, ctx) {
     return handleProxyRequest(request, env);
@@ -310,12 +350,12 @@ export default {
 // Deno Deploy：若存在 Deno.serve，则自动启动服务
 if (typeof globalThis.Deno !== "undefined" && typeof globalThis.Deno.serve === "function") {
   globalThis.Deno.serve((req) =>
-    handleProxyRequest(req, {
-      ORIGIN: globalThis.Deno.env?.get?.("ORIGIN") ?? ORIGIN,
-      TOKEN: globalThis.Deno.env?.get?.("TOKEN") ?? TOKEN,
-      SIGN_SECRET: globalThis.Deno.env?.get?.("SIGN_SECRET") ?? SIGN_SECRET,
-      WORKER_BASE: globalThis.Deno.env?.get?.("WORKER_BASE") ?? WORKER_BASE,
-    })
+      handleProxyRequest(req, {
+        ORIGIN: globalThis.Deno.env?.get?.("ORIGIN") ?? ORIGIN,
+        TOKEN: globalThis.Deno.env?.get?.("TOKEN") ?? TOKEN,
+        SIGN_SECRET: globalThis.Deno.env?.get?.("SIGN_SECRET") ?? SIGN_SECRET,
+        WORKER_BASE: globalThis.Deno.env?.get?.("WORKER_BASE") ?? WORKER_BASE,
+      })
   );
 }
 

@@ -10,6 +10,7 @@ import { getFileBySlug, isFileAccessible } from "./fileService.js";
 import { ObjectStore } from "../storage/object/ObjectStore.js";
 import { StorageStreaming, STREAMING_CHANNELS } from "../storage/streaming/index.js";
 import { StorageFactory } from "../storage/factory/StorageFactory.js";
+import { FILE_TYPES } from "../constants/index.js";
 
 /**
  * 文件查看服务类
@@ -63,7 +64,7 @@ export class FileViewService {
    * @param {boolean} forceDownload - 是否强制下载
    * @returns {Promise<Response>} 响应对象
    */
-  async handleFileDownload(slug, request, forceDownload = false) {
+  async handleFileDownload(slug, request, forceDownload = false, options = {}) {
     try {
       // 查询文件详情
       const file = await getFileBySlug(this.db, slug, this.encryptionSecret);
@@ -127,6 +128,13 @@ export class FileViewService {
 
       const fileRecord = result.file;
       const useProxyFlag = fileRecord.use_proxy ?? 0;
+      const forceProxy = options && options.forceProxy === true;
+
+      // 文本类预览优先走本地代理，以避免直链 CORS 与内容类型差异
+      const isInline = !forceDownload;
+      const isTextLike =
+        fileRecord.type === FILE_TYPES.TEXT ||
+        (fileRecord.mimetype && fileRecord.mimetype.startsWith("text/"));
 
       // 抽取本地代理下载逻辑，便于在直链失败时复用
       // 使用 StorageStreaming 层统一处理
@@ -174,6 +182,16 @@ export class FileViewService {
         return response;
       };
 
+      // forceProxy=true 时，强制只走本地代理（share 的 /api/s 与 /api/share/content）
+      if (forceProxy) {
+        return await proxyDownload();
+      }
+
+      // 文本类 inline 预览，无论 use_proxy 配置如何，都优先走本地代理访问
+      if (isInline && isTextLike) {
+        return await proxyDownload();
+      }
+
       // use_proxy = 1 时，走本地代理访问
       if (useProxyFlag === 1) {
         return await proxyDownload();
@@ -211,9 +229,17 @@ export class FileViewService {
 }
 
 // 导出便捷函数供路由使用
-export async function handleFileDownload(slug, db, encryptionSecret, request, forceDownload = false, repositoryFactory = null) {
+export async function handleFileDownload(
+  slug,
+  db,
+  encryptionSecret,
+  request,
+  forceDownload = false,
+  repositoryFactory = null,
+  options = {},
+) {
   const service = new FileViewService(db, encryptionSecret, repositoryFactory);
-  return service.handleFileDownload(slug, request, forceDownload);
+  return service.handleFileDownload(slug, request, forceDownload, options);
 }
 
 export async function checkAndDeleteExpiredFile(db, file, encryptionSecret, repositoryFactory = null) {

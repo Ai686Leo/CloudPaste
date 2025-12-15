@@ -619,14 +619,14 @@ X-Custom-Auth-Key: <api_key>
 
 ### 公共文件查询
 
-- `GET /api/public/files/:slug`
-  - 描述：获取文件公开信息
+- `GET /api/share/get/:slug`
+  - 描述：获取分享文件公开信息（控制面 JSON）
   - 参数：slug - 文件短链接
   - 授权：无需授权
-  - 响应：包含文件基本信息（不含下载链接）
+  - 响应：包含文件基本信息 + 语义明确的 `previewUrl`/`downloadUrl`/`linkType` 等字段；若文件需要密码且未验证，则 `previewUrl`/`downloadUrl` 为 null。
 
-- `POST /api/public/files/:slug/verify`
-  - 描述：验证文件访问密码
+- `POST /api/share/verify/:slug`
+  - 描述：验证文件访问密码（成功后返回同 GET 的公开视图）
   - 参数：slug - 文件短链接
   - 请求体：
     ```json
@@ -634,7 +634,7 @@ X-Custom-Auth-Key: <api_key>
       "password": "文件密码"
     }
     ```
-  - 响应：验证成功后返回带下载链接的文件信息
+  - 响应：验证成功后返回包含 `previewUrl`/`downloadUrl` 的文件信息
 
 ### 文件管理
 
@@ -655,7 +655,12 @@ X-Custom-Auth-Key: <api_key>
   - 描述：获取单个文件详情
   - 授权：需要管理员令牌或有文件权限的 API 密钥
   - 参数：id - 文件 ID
-  - 响应：文件详细信息和下载链接
+  - 查询参数（可选）：
+    - `include=links` - 返回链接信息（`previewUrl`/`downloadUrl`/`linkType`/`documentPreview`）
+    - `links=true` - 兼容写法，等价 `include=links`
+  - 响应：
+    - 默认：仅返回文件元信息（不包含任何链接字段）
+    - `include=links` 时：在元信息基础上额外返回 `previewUrl`（预览入口）、`downloadUrl`（下载入口）、`linkType`（direct/url_proxy/proxy）以及 `documentPreview`
 
 #### 更新文件信息
 
@@ -742,19 +747,23 @@ X-Custom-Auth-Key: <api_key>
 ### 文件分享内容访问
 
 - `GET /api/s/:slug`
-  - 描述：访问文件分享内容（预览/下载）
+  - 描述：Share 本地代理内容入口（等价 FS 的本地代理语义），用于同源预览/下载
   - 参数：slug - 文件短链接
-  - 授权：无需授权（受密码保护和过期时间限制）
+  - 授权：无需授权（受密码保护、过期时间、浏览次数限制）
   - 查询参数：
-    - `password` - 文件密码（如果文件受密码保护）
-    - `mode` - 访问模式（可选）：
-      - `inline` - 预览模式（默认）
-      - `attachment` - 下载模式
-  - 响应：文件内容流
-  - 说明：
-    - 当 `use_proxy = 1` 时，通过服务器代理流式返回文件内容
-    - 当 `use_proxy = 0` 时，使用存储直链（S3 预签名 URL 等）
-    - 支持 Range 请求，可实现断点续传和视频流播放
+    - `password` - 文件密码（文件受密码保护时必填）
+    - `down` - 下载语义开关（`true`/`1` 表示下载；不传或 `false` 表示预览）
+    - `mode` - 旧版兼容参数（`attachment`/`download` 等价 `down=true`，`inline` 等价预览；新代码不推荐使用）
+  - 响应：同源 200 文件内容流（始终后端代理，不做 302 外跳），支持 Range 断点续传/媒体流播放
+  - 说明：直链 / url_proxy / Worker 等决策只体现在 `/api/share/get/:slug` 返回的 `previewUrl`/`downloadUrl`/`linkType` 上；`/api/s/:slug` 永远走本地代理
+
+- `GET /api/share/content/:slug`
+  - 描述：分享文件同源内容口（文本预览/编码检测专用）
+  - 参数：slug - 文件短链接
+  - 授权：无需授权（受密码保护、过期时间、浏览次数限制）
+  - 查询参数：
+    - `password` - 文件密码（文件受密码保护时必填）
+  - 响应：同源 200 文件内容流（预览语义），支持 Range；不做 302 外跳
 
 ---
 
@@ -931,8 +940,9 @@ X-Custom-Auth-Key: <api_key>
   - 授权：需要管理员令牌或有文件权限的 API 密钥
   - 查询参数：
     - `path` - 要列出内容的目录路径，默认为根目录("/")
+    - `path_token` - 路径密码验证令牌（可选；等价请求头 `X-FS-Path-Token`）
   - 请求头（可选）：
-    - `X-FS-Path-Token` - 路径密码验证令牌（访问受密码保护的目录时需要）
+    - `X-FS-Path-Token` - 路径密码验证令牌（访问受密码保护的目录时需要；也可用 `path_token` 传递）
   - 响应：目录内容列表，包含文件和子目录信息
 
 ### 文件操作
@@ -944,27 +954,56 @@ X-Custom-Auth-Key: <api_key>
   - 授权：需要管理员令牌或有文件权限的 API 密钥
   - 查询参数：
     - `path` - 文件路径
-  - 响应：文件详细信息
+    - `path_token` - 路径密码验证令牌（可选；等价请求头 `X-FS-Path-Token`）
+  - 请求头（可选）：
+    - `X-FS-Path-Token` - 路径密码验证令牌（访问受密码保护的目录时需要；也可用 `path_token` 传递）
+  - 响应：文件详细信息 + 语义明确的 `previewUrl`/`downloadUrl`/`linkType`/`documentPreview` 字段
 
 #### 下载文件
 
 - `GET /api/fs/download`
-  - 描述：下载文件（强制下载）
+  - 描述：下载文件（attachment 语义，优先外部入口）
   - 授权：需要管理员令牌或有文件权限的 API 密钥
   - 查询参数：
     - `path` - 文件路径
-  - 响应：文件内容（下载），包含 Content-Disposition: attachment 头
+    - `path_token` - 路径密码验证令牌（可选；等价请求头 `X-FS-Path-Token`）
+  - 请求头（可选）：
+    - `X-FS-Path-Token` - 路径密码验证令牌（访问受密码保护的目录时需要；也可用 `path_token` 传递）
+  - 响应：
+    - 若可生成外部下载入口（直链 / url_proxy / 本地代理），返回 `302` 重定向到该 URL
+    - 否则回退为同源 `200` 流式下载（支持 Range）
+
+#### 获取文件内容（同源代理）
+
+- `GET /api/fs/content`
+  - 描述：同源返回 FS 文件原始内容（预览/文本编码检测专用，后端代理）
+  - 授权：需要管理员令牌或有文件权限的 API 密钥
+  - 查询参数：
+    - `path` - 文件路径（必填）
+    - `path_token` - 路径密码验证令牌（可选；等价请求头 `X-FS-Path-Token`）
+  - 请求头（可选）：
+    - `X-FS-Path-Token` - 路径密码验证令牌（访问受密码保护的目录时需要；也可用 `path_token` 传递）
+  - 响应：同源 `200` 文件内容流（预览语义），支持 Range；不做 `302` 外跳
 
 #### 获取文件直链
 
 - `GET /api/fs/file-link`
-  - 描述：获取文件直链(预签名 URL)
+  - 描述：获取文件外部访问链接（直链 / url_proxy / 代理入口）
   - 授权：需要管理员令牌或有文件权限的 API 密钥
   - 查询参数：
     - `path` - 文件路径（必填）
     - `expires_in` - 链接有效期（秒），默认为 604800（7 天）
     - `force_download` - 是否强制下载，true 或 false（默认 false）
-  - 响应：包含预签名 URL 的对象
+    - `path_token` - 路径密码验证令牌（可选；等价请求头 `X-FS-Path-Token`）
+  - 请求头（可选）：
+    - `X-FS-Path-Token` - 路径密码验证令牌（访问受密码保护的目录时需要；也可用 `path_token` 传递）
+  - 响应：
+    ```json
+    {
+      "url": "最终可访问 URL",
+      "linkType": "direct|url_proxy|proxy"
+    }
+    ```
 
 #### 创建目录
 
@@ -1545,5 +1584,3 @@ X-Custom-Auth-Key: <api_key>
 - 搜索结果会被缓存 5 分钟
 
 ---
-
-

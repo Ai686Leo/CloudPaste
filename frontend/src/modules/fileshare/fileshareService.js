@@ -4,6 +4,7 @@ import {
   getSharedFileBySlug,
   buildDownloadUrl as gatewayBuildDownloadUrl,
   buildPreviewUrl as gatewayBuildPreviewUrl,
+  buildContentUrl as gatewayBuildContentUrl,
   getOfficePreviewUrl as gatewayGetOfficePreviewUrl,
 } from "@/api/services/fileGateway.js";
 import {
@@ -42,11 +43,11 @@ export function useFileshareService() {
    * @param {number|string} id
    * @returns {Promise<FileshareItem>}
    */
-  const fetchById = async (id) => {
+  const fetchById = async (id, options = {}) => {
     if (!id) {
       throw new Error("缺少文件 ID");
     }
-    return /** @type {FileshareItem} */ (await getSharedFileById(id));
+    return /** @type {FileshareItem} */ (await getSharedFileById(id, options));
   };
 
   /**
@@ -79,6 +80,17 @@ export function useFileshareService() {
   const getPermanentPreviewUrl = (file) => {
     if (!file || !file.slug) return "";
     return gatewayBuildPreviewUrl(file);
+  };
+
+  /**
+   * 获取用于“内容访问”的 URL（文本类预览使用）
+   * - 始终通过 share 内容路由 /api/share/content/:slug 访问
+   * @param {FileshareItem} file
+   * @returns {string}
+   */
+  const getPermanentContentUrl = (file) => {
+    if (!file || !file.slug) return "";
+    return gatewayBuildContentUrl(file);
   };
 
   /**
@@ -185,6 +197,7 @@ export function useFileshareService() {
     fetchBySlug,
     getPermanentDownloadUrl,
     getPermanentPreviewUrl,
+    getPermanentContentUrl,
     getOfficePreviewUrl,
     buildShareUrl,
     updateFileMetadata,

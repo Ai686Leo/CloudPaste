@@ -11,6 +11,13 @@ DROP TABLE IF EXISTS admins;
 DROP TABLE IF EXISTS pastes;
 DROP TABLE IF EXISTS file_passwords;
 DROP TABLE IF EXISTS paste_passwords;
+DROP TABLE IF EXISTS tasks;
+DROP TABLE IF EXISTS fs_meta;
+DROP TABLE IF EXISTS storage_mounts;
+DROP TABLE IF EXISTS system_settings;
+DROP TABLE IF EXISTS scheduled_jobs;
+DROP TABLE IF EXISTS upload_sessions;
+DROP TABLE IF EXISTS scheduled_job_runs;
 
 -- 创建pastes表 - 存储文本分享数据
 CREATE TABLE pastes (
@@ -309,12 +316,62 @@ CREATE TABLE tasks (
   started_at INTEGER,
   updated_at INTEGER NOT NULL,
   finished_at INTEGER
-)
+);
 
-CREATE INDEX IF NOT EXISTS idx_tasks_status_created ON ${DbTables.TASKS} (status, created_at DESC)
-CREATE INDEX IF NOT EXISTS idx_tasks_type_status ON ${DbTables.TASKS} (task_type, status)
-CREATE INDEX IF NOT EXISTS idx_tasks_user ON ${DbTables.TASKS} (user_id, created_at DESC)
-CREATE INDEX IF NOT EXISTS idx_tasks_workflow ON ${DbTables.TASKS} (workflow_instance_id) WHERE workflow_instance_id IS NOT NULL
+CREATE INDEX IF NOT EXISTS idx_tasks_status_created ON tasks (status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tasks_type_status ON tasks (task_type, status);
+CREATE INDEX IF NOT EXISTS idx_tasks_user ON tasks (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tasks_workflow ON tasks (workflow_instance_id) WHERE workflow_instance_id IS NOT NULL;
+
+CREATE TABLE scheduled_jobs (
+  task_id              TEXT PRIMARY KEY,              -- 作业唯一标识（job ID），例如 'cleanup_upload_sessions_default'
+  handler_id           TEXT,                          -- 任务类型ID（Handler ID），例如 'cleanup_upload_sessions'
+  name                 TEXT,                          -- 作业名称（展示用，可自定义）
+  description          TEXT,                          -- 作业描述/备注
+  enabled              INTEGER NOT NULL,              -- 1=启用, 0=禁用
+
+  schedule_type        TEXT NOT NULL DEFAULT 'interval', -- 调度类型：interval | cron
+  interval_sec         INTEGER,                       -- interval 模式下的执行间隔(秒)
+  cron_expression      TEXT,                          -- cron 模式下的表达式，例如 \"0 2 * * *\"
+
+  run_count            INTEGER NOT NULL DEFAULT 0,    -- 累计执行次数（成功/失败均计入）
+  failure_count        INTEGER NOT NULL DEFAULT 0,    -- 累计失败次数
+
+  last_run_status      TEXT,                          -- 最近一次执行状态：success/failure/skipped
+  last_run_started_at  DATETIME,                      -- 最近一次执行开始时间
+  last_run_finished_at DATETIME,                      -- 最近一次执行结束时间
+
+  next_run_after       DATETIME,                      -- 最早允许再次执行的时间
+  lock_until           DATETIME,                      -- 锁过期时间，用于多实例互斥
+
+  config_json          TEXT NOT NULL DEFAULT '{}',
+  created_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_scheduled_jobs_next_run ON scheduled_jobs (enabled, next_run_after);
+
+-- 后台调度作业运行日志表：记录每次执行结果
+CREATE TABLE scheduled_job_runs (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id       TEXT NOT NULL,                  -- 对应 scheduled_jobs.task_id
+  status        TEXT NOT NULL,                  -- 'success' | 'failure' | 'skipped'
+  trigger_type  TEXT NOT NULL DEFAULT 'auto',   -- 触发类型：'auto' | 'manual'
+
+  scheduled_at  DATETIME,                       -- 计划执行时间（可选）
+  started_at    DATETIME NOT NULL,              -- 本次执行开始时间
+  finished_at   DATETIME,                       -- 本次执行结束时间
+  duration_ms   INTEGER,                        -- 执行耗时(毫秒)
+
+  summary       TEXT,                           -- 简要摘要，如影响行数等
+  error_message TEXT,                           -- 失败时的错误信息
+  details_json  TEXT,                           -- 可选的结构化详情(JSON)
+
+  created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_scheduled_job_runs_task_started
+  ON scheduled_job_runs (task_id, started_at DESC);
 
 
 -- 创建初始管理员账户

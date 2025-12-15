@@ -191,23 +191,23 @@ export function useGalleryView() {
     imageStates.value.set(imagePath, { status: "loading", url: null });
 
     try {
-      // 使用 FS service 获取文件信息，包含 Link JSON（rawUrl），并自动附带路径密码 token
+      // 使用 FS service 获取文件信息，包含 Link JSON（previewUrl），并自动附带路径密码 token
       const fileInfo = await fsService.getFileInfo(imagePath);
 
-      if (fileInfo?.rawUrl) {
+      if (fileInfo?.previewUrl) {
         // 设置加载完成状态
         imageStates.value.set(imagePath, {
           status: "loaded",
-          url: fileInfo.rawUrl,
+          url: fileInfo.previewUrl,
         });
         console.log(`✅ 懒加载完成: ${image.name}`);
 
         // 🔍 检测图片是否会走Service Worker缓存
-        checkImageCacheStatus(fileInfo.rawUrl, image.name);
+        checkImageCacheStatus(fileInfo.previewUrl, image.name);
       } else {
         // 设置错误状态
         imageStates.value.set(imagePath, { status: "error", url: null });
-        console.error(`❌ 获取到的文件信息缺少 rawUrl: ${image.name}`, fileInfo);
+        console.error(`❌ 获取到的文件信息缺少 previewUrl: ${image.name}`, fileInfo);
       }
     } catch (error) {
       console.error(`获取图片预览URL失败: ${image.name}`, error);

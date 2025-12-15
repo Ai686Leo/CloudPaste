@@ -20,6 +20,9 @@ export const DbTables: {
   readonly STORAGE_MOUNTS: "storage_mounts";
   readonly FS_META: "fs_meta";
   readonly TASKS: "tasks";
+  readonly SCHEDULED_JOBS: "scheduled_jobs";
+  readonly SCHEDULED_JOB_RUNS: "scheduled_job_runs";
+  readonly UPLOAD_SESSIONS: "upload_sessions";
 };
 
 /**

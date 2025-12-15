@@ -56,6 +56,17 @@ const STORAGE_TYPE_SCHEMA = {
       preview: "proxy",
     },
   },
+  GOOGLE_DRIVE: {
+    type: "GOOGLE_DRIVE",
+    label: "Google Drive 存储",
+    description: "基于 Google Drive API 的云存储，支持 sharedWithMe 视图与单会话分片上传",
+    capabilities: {
+      multipart: true,
+      presigned: false,
+      requiresProxy: true,
+      preview: "proxy",
+    },
+  },
   UNKNOWN: {
     type: "UNKNOWN",
     label: "未指定类型",

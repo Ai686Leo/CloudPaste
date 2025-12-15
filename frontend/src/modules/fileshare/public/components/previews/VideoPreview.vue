@@ -40,6 +40,10 @@ const props = defineProps({
     type: String,
     required: true,
   },
+  linkType: {
+    type: String,
+    default: null,
+  },
   mimetype: {
     type: String,
     required: true,
@@ -181,6 +185,7 @@ const initializeCurrentVideo = async () => {
     name: props.filename || "视频文件",
     title: props.filename || "视频预览",
     url: props.previewUrl,
+    linkType: props.linkType || null,
     poster: generateDefaultPoster(props.filename),
     contentType: props.mimetype,
     mimetype: props.mimetype,

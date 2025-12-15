@@ -94,7 +94,7 @@ export class OneDriveAuthManager {
       let tokenResponse;
 
       // 分支策略：
-      // - 当显式启用 useOnlineApi 且配置了 tokenRenewEndpoint 时，走外部 Online API 续期端点（与 OpenList 行为保持一致）
+      // - 当显式启用 useOnlineApi 且配置了 tokenRenewEndpoint 时，走外部 Online API 续期端点
       // - 其他情况一律走微软官方 OAuth 端点（即便仍然配置了 tokenRenewEndpoint，也不使用）
       if (this.useOnlineApi && this.tokenRenewEndpoint) {
         // 使用外部 token 续期端点（Online API 协议）

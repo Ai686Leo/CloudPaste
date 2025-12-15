@@ -36,10 +36,6 @@ export function useFileManagement(userType = "admin", { confirmFn } = {}) {
   // 删除设置store
   const deleteSettingsStore = useDeleteSettingsStore();
 
-  // 复制状态跟踪
-  const copiedFiles = reactive({});
-  const copiedPermanentFiles = reactive({});
-
   // 用户类型判断
   const isAdmin = () => userType === "admin";
   const isApiKeyUser = () => userType === "apikey";
@@ -157,7 +153,7 @@ export function useFileManagement(userType = "admin", { confirmFn } = {}) {
    */
   const openEditModal = async (file) => {
     try {
-      const detail = await fileShareStore.fetchById(file.id, { useCache: true });
+      const detail = await fileShareStore.fetchById(file.id, { useCache: false });
       editingFile.value = detail;
       showEdit.value = true;
     } catch (err) {
@@ -189,7 +185,7 @@ export function useFileManagement(userType = "admin", { confirmFn } = {}) {
    */
   const openPreviewModal = async (file) => {
     try {
-      const detail = await fileShareStore.fetchById(file.id, { useCache: true });
+      const detail = await fileShareStore.fetchById(file.id, { useCache: false, includeLinks: true });
       previewFile.value = detail;
       showPreview.value = true;
     } catch (err) {
@@ -234,18 +230,27 @@ export function useFileManagement(userType = "admin", { confirmFn } = {}) {
     try {
       const fileUrl = fileshareService.buildShareUrl(file, window.location.origin);
 
-      await copyToClipboard(fileUrl);
-
-      // 设置复制状态
-      copiedFiles[file.id] = true;
-      setTimeout(() => {
-        copiedFiles[file.id] = false;
-      }, 2000);
+      const ok = await copyToClipboard(fileUrl);
+      if (ok) {
+        base.showSuccess("分享链接已复制");
+      }
     } catch (err) {
       console.error("复制链接失败:", err);
       // 只在失败时显示错误提示，成功时不显示顶部提示
       base.showError("复制链接失败，请手动复制");
     }
+  };
+
+  /**
+   * 确保文件对象包含 previewUrl/downloadUrl（必要时按需拉取 include=links）
+   * @param {any} file
+   * @returns {Promise<any>}
+   */
+  const ensureLinks = async (file) => {
+    if (!file || !file.id) return file;
+    if (file.previewUrl || file.downloadUrl) return file;
+    const detail = await fileShareStore.fetchById(file.id, { useCache: true, includeLinks: true });
+    return detail || file;
   };
 
   /**
@@ -258,17 +263,15 @@ export function useFileManagement(userType = "admin", { confirmFn } = {}) {
     }
 
     try {
+      const detail = await ensureLinks(file);
       // 使用统一的 Down 路由构造永久下载链接
-      const permanentDownloadUrl = fileshareService.getPermanentDownloadUrl(file);
+      const permanentDownloadUrl = fileshareService.getPermanentDownloadUrl(detail);
       if (!permanentDownloadUrl) {
         throw new Error("无法获取文件的下载链接");
       }
 
       await copyToClipboard(permanentDownloadUrl);
-      copiedPermanentFiles[file.id] = true;
-      setTimeout(() => {
-        copiedPermanentFiles[file.id] = false;
-      }, 2000);
+      base.showSuccess("下载直链已复制");
     } catch (err) {
       console.error("复制永久链接失败:", err);
       base.showError(err.message || "复制永久链接失败，请稍后重试");
@@ -300,16 +303,17 @@ export function useFileManagement(userType = "admin", { confirmFn } = {}) {
     }
 
     try {
+      const detail = await ensureLinks(file);
       // 检查是否为Office文件
       const { FileType } = await import("@/utils/fileTypes.js");
-      if (file.type === FileType.OFFICE) {
+      if (detail.type === FileType.OFFICE) {
         console.log("检测到Office文件，使用专用预览", {
-          filename: file.filename,
-          mimetype: file.mimetype,
+          filename: detail.filename,
+          mimetype: detail.mimetype,
         });
 
         // 获取Office预览URL
-        const officePreviewUrl = await getOfficePreviewUrl(file);
+        const officePreviewUrl = await getOfficePreviewUrl(detail);
         if (officePreviewUrl) {
           window.open(officePreviewUrl, "_blank");
         }
@@ -317,7 +321,10 @@ export function useFileManagement(userType = "admin", { confirmFn } = {}) {
       }
 
       // 非Office文件使用普通预览方式
-      const previewUrl = getPermanentViewUrl(file);
+      const previewUrl = getPermanentViewUrl(detail);
+      if (!previewUrl) {
+        throw new Error("无法获取文件的预览链接");
+      }
       window.open(previewUrl, "_blank");
     } catch (err) {
       console.error("预览文件失败:", err);
@@ -328,7 +335,7 @@ export function useFileManagement(userType = "admin", { confirmFn } = {}) {
   /**
    * 下载文件
    */
-  const downloadFileDirectly = (file) => {
+  const downloadFileDirectly = async (file) => {
     try {
       // 检查是否有永久下载链接
       if (!file.slug) {
@@ -336,12 +343,18 @@ export function useFileManagement(userType = "admin", { confirmFn } = {}) {
         return;
       }
 
+      const detail = await ensureLinks(file);
+
       // 提取文件名，用于下载时的文件命名
-      const fileName = file.filename || "下载文件";
+      const fileName = detail.filename || "下载文件";
 
       // 创建一个隐藏的a标签
       const link = document.createElement("a");
-      link.href = getPermanentDownloadUrl(file);
+      const downloadUrl = getPermanentDownloadUrl(detail);
+      if (!downloadUrl) {
+        throw new Error("无法获取文件的下载链接");
+      }
+      link.href = downloadUrl;
       link.download = fileName; // 设置下载文件名
       link.setAttribute("target", "_blank"); // 在新窗口打开
       document.body.appendChild(link);
@@ -357,7 +370,12 @@ export function useFileManagement(userType = "admin", { confirmFn } = {}) {
       console.error("下载文件失败:", err);
       // 如果直接下载失败，尝试在新窗口打开下载链接
       if (file.slug) {
-        window.open(getPermanentDownloadUrl(file), "_blank");
+        try {
+          const detail = await ensureLinks(file);
+          window.open(getPermanentDownloadUrl(detail), "_blank");
+        } catch {
+          window.open(getPermanentDownloadUrl(file), "_blank");
+        }
       } else {
         window.open(file.publicUrl || "", "_blank");
       }
@@ -433,8 +451,6 @@ export function useFileManagement(userType = "admin", { confirmFn } = {}) {
     showQRCodeModal,
     qrCodeDataURL,
     qrCodeSlug,
-    copiedFiles,
-    copiedPermanentFiles,
 
     // 文件管理方法
     loadFiles,

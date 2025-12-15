@@ -39,6 +39,10 @@ const BADGE_THEME_CLASS = {
     light: "bg-sky-100 text-sky-800",
     dark: "bg-sky-700 text-sky-100",
   },
+  googledrive: {
+    light: "bg-red-100 text-red-800",
+    dark: "bg-red-700 text-red-100",
+  },
   local: {
     light: "bg-gray-100 text-gray-800",
     dark: "bg-gray-700 text-gray-100",
@@ -63,6 +67,8 @@ function resolveBadgeTheme(type) {
       return "webdav";
     case "ONEDRIVE":
       return "onedrive";
+    case "GOOGLE_DRIVE":
+      return "googledrive";
     case "LOCAL":
       return "local";
     default:

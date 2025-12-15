@@ -11,6 +11,7 @@ import { ApiStatus, DbTables, UserType } from "../constants/index.js";
 import { ValidationError, NotFoundError, AuthorizationError, ConflictError } from "../http/errors.js";
 import { ensureRepositoryFactory } from "../utils/repositories.js";
 import { ObjectStore } from "../storage/object/ObjectStore.js";
+import { LinkService } from "../storage/link/LinkService.js";
 import { resolveDocumentPreview } from "./documentPreviewService.js";
 
 export class FileService {
@@ -141,9 +142,9 @@ export class FileService {
 
   /**
    * 获取文件的公开信息（分享视图 JSON）
-   * - 统一返回 Link JSON 结构，供前端 fileshare 视图消费
-   * - rawUrl 与 FS 一致，始终代表“最终 URL”（直链或 share 维度的代理 URL）
-   * - 当具备直链能力且 use_proxy = 0 时直接返回存储直链；否则使用 `/api/s/:slug?mode=inline`
+   * - 统一返回语义明确的 previewUrl / downloadUrl
+   * - previewUrl：inline 语义入口（直链 / url_proxy / 本地 /api/s）
+   * - downloadUrl：attachment 语义入口（直链下载 / url_proxy 下载 / 本地 /api/s?down=true）
    * @param {Object} file - 文件对象
    * @param {boolean} requiresPassword - 是否需要密码
    * @param {import("../storage/link/LinkTypes.js").StorageLink|null} link - 由 LinkService 生成的 StorageLink
@@ -160,35 +161,40 @@ export class FileService {
 
     const baseOrigin = options.baseOrigin || null;
 
-    // LinkService 已经根据 use_proxy / url_proxy / 直链能力生成了最终 URL，这里只做轻量封装：
-    let rawUrl = link && link.url ? link.url : null;
-    let linkType = "proxy";
+    // LinkService 已经根据 use_proxy / url_proxy / 直链能力生成了预览入口（link）
+    const previewLink = link;
+    let previewUrl = previewLink && previewLink.url ? previewLink.url : null;
 
-    // 补全 linkType 语义，方便前端区分“本地代理”“外部 Proxy/Worker 入口”和“直链”
+    // 下载入口
+    const linkService = new LinkService(this.db, this.encryptionSecret, this.repositoryFactory);
+    const downloadLink = await linkService.getShareExternalLink(file, null, { forceDownload: true });
+    let downloadUrl = downloadLink && downloadLink.url ? downloadLink.url : null;
+
+    let linkType = "proxy";
     if (useProxyFlag) {
       linkType = "proxy";
-    } else if (storageUrlProxy && rawUrl) {
-      // 配置了 url_proxy 且存在可用 URL：视为外部 Proxy/Worker 入口
+    } else if (storageUrlProxy && previewUrl) {
       linkType = "url_proxy";
-    } else if (link && link.kind === "direct" && rawUrl) {
+    } else if (previewLink && previewLink.kind === "direct" && previewUrl) {
       linkType = "direct";
-    } else if (rawUrl) {
-      // 其余非空 URL 默认视为 proxy 链路
+    } else if (previewUrl) {
       linkType = "proxy";
     } else {
-      // 没有任何 URL 时按“直链不可用”处理，方便前端渲染“不支持直链/预览”
       linkType = "direct";
     }
 
-    // 若提供了 baseOrigin，则仅对本地相对路径（/api/s/...）补全为绝对 URL；
-    // 对 Worker/直链等已为绝对 URL 的场景不做修改。
-    if (rawUrl && baseOrigin && rawUrl.startsWith("/")) {
-      rawUrl = `${baseOrigin}${rawUrl}`;
+    // 若提供了 baseOrigin，则仅对本地相对路径补全为绝对 URL
+    if (previewUrl && baseOrigin && previewUrl.startsWith("/")) {
+      previewUrl = `${baseOrigin}${previewUrl}`;
+    }
+    if (downloadUrl && baseOrigin && downloadUrl.startsWith("/")) {
+      downloadUrl = `${baseOrigin}${downloadUrl}`;
     }
 
-    // 对于受密码保护且尚未通过校验的场景，不应在 JSON 中暴露任何可直接访问的 URL
+    // 受密码保护且未校验通过：不在 JSON 中暴露任何可直接访问的 URL
     if (requiresPassword) {
-      rawUrl = null;
+      previewUrl = null;
+      downloadUrl = null;
     }
 
     // 基于文件信息和 Link JSON 生成 DocumentPreviewResult（仅用于文档/Office 预览）
@@ -201,7 +207,7 @@ export class FileService {
         size: file.size,
       },
       {
-        rawUrl,
+        previewUrl,
         linkType,
         use_proxy: useProxyFlag,
       },
@@ -219,7 +225,8 @@ export class FileService {
       views: file.views,
       max_views: file.max_views,
       expires_at: file.expires_at,
-      rawUrl,
+      previewUrl,
+      downloadUrl,
       linkType,
       use_proxy: useProxyFlag,
       created_by: file.created_by || null,
@@ -461,20 +468,24 @@ export class FileService {
    * @param {Object} request - 请求对象
    * @returns {Promise<Object>} 文件详情
    */
-  async getAdminFileDetail(fileId, encryptionSecret, request = null) {
-    // 获取文件详情
+  async getAdminFileDetail(fileId, encryptionSecret, request = null, options = {}) {
+    const { includeLinks = false } = options || {};
+
     const file = await this.fileRepository.findByIdWithStorageConfig(fileId);
     if (!file) {
       throw new NotFoundError("文件不存在");
     }
 
-    // 构建响应
+    const fileType = await GetFileType(file.filename, this.db);
+    const fileTypeName = await getFileTypeName(file.filename, this.db);
+
     const result = {
       ...file,
-      has_password: file.password ? true : false,
+      has_password: !!file.password,
+      type: fileType,
+      typeName: fileTypeName,
     };
 
-    // 如果文件有密码保护，获取明文密码
     if (file.password) {
       const passwordInfo = await this.fileRepository.getFilePassword(file.id);
       if (passwordInfo && passwordInfo.plain_password) {
@@ -482,7 +493,6 @@ export class FileService {
       }
     }
 
-    // 处理API密钥名称
     if (result.created_by && result.created_by.startsWith("apikey:")) {
       const keyId = result.created_by.substring(7);
       const keyInfo = await this.getApiKeyInfo(keyId);
@@ -490,6 +500,96 @@ export class FileService {
         result.key_name = keyInfo.name;
       }
     }
+
+    if (!includeLinks) {
+      return result;
+    }
+
+    const linkService = new LinkService(this.db, encryptionSecret, this.repositoryFactory);
+    const previewLink = await linkService.getShareExternalLink(file, null, {
+      forceDownload: false,
+      request,
+    });
+    const downloadLink = await linkService.getShareExternalLink(file, null, {
+      forceDownload: true,
+      request,
+    });
+
+    let previewUrl = previewLink && previewLink.url ? previewLink.url : null;
+    let downloadUrl = downloadLink && downloadLink.url ? downloadLink.url : null;
+
+    // 管理端 include=links 场景：若存储无直链/无 url_proxy 导致外部入口为空，
+    // 为保证文件管理可预览/可下载，回退为本地 share 代理链路。
+    let usedFallback = false;
+    if (file.slug) {
+      if (!previewUrl) {
+        previewUrl = `/api/s/${file.slug}`;
+        usedFallback = true;
+      }
+      if (!downloadUrl) {
+        downloadUrl = `/api/s/${file.slug}?down=true`;
+        usedFallback = true;
+      }
+    }
+
+    const useProxyFlag = file.use_proxy ?? 0;
+    const storageUrlProxy = file.url_proxy || null;
+
+    let linkType = "proxy";
+    if (useProxyFlag) {
+      linkType = "proxy";
+    } else if (storageUrlProxy && previewUrl) {
+      linkType = "url_proxy";
+    } else if (previewLink && previewLink.kind === "direct" && previewUrl) {
+      linkType = "direct";
+    } else if (previewUrl) {
+      linkType = "proxy";
+    } else {
+      linkType = "direct";
+    }
+
+    if (usedFallback) {
+      linkType = "proxy";
+    }
+
+    if (usedFallback) {
+      linkType = "proxy";
+    }
+
+    if (request) {
+      try {
+        const base = new URL(request.url);
+        const origin = `${base.protocol}//${base.host}`;
+        if (previewUrl && previewUrl.startsWith("/")) {
+          previewUrl = new URL(previewUrl, origin).toString();
+        }
+        if (downloadUrl && downloadUrl.startsWith("/")) {
+          downloadUrl = new URL(downloadUrl, origin).toString();
+        }
+      } catch (e) {
+        console.warn("构建文件详情绝对 URL 失败，将返回原始链接：", e?.message || e);
+      }
+    }
+
+    const documentPreview = await resolveDocumentPreview(
+      {
+        type: fileType,
+        typeName: fileTypeName,
+        mimetype: file.mimetype,
+        filename: file.filename,
+        size: file.size,
+      },
+      {
+        previewUrl,
+        linkType,
+        use_proxy: useProxyFlag,
+      },
+    );
+
+    result.previewUrl = previewUrl;
+    result.downloadUrl = downloadUrl;
+    result.linkType = linkType;
+    result.documentPreview = documentPreview;
 
     return result;
   }
@@ -623,31 +723,120 @@ export class FileService {
    * @param {Object} request - 请求对象
    * @returns {Promise<Object>} 文件详情
    */
-  async getUserFileDetail(fileId, apiKeyId, encryptionSecret, request = null) {
-    // 获取文件详情
+  async getUserFileDetail(fileId, apiKeyId, encryptionSecret, request = null, options = {}) {
+    const { includeLinks = false } = options || {};
+
     const file = await this.fileRepository.findByIdWithStorageConfig(fileId);
     if (!file) {
       throw new NotFoundError("文件不存在");
     }
 
-    // 检查权限：确保文件属于该API密钥用户
     if (file.created_by !== `apikey:${apiKeyId}`) {
       throw new AuthorizationError("没有权限查看此文件");
     }
 
-    // 构建响应
+    const fileType = await GetFileType(file.filename, this.db);
+    const fileTypeName = await getFileTypeName(file.filename, this.db);
+
     const result = {
       ...file,
-      has_password: file.password ? true : false,
+      has_password: !!file.password,
+      type: fileType,
+      typeName: fileTypeName,
     };
 
-    // 如果文件有密码保护，获取明文密码
     if (file.password) {
       const passwordInfo = await this.fileRepository.getFilePassword(file.id);
       if (passwordInfo && passwordInfo.plain_password) {
         result.plain_password = passwordInfo.plain_password;
       }
     }
+
+    if (!includeLinks) {
+      return result;
+    }
+
+    const linkService = new LinkService(this.db, encryptionSecret, this.repositoryFactory);
+    const previewLink = await linkService.getShareExternalLink(file, null, {
+      forceDownload: false,
+      request,
+    });
+    const downloadLink = await linkService.getShareExternalLink(file, null, {
+      forceDownload: true,
+      request,
+    });
+
+    let previewUrl = previewLink && previewLink.url ? previewLink.url : null;
+    let downloadUrl = downloadLink && downloadLink.url ? downloadLink.url : null;
+
+    // include=links 场景：若存储无直链/无 url_proxy 能力导致入口为空，回退本地 share 代理链路
+    // 该回退仅用于受控的文件管理视图，确保 API Key 用户也能预览/下载自己的文件
+    let usedFallback = false;
+    if (file.slug) {
+      if (!previewUrl) {
+        previewUrl = `/api/s/${file.slug}`;
+        usedFallback = true;
+      }
+      if (!downloadUrl) {
+        downloadUrl = `/api/s/${file.slug}?down=true`;
+        usedFallback = true;
+      }
+    }
+
+    const useProxyFlag = file.use_proxy ?? 0;
+    const storageUrlProxy = file.url_proxy || null;
+
+    let linkType = "proxy";
+    if (useProxyFlag) {
+      linkType = "proxy";
+    } else if (storageUrlProxy && previewUrl) {
+      linkType = "url_proxy";
+    } else if (previewLink && previewLink.kind === "direct" && previewUrl) {
+      linkType = "direct";
+    } else if (previewUrl) {
+      linkType = "proxy";
+    } else {
+      linkType = "direct";
+    }
+
+    if (usedFallback) {
+      linkType = "proxy";
+    }
+
+    if (request) {
+      try {
+        const base = new URL(request.url);
+        const origin = `${base.protocol}//${base.host}`;
+        if (previewUrl && previewUrl.startsWith("/")) {
+          previewUrl = new URL(previewUrl, origin).toString();
+        }
+        if (downloadUrl && downloadUrl.startsWith("/")) {
+          downloadUrl = new URL(downloadUrl, origin).toString();
+        }
+      } catch (e) {
+        console.warn("构建文件详情绝对 URL 失败，将返回原始链接：", e?.message || e);
+      }
+    }
+
+    const documentPreview = await resolveDocumentPreview(
+      {
+        type: fileType,
+        typeName: fileTypeName,
+        mimetype: file.mimetype,
+        filename: file.filename,
+        size: file.size,
+      },
+      {
+        previewUrl,
+        linkType,
+        use_proxy: useProxyFlag,
+      },
+    );
+
+    result.previewUrl = previewUrl;
+    result.downloadUrl = downloadUrl;
+    result.linkType = linkType;
+    result.documentPreview = documentPreview;
 
     return result;
   }
@@ -697,9 +886,9 @@ export async function getAdminFileList(db, options = {}) {
   return await fileService.getAdminFileList(options);
 }
 
-export async function getAdminFileDetail(db, fileId, encryptionSecret, request = null) {
+export async function getAdminFileDetail(db, fileId, encryptionSecret, request = null, options = {}) {
   const fileService = new FileService(db);
-  return await fileService.getAdminFileDetail(fileId, encryptionSecret, request);
+  return await fileService.getAdminFileDetail(fileId, encryptionSecret, request, options);
 }
 
 // 用户文件管理导出函数
@@ -708,9 +897,9 @@ export async function getUserFileList(db, apiKeyId, options = {}) {
   return await fileService.getUserFileList(apiKeyId, options);
 }
 
-export async function getUserFileDetail(db, fileId, apiKeyId, encryptionSecret, request = null) {
+export async function getUserFileDetail(db, fileId, apiKeyId, encryptionSecret, request = null, options = {}) {
   const fileService = new FileService(db);
-  return await fileService.getUserFileDetail(fileId, apiKeyId, encryptionSecret, request);
+  return await fileService.getUserFileDetail(fileId, apiKeyId, encryptionSecret, request, options);
 }
 
 // 文件更新导出函数

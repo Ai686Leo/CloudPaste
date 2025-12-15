@@ -117,7 +117,7 @@ export default {
       stream: "流式上传",
       form: "表单上传",
       multipart: "分片上传",
-      presignedOnly: "(仅S3)",
+      presignedOnly: "(仅直链)",
       presignedMode: "预签名模式",
       streamMode: "流式模式",
       formMode: "表单模式",

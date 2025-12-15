@@ -73,10 +73,10 @@ router.put("/api/upload-direct/:filename", requireFilesCreate, async (c) => {
     { ...shareParams, uploadId: uploadId || null }
   );
 
-  // 对齐 /api/public/files/:slug：统一返回公开文件信息（含 rawUrl/linkType/documentPreview），不再返回分享页 URL
+  // 对齐 /api/share/get/:slug：统一返回公开文件信息（含 previewUrl/downloadUrl/linkType/documentPreview），不再返回分享页 URL
   // upload-direct 属于受信任调用场景：
-  // - 即使设置了密码，这里也视为“已通过校验”，始终返回 rawUrl，方便调用方直接使用
-  // - 对于代理模式（share 内容路由），自动在 rawUrl 上附加 password 查询参数，生成一条可直接使用的代理链接
+  // - 即使设置了密码，这里也视为“已通过校验”，始终返回 preview/download 入口，方便调用方直接使用
+  // - 对于代理模式（share 内容路由），自动在预览/下载 URL 上附加 password 查询参数
   try {
     const file = await getFileBySlug(db, result.slug, encryptionSecret);
     const hasPassword = !!file.password;
@@ -92,20 +92,26 @@ router.put("/api/upload-direct/:filename", requireFilesCreate, async (c) => {
       { baseOrigin: requestUrl.origin },
     );
 
-    // 如果是代理模式且本次上传提供了密码，为 rawUrl 附加 password 查询参数
-    let rawUrl = publicInfo.rawUrl || null;
+    // 如果是代理模式且本次上传提供了密码，为预览/下载 URL 附加 password 查询参数
+    let previewUrl = publicInfo.previewUrl || null;
+    let downloadUrl = publicInfo.downloadUrl || null;
     const linkType = publicInfo.linkType || null;
     const password = shareParams.password || null;
-    if (rawUrl && password && (linkType === "proxy" || file.use_proxy)) {
-      if (!rawUrl.includes("password=")) {
-        const separator = rawUrl.includes("?") ? "&" : "?";
-        rawUrl = `${rawUrl}${separator}password=${encodeURIComponent(password)}`;
+    if (password && (linkType === "proxy" || file.use_proxy)) {
+      if (previewUrl && !previewUrl.includes("password=")) {
+        const separator = previewUrl.includes("?") ? "&" : "?";
+        previewUrl = `${previewUrl}${separator}password=${encodeURIComponent(password)}`;
+      }
+      if (downloadUrl && !downloadUrl.includes("password=")) {
+        const separator = downloadUrl.includes("?") ? "&" : "?";
+        downloadUrl = `${downloadUrl}${separator}password=${encodeURIComponent(password)}`;
       }
     }
 
     const response = {
       ...publicInfo,
-      rawUrl,
+      previewUrl,
+      downloadUrl,
       requires_password: hasPassword,
     };
 

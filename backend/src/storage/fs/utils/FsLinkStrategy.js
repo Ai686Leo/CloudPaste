@@ -46,6 +46,7 @@ export async function generateFileLink(fs, path, userIdOrInfo, userType, options
       db,
       userIdOrInfo,
       userType,
+      request,
       expiresIn: options.expiresIn,
       forceDownload,
     });

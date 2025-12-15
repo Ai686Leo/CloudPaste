@@ -18,6 +18,7 @@ import pastesRoutes from "./routes/pastesRoutes.js";
 import fileViewRoutes from "./routes/fileViewRoutes.js";
 import { fsProxyRoutes } from "./routes/fsProxyRoutes.js";
 import { proxyLinkRoutes } from "./routes/proxyLinkRoutes.js";
+import scheduledRoutes from "./routes/scheduledRoutes.js";
 import { securityContext } from "./security/middleware/securityContext.js";
 import { withRepositories } from "./utils/repositories.js";
 import { errorBoundary } from "./http/middlewares/errorBoundary.js";
@@ -137,6 +138,7 @@ app.use("*", async (c, next) => {
         "If-Modified-Since",
         "If-Unmodified-Since",
         "Lock-Token",
+        "Content-Range",
         "Content-Length",
         "X-Requested-With",
         // FS / Share 流式上传自定义头
@@ -191,6 +193,7 @@ app.route("/", fsRoutes);
 app.route("/", fsMetaRoutes);
 app.route("/", fsProxyRoutes);
 app.route("/", proxyLinkRoutes);
+app.route("/", scheduledRoutes);
 
 // 健康检查路由
 app.get("/api/health", (c) => {

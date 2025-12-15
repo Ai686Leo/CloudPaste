@@ -65,9 +65,10 @@
 
 ### 📤 文件上传与管理
 
-- **多存储支持**：兼容多种 S3(R2、B2等)/WebDav/本地存储(Docker) 等存储聚合服务
+- **多存储支持**：对象存储（S3 兼容：Cloudflare R2、Backblaze B2、AWS S3、阿里云 OSS、腾讯 COS 等）、WebDAV、本地文件系统、OneDrive、Google Drive、GitHub Releases（只读挂载）
 - **存储配置**：可视化界面配置多个存储空间，灵活切换默认存储源
-- **高效上传**：通过预签名 URL/分片断点续传 上传至S3存储，其余存储则流式上传
+- **挂载点**：将多个存储统一为文件系统路径，通过挂载浏览器按目录访问
+- **高效上传**：支持多种上传方式，包括前端预签名直传存储和分片断点续传的对接；其余走流式上传等多种选择
 - **实时反馈**：上传进度实时显示
 - **自定义限制**：单次上传限制和最大容量限制
 - **元数据管理**：文件备注、密码、过期时间、访问限制
@@ -86,20 +87,14 @@
 - **WebDAV 协议支持**：通过标准 WebDAV 协议访问和管理文件系统
 - **网络驱动器挂载**：支持 部分第三方客户端直接挂载
 - **灵活的挂载点**：支持创建多个挂载点，连接不同的存储服务
+- **本地代理**：可通过本地代理进行预览/下载走同源代理(cf部署即为cf代理)
+- **外部反代**：可将预览/下载数据面流量交给 `Cloudpaste-Proxy.js`（Worker/VPS/边缘运行时）转发
+- **缓存 TTL**：挂载点支持控制目录/元信息缓存，降低上游请求次数
 - **权限控制**：精细的挂载点访问权限管理
 - **API 密钥集成**：通过 API 密钥授权 WebDAV 访问
-- **多文件支持**：自动使用流式上传机制处理多文件
 - **目录操作**：完整支持目录创建、上传、删除、重命名等操作
 
 ### 🔐 轻量权限管理
-
-#### 管理员权限控制
-
-- **系统管理**：全局系统设置配置
-- **内容审核**：所有用户内容的管理
-- **存储管理**：S3 存储服务的添加、编辑与删除
-- **权限分配**：API 密钥的创建与权限管理
-- **数据分析**：完整的统计数据访问
 
 #### API 密钥权限控制
 
@@ -117,6 +112,7 @@
 - **视觉模式**：明亮/暗黑主题切换
 - **安全认证**：基于 JWT 的管理员认证系统
 - **离线体验**：PWA 支持，可离线使用和安装到桌面
+- **定时任务**：后台定时调度（Docker/Node 环境），支持 interval/cron 配置；内置清理分片上传会话、存储同步；
 
 ## 🚀 部署教程
 
@@ -128,10 +124,10 @@
 - [ ] 如使用 R2：开通 **Cloudflare R2** 服务并创建存储桶（需绑定支付方式）
 - [ ] 如使用 Vercel：注册 [Vercel](https://vercel.com) 账号
 - [ ] 其他 S3 存储服务的配置信息：
-   - `S3_ACCESS_KEY_ID`
-   - `S3_SECRET_ACCESS_KEY`
-   - `S3_BUCKET_NAME`
-   - `S3_ENDPOINT`
+    - `S3_ACCESS_KEY_ID`
+    - `S3_SECRET_ACCESS_KEY`
+    - `S3_BUCKET_NAME`
+    - `S3_ENDPOINT`
 
 **以下教程可能过时 具体参考： [Cloudpaste 在线部署文档](https://doc.cloudpaste.qzz.io)**
 
@@ -141,13 +137,13 @@
 ### 📑 目录
 
 - [Action 自动部署](#Action自动部署)
-   - [部署架构选择](#部署架构选择)
-   - [配置 GitHub 仓库](#配置-GitHub-仓库)
-   - [一体化部署教程（推荐）](#一体化部署教程推荐)
-   - [前后端分离部署教程](#前后端分离部署教程)
+    - [部署架构选择](#部署架构选择)
+    - [配置 GitHub 仓库](#配置-GitHub-仓库)
+    - [一体化部署教程（推荐）](#一体化部署教程推荐)
+    - [前后端分离部署教程](#前后端分离部署教程)
 - [手动部署](#手动部署)
-   - [一体化手动部署（推荐）](#一体化手动部署推荐)
-   - [前后端分离手动部署](#前后端分离手动部署)
+    - [一体化手动部署（推荐）](#一体化手动部署推荐)
+    - [前后端分离手动部署](#前后端分离手动部署)
 - [ClawCloud 部署 CloudPaste 教程](#ClawCloud部署CloudPaste教程)
 
 ---
@@ -206,8 +202,8 @@
 2. 点击 **Create Token**
 3. 选择 **Edit Cloudflare Workers** 模板
 4. **添加额外权限**：
-   - Account → **D1** → **Edit**
-   - Account → **Cloudflare Pages** → **Edit** (如使用分离部署)
+    - Account → **D1** → **Edit**
+    - Account → **Cloudflare Pages** → **Edit** (如使用分离部署)
 5. 点击 **Continue to summary** → **Create Token**
 6. **复制 Token** 并保存到 GitHub Secrets
 
@@ -229,8 +225,8 @@
 2. 点击 **Generate new token** → **Generate new token (classic)**
 3. 设置 Token 名称（如 `CloudPaste Deployment Control`）
 4. 选择权限：
-   - ✅ **repo** (完整仓库访问权限)
-   - ✅ **workflow** (工作流权限)
+    - ✅ **repo** (完整仓库访问权限)
+    - ✅ **workflow** (工作流权限)
 5. 点击 **Generate token**
 6. 复制 Token 并保存为 Secret `ACTIONS_VAR_TOKEN`
 
@@ -286,8 +282,8 @@
 
 1. 首次访问会自动初始化数据库
 2. 使用默认管理员账户登录：
-   - 用户名：`admin`
-   - 密码：`admin123`
+    - 用户名：`admin`
+    - 密码：`admin123`
 3. **⚠️ 重要：立即修改默认管理员密码！**
 4. 在管理员面板中配置您的 S3/WEBDAV 兼容存储服务
 5. （可选）在 Cloudflare Dashboard 中绑定自定义域名
@@ -358,9 +354,9 @@
 2. 导航到 **Pages** → **cloudpaste-frontend**
 3. 点击 **Settings** → **Environment variables**
 4. 添加环境变量：
-   - **名称**：`VITE_BACKEND_URL`
-   - **值**：您的后端 Worker URL（如 `https://cloudpaste-backend.your-account.workers.dev`）
-   - **注意**：末尾不带 `/`，建议使用自定义域名
+    - **名称**：`VITE_BACKEND_URL`
+    - **值**：您的后端 Worker URL（如 `https://cloudpaste-backend.your-account.workers.dev`）
+    - **注意**：末尾不带 `/`，建议使用自定义域名
 
 **<span style="color:red">⚠️ 必须填写完整的后端域名，格式：https://xxxx.com</span>**
 
@@ -395,8 +391,8 @@ Install Command（安装命令）: npm install
 ```
 
 3. 配置环境变量：
-   - 名称：`VITE_BACKEND_URL`
-   - 值：您的后端 Worker URL
+    - 名称：`VITE_BACKEND_URL`
+    - 值：您的后端 Worker URL
 4. 点击 **Deploy** 按钮进行部署
 
 **☝️ Cloudflare Pages 和 Vercel 二选一即可**
@@ -589,12 +585,12 @@ cd CloudPaste/backend
 
    **方法二**：通过 Cloudflare Dashboard
 
-   1. 登录 [Cloudflare Dashboard](https://dash.cloudflare.com/)
-   2. 选择 "Pages"
-   3. 点击 "Create a project" → "Direct Upload"
-   4. 上传 `dist` 目录内的文件
-   5. 设置项目名称（如 "cloudpaste-frontend"）
-   6. 点击 "Save and Deploy"
+    1. 登录 [Cloudflare Dashboard](https://dash.cloudflare.com/)
+    2. 选择 "Pages"
+    3. 点击 "Create a project" → "Direct Upload"
+    4. 上传 `dist` 目录内的文件
+    5. 设置项目名称（如 "cloudpaste-frontend"）
+    6. 点击 "Save and Deploy"
 
 #### Vercel
 
@@ -661,8 +657,8 @@ cd CloudPaste/backend
 ### 📑 目录
 
 - [Docker 命令行部署](#Docker命令行部署:)
-   - [后端 Docker 部署](#后端Docker部署)
-   - [前端 Docker 部署](#前端Docker部署)
+    - [后端 Docker 部署](#后端Docker部署)
+    - [前端 Docker 部署](#前端Docker部署)
 - [Docker Compose 一键部署](#Docker-Compose一键部署:)
 
 ---
@@ -1027,27 +1023,27 @@ b2-windows.exe bucket update <bucketName> allPrivate --cors-rules "[{\"corsRuleN
 
 5. **在 CloudPaste 中配置 MinIO**
 
-   - 登录 CloudPaste 管理界面
-   - 进入 "S3 存储配置" → "添加存储配置"
-   - 选择 "其他兼容 S3 服务" 作为提供商类型
-   - 填入以下信息：
-      - 名称：自定义名称
-      - 端点 URL：您的 MinIO 服务地址（如 `https://minio.example.com`）
-      - 存储桶名称：之前创建的存储桶名称
-      - 访问密钥 ID：您的 Access Key
-      - 访问密钥：您的 Secret Key
-      - 区域：可留空
-      - 路径风格访问：必须启用！！！！
-   - 点击 "测试连接" 确认配置正确
-   - 保存配置
+    - 登录 CloudPaste 管理界面
+    - 进入 "S3 存储配置" → "添加存储配置"
+    - 选择 "其他兼容 S3 服务" 作为提供商类型
+    - 填入以下信息：
+        - 名称：自定义名称
+        - 端点 URL：您的 MinIO 服务地址（如 `https://minio.example.com`）
+        - 存储桶名称：之前创建的存储桶名称
+        - 访问密钥 ID：您的 Access Key
+        - 访问密钥：您的 Secret Key
+        - 区域：可留空
+        - 路径风格访问：必须启用！！！！
+    - 点击 "测试连接" 确认配置正确
+    - 保存配置
 
 6. **注意与故障排查**
 
-   - **注意事项**：如使用 Cloudfare 开启 cdn 可能需要加上 proxy_set_header Accept-Encoding "identity"，同时存在缓存问题，最好仅用 DNS 解析
-   - **403 错误**：确保反向代理配置中包含 `proxy_cache off` 和 `proxy_buffering off`
-   - **预览问题**：确保 MinIO 服务器正确配置了 `MINIO_SERVER_URL` 和 `MINIO_BROWSER_REDIRECT_URL`
-   - **上传失败**：检查 CORS 配置是否正确，确保允许的源包含您的前端域名
-   - **控制台无法访问**：检查 WebSocket 配置是否正确，特别是 `Connection "upgrade"` 设置
+    - **注意事项**：如使用 Cloudfare 开启 cdn 可能需要加上 proxy_set_header Accept-Encoding "identity"，同时存在缓存问题，最好仅用 DNS 解析
+    - **403 错误**：确保反向代理配置中包含 `proxy_cache off` 和 `proxy_buffering off`
+    - **预览问题**：确保 MinIO 服务器正确配置了 `MINIO_SERVER_URL` 和 `MINIO_BROWSER_REDIRECT_URL`
+    - **上传失败**：检查 CORS 配置是否正确，确保允许的源包含您的前端域名
+    - **控制台无法访问**：检查 WebSocket 配置是否正确，特别是 `Connection "upgrade"` 设置
 
 ## 更多 S3 相关配置待续......
 
@@ -1064,10 +1060,10 @@ CloudPaste 提供简易的 WebDAV 协议支持，允许您将存储空间挂载�
 
 - **WebDAV 基础 URL**: `https://你的后端域名/dav`
 - **支持的认证方式**:
-   - Basic 认证（用户名+密码）
+    - Basic 认证（用户名+密码）
 - **支持的权限类型**:
-   - 管理员账户 - 拥有完整操作权限
-   - API 密钥 - 按需启用
+    - 管理员账户 - 拥有完整操作权限
+    - API 密钥 - 按需启用
 
 ### 权限配置
 
@@ -1086,8 +1082,8 @@ CloudPaste 提供简易的 WebDAV 协议支持，允许您将存储空间挂载�
 2. 导航至"API 密钥管理"
 3. 创建新 API 密钥，**确保启用"挂载权限"**
 4. 使用方式：
-   - **用户名**: API 密钥值
-   - **密码**: 与用户名相同的 API 密钥值
+    - **用户名**: API 密钥值
+    - **密码**: 与用户名相同的 API 密钥值
 
 ### NGINX 反向代理配置
 
@@ -1127,20 +1123,20 @@ location /dav {
 
 1. **连接问题**:
 
-   - 确认 WebDAV URL 格式正确
-   - 验证认证凭据是否有效
-   - 检查 API 密钥是否具有挂载权限
+    - 确认 WebDAV URL 格式正确
+    - 验证认证凭据是否有效
+    - 检查 API 密钥是否具有挂载权限
 
 2. **权限错误**:
 
-   - 确认账户具有所需的权限
-   - 管理员账户应有完整权限
-   - API 密钥需特别启用挂载权限
+    - 确认账户具有所需的权限
+    - 管理员账户应有完整权限
+    - API 密钥需特别启用挂载权限
 
 3. **⚠️⚠️ Webdav 上传问题**:
 
-   - Worker 部署的 webdav 上传大小可能受限于 CF 的 CDN 限制 100MB 左右，导致报错 413
-   - 对于 Docker 部署，只需注意 nginx 代理配置，上传模式任意。
+    - Worker 部署的 webdav 上传大小可能受限于 CF 的 CDN 限制 100MB 左右，导致报错 413
+    - 对于 Docker 部署，只需注意 nginx 代理配置，上传模式任意。
 
 </details>
 
@@ -1198,8 +1194,8 @@ location /dav {
 
 4. **配置环境变量**
 
-   - 在 `backend` 目录下，创建 `wrangler.toml` 文件设置开发环境变量
-   - 在 `frontend` 目录下，配置 `.env.development` 文件设置前端环境变量
+    - 在 `backend` 目录下，创建 `wrangler.toml` 文件设置开发环境变量
+    - 在 `frontend` 目录下，配置 `.env.development` 文件设置前端环境变量
 
 5. **启动开发服务器**
 
@@ -1355,9 +1351,9 @@ Apache License 2.0
 
   <a href="https://afdian.com/a/drag0n"><img width="200" src="https://pic1.afdiancdn.com/static/img/welcome/button-sponsorme.png" alt=""></a>
 
-   - **赞助者**：非常感谢以下赞助者对本项目的支持！！
+    - **赞助者**：非常感谢以下赞助者对本项目的支持！！
 
-     [![赞助者](https://afdian.730888.xyz/image)](https://afdian.com/a/drag0n)
+      [![赞助者](https://afdian.730888.xyz/image)](https://afdian.com/a/drag0n)
 
 - **Contributors**：感谢以下贡献者对本项目的无私贡献！
 

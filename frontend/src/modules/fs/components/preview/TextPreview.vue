@@ -26,6 +26,7 @@
 import { computed, ref, watch } from "vue";
 import TextRenderer from "@/components/common/text-preview/TextRenderer.vue";
 import { useTextPreview } from "@/composables/text-preview/useTextPreview.js";
+import { usePathPassword } from "@/composables/usePathPassword.js";
 
 // Props 定义
 const props = defineProps({
@@ -100,6 +101,9 @@ const {
   emitEncodingChange: true,
 });
 
+// 路径密码管理，用于为受保护路径的内容请求附加 token
+const pathPassword = usePathPassword();
+
 // 为了兼容性，保留 fileData 计算属性
 const fileData = computed(() => currentFileData.value);
 
@@ -147,16 +151,49 @@ const initializeCurrentFile = async () => {
 
   console.log("📄 开始初始化当前文件:", props.file.name);
 
-  // 使用传入的文本URL或文件的 Down 路由 rawUrl
-  const previewUrl = props.textUrl || props.file.rawUrl;
+  const fsPath = props.file.path || props.currentPath || "/";
+
+  // 为预览内容构造统一的同源内容 URL
+  let baseContentUrl = `/api/fs/content?path=${encodeURIComponent(fsPath)}`;
+
+  // 非管理员访问时，附加路径密码 token（如果存在）
+  if (!props.isAdmin) {
+    const token = pathPassword.getPathToken(fsPath);
+    if (token) {
+      baseContentUrl += `&path_token=${encodeURIComponent(token)}`;
+    }
+  }
+
+  // 文本/Markdown/代码预览需要通过 fetch 拉取内容：
+  // - 对同源或 proxy 链接可直接使用 textUrl
+  // - 对跨域 direct 链接禁用外链 fetch，强制走同源 /api/fs/content
+  const safeTextUrl = (() => {
+    if (!props.textUrl) return null;
+    try {
+      const resolved = new URL(props.textUrl, window.location.href);
+      if (resolved.origin === window.location.origin) {
+        return props.textUrl;
+      }
+      const linkType = (props.file?.linkType || "").toLowerCase();
+      if (linkType === "proxy") {
+        return props.textUrl;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  })();
+
+  const previewUrl = safeTextUrl || baseContentUrl;
 
   if (previewUrl) {
     console.log("📄 使用文本URL:", previewUrl);
     currentFileData.value = {
       name: props.file.name || "unknown",
       filename: props.file.name || "unknown",
-      rawUrl: previewUrl,
       previewUrl: previewUrl,
+      contentUrl: baseContentUrl,
+      path: fsPath,
       contentType: props.file.contentType,
       size: props.file.size,
       modified: props.file.modified,
@@ -166,7 +203,7 @@ const initializeCurrentFile = async () => {
     // 加载文本内容
     await loadTextContent();
   } else {
-    console.error("❌ 没有可用的 rawUrl");
+    console.error("❌ 没有可用的文本内容 URL");
   }
 };
 

@@ -14,8 +14,9 @@ import { BaseDriver, CAPABILITIES } from "../../interfaces/capabilities/index.js
 import { ApiStatus, FILE_TYPES } from "../../../constants/index.js";
 import { DriverError, AppError, NotFoundError, ValidationError } from "../../../http/errors.js";
 import { isCloudflareWorkerEnvironment, isNodeJSEnvironment } from "../../../utils/environmentUtils.js";
-import { GetFileType, getFileTypeName } from "../../../utils/fileTypeDetector.js";
 import { getEffectiveMimeType } from "../../../utils/fileUtils.js";
+import { buildFileInfo } from "../../utils/FileInfoBuilder.js";
+import { createNodeStreamDescriptor } from "../../streaming/StreamDescriptorUtils.js";
 import { buildFullProxyUrl } from "../../../constants/proxy.js";
 
 export class LocalStorageDriver extends BaseDriver {
@@ -296,22 +297,25 @@ export class LocalStorageDriver extends BaseDriver {
 
         const isDirectory = stat.isDirectory();
         const size = isDirectory ? 0 : stat.size || 0;
-        const modified = stat.mtime ? new Date(stat.mtime).toISOString() : new Date().toISOString();
-
-        const type = isDirectory ? FILE_TYPES.FOLDER : await GetFileType(name, db);
-        const typeName = isDirectory ? "folder" : await getFileTypeName(name, db);
+        const modified = stat.mtime ? new Date(stat.mtime) : new Date();
 
         const itemMountPath = this._joinMountPath(basePath, name, isDirectory);
 
-        return {
+        const info = await buildFileInfo({
+          fsPath: itemMountPath,
           name,
-          path: itemMountPath,
           isDirectory,
-          isVirtual: false,
           size,
           modified,
-          type,
-          typeName,
+          mimetype: isDirectory ? "application/x-directory" : undefined,
+          mount,
+          storageType: mount?.storage_type,
+          db,
+        });
+
+        return {
+          ...info,
+          isVirtual: false,
         };
       })
     );
@@ -341,28 +345,24 @@ export class LocalStorageDriver extends BaseDriver {
 
     const isDirectory = stat.isDirectory();
     const name = this._basename(fsPath);
-    const type = isDirectory ? FILE_TYPES.FOLDER : await GetFileType(name, db);
-    const typeName = isDirectory ? "folder" : await getFileTypeName(name, db);
-
     const size = isDirectory ? 0 : stat.size || 0;
-    const modified = stat.mtime ? new Date(stat.mtime).toISOString() : new Date().toISOString();
+    const modified = stat.mtime ? new Date(stat.mtime) : new Date();
     const mimetype = isDirectory ? "application/x-directory" : undefined;
 
     // fullPath 当前未直接暴露，仅用于调试时可从 details 中取
     void fullPath;
 
-    return {
-      path: fsPath,
+    return await buildFileInfo({
+      fsPath,
       name,
       isDirectory,
       size,
       modified,
       mimetype,
-      mount_id: mount?.id,
-      storage_type: mount?.storage_type,
-      type,
-      typeName,
-    };
+      mount,
+      storageType: mount?.storage_type,
+      db,
+    });
   }
 
   /**
@@ -392,69 +392,25 @@ export class LocalStorageDriver extends BaseDriver {
     const lastModified = stat.mtime ? new Date(stat.mtime) : new Date();
     const etag = `"${lastModified.getTime()}-${size}"`;
 
-    // 保存 fullPath 供闭包使用
+    // 保存 fullPath 供流工厂使用
     const filePath = fullPath;
 
-    // 返回 StorageStreamDescriptor，不再构造 Response
-    return {
+    return createNodeStreamDescriptor({
       size,
       contentType,
       etag,
       lastModified,
-
-      /**
-       * 获取完整文件流
-       * @param {{ signal?: AbortSignal }} [streamOptions]
-       * @returns {Promise<{ stream: import('stream').Readable, close: () => Promise<void> }>}
-       */
-      async getStream(streamOptions = {}) {
-        const { signal } = streamOptions;
-        const stream = fs.createReadStream(filePath);
-
-        // 支持 AbortSignal 取消
-        if (signal) {
-          signal.addEventListener("abort", () => {
-            stream.destroy();
-          });
-        }
-
-        return {
-          stream, // NodeReadable
-          async close() {
-            stream.destroy();
-          },
-        };
+      async openStream() {
+        return fs.createReadStream(filePath);
       },
-
-      /**
-       * 获取指定范围的流（原生 Range 支持）
-       * @param {{ start: number, end?: number }} range
-       * @param {{ signal?: AbortSignal }} [streamOptions]
-       * @returns {Promise<{ stream: import('stream').Readable, close: () => Promise<void> }>}
-       */
-      async getRange(range, streamOptions = {}) {
-        const { signal } = streamOptions;
+      async openRangeStream(range) {
         const { start, end } = range;
-
-        const stream = fs.createReadStream(filePath, {
+        return fs.createReadStream(filePath, {
           start,
           end: end !== undefined ? end : undefined,
         });
-
-        if (signal) {
-          signal.addEventListener("abort", () => {
-            stream.destroy();
-          });
-        }
-
-        return {
-          stream, // NodeReadable
-          async close() {
-            stream.destroy();
-          },
-        };
       },
-    };
+    });
   }
 
   // ========== WRITER / ATOMIC 能力：uploadFile / createDirectory / updateFile / batchRemoveItems / renameItem / copyItem ==========
@@ -819,23 +775,24 @@ export class LocalStorageDriver extends BaseDriver {
         }
 
         const size = statInfo.size || 0;
-        const modified = statInfo.mtime ? new Date(statInfo.mtime).toISOString() : new Date().toISOString();
-        const type = await GetFileType(entryName, db);
-        const typeName = await getFileTypeName(entryName, db);
+        const modified = statInfo.mtime ? new Date(statInfo.mtime) : new Date();
         const fsPath = this._buildMountPath(mount, nextSubPath || "/");
 
-        results.push({
+        const info = await buildFileInfo({
+          fsPath,
           name: entryName,
-          path: fsPath,
+          isDirectory: false,
           size,
           modified,
-          isDirectory: false,
           mimetype: getEffectiveMimeType(null, entryName),
-          type,
-          typeName,
-          mount_id: mount.id,
+          mount,
+          storageType: mount.storage_type,
+          db,
+        });
+
+        results.push({
+          ...info,
           mount_name: mount.name,
-          storage_type: mount.storage_type,
         });
       }
     };

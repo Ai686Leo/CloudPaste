@@ -1,7 +1,6 @@
 import { api } from "@/api";
 import { useAuthStore } from "@/stores/authStore.js";
 import { usePathPassword } from "@/composables/usePathPassword.js";
-import { downloadFileWithAuth } from "@/api/services/fileDownloadService.js";
 
 /** @typedef {import("@/types/fs").FsDirectoryResponse} FsDirectoryResponse */
 /** @typedef {import("@/types/fs").FsDirectoryItem} FsDirectoryItem */
@@ -243,7 +242,23 @@ export function useFsService() {
    * @returns {Promise<string>}
    */
   const getFileLink = async (path, expiresIn = null, forceDownload = true) => {
-    const url = await api.fs.getFileLink(path, expiresIn, forceDownload);
+    const isAdmin = authStore.isAdmin;
+    const normalizedPath = path || "/";
+
+    /** @type {{ headers?: Record<string,string> }} */
+    const requestOptions = {};
+
+    // 非管理员访问时，附带路径密码 token（如果存在）
+    if (!isAdmin) {
+      const token = pathPassword.getPathToken(normalizedPath);
+      if (token) {
+        requestOptions.headers = {
+          "X-FS-Path-Token": token,
+        };
+      }
+    }
+
+    const url = await api.fs.getFileLink(normalizedPath, expiresIn, forceDownload, requestOptions);
     if (!url) {
       throw new Error("获取文件直链失败");
     }
@@ -251,28 +266,21 @@ export function useFsService() {
   };
 
   /**
-   * 通过 Down 路由下载文件（复用统一带鉴权下载逻辑）
+   * 下载文件（通过获取直链并让浏览器直接导航）
    * @param {string} path
    * @param {string} filename
    * @returns {Promise<void>}
    */
   const downloadFile = async (path, filename) => {
     const normalizedPath = path || "/";
-    const isAdmin = authStore.isAdmin;
+    const url = await getFileLink(normalizedPath, null, true);
 
-    /** @type {Record<string,string>|undefined} */
-    let headers;
-    if (!isAdmin) {
-      const token = pathPassword.getPathToken(normalizedPath);
-      if (token) {
-        headers = {
-          "X-FS-Path-Token": token,
-        };
-      }
-    }
-
-    const endpoint = `/api/fs/download?path=${encodeURIComponent(normalizedPath)}`;
-    await downloadFileWithAuth(endpoint, filename, headers ? { headers } : {});
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename || "";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   /**

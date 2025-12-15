@@ -82,6 +82,22 @@ const STORAGE_TYPE_BEHAVIOR_DEF = {
       return false;
     },
   },
+  GOOGLE_DRIVE: {
+    secretFields: ["client_secret", "refresh_token"],
+    /**
+     * 字段禁用规则
+     * - api_address 仅在 use_online_api 启用时可编辑
+     */
+    isFieldDisabled(fieldName, formData) {
+      if (fieldName === "api_address") {
+        return !formData.value.use_online_api;
+      }
+      return false;
+    },
+  },
+  GITHUB_RELEASES: {
+    secretFields: ["token"],
+  },
 };
 
 /**
@@ -108,6 +124,16 @@ export function useAdminStorageTypeBehavior(options) {
       loaded: ref(false),
     },
     ONEDRIVE: {
+      visible: ref(false),
+      revealing: ref(false),
+      loaded: ref(false),
+    },
+    GOOGLE_DRIVE: {
+      visible: ref(false),
+      revealing: ref(false),
+      loaded: ref(false),
+    },
+    GITHUB_RELEASES: {
       visible: ref(false),
       revealing: ref(false),
       loaded: ref(false),
@@ -169,6 +195,11 @@ export function useAdminStorageTypeBehavior(options) {
           } else if (type === "ONEDRIVE") {
             formData.value.client_secret = data.client_secret || "";
             formData.value.refresh_token = data.refresh_token || "";
+          } else if (type === "GOOGLE_DRIVE") {
+            formData.value.client_secret = data.client_secret || "";
+            formData.value.refresh_token = data.refresh_token || "";
+          } else if (type === "GITHUB_RELEASES") {
+            formData.value.token = data.token || "";
           }
           state.loaded.value = true;
         }
@@ -201,8 +232,17 @@ export function useAdminStorageTypeBehavior(options) {
     if (!meta) return false;
 
     const storageType = currentType.value;
-    // OneDrive 的 refresh_token 和 client_secret 通过授权获取，新建时遵循 schema 标记
-    if (storageType === "ONEDRIVE" && (fieldName === "refresh_token" || fieldName === "client_secret")) {
+
+    // GitHub Releases：令牌等 secret 字段保持可选
+    if (storageType === "GITHUB_RELEASES") {
+      return !!meta.required;
+    }
+
+    // OneDrive / GoogleDrive 的 refresh_token 和 client_secret 通过授权获取，新建时遵循 schema 标记
+    if (
+      (storageType === "ONEDRIVE" || storageType === "GOOGLE_DRIVE") &&
+      (fieldName === "refresh_token" || fieldName === "client_secret")
+    ) {
       return !!meta.required;
     }
 

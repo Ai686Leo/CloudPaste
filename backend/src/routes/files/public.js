@@ -1,5 +1,5 @@
 import { ApiStatus } from "../../constants/index.js";
-import { AppError, NotFoundError, AuthenticationError, ValidationError } from "../../http/errors.js";
+import { AppError, NotFoundError, AuthorizationError, ValidationError } from "../../http/errors.js";
 import { jsonOk } from "../../utils/common.js";
 import { guardShareFile, getFileBySlug, getPublicFileInfo } from "../../services/fileService.js";
 import { verifyPassword } from "../../utils/crypto.js";
@@ -8,7 +8,7 @@ import { getEncryptionSecret } from "../../utils/environmentUtils.js";
 import { LinkService } from "../../storage/link/LinkService.js";
 
 export const registerFilesPublicRoutes = (router) => {
-  router.get("/api/public/files/:slug", async (c) => {
+  const getShareFileInfoHandler = async (c) => {
     const db = c.env.DB;
     const { slug } = c.req.param();
     const encryptionSecret = getEncryptionSecret(c);
@@ -49,9 +49,9 @@ export const registerFilesPublicRoutes = (router) => {
       baseOrigin: requestUrl.origin,
     });
     return jsonOk(c, publicInfo, "获取文件成功");
-  });
+  };
 
-  router.post("/api/public/files/:slug/verify", async (c) => {
+  const verifyShareFilePasswordHandler = async (c) => {
     const db = c.env.DB;
     const { slug } = c.req.param();
     const body = await c.req.json();
@@ -75,7 +75,7 @@ export const registerFilesPublicRoutes = (router) => {
 
     const passwordValid = await verifyPassword(body.password, file.password);
     if (!passwordValid) {
-      throw new AuthenticationError("密码不正确");
+      throw new AuthorizationError("密码不正确");
     }
 
     const { file: guardedFile, isExpired } = await guardShareFile(db, slug, encryptionSecret, { incrementViews: true });
@@ -105,5 +105,11 @@ export const registerFilesPublicRoutes = (router) => {
     });
 
     return jsonOk(c, publicInfo, "密码验证成功");
-  });
+  };
+
+  // Share 控制面（JSON）
+  router.get("/api/share/get/:slug", getShareFileInfoHandler);
+
+  // Share 密码验证
+  router.post("/api/share/verify/:slug", verifyShareFilePasswordHandler);
 };

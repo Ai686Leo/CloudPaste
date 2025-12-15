@@ -37,7 +37,7 @@ export function getOfflineOperationType(endpoint, method) {
     return { type: "clearCache", description: "离线缓存清理已加入队列" };
   }
 
-  if (endpoint.includes("/public/files/") && endpoint.includes("/verify") && method === "POST") {
+  if (endpoint.includes("/share/verify/") && method === "POST") {
     return { type: "verifyFilePassword", description: "离线文件密码验证已加入队列" };
   }
 

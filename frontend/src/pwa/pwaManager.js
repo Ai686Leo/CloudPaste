@@ -661,7 +661,7 @@ class PWAManager {
 
       // 🔐 文件密码验证
       case "verifyFilePassword":
-        return await post(endpoint, data); // /api/public/files/:slug/verify
+        return await post(endpoint, data);
 
       default:
         console.warn(`[PWA] 未知的离线操作类型: ${type}`);

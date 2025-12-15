@@ -220,6 +220,7 @@ fsRoutes.use(`${FS_BASE_PATH}/*`, baseFsPolicy, unifiedFsAuthMiddleware);
 fsRoutes.use(`${FS_BASE_PATH}/list`, usePolicy("fs.list"));
 fsRoutes.use(`${FS_BASE_PATH}/get`, usePolicy("fs.read"));
 fsRoutes.use(`${FS_BASE_PATH}/download`, usePolicy("fs.read"));
+fsRoutes.use(`${FS_BASE_PATH}/content`, usePolicy("fs.read"));
 fsRoutes.use(`${FS_BASE_PATH}/file-link`, usePolicy("fs.share-link"));
 
 // 目录路径密码校验接口

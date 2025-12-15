@@ -16,6 +16,18 @@ export default {
     actions: "Actions",
     selectOption: "Please select",
     pleaseSelect: "Please select",
+    // Time units
+    second: "s",
+    minute: "m",
+    hour: "h",
+    day: "d",
+    now: "now",
+    ago: "ago",
+    // Time units (plural)
+    seconds: "s",
+    minutes: "m",
+    hours: "h",
+    days: "d",
     pagination: {
       previousPage: "Previous",
       nextPage: "Next",

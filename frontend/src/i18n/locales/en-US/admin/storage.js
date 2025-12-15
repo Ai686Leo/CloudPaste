@@ -9,6 +9,8 @@ export default {
       webdav: "WebDAV storage",
       local: "Local file system",
       onedrive: "OneDrive storage",
+      googledrive: "Google Drive storage",
+      github_releases: "GitHub Releases",
     },
 
     // group titles
@@ -19,6 +21,7 @@ export default {
       permissions: "Permissions",
       advanced: "Advanced options",
       options: "Options",
+      behaviour: "Behaviour",
     },
 
     // field labels
@@ -58,6 +61,30 @@ export default {
         use_online_api: "API Type",
         oauth_status: "OAuth Status",
       },
+
+      // Google Drive specific
+      googledrive: {
+        use_online_api: "API Type",
+        api_address: "Online API URL",
+        client_id: "Client ID",
+        client_secret: "Client secret",
+        refresh_token: "Refresh token / Service Account JSON remote URL",
+        root_id: "Root ID",
+        enable_disk_usage: "Enable quota reading",
+        enable_shared_view: "SharedWithMe view",
+      },
+
+      // GitHub Releases specific
+      github_releases: {
+        repo_structure: "Repository mapping rules",
+        show_all_version: "Show all versions as directories",
+        show_source_code: "Show Source code archives",
+        show_readme: "Show README / LICENSE",
+        show_release_notes: "Show Release Notes",
+        per_page: "Releases per page",
+        gh_proxy: "GitHub proxy URL",
+        token: "GitHub access token",
+      },
     },
 
     // placeholder texts
@@ -82,6 +109,23 @@ export default {
         refresh_token: "Refresh token from external OAuth page",
         token_renew_endpoint: "e.g., https://your-token-service.com/renew",
         redirect_uri: "e.g., https://your-token-service.com/onedrive/callback",
+      },
+
+      // Google Drive placeholders
+      googledrive: {
+        api_address: "e.g., https://your-online-api.example.com/refresh",
+        client_id: "Google OAuth client ID",
+        client_secret: "Google OAuth client secret",
+        refresh_token: "RefreshToken or remote URL to Service Account JSON",
+        root_id: "e.g., root or a specific Shared Drive ID",
+      },
+
+      // GitHub Releases placeholders
+      github_releases: {
+        repo_structure:
+          "One per line: owner/repo (single repo mounts at root), alias:owner/repo (required for multiple repos), or full repo URL (https://github.com/owner/repo), e.g., 2512132839/test, test:2512132839/test or https://github.com/2512132839/test",
+        gh_proxy: "e.g., https://gh-proxy.com/github.com",
+        token: "Recommended to set a personal access token to raise rate limits",
       },
     },
 
@@ -108,6 +152,38 @@ export default {
         redirect_uri: "Callback address configured in the Azure application for the external authorization site, usually consistent with the authorization page documentation",
         use_online_api: "When enabled, CloudPaste will call the renewal endpoint to refresh the token according to the Online API protocol",
       },
+
+      // Google Drive descriptions
+      googledrive: {
+        use_online_api: "When enabled, use the Online API endpoint to obtain access tokens, suitable for centralized token services.",
+        api_address: "Online API refresh address, call to obtain access_token and refresh_token.",
+        client_id: "Client ID used in standard OAuth mode, created in GCP console.",
+        client_secret: "Client secret used together with refresh_token to refresh access_token in standard OAuth mode.",
+        refresh_token: "Supports two forms: 1) standard OAuth refresh_token; 2) remote Service Account JSON URL.",
+        root_id: "Google Drive root folder ID, defaults to root; set to driveId when mounting a Shared Drive.",
+        enable_disk_usage: "When enabled, get to fetch storage quota and usage information for display and quota analysis.",
+        enable_shared_view: 'When enabled, a "Shared with me" virtual directory will be displayed under the corresponding mount root directory for browsing files shared with me',
+      },
+
+      // GitHub Releases descriptions
+      github_releases: {
+        repo_structure:
+          "Configure GitHub repositories, one per line. Supported formats: owner/repo (recommended, the directory name uses repo) or alias:owner/repo (custom directory name). Example: ling-drag0n/CloudPaste or cloudpaste:ling-drag0n/CloudPaste. The mount path itself is defined in the mount configuration.",
+        show_all_version:
+          "When enabled, create a subdirectory for each release (named by tagName) and list assets under that directory. When disabled, only show assets from the latest release at the repo root.",
+        show_source_code:
+          "When enabled, add virtual files \"Source code (zip)\" and \"Source code (tar.gz)\" for each release, pointing to GitHub provided source archives.",
+        show_readme:
+          "Mount README / LICENSE as virtual files at the repository root (when present in the repo). File content is fetched on demand via the GitHub API.",
+        show_release_notes:
+          "Add a virtual file RELEASE_NOTES.md under each release. Content is taken from the GitHub Release notes (Markdown).",
+        per_page:
+          "Number of releases to fetch per call from the GitHub Releases API. Default is 20. Larger values reduce API calls but increase response size.",
+        gh_proxy:
+          "Optional: Proxy prefix for accelerating GitHub downloads, e.g., fill in completely as https://gh-proxy.com/github.com or https://gh-proxy.com/https://github.com. Only effective for download links starting with https://github.com.",
+        token:
+          "Optional: GitHub personal access token. Used for private repositories or to increase API rate limits (strongly recommended for public-facing deployments).",
+      },
     },
 
     // card summary display values
@@ -127,6 +203,16 @@ export default {
         oauth_status: {
           authorized: "✅ Authorized",
           missing: "⚠️ Not configured",
+        },
+      },
+      googledrive: {
+        use_online_api: {
+          enabled: "Online API",
+          disabled: "Standard API",
+        },
+        enable_shared_view: {
+          enabled: "enabled",
+          disabled: "disabled",
         },
       },
     },

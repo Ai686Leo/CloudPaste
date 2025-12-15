@@ -17,6 +17,18 @@ export default {
     reset: "重置",
     selectOption: "请选择",
     pleaseSelect: "请选择",
+    // 时间单位
+    second: "秒",
+    minute: "分",
+    hour: "时",
+    day: "天",
+    now: "现在",
+    ago: "前",
+    // 时间单位（复数形式）
+    seconds: "秒",
+    minutes: "分",
+    hours: "时",
+    days: "天",
     pagination: {
       previousPage: "上一页",
       nextPage: "下一页",

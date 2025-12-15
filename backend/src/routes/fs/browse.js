@@ -27,7 +27,7 @@ export const registerBrowseRoutes = (router, helpers) => {
 
     // 管理员不受路径密码限制；仅对非管理员用户应用路径密码控制
     if (userType !== UserType.ADMIN && typeof verifyPathPasswordToken === "function") {
-      const pathToken = c.req.header("x-fs-path-token") || null;
+      const pathToken = c.req.header("x-fs-path-token") || c.req.query("path_token") || null;
       const verification = await verifyPathPasswordToken(db, path, pathToken, encryptionSecret);
 
       if (verification.requiresPassword && !verification.verified) {
@@ -80,7 +80,7 @@ export const registerBrowseRoutes = (router, helpers) => {
 
     // 对受路径密码保护的文件路径应用与目录列表相同的校验逻辑
     if (userType !== UserType.ADMIN && typeof verifyPathPasswordToken === "function") {
-      const pathToken = c.req.header("x-fs-path-token") || null;
+      const pathToken = c.req.header("x-fs-path-token") || c.req.query("path_token") || null;
       const verification = await verifyPathPasswordToken(db, path, pathToken, encryptionSecret);
 
       if (verification.requiresPassword && !verification.verified) {
@@ -107,20 +107,26 @@ export const registerBrowseRoutes = (router, helpers) => {
     const fileSystem = new FileSystem(mountManager);
     const result = await fileSystem.getFileInfo(path, userIdOrInfo, userType, c.req.raw);
 
-    // 通过 LinkService 生成统一 Link 信息，rawUrl 直接使用最终 URL（直链或代理）
+    // 通过 LinkService 生成语义清晰的预览/下载入口
     const linkService = new LinkService(db, encryptionSecret, repositoryFactory);
-    const link = await linkService.getFsExternalLink(path, userIdOrInfo, userType, {
+    const previewLink = await linkService.getFsExternalLink(path, userIdOrInfo, userType, {
       forceDownload: false,
       request: c.req.raw,
     });
 
-    // 使用 LinkService 的决策结果作为 Link JSON 核心字段
-    const rawUrl = link.url || null;
-    const linkType = link.kind;
+    const downloadLink = await linkService.getFsExternalLink(path, userIdOrInfo, userType, {
+      forceDownload: true,
+      request: c.req.raw,
+    });
+
+    const previewUrl = previewLink.url || null;
+    const downloadUrl = downloadLink.url || null;
+    const linkType = previewLink.kind;
 
     const responsePayload = {
       ...result,
-      rawUrl,
+      previewUrl,
+      downloadUrl,
       linkType,
     };
 
@@ -134,7 +140,7 @@ export const registerBrowseRoutes = (router, helpers) => {
         size: responsePayload.size,
       },
       {
-        rawUrl,
+        previewUrl,
         linkType,
         use_proxy: responsePayload.use_proxy ?? 0,
       },
@@ -150,6 +156,7 @@ export const registerBrowseRoutes = (router, helpers) => {
     );
   });
 
+  //内部
   router.get("/api/fs/download", async (c) => {
     const db = c.env.DB;
     const path = c.req.query("path");
@@ -164,7 +171,7 @@ export const registerBrowseRoutes = (router, helpers) => {
 
     // 下载路由与元数据路由共享相同的路径密码校验规则
     if (userType !== UserType.ADMIN && typeof verifyPathPasswordToken === "function") {
-      const pathToken = c.req.header("x-fs-path-token") || null;
+      const pathToken = c.req.header("x-fs-path-token") || c.req.query("path_token") || null;
       const verification = await verifyPathPasswordToken(db, path, pathToken, encryptionSecret);
 
       if (verification.requiresPassword && !verification.verified) {
@@ -219,6 +226,70 @@ export const registerBrowseRoutes = (router, helpers) => {
     return response;
   });
 
+  /**
+   * 文件内容访问接口（统一内容 API）
+   * - 语义：返回指定 FS 路径下文件的原始内容，用于前端预览、编码检测等场景
+   * - 特点：始终由 CloudPaste 后端代理访问上游存储，避免前端直接对第三方直链发起跨域请求
+   * - 与 /api/fs/download 的区别：content 更偏“读取内容”，download 更偏“触发下载（可 302 直链）”
+   */
+  router.get("/api/fs/content", async (c) => {
+    const db = c.env.DB;
+    const path = c.req.query("path");
+    const userInfo = c.get("userInfo");
+    const { userIdOrInfo, userType } = getServiceParams(userInfo);
+    const encryptionSecret = getEncryptionSecret(c);
+    const repositoryFactory = c.get("repos");
+
+    if (!path) {
+      throw new ValidationError("请提供文件路径");
+    }
+
+    // 路径密码校验规则与 /list /get /download 保持一致
+    if (userType !== UserType.ADMIN && typeof verifyPathPasswordToken === "function") {
+      const pathToken = c.req.header("x-fs-path-token") || c.req.query("path_token") || null;
+      const verification = await verifyPathPasswordToken(db, path, pathToken, encryptionSecret);
+
+      if (verification.requiresPassword && !verification.verified) {
+        return c.json(
+          {
+            ...createErrorResponse(
+              ApiStatus.FORBIDDEN,
+              verification.error === "PASSWORD_CHANGED"
+                ? "目录路径密码已更新，请重新输入"
+                : "该目录需要密码访问",
+              "FS_PATH_PASSWORD_REQUIRED",
+            ),
+            data: {
+              path,
+              requiresPassword: true,
+            },
+          },
+          ApiStatus.FORBIDDEN,
+        );
+      }
+    }
+
+    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
+    const streaming = new StorageStreaming({
+      mountManager,
+      storageFactory: null,
+      encryptionSecret,
+    });
+
+    const rangeHeader = c.req.header("Range") || null;
+    const response = await streaming.createResponse({
+      path,
+      channel: STREAMING_CHANNELS.FS_WEB,
+      rangeHeader,
+      request: c.req.raw,
+      userIdOrInfo,
+      userType,
+      db,
+    });
+
+    return response;
+  });
+
   router.get("/api/fs/file-link", async (c) => {
     const db = c.env.DB;
     const path = c.req.query("path");
@@ -227,12 +298,38 @@ export const registerBrowseRoutes = (router, helpers) => {
     const encryptionSecret = getEncryptionSecret(c);
     const repositoryFactory = c.get("repos");
     const expiresInParam = c.req.query("expires_in");
-    const parsedExpiresIn = expiresInParam === undefined || expiresInParam === "null" ? null : parseInt(expiresInParam, 10);
+    const parsedExpiresIn =
+      expiresInParam === undefined || expiresInParam === "null" ? null : parseInt(expiresInParam, 10);
     const expiresIn = parsedExpiresIn !== null && Number.isNaN(parsedExpiresIn) ? null : parsedExpiresIn;
     const forceDownload = getQueryBool(c, "force_download", false);
 
     if (!path) {
       throw new ValidationError("请提供文件路径");
+    }
+
+    // 与目录列表/文件信息/下载保持一致：对受路径密码保护的路径进行校验
+    if (userType !== UserType.ADMIN && typeof verifyPathPasswordToken === "function") {
+      const pathToken = c.req.header("x-fs-path-token") || c.req.query("path_token") || null;
+      const verification = await verifyPathPasswordToken(db, path, pathToken, encryptionSecret);
+
+      if (verification.requiresPassword && !verification.verified) {
+        return c.json(
+          {
+            ...createErrorResponse(
+              ApiStatus.FORBIDDEN,
+              verification.error === "PASSWORD_CHANGED"
+                ? "目录路径密码已更新，请重新输入"
+                : "该目录需要密码访问",
+              "FS_PATH_PASSWORD_REQUIRED",
+            ),
+            data: {
+              path,
+              requiresPassword: true,
+            },
+          },
+          ApiStatus.FORBIDDEN,
+        );
+      }
     }
 
     const linkService = new LinkService(db, encryptionSecret, repositoryFactory);
@@ -243,7 +340,7 @@ export const registerBrowseRoutes = (router, helpers) => {
     });
 
     const responsePayload = {
-      rawUrl: link.url,
+      url: link.url,
       linkType: link.kind,
     };
 

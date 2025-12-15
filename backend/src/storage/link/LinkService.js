@@ -81,6 +81,7 @@ export class LinkService {
   async getLinkForShare(file, userInfo = null, options = {}) {
     const mode = options.mode === "proxy" ? "proxy" : "client";
     const request = options.request || null;
+    const forceDownload = !!options.forceDownload;
 
     // 本地代理开关（share 视图使用 use_proxy 与 FS 的 web_proxy 语义一致）
     const useProxyFlag = file?.use_proxy ?? 0;
@@ -90,7 +91,7 @@ export class LinkService {
     if (!file || !file.storage_config_id || !file.storage_path || !file.storage_type || !slug) {
       if (mode === "proxy") {
         // 兜底：直接返回 /api/s 下载路径，交由上层处理
-        const shareDownloadPath = `/api/s/${slug || ""}?mode=download`;
+        const shareDownloadPath = `/api/s/${slug || ""}?down=true`;
         let finalUrl = shareDownloadPath;
         if (request) {
           try {
@@ -144,15 +145,15 @@ export class LinkService {
     if (mode === "client") {
       // 1) use_proxy = 1：本地 share 内容路由，忽略 url_proxy 与直链能力
       if (useProxyFlag) {
-        const shareInlinePath = `/api/s/${slug}?mode=inline`;
-        console.log(`[LinkService][share][local-proxy] 文件(${file.id || slug}) 使用本地 /api/s 内容路由: ${shareInlinePath}`);
-        return createProxyLink(shareInlinePath);
+        const sharePath = forceDownload ? `/api/s/${slug}?down=true` : `/api/s/${slug}`;
+        console.log(`[LinkService][share][local-proxy] 文件(${file.id || slug}) 使用本地 /api/s 内容路由: ${sharePath}`);
+        return createProxyLink(sharePath);
       }
 
       // 2) use_proxy = 0 且配置了 url_proxy：使用 Worker / 反代入口
       if (urlProxy) {
         try {
-          const entryPath = `${WORKER_ENTRY.SHARE_PREFIX}/${encodeURIComponent(slug)}`;
+          const entryPath = `${WORKER_ENTRY.SHARE_PREFIX}/${encodeURIComponent(slug)}${forceDownload ? "?down=true" : ""}`;
           const workerUrl = buildSignedWorkerUrl(urlProxy, entryPath, {});
           console.log(
             `[LinkService][share][url_proxy] 文件(${file.id || slug}) 使用 url_proxy=${urlProxy} 生成入口: ${workerUrl}`,
@@ -160,20 +161,24 @@ export class LinkService {
           return createProxyLink(workerUrl);
         } catch (e) {
           console.warn("构建分享 Worker 入口链接失败，将退回为本地 share 内容路由：", e?.message || e);
-          const fallbackPath = `/api/s/${slug}?mode=inline`;
+          const fallbackPath = forceDownload ? `/api/s/${slug}?down=true` : `/api/s/${slug}`;
           return createProxyLink(fallbackPath);
         }
       }
 
       // 3) 无 url_proxy：有直链则使用直链，否则不提供 URL
-      if (previewDirectUrl) {
-        console.log(
-          `[LinkService][share][direct] 文件(${file.id || slug}) 使用存储直链作为预览入口: ${previewDirectUrl}`,
-        );
-        return createDirectLink(previewDirectUrl);
+      if (previewDirectUrl || (forceDownload && downloadDirectUrl)) {
+        const directUrl = forceDownload ? (downloadDirectUrl || previewDirectUrl) : previewDirectUrl;
+        if (directUrl) {
+          console.log(
+            `[LinkService][share][direct] 文件(${file.id || slug}) 使用存储直链作为${forceDownload ? "下载" : "预览"}入口: ${directUrl}`,
+          );
+          return createDirectLink(directUrl);
+        }
       }
 
-      // 没有任何可用 URL：返回空 proxy 链接，交由上层决定如何提示
+      // 没有直链能力且未配置 url_proxy 时，不再兜底本地 /api/s
+      // 这会强制要求：要么开启 use_proxy，要么配置 url_proxy，否则分享视图不暴露任何外部入口
       return createProxyLink("");
     }
 
@@ -181,7 +186,7 @@ export class LinkService {
 
     // 1) use_proxy = 1：统一走本地 share 内容路由（下载语义）
     if (useProxyFlag) {
-      const shareDownloadPath = `/api/s/${slug}?mode=download`;
+      const shareDownloadPath = `/api/s/${slug}?down=true`;
       let finalUrl = shareDownloadPath;
       if (request) {
         try {
@@ -222,7 +227,7 @@ export class LinkService {
       );
     }
 
-    // 3) use_proxy = 0：有直链能力时直接返回存储直链，否则退回本地 /api/s/:slug?mode=download
+    // 3) use_proxy = 0：有直链能力时直接返回存储直链，否则退回本地 /api/s/:slug?down=true
     if (downloadDirectUrl) {
       console.log(
         `[LinkService][share][direct] 文件(${file.id || slug}) 上游使用存储直链下载: ${downloadDirectUrl}`,
@@ -230,7 +235,7 @@ export class LinkService {
       return createDirectLink(downloadDirectUrl);
     }
 
-    const shareDownloadPath = `/api/s/${slug}?mode=download`;
+    const shareDownloadPath = `/api/s/${slug}?down=true`;
     let finalUrl = shareDownloadPath;
     if (request) {
       try {
@@ -419,7 +424,7 @@ export class LinkService {
     let proxiedUrl = finalUrl;
     if (hasUrlProxy) {
       try {
-        const entryPath = `${WORKER_ENTRY.FS_PREFIX}${path}`;
+        const entryPath = `${WORKER_ENTRY.FS_PREFIX}${path}${options.forceDownload ? "?download=true" : ""}`;
         proxiedUrl = buildSignedWorkerUrl(urlProxy, entryPath, {
           signature: signatureForPath || undefined,
         });
@@ -440,4 +445,3 @@ export class LinkService {
     return createProxyLink(proxiedUrl || "");
   }
 }
-

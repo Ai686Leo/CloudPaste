@@ -6,7 +6,6 @@
 import { ref, onMounted, onUnmounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { api } from "@/api";
-import { createAuthenticatedPreviewUrl } from "@/api/services/fileDownloadService.js";
 
 export function useFilePreviewExtensions(
   file,

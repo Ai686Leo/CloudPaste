@@ -4,36 +4,26 @@
  */
 
 import { normalizePath } from "./PathResolver.js";
+import { resolveMountFromList } from "./MountResolver.js";
 
 /**
  * 检查路径是否为虚拟路径
- * @param {string} path - 请求路径
+ * @param {string} path - 请求路径（FS 视图路径）
  * @param {Array} mounts - 挂载点列表
  * @returns {boolean} 是否为虚拟路径
  */
 export function isVirtualPath(path, mounts) {
-  // 规范化路径
-  path = path.startsWith("/") ? path : "/" + path;
+  // 使用与 MountResolver 相同的规范化规则，保证行为一致
+  const normalizedPath = normalizePath(path);
 
   // 根路径总是虚拟路径
-  if (path === "/" || path === "//") {
+  if (normalizedPath === "/" || normalizedPath === "//") {
     return true;
   }
 
-  // 按照路径长度降序排序，以便优先匹配最长的路径
-  const sortedMounts = [...mounts].sort((a, b) => b.mount_path.length - a.mount_path.length);
-
-  // 查找匹配的挂载点
-  for (const mount of sortedMounts) {
-    const mountPath = mount.mount_path.startsWith("/") ? mount.mount_path : "/" + mount.mount_path;
-
-    // 如果请求路径完全匹配挂载点或者是挂载点的子路径
-    if (path === mountPath || path === mountPath + "/" || path.startsWith(mountPath + "/")) {
-      return false; // 匹配到实际挂载点，不是虚拟路径
-    }
-  }
-
-  return true; // 没有匹配到挂载点，是虚拟路径
+  // 只要能解析到挂载点，就不是虚拟路径
+  const resolved = resolveMountFromList(normalizedPath, mounts);
+  return !resolved;
 }
 
 /**

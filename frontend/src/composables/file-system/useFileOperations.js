@@ -46,8 +46,18 @@ export function useFileOperations() {
       loading.value = true;
       error.value = null;
 
-      // 通过 FS service 调用 Down 路由下载，由后端根据 Link 能力统一决策直链/代理/302
-      await fsService.downloadFile(item.path, item.name);
+      // 优先使用控制面 /api/fs/get 生成的 downloadUrl
+      if (item.downloadUrl) {
+        const link = document.createElement("a");
+        link.href = item.downloadUrl;
+        link.download = item.name || "";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } else {
+        // 无 downloadUrl 时回退为按需签发（file-link）下载
+        await fsService.downloadFile(item.path, item.name);
+      }
 
       return { success: true, message: t("mount.messages.downloadStarted", { name: item.name }) };
     } catch (err) {

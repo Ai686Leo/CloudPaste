@@ -39,6 +39,10 @@
         @load="handleLoad"
         @error="handleError"
       />
+      <!-- 缺少内容URL或加载失败 -->
+      <div v-else-if="urlError" class="absolute inset-0 flex items-center justify-center bg-gray-100 dark:bg-gray-700">
+        <p class="text-red-600 dark:text-red-400 text-sm">{{ urlError }}</p>
+      </div>
       <!-- 加载状态 -->
       <div v-else class="absolute inset-0 flex items-center justify-center bg-gray-100 dark:bg-gray-700">
         <div class="text-center">
@@ -58,7 +62,7 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import TextRenderer from "@/components/common/text-preview/TextRenderer.vue";
 import { useFetchText } from "@/composables/text-preview/useFetchText.js";
@@ -67,7 +71,7 @@ import { useCodeHighlight } from "@/composables/text-preview/useCodeHighlight.js
 const { t } = useI18n();
 
 const props = defineProps({
-  previewUrl: {
+  contentUrl: {
     type: String,
     required: true,
   },
@@ -99,6 +103,7 @@ const emit = defineEmits(["load", "error"]);
 const textContent = ref("");
 const detectedLanguage = ref("");
 const currentEncoding = ref("utf-8");
+const urlError = ref("");
 
 // 统计信息计算
 const lineCount = computed(() => {
@@ -119,29 +124,36 @@ const { detectLanguageFromFilename } = useCodeHighlight();
 
 // 适配数据结构
 const adaptedFileData = computed(() => {
-  if (!props.previewUrl) return null;
+  if (!props.contentUrl) return null;
 
   return {
     name: props.filename || "code-file",
     filename: props.filename || "code-file",
-    rawUrl: props.previewUrl,
+    contentUrl: props.contentUrl,
     contentType: "text/plain",
   };
 });
 
 // 加载文本内容
 const loadTextContent = async () => {
-  if (!adaptedFileData.value?.rawUrl) {
-    console.warn("没有可用的 rawUrl");
+  if (!adaptedFileData.value) {
+    console.warn("没有可用的文件数据");
     return;
   }
 
   try {
-    const result = await fetchText(adaptedFileData.value.rawUrl, adaptedFileData.value);
+    const effectiveUrl = adaptedFileData.value.contentUrl;
+    if (!effectiveUrl) {
+      console.warn("缺少可用的代码内容 URL");
+      return;
+    }
+
+    const result = await fetchText(effectiveUrl, adaptedFileData.value);
 
     if (result.success) {
       textContent.value = result.text;
       currentEncoding.value = result.encoding || "utf-8";
+      urlError.value = "";
 
       // 检测语言
       const filename = adaptedFileData.value.name || "";
@@ -156,17 +168,19 @@ const loadTextContent = async () => {
 
       emit("load", result);
     } else {
+      urlError.value = result.error || "预览 URL 不可用";
       emit("error", result.error);
     }
   } catch (err) {
     console.error("加载代码内容失败:", err);
+    urlError.value = err.message || "预览 URL 不可用";
     emit("error", err.message);
   }
 };
 
 // 处理编码切换
 const handleEncodingChange = async () => {
-  if (!adaptedFileData.value?.rawUrl) return;
+  if (!adaptedFileData.value) return;
 
   try {
     const result = await reDecodeWithEncoding(currentEncoding.value);
@@ -195,21 +209,18 @@ const handleError = (error) => {
   emit("error", error);
 };
 
-// 监听预览URL变化
+// 监听内容URL变化
 watch(
-  () => props.previewUrl,
-  () => {
-    if (props.previewUrl) {
-      loadTextContent();
+  () => props.contentUrl,
+  (url) => {
+    if (!url) {
+      urlError.value = "预览 URL 不可用";
+      emit("error", urlError.value);
+      return;
     }
+    urlError.value = "";
+    loadTextContent();
   },
   { immediate: true }
 );
-
-// 组件挂载时加载内容
-onMounted(() => {
-  if (props.previewUrl) {
-    loadTextContent();
-  }
-});
 </script>

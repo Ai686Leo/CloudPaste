@@ -17,7 +17,7 @@ import { updateMountLastUsed } from "../../../fs/utils/MountResolver.js";
 import { findMountPointByPath } from "../../../fs/utils/MountResolver.js";
 import { updateParentDirectoriesModifiedTime } from "../utils/S3DirectoryUtils.js";
 import { handleFsError } from "../../../fs/utils/ErrorHandler.js";
-import { normalizePath } from "../../../fs/utils/PathResolver.js";
+import { normalizePath, isDirectoryPath } from "../../../fs/utils/PathResolver.js";
 import { StorageConfigUtils } from "../../../utils/StorageConfigUtils.js";
 
 const DEFAULT_STORAGE_TYPE = "S3";
@@ -127,7 +127,7 @@ export class S3BatchOperations {
     for (let path of paths) {
       try {
         // 规范化路径
-        path = normalizePath(path, path.endsWith("/"));
+        path = normalizePath(path, isDirectoryPath(path));
 
         // 查找挂载点
         const mountResult = await findMountPointByPath(db, path, userIdOrInfo, userType);
@@ -154,8 +154,8 @@ export class S3BatchOperations {
           continue;
         }
 
-        // 判断是目录还是文件
-        const isDirectory = path.endsWith("/");
+        // 判断是目录还是文件（统一使用 FS 视图路径规则）
+        const isDirectory = isDirectoryPath(path);
 
         // 规范化S3子路径
         const s3SubPath = normalizeS3SubPath(subPath, isDirectory);
@@ -220,12 +220,12 @@ export class S3BatchOperations {
     return handleFsError(
       async () => {
         // 规范化路径
-        sourcePath = normalizePath(sourcePath, sourcePath.endsWith("/"));
-        targetPath = normalizePath(targetPath, targetPath.endsWith("/"));
+        sourcePath = normalizePath(sourcePath, isDirectoryPath(sourcePath));
+        targetPath = normalizePath(targetPath, isDirectoryPath(targetPath));
 
         // 检查路径类型 (都是文件或都是目录)
-        const sourceIsDirectory = sourcePath.endsWith("/");
-        let targetIsDirectory = targetPath.endsWith("/");
+        const sourceIsDirectory = isDirectoryPath(sourcePath);
+        let targetIsDirectory = isDirectoryPath(targetPath);
 
         // 如果源是目录但目标不是目录格式，自动添加斜杠
         if (sourceIsDirectory && !targetIsDirectory) {
@@ -265,7 +265,7 @@ export class S3BatchOperations {
     const sourceS3Config = await loadStorageConfigById(db, sourceMount.storage_config_id, sourceMount.storage_type);
     const targetS3Config = await loadStorageConfigById(db, targetMount.storage_config_id, targetMount.storage_type);
 
-    const isDirectory = sourcePath.endsWith("/");
+    const isDirectory = isDirectoryPath(sourcePath);
     const s3SourcePath = normalizeS3SubPath(sourceSubPath, isDirectory);
     const s3TargetPath = normalizeS3SubPath(targetSubPath, isDirectory);
 
@@ -502,7 +502,7 @@ export class S3BatchOperations {
       }
 
       // 更新逻辑路径
-      const targetPathWithoutTrailingSlash = targetPath.endsWith("/") ? targetPath.slice(0, -1) : targetPath;
+      const targetPathWithoutTrailingSlash = isDirectoryPath(targetPath) ? targetPath.slice(0, -1) : targetPath;
       const targetPathParts2 = targetPathWithoutTrailingSlash.split("/");
       targetPathParts2.pop(); // 移除原始目录名
       const targetParentPath = targetPathParts2.join("/");
@@ -524,7 +524,7 @@ export class S3BatchOperations {
       // 正常的目录复制（目标路径与源路径不同）
       // 实现目录自动重命名逻辑
       let finalS3TargetPath = normalizedS3TargetPath;
-      let finalTargetPath = targetPath.endsWith("/") ? targetPath : targetPath + "/";
+      let finalTargetPath = isDirectoryPath(targetPath) ? targetPath : targetPath + "/";
       let wasRenamed = false;
 
       // 提取目标目录的父目录和名称（与相同路径逻辑保持一致）
@@ -557,7 +557,7 @@ export class S3BatchOperations {
       }
 
       // 更新逻辑路径
-      const targetPathWithoutTrailingSlash = targetPath.endsWith("/") ? targetPath.slice(0, -1) : targetPath;
+      const targetPathWithoutTrailingSlash = isDirectoryPath(targetPath) ? targetPath.slice(0, -1) : targetPath;
       const targetPathParts2 = targetPathWithoutTrailingSlash.split("/");
       targetPathParts2.pop(); // 移除原始目录名
       const targetParentPath = targetPathParts2.join("/");
@@ -592,12 +592,12 @@ export class S3BatchOperations {
     return handleFsError(
       async () => {
         // 规范化路径
-        oldPath = normalizePath(oldPath, oldPath.endsWith("/"));
-        newPath = normalizePath(newPath, newPath.endsWith("/"));
+        oldPath = normalizePath(oldPath, isDirectoryPath(oldPath));
+        newPath = normalizePath(newPath, isDirectoryPath(newPath));
 
-        // 检查路径类型必须匹配
-        const oldIsDirectory = oldPath.endsWith("/");
-        const newIsDirectory = newPath.endsWith("/");
+        // 检查路径类型必须匹配（统一使用 FS 视图路径规则）
+        const oldIsDirectory = isDirectoryPath(oldPath);
+        const newIsDirectory = isDirectoryPath(newPath);
 
         if (oldIsDirectory !== newIsDirectory) {
           throw new ValidationError("源路径和目标路径类型必须一致（文件或目录）");

@@ -22,6 +22,7 @@ export const DRIVER_TYPES = Object.freeze({
   WEBDAV: "WEBDAV",
   LOCAL: "LOCAL",
   ONEDRIVE: "ONEDRIVE",
+  GOOGLE_DRIVE: "GOOGLE_DRIVE",
 });
 
 export const DEFAULT_DRIVER_CAPABILITIES = Object.freeze({

@@ -4,6 +4,7 @@ import { S3Driver } from "./s3/S3Driver.js";
 import { WebDavDriver } from "./webdav/WebDavDriver.js";
 import { LocalDriver } from "./local/LocalDriver.js";
 import { OneDriveDriver } from "./onedrive/OneDriveDriver.js";
+import { GoogleDriveDriver } from "./googledrive/GoogleDriveDriver.js";
 
 // 存储驱动工厂
 const driverFactories = new Map([
@@ -11,6 +12,7 @@ const driverFactories = new Map([
   [DRIVER_TYPES.WEBDAV, (config) => new WebDavDriver(config)],
   [DRIVER_TYPES.LOCAL, (config) => new LocalDriver(config)],
   [DRIVER_TYPES.ONEDRIVE, (config) => new OneDriveDriver(config)],
+  [DRIVER_TYPES.GOOGLE_DRIVE, (config) => new GoogleDriveDriver(config)],
 ]);
 
 const driverCache = new Map();

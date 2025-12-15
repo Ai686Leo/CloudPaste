@@ -7,9 +7,12 @@ import app from "./src/index.js";
 import { ApiStatus } from "./src/constants/index.js";
 import { checkAndInitDatabase } from "./src/utils/database.js";
 import { registerTaskHandlers } from "./src/storage/fs/tasks/registerHandlers.js";
+import { registerScheduledHandlers } from "./src/scheduled/ScheduledTaskRegistry.js";
+import { runDueScheduledJobs } from "./src/scheduled/runDueScheduledJobs.js";
 
-// 在模块加载时注册所有任务处理器
+// 在模块加载时注册所有任务处理器和调度任务处理器
 registerTaskHandlers();
+registerScheduledHandlers();
 
 // 运行时环境检测：通过 caches.default 判断是否为 Cloudflare Workers
 const isCloudflareWorkers = (() => {
@@ -78,12 +81,37 @@ export default {
       );
     }
   },
+
+  async scheduled(controller, env, ctx) {
+    try {
+      if (!env || !env.DB) {
+        console.warn("[scheduled] 缺少 DB 绑定，跳过维护任务执行");
+        return;
+      }
+
+      console.log(
+        "[scheduled] Cloudflare scheduled 触发，开始检查到期后台任务...",
+        new Date().toISOString(),
+      );
+
+      await checkAndInitDatabase(env.DB);
+      await runDueScheduledJobs(env.DB, env);
+    } catch (error) {
+      console.error("[scheduled] 执行维护任务时发生错误:", error);
+    }
+  },
 };
 
 // ============ Node/Docker 环境启动逻辑 ============ 
 if (!isCloudflareWorkers) {
   const bootstrap = async () => {
-    const [{ serve }, { default: path }, { default: fs }, { fileURLToPath }, { createSQLiteAdapter }] = await Promise.all([
+    const [
+      { serve },
+      { default: path },
+      { default: fs },
+      { fileURLToPath },
+      { createSQLiteAdapter },
+    ] = await Promise.all([
       import("@hono/node-server"),
       import("path"),
       import("fs"),
@@ -114,6 +142,39 @@ if (!isCloudflareWorkers) {
 
     if (!bindings.ENCRYPTION_SECRET) {
       throw new Error("ENCRYPTION_SECRET 未设置，请在环境变量中配置安全密钥");
+    }
+
+    // 启动 Node/Docker 环境内部调度器：
+    // - 使用 node-schedule 定期触发 runDueScheduledJobs
+    // - cron 表达式可以通过环境变量 SCHEDULED_TICK_CRON 覆盖，默认每分钟一次
+    const cronExpr = process.env.SCHEDULED_TICK_CRON || "*/1 * * * *";
+    const { scheduleJob } = await import("node-schedule");
+    try {
+      scheduleJob(cronExpr, async () => {
+        const tickStartedAt = new Date();
+        const tickStartedIso = tickStartedAt.toISOString();
+        console.log(
+          "[scheduled] node-schedule tick 触发",
+          { time: tickStartedIso, cron: cronExpr },
+        );
+
+        const startedMs = Date.now();
+        try {
+          await runDueScheduledJobs(sqliteAdapter, bindings);
+        } catch (error) {
+          const durationMs = Date.now() - startedMs;
+          console.error("[scheduled] node-schedule tick 执行失败:", {
+            time: new Date().toISOString(),
+            durationMs,
+            error,
+          });
+        }
+      });
+      console.log(
+        `[scheduled] 已在 Node/Docker 环境启动内部调度器，cron=${cronExpr}`,
+      );
+    } catch (error) {
+      console.error("[scheduled] 启动内部调度器失败:", error);
     }
 
     // 使用 @hono/node-server 启动 Node 服务器

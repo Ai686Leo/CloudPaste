@@ -167,12 +167,14 @@
 
 <script setup>
 import { computed, ref, defineProps, onMounted, watch, onUnmounted } from "vue";
+import { useRoute } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { getFilePassword as resolveFilePassword } from "@/utils/filePasswordUtils.js";
 import { useFileshareService } from "@/modules/fileshare/fileshareService.js";
 
 const { t } = useI18n();
 const fileshareService = useFileshareService();
+const route = useRoute();
 import { getPreviewComponent, formatFileSize, FileType, getIconType } from "@/utils/fileTypes.js";
 import { getPreviewModeFromFilename, PREVIEW_MODES } from "@/utils/textUtils.js";
 import { formatDateTime } from "@/utils/timeUtils.js";
@@ -298,7 +300,11 @@ const currentPreviewComponent = computed(() => {
 
 // 是否应该显示预览
 const shouldShowPreview = computed(() => {
-  return processedPreviewUrl.value || isOfficeFile.value;
+  // 文本类预览不依赖 processedPreviewUrl（直链能力），只要识别为文本类就应显示并走 contentUrl
+  if (isText.value || isCode.value || isMarkdown.value || isHtml.value) {
+    return true;
+  }
+  return Boolean(processedPreviewUrl.value) || isOfficeFile.value;
 });
 
 // 注意：预览能力检查现在通过 shouldShowPreview 计算属性处理
@@ -325,6 +331,10 @@ const getCodeLanguage = computed(() => {
     rs: "Rust",
     sh: "Shell",
     sql: "SQL",
+    xml: "XML",
+    json: "JSON",
+    yaml: "YAML",
+    toml: "TOML",
     // UI/前端
     css: "CSS",
     scss: "SCSS",
@@ -337,19 +347,29 @@ const getCodeLanguage = computed(() => {
   return languageMap[extension] || t("fileView.preview.code.title");
 });
 
-// 删除getConfigLanguage - 不再区分配置文件
 
 // 动态组件属性配置
 const previewComponentProps = computed(() => {
+  const previewUrl = processedPreviewUrl.value;
   const baseProps = {
-    previewUrl: processedPreviewUrl.value,
     filename: props.fileInfo.filename,
     mimetype: props.fileInfo.mimetype,
   };
 
+  const effectiveSlug =
+    props.fileInfo?.slug ||
+    route.params?.slug ||
+    route.params?.fileSlug ||
+    "";
+  const effectiveContentUrl = effectiveSlug
+    ? fileshareService.getPermanentContentUrl({ ...props.fileInfo, slug: effectiveSlug })
+    : "";
+
+  // 所有“文本类预览”组件仅接收 contentUrl，由 gateway / LinkService 统一决定直链或代理
   if (isText.value || isCode.value) {
     return {
       ...baseProps,
+      contentUrl: effectiveContentUrl,
       title: isCode.value ? t("fileView.preview.code.title") : t("fileView.preview.text.title"),
       language: isCode.value ? getCodeLanguage.value : "",
       loadingText: isCode.value ? t("fileView.preview.code.loading") : t("fileView.preview.text.loading"),
@@ -360,6 +380,7 @@ const previewComponentProps = computed(() => {
   if (isMarkdown.value) {
     return {
       ...baseProps,
+      contentUrl: effectiveContentUrl,
       darkMode: props.darkMode,
     };
   }
@@ -367,6 +388,7 @@ const previewComponentProps = computed(() => {
   if (isHtml.value) {
     return {
       ...baseProps,
+      contentUrl: effectiveContentUrl,
       darkMode: props.darkMode,
     };
   }
@@ -377,15 +399,16 @@ const previewComponentProps = computed(() => {
     const providers = (preview && preview.providers) || {};
     return {
       ...baseProps,
+      previewUrl,
       providers,
-      nativeUrl: baseProps.previewUrl,
+      nativeUrl: previewUrl,
     };
   }
 
   if (isOfficeFile.value) {
     return {
       providers: props.fileInfo.documentPreview?.providers || {},
-      nativeUrl: processedPreviewUrl.value,
+      nativeUrl: previewUrl,
       mimetype: props.fileInfo.mimetype,
       filename: props.fileInfo.filename,
       useProxy: props.fileInfo.use_proxy,
@@ -394,12 +417,17 @@ const previewComponentProps = computed(() => {
   }
 
   if (isImage.value || isAudio.value) {
-    return baseProps;
+    return {
+      ...baseProps,
+      previewUrl,
+    };
   }
 
   if (isVideo.value) {
     return {
       ...baseProps,
+      previewUrl,
+      linkType: props.fileInfo.linkType || null,
       darkMode: props.darkMode,
     };
   }

@@ -32,7 +32,33 @@
                   <span v-html="getFileIconClassLocal(file)"></span>
                 </div>
                 <!-- 文件名 -->
-                <div class="font-medium" :class="darkMode ? 'text-white' : 'text-gray-900'" :title="file.filename">{{ truncateFilename(file.filename) }}</div>
+                <div
+                  class="font-medium cursor-pointer hover:underline"
+                  :class="darkMode ? 'text-primary-400' : 'text-primary-600'"
+                  :title="file.filename"
+                  @click.stop="openFileLink(file)"
+                >{{ truncateFilename(file.filename) }}</div>
+                <!-- 分享相关操作（与文本分享页一致：放在文件名旁） -->
+                <div class="ml-2 flex items-center space-x-1">
+                  <button
+                    @click.stop="emit('copy-link', file)"
+                    class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full relative transition-colors"
+                    title="复制分享链接"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                  </button>
+                  <button
+                    @click.stop="emit('generate-qr', file)"
+                    class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
+                    title="二维码"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+                    </svg>
+                  </button>
+                </div>
                 <span
                   v-if="file.has_password"
                   :class="['ml-2', passwordBadgeBaseClass]"
@@ -42,7 +68,16 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 11V7a5 5 0 0110 0v4" />
                     <rect stroke-linecap="round" stroke-linejoin="round" stroke-width="2" x="6" y="11" width="12" height="9" rx="2" />
                   </svg>
-                  <span class="leading-none">加密</span>
+                </span>
+                <span
+                  v-if="file.use_proxy === 1 || file.use_proxy === true"
+                  :class="['ml-2', proxyBadgeBaseClass]"
+                  title="Worker 代理访问"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" class="h-3.5 w-3.5" :class="proxyIconClass">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.172 13.828a4 4 0 015.656 0l4 4a4 4 0 01-5.656 5.656l-1.102-1.101" />
+                  </svg>
                 </span>
               </div>
               <div class="text-xs mt-1 truncate" :class="darkMode ? 'text-gray-400' : 'text-gray-500'" :title="file.slug ? `/${file.slug}` : '无短链接'">
@@ -147,41 +182,12 @@
               />
             </svg>
           </button>
-          <button @click="$emit('generate-qr', file)" class="p-2 rounded-md" :class="darkMode ? 'bg-gray-700 text-indigo-400' : 'bg-gray-100 text-indigo-600'">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"
-              />
-            </svg>
-          </button>
-          <button @click="openFileLink(file)" class="p-2 rounded-md" :class="darkMode ? 'bg-gray-700 text-amber-400' : 'bg-gray-100 text-amber-600'">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-            </svg>
-          </button>
-          <button @click="emit('copy-link', file)" class="p-2 rounded-md relative" :class="darkMode ? 'bg-gray-700 text-cyan-400' : 'bg-gray-100 text-cyan-600'">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-              />
-            </svg>
-            <!-- 移动端复制成功提示 -->
-            <span v-if="props.copiedFiles[file.id]" class="absolute -top-8 right-0 px-2 py-1 text-xs text-white bg-green-500 rounded whitespace-nowrap"> 已复制 </span>
-          </button>
           <!-- 移动端复制永久直链按钮 -->
           <button @click="emit('copy-permanent-link', file)" class="p-2 rounded-md relative" :class="darkMode ? 'bg-gray-700 text-purple-400' : 'bg-gray-100 text-purple-600'">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101" />
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.172 13.828a4 4 0 0 1 5.656 0l4 4a4 4 0 01-5.656 5.656l-1.102-1.101" />
             </svg>
-            <!-- 移动端永久链接复制成功提示 -->
-            <span v-if="props.copiedPermanentFiles[file.id]" class="absolute -top-8 right-0 px-2 py-1 text-xs text-white bg-green-500 rounded whitespace-nowrap"> 已复制直链 </span>
           </button>
           <button @click="$emit('delete', file)" class="p-2 rounded-md" :class="darkMode ? 'bg-gray-700 text-red-400' : 'bg-gray-100 text-red-600'">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -228,15 +234,6 @@ const props = defineProps({
     type: String,
     default: "admin",
   },
-  copiedFiles: {
-    type: Object,
-    default: () => ({}),
-  },
-  copiedPermanentFiles: {
-    type: Object,
-    default: () => ({}),
-  },
-
   loading: {
     type: Boolean,
     default: false,
@@ -244,7 +241,17 @@ const props = defineProps({
 });
 
 const isAdmin = computed(() => props.userType === "admin");
-const emit = defineEmits(["toggle-select", "toggle-select-all", "preview", "edit", "delete", "generate-qr", "copy-link", "copy-permanent-link"]);
+const emit = defineEmits([
+  "toggle-select",
+  "toggle-select-all",
+  "preview",
+  "edit",
+  "delete",
+  "generate-qr",
+  "copy-link",
+  "copy-permanent-link",
+  "error",
+]);
 
 const storageConfigsStore = useStorageConfigsStore();
 
@@ -278,13 +285,87 @@ const fileColumns = computed(() => [
           h(
             "span",
             {
-              class: "font-medium truncate max-w-64",
+              class: [
+                "font-medium truncate max-w-64 cursor-pointer hover:underline",
+                props.darkMode ? "text-primary-400" : "text-primary-600",
+              ],
               title: file.filename,
+              onClick: (e) => {
+                e?.stopPropagation?.();
+                openFileLink(file);
+              },
             },
             truncateFilename(file.filename)
           ),
+          h("div", { class: "ml-2 flex items-center space-x-1" }, [
+            // 复制分享链接（与文本分享页一致：放在文件名旁边）
+            h(
+              "button",
+              {
+                class: "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full relative transition-colors",
+                title: "复制分享链接",
+                onClick: (e) => {
+                  e?.stopPropagation?.();
+                  emit("copy-link", file);
+                },
+              },
+              [
+                h(
+                  "svg",
+                  {
+                    xmlns: "http://www.w3.org/2000/svg",
+                    class: "h-4 w-4",
+                    fill: "none",
+                    viewBox: "0 0 24 24",
+                    stroke: "currentColor",
+                  },
+                  [
+                    h("path", {
+                      "stroke-linecap": "round",
+                      "stroke-linejoin": "round",
+                      "stroke-width": "2",
+                      d: "M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z",
+                    }),
+                  ]
+                ),
+              ]
+            ),
+            // 二维码
+            h(
+              "button",
+              {
+                class: "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors",
+                title: "二维码",
+                onClick: (e) => {
+                  e?.stopPropagation?.();
+                  emit("generate-qr", file);
+                },
+              },
+              [
+                h(
+                  "svg",
+                  {
+                    xmlns: "http://www.w3.org/2000/svg",
+                    class: "h-4 w-4",
+                    fill: "none",
+                    viewBox: "0 0 24 24",
+                    stroke: "currentColor",
+                  },
+                  [
+                    h("path", {
+                      "stroke-linecap": "round",
+                      "stroke-linejoin": "round",
+                      "stroke-width": "2",
+                      d: "M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z",
+                    }),
+                  ]
+                ),
+              ]
+            ),
+          ]), 
           file.has_password && renderPasswordBadge("ml-2"),
-        ]),
+          (file.use_proxy === 1 || file.use_proxy === true) && renderProxyBadge("ml-2"),
+        ]), 
         h(
           "span",
           {
@@ -484,75 +565,6 @@ const fileColumns = computed(() => [
           ),
         },
         {
-          title: "二维码",
-          event: () => emit("generate-qr", file),
-          color: "text-indigo-600 hover:text-indigo-900 dark:text-indigo-400",
-          svg: h(
-            "svg",
-            {
-              xmlns: "http://www.w3.org/2000/svg",
-              class: "h-5 w-5",
-              fill: "none",
-              viewBox: "0 0 24 24",
-              stroke: "currentColor",
-            },
-            [
-              h("path", {
-                "stroke-linecap": "round",
-                "stroke-linejoin": "round",
-                "stroke-width": "2",
-                d: "M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z",
-              }),
-            ]
-          ),
-        },
-        {
-          title: "跳转",
-          event: () => openFileLink(file),
-          color: "text-amber-600 hover:text-amber-900 dark:text-amber-400",
-          svg: h(
-            "svg",
-            {
-              xmlns: "http://www.w3.org/2000/svg",
-              class: "h-5 w-5",
-              fill: "none",
-              viewBox: "0 0 24 24",
-              stroke: "currentColor",
-            },
-            [
-              h("path", {
-                "stroke-linecap": "round",
-                "stroke-linejoin": "round",
-                "stroke-width": "2",
-                d: "M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14",
-              }),
-            ]
-          ),
-        },
-        {
-          title: "复制链接",
-          event: () => emit("copy-link", file),
-          color: "text-cyan-600 hover:text-cyan-900 dark:text-cyan-400",
-          svg: h(
-            "svg",
-            {
-              xmlns: "http://www.w3.org/2000/svg",
-              class: "h-5 w-5",
-              fill: "none",
-              viewBox: "0 0 24 24",
-              stroke: "currentColor",
-            },
-            [
-              h("path", {
-                "stroke-linecap": "round",
-                "stroke-linejoin": "round",
-                "stroke-width": "2",
-                d: "M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z",
-              }),
-            ]
-          ),
-        },
-        {
           title: "复制直链",
           event: () => emit("copy-permanent-link", file),
           color: "text-purple-600 hover:text-purple-900 dark:text-purple-400",
@@ -613,25 +625,6 @@ const fileColumns = computed(() => [
             [
               h("span", { class: "sr-only" }, action.title),
               action.svg,
-              // 添加复制反馈提示
-              action.title === "复制链接" && props.copiedFiles[file.id]
-                ? h(
-                    "span",
-                    {
-                      class: "absolute -top-8 left-1/2 transform -translate-x-1/2 px-2 py-1 text-xs text-white bg-green-500 rounded whitespace-nowrap",
-                    },
-                    "已复制"
-                  )
-                : null,
-              action.title === "复制直链" && props.copiedPermanentFiles[file.id]
-                ? h(
-                    "span",
-                    {
-                      class: "absolute -top-8 left-1/2 transform -translate-x-1/2 px-2 py-1 text-xs text-white bg-green-500 rounded whitespace-nowrap",
-                    },
-                    "已复制直链"
-                  )
-                : null,
             ]
           )
         )
@@ -778,6 +771,57 @@ const renderPasswordBadge = (extraClass = "") =>
           class: "leading-none",
         },
         "加密"
+      ),
+    ]
+  );
+
+const proxyBadgeBaseClass = computed(
+  () =>
+    `inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${
+      props.darkMode ? "bg-sky-500/15 text-sky-100 border-sky-400/30" : "bg-sky-50 text-sky-700 border-sky-200"
+    }`
+);
+
+const proxyIconClass = computed(() => (props.darkMode ? "text-sky-200" : "text-sky-600"));
+
+const renderProxyBadge = (extraClass = "") =>
+  h(
+    "span",
+    {
+      class: `${proxyBadgeBaseClass.value} ${extraClass}`,
+      title: "Worker 代理访问",
+    },
+    [
+      h(
+        "svg",
+        {
+          xmlns: "http://www.w3.org/2000/svg",
+          viewBox: "0 0 24 24",
+          fill: "none",
+          stroke: "currentColor",
+          class: `h-3.5 w-3.5 ${proxyIconClass.value}`,
+        },
+        [
+          h("path", {
+            "stroke-linecap": "round",
+            "stroke-linejoin": "round",
+            "stroke-width": "2",
+            d: "M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101",
+          }),
+          h("path", {
+            "stroke-linecap": "round",
+            "stroke-linejoin": "round",
+            "stroke-width": "2",
+            d: "M10.172 13.828a4 4 0 015.656 0l4 4a4 4 0 01-5.656 5.656l-1.102-1.101",
+          }),
+        ]
+      ),
+      h(
+        "span",
+        {
+          class: "leading-none",
+        },
+        "代理"
       ),
     ]
   );

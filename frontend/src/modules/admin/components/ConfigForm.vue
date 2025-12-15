@@ -101,6 +101,7 @@ const {
 // 计算表单标题与类型辅助标志
 const isWebDavType = computed(() => formData.value.storage_type === "WEBDAV");
 const isOneDriveType = computed(() => currentType.value === "ONEDRIVE");
+const isGoogleDriveType = computed(() => currentType.value === "GOOGLE_DRIVE");
 
 const formTitle = computed(() => {
   return props.isEdit ? "编辑存储配置" : "添加存储配置";
@@ -261,6 +262,27 @@ const isMaskedValue = (value) => {
   return typeof value === "string" && value.startsWith("*");
 };
 
+/**
+ * 归一化布尔字段的取值：
+ */
+const normalizeBooleanLike = (value) => {
+  if (value === 1 || value === "1") return true;
+  if (value === 0 || value === "0") return false;
+  return value;
+};
+
+const normalizeFormBooleans = (schema = currentConfigSchema.value) => {
+  // 顶层字段：后端存储为 0/1
+  formData.value.is_public = normalizeBooleanLike(formData.value.is_public);
+
+  // schema 内 boolean 字段：统一转换为 boolean
+  if (!schema?.fields) return;
+  for (const field of schema.fields) {
+    if (!field || field.type !== "boolean" || !field.name) continue;
+    formData.value[field.name] = normalizeBooleanLike(formData.value[field.name]);
+  }
+};
+
 // 字段级 blur 处理：复用已有工具逻辑
 const handleFieldBlur = (fieldName) => {
   if (fieldName === "name") {
@@ -378,7 +400,18 @@ watch(
     const config = props.config;
     if (config) {
       const type = config.storage_type || (storageTypes.value[0]?.value || "");
-      formData.value = { ...config, storage_type: type };
+      const next = { ...config, storage_type: type };
+
+      // Google Drive：如果未显式设置 root_id，则编辑表单中统一展示为 "root"
+      if (
+        next.storage_type === "GOOGLE_DRIVE" &&
+        (!next.root_id || String(next.root_id).trim().length === 0)
+      ) {
+        next.root_id = "root";
+      }
+
+      formData.value = next;
+      normalizeFormBooleans();
 
       const sizeState = { storageSize: "", storageUnit: storageUnit.value };
       setStorageSizeFromBytes(formData.value.total_storage_bytes, sizeState);
@@ -390,6 +423,7 @@ watch(
         name: "",
         storage_type: type,
       };
+      normalizeFormBooleans();
       const defaultBytes = getDefaultStorageByProvider("Cloudflare R2");
       formData.value.total_storage_bytes = defaultBytes;
       const sizeState = { storageSize: "", storageUnit: storageUnit.value };
@@ -424,6 +458,15 @@ watch([storageSize, storageUnit], () => {
   });
 });
 
+// 当 schema 加载完成或 storage_type 切换时，确保布尔字段已归一化
+watch(
+  () => currentConfigSchema.value,
+  (schema) => {
+    if (!schema) return;
+    normalizeFormBooleans(schema);
+  },
+);
+
 // 提交表单
 const submitForm = async () => {
   loading.value = true;
@@ -449,12 +492,18 @@ const submitForm = async () => {
         delete updateData.password;
       }
 
-      // OneDrive 密钥字段：空值或掩码值不提交（保留原值）
-      if (isOneDriveType.value && (!updateData.client_secret || updateData.client_secret.trim() === "" || isMaskedValue(updateData.client_secret))) {
+      // OneDrive / GoogleDrive 密钥字段：空值或掩码值不提交（保留原值）
+      if (
+        (isOneDriveType.value || isGoogleDriveType.value) &&
+        (!updateData.client_secret || updateData.client_secret.trim() === "" || isMaskedValue(updateData.client_secret))
+      ) {
         delete updateData.client_secret;
       }
 
-      if (isOneDriveType.value && (!updateData.refresh_token || updateData.refresh_token.trim() === "" || isMaskedValue(updateData.refresh_token))) {
+      if (
+        (isOneDriveType.value || isGoogleDriveType.value) &&
+        (!updateData.refresh_token || updateData.refresh_token.trim() === "" || isMaskedValue(updateData.refresh_token))
+      ) {
         delete updateData.refresh_token;
       }
 
@@ -500,6 +549,7 @@ onMounted(async () => {
         }
       }
     }
+    normalizeFormBooleans();
   } catch (e) {
     console.error("加载存储类型元数据失败:", e);
   }

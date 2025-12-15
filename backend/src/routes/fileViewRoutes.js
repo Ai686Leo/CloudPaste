@@ -17,10 +17,12 @@ const app = new Hono();
 // 路由处理器
 // ==========================================
 
-// Share 内容路由 /api/s/:slug
-// - 统一处理分享视图下的内容访问（预览/下载）
-// - 通过 mode=inline|attachment 区分预览与下载行为
-app.get("/api/s/:slug", async (c) => {
+/**
+ * Share 内容交付统一入口
+ * - 负责密码/过期/可访问性校验
+ * - 最终委托 FileViewService 进行直链/代理决策与数据流输出
+ */
+async function handleShareDelivery(c, { forceDownload, forceProxy }) {
   const slug = c.req.param("slug");
   const db = c.env.DB;
   const encryptionSecret = getEncryptionSecret(c);
@@ -34,8 +36,6 @@ app.get("/api/s/:slug", async (c) => {
 
   const url = new URL(c.req.url);
   const passwordParam = url.searchParams.get("password");
-  const mode = url.searchParams.get("mode") || "inline";
-  const forceDownload = mode === "attachment";
 
   if (file.password) {
     if (!passwordParam) {
@@ -56,10 +56,28 @@ app.get("/api/s/:slug", async (c) => {
     throw new AuthorizationError("文件不可访问");
   }
 
-  // 内容交付逻辑统一由 FileViewService 处理：
-  // - 当 use_proxy = 1 时，通过 ObjectStore 代理流式返回（share 层本地代理）
-  // - 当 use_proxy = 0 时，优先使用存储直链（S3 custom_host / 预签名等 DirectLink 能力），否则返回 501
-  return handleFileDownload(slug, db, encryptionSecret, c.req.raw, forceDownload, repositoryFactory);
+  return handleFileDownload(slug, db, encryptionSecret, c.req.raw, forceDownload, repositoryFactory, {
+    forceProxy: !!forceProxy,
+  });
+}
+
+// Share 本地代理入口 /api/s/:slug（等价 FS 的 /api/p）
+// - 永远同源本地流式 200，不做直链/Worker 决策
+// - down=true/1 表示下载语义，否则为预览语义
+app.get("/api/s/:slug", async (c) => {
+  const url = new URL(c.req.url);
+  const down = url.searchParams.get("down");
+  const legacyMode = url.searchParams.get("mode");
+  const forceDownload =
+    (down && down !== "0" && down !== "false") ||
+    legacyMode === "attachment" ||
+    legacyMode === "download";
+  return handleShareDelivery(c, { forceDownload, forceProxy: true });
+});
+
+// Share 文本/编码检测专用同源内容口（共用）
+app.get("/api/share/content/:slug", async (c) => {
+  return handleShareDelivery(c, { forceDownload: false, forceProxy: true });
 });
 
 export default app;

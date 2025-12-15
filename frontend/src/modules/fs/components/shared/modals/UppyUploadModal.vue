@@ -49,20 +49,6 @@
           :paste-key="t('mount.uppy.pasteKey')"
           :paste-hint-suffix="t('mount.uppy.pasteHint')"
         />
-
-        <!-- 错误显示 -->
-        <div v-if="errorMessage" class="mb-4 p-3 rounded-md" :class="darkMode ? 'bg-red-900/20 border border-red-700' : 'bg-red-50 border border-red-200'">
-          <div class="flex items-center">
-            <svg class="w-4 h-4 mr-2 text-red-500" fill="currentColor" viewBox="0 0 20 20">
-              <path
-                fill-rule="evenodd"
-                d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                clip-rule="evenodd"
-              />
-            </svg>
-            <span class="text-sm" :class="darkMode ? 'text-red-300' : 'text-red-700'">{{ errorMessage }}</span>
-          </div>
-        </div>
       </div>
 
       <!-- 底部操作栏 -->
@@ -498,11 +484,30 @@ const configureUploadMethod = async () => {
 };
 
 /**
- * 配置ServerResumePlugin插件
+ * 配置 ServerResumePlugin 插件
+ * - 避免重复安装相同 id 的插件
+ * - 根据当前上传模式动态开启/关闭并更新配置
  */
 const configureServerResumePlugin = () => {
+  const uppy = uppyInstance.value;
+  if (!uppy) return;
+
+  const existing = uppy.getPlugin('ServerResumePlugin');
+
   if (uploadMethod.value === 'multipart') {
-    uppyInstance.value.use(ServerResumePlugin, getServerResumeConfig());
+    const opts = getServerResumeConfig();
+    if (existing) {
+      try {
+        existing.setOptions(opts);
+      } catch (e) {
+        console.warn('[Uppy] 更新 ServerResumePlugin 配置失败', e);
+      }
+    } else {
+      uppy.use(ServerResumePlugin, opts);
+    }
+  } else if (existing) {
+    // 非分片模式时移除插件，避免多次初始化
+    uppy.removePlugin('ServerResumePlugin');
   }
 };
 

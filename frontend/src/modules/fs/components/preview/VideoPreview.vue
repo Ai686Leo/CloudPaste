@@ -279,6 +279,7 @@ const initializeCurrentVideo = async () => {
       url: props.videoUrl,
       poster: generateDefaultPoster(props.file.name),
       contentType: props.file.contentType,
+      linkType: props.file.linkType || null,
       originalFile: props.file,
       isHLS: isHLSVideo.value,
       hlsSegmentUrls: hlsSegmentUrls.value,

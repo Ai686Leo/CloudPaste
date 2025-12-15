@@ -37,17 +37,20 @@ export function useTextPreview(options = {}) {
    * @returns {Promise<Object>} 加载结果
    */
   const loadTextContent = async (fileData, emitFn) => {
-    if (!fileData?.rawUrl) {
-      console.warn("没有可用的 rawUrl");
-      return { success: false, error: "没有可用的 rawUrl" };
+    // 解析/预览严格依赖同源内容 URL（contentUrl），不再退回外部预览/下载入口
+    const effectiveUrl = fileData?.contentUrl;
+    if (!effectiveUrl) {
+      console.error("文件数据缺少 contentUrl，无法进行文本加载:", fileData);
+      return { success: false, error: "缺少可用的内容预览 URL（contentUrl）" };
     }
 
     try {
       loading.value = true;
       error.value = null;
 
-      const url = fileData.rawUrl;
-      const result = await fetchText(url, fileData);
+      const url = effectiveUrl;
+      // 一次拉取原始字节后复用 rawBuffer，编码切换仅做本地 TextDecoder 解码
+      const result = await fetchText(url, fileData, { keepRawBuffer: true });
 
       if (result.success) {
         textContent.value = result.text;

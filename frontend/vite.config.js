@@ -9,7 +9,7 @@ export default defineConfig(({ command, mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
 
   // 统一版本管理
-  const APP_VERSION = "1.3.0";
+  const APP_VERSION = "1.4.0";
   const isDev = command === "serve";
 
   // 打印环境变量，帮助调试
@@ -313,40 +313,6 @@ export default defineConfig(({ command, mode }) => {
               handler: "NetworkOnly",
               options: {
                 cacheName: "admin-config-write",
-              },
-            },
-
-            // 页面导航缓存 - NetworkFirst（页面短期缓存）
-            {
-              urlPattern: ({ request }) => request.mode === "navigate",
-              handler: "NetworkFirst",
-              options: {
-                cacheName: "pages",
-                expiration: {
-                  maxEntries: 20,
-                  maxAgeSeconds: 2 * 60 * 60, // 2小时
-                },
-                networkTimeoutSeconds: 3,
-                cacheableResponse: {
-                  statuses: [0, 200],
-                },
-              },
-            },
-
-            // 通用API回退缓存 - NetworkFirst（其他API短期缓存）
-            {
-              urlPattern: /^.*\/api\/.*$/,
-              handler: "NetworkFirst",
-              options: {
-                cacheName: "api-fallback",
-                expiration: {
-                  maxEntries: 30,
-                  maxAgeSeconds: 10 * 60, // 10分钟
-                },
-                networkTimeoutSeconds: 5,
-                cacheableResponse: {
-                  statuses: [0, 200],
-                },
               },
             },
           ],

@@ -17,6 +17,8 @@ export const DbTables = {
   STORAGE_MOUNTS: "storage_mounts", // 存储挂载表
   FS_META: "fs_meta", // 目录 Meta 配置表
   TASKS: "tasks", // 任务编排表
+  SCHEDULED_JOBS: "scheduled_jobs", // 后台调度作业表
+  SCHEDULED_JOB_RUNS: "scheduled_job_runs", // 后台调度作业运行日志表
   UPLOAD_SESSIONS: "upload_sessions", // 通用上传会话表（前端分片/断点续传）
 };
 

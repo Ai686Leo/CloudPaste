@@ -34,8 +34,14 @@ export class SQLiteAdapter {
       },
 
       async run() {
-        await this._db.run(this.sql, ...this.params);
-        return { success: true };
+        const result = await this._db.run(this.sql, ...this.params);
+        const changes =
+          result && typeof result.changes === "number" ? result.changes : 0;
+        return {
+          success: true,
+          changes,
+          meta: { changes },
+        };
       },
 
       async all() {

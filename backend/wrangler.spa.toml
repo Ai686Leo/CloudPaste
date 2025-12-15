@@ -33,6 +33,10 @@ binding = "JOB_WORKFLOW"
 name = "job-workflow"
 class_name = "JobWorkflow"
 
+[triggers]
+crons = ["*/5 * * * *"]
+
+
 # ==================== Static Assets 配置 ====================
 # 用于托管前端静态资源
 [assets]

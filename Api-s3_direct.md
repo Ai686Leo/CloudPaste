@@ -30,7 +30,7 @@ https://{域名}/api/upload-direct/{filename}
 | expires_in        | number | 否   | 0            | 文件过期时间（小时）。0 表示永不过期。                                                                 |
 | max_views         | number | 否   | 0            | 文件最大查看次数。0 表示无限制。                                                                       |
 | remark            | string | 否   | 空           | 文件备注信息。                                                                                         |
-| password          | string | 否   | 空           | 访问密码。设置后文件在公共接口中需要密码才能访问；upload-direct 响应中始终返回 rawUrl，便于受信任端使用。 |
+| password          | string | 否   | 空           | 访问密码。设置后文件在公共接口中需要密码才能访问；upload-direct 响应中始终返回 previewUrl/downloadUrl，便于受信任端使用。 |
 | use_proxy         | string | 否   | 系统设置     | 是否使用代理访问。未提供时按系统设置 `default_use_proxy` 决定（默认直链），传 "1" 强制代理，传 "0" 强制直链。 |
 | override          | string | 否   | "false"      | 是否覆盖同名 slug 的已存在文件。"true"表示覆盖，"false"表示不覆盖。只能覆盖自己创建的文件。                  |
 | original_filename | string | 否   | "false"      | 是否标记使用原始文件名。直传场景下具体命名仍由系统策略决定，此参数主要作为元数据标记。                         |
@@ -71,8 +71,9 @@ https://{域名}/api/upload-direct/{filename}
     "max_views": null, // 最大查看次数限制
     "expires_at": null, // 过期时间
 
-    "rawUrl": "https://cdn.example.com/file/abcd12", // 最终可对外访问的 URL（直链或基于 `/api/s/:slug` 的代理 URL）
-    "linkType": "direct", // "direct" | "proxy"
+    "previewUrl": "https://cdn.example.com/file/abcd12", // 最终可对外预览入口（inline 语义；直链或基于 `/api/s/:slug` 的代理 URL）
+    "downloadUrl": "https://cdn.example.com/file/abcd12", // 最终可对外下载入口（attachment 语义；可能与 previewUrl 相同）
+    "linkType": "direct", // "direct" | "proxy" | "url_proxy"
     "use_proxy": 1, // 是否使用代理 (1=代理, 0=直接)
     "created_by": "admin:1" // 创建者信息 (admin:ID 或 apikey:ID)
   },

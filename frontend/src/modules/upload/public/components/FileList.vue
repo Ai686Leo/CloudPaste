@@ -554,8 +554,18 @@ const copyPermanentLink = async (file) => {
   }
 
   try {
-    // 基于 Link JSON 的 Down 路由获取永久下载链接
-    const permanentDownloadUrl = fileshareService.getPermanentDownloadUrl(file);
+    // 最近上传列表来自 /api/files（默认不含链接字段），
+    // 这里按需拉取 include=links 以获得 downloadUrl。
+    let detail = file;
+    if (!detail.downloadUrl) {
+      if (!file.id) {
+        throw new Error(t("file.cannotGetProxyLink"));
+      }
+      detail = await fileshareService.fetchById(file.id, { includeLinks: true });
+    }
+
+    // 基于 Link JSON 的 downloadUrl 获取永久下载直链（或本地代理兜底）
+    const permanentDownloadUrl = fileshareService.getPermanentDownloadUrl(detail);
     if (!permanentDownloadUrl) {
       throw new Error(t("file.cannotGetProxyLink"));
     }

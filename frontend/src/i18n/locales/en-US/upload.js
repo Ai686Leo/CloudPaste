@@ -117,7 +117,7 @@ export default {
       stream: "Streaming Upload",
       form: "Form Upload",
       multipart: "Multipart Upload",
-      presignedOnly: "(S3 Only)",
+      presignedOnly: "(Direct links only)",
       presignedMode: "Presigned Mode",
       streamMode: "Streaming Mode",
       formMode: "Form Mode",

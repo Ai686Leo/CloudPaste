@@ -148,9 +148,10 @@ export async function updateFile(path, content) {
  * @param {string} path 文件路径
  * @param {number|null} expiresIn 过期时间（秒），null表示使用存储配置的默认签名时间
  * @param {boolean} forceDownload 是否强制下载而非预览
+ * @param {{ headers?: Record<string,string> }} [options] 可选请求配置（例如路径密码 token）
  * @returns {Promise<string>} 预签名访问 URL（可能是直链或代理 URL）
  */
-export async function getFileLink(path, expiresIn = null, forceDownload = false) {
+export async function getFileLink(path, expiresIn = null, forceDownload = false, options = {}) {
   const params = {
     path: path,
     force_download: forceDownload.toString(),
@@ -161,11 +162,17 @@ export async function getFileLink(path, expiresIn = null, forceDownload = false)
     params.expires_in = expiresIn.toString();
   }
 
-  const resp = await get("/fs/file-link", { params });
+  /** @type {{ params: Record<string,string>, headers?: Record<string,string> }} */
+  const requestOptions = { params };
+  if (options.headers) {
+    requestOptions.headers = options.headers;
+  }
+
+  const resp = await get("/fs/file-link", requestOptions);
   if (!resp || resp.success === false) {
     throw new Error(resp?.message || "获取文件直链失败");
   }
-  const url = resp?.data?.rawUrl;
+  const url = resp?.data?.url;
   if (!url) {
     throw new Error(resp?.message || "获取文件直链失败");
   }
@@ -613,4 +620,3 @@ export async function listJobs(filter = {}) {
 export async function deleteJob(jobId) {
   return del(`/fs/jobs/${jobId}`);
 }
-

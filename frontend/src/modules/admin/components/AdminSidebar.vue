@@ -162,7 +162,7 @@
                 <template v-else>
                   <!-- 主菜单项 -->
                   <button
-                    @click="toggleSystemSettings"
+                    @click="item.id === 'system-settings' ? toggleSystemSettings() : toggleTaskManagement()"
                     :class="[
                       darkMode ? 'text-gray-300 hover:bg-gray-700 hover:text-white' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900',
                       'w-full group flex items-center justify-between px-3 py-2.5 text-sm font-medium rounded-md cursor-pointer',
@@ -207,7 +207,7 @@
                       <svg
                         v-if="!isCollapsed"
                         class="h-5 w-5 transition-transform duration-200"
-                        :class="[isSystemSettingsExpanded ? 'transform rotate-180' : '', darkMode ? 'text-gray-400' : 'text-gray-500']"
+                        :class="[(item.id === 'system-settings' ? isSystemSettingsExpanded : isTaskManagementExpanded) ? 'transform rotate-180' : '', darkMode ? 'text-gray-400' : 'text-gray-500']"
                         xmlns="http://www.w3.org/2000/svg"
                         fill="none"
                         viewBox="0 0 24 24"
@@ -219,7 +219,7 @@
                   </button>
 
                   <!-- 子菜单项 -->
-                  <div v-if="isSystemSettingsExpanded" class="ml-6 space-y-1">
+                  <div v-if="item.id === 'system-settings' ? isSystemSettingsExpanded : isTaskManagementExpanded" class="ml-6 space-y-1">
                     <router-link
                       v-for="child in item.children"
                       :key="child.id"
@@ -421,7 +421,7 @@
                 <div v-else-if="item.type === 'group'" :key="`mobile-group-${item.id}`" class="space-y-1">
                   <!-- 主菜单项 -->
                   <a
-                    @click="toggleSystemSettings"
+                    @click="item.id === 'system-settings' ? toggleSystemSettings() : toggleTaskManagement()"
                     :class="[
                       darkMode ? 'text-gray-300 hover:bg-gray-700 hover:text-white' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900',
                       'group flex items-center justify-between px-3 py-2.5 text-sm font-medium rounded-md cursor-pointer',
@@ -444,7 +444,7 @@
                     <!-- 展开/收起箭头 -->
                     <svg
                       class="h-5 w-5 transition-transform duration-200"
-                      :class="[isSystemSettingsExpanded ? 'transform rotate-180' : '', darkMode ? 'text-gray-400' : 'text-gray-500']"
+                      :class="[(item.id === 'system-settings' ? isSystemSettingsExpanded : isTaskManagementExpanded) ? 'transform rotate-180' : '', darkMode ? 'text-gray-400' : 'text-gray-500']"
                       xmlns="http://www.w3.org/2000/svg"
                       fill="none"
                       viewBox="0 0 24 24"
@@ -455,7 +455,7 @@
                   </a>
 
                   <!-- 子菜单项 -->
-                  <div v-if="isSystemSettingsExpanded" class="ml-6 space-y-1">
+                  <div v-if="item.id === 'system-settings' ? isSystemSettingsExpanded : isTaskManagementExpanded" class="ml-6 space-y-1">
                     <router-link
                       v-for="child in item.children"
                       :key="child.id"
@@ -578,8 +578,9 @@ onMounted(() => {
   }
 });
 
-// 系统设置菜单的展开状态
+// 菜单组的展开状态
 const isSystemSettingsExpanded = ref(false);
+const isTaskManagementExpanded = ref(false);
 
 // 站点图标相关计算属性
 const siteFaviconUrl = computed(() => siteConfigStore.siteFaviconUrl);
@@ -613,7 +614,16 @@ const visibleMenuItems = computed(() => {
       { id: "storage", name: t("admin.sidebar.storageConfig"), icon: "cloud", type: "item", routeName: "AdminStorage" },
       { id: "mount-management", name: t("admin.sidebar.mountManagement"), icon: "server", type: "item", routeName: "AdminMountManagement" },
       { id: "fs-meta-management", name: t("admin.sidebar.fsMetaManagement"), icon: "information-circle", type: "item", routeName: "AdminFsMetaManagement" },
-      { id: "tasks", name: t("admin.sidebar.tasks"), icon: "clipboard-list", type: "item", routeName: "AdminTasks" },
+      {
+        id: "task-management",
+        name: t("admin.sidebar.taskManagement"),
+        icon: "clipboard-list",
+        type: "group",
+        children: [
+          { id: "scheduled-jobs", name: t("admin.sidebar.scheduledJobs"), icon: "bell-alert", type: "item", routeName: "AdminScheduledJobs" },
+          { id: "tasks", name: t("admin.sidebar.tasks"), icon: "list-bullet", type: "item", routeName: "AdminTasks" },
+        ],
+      },
       { id: "key-management", name: t("admin.sidebar.keyManagement"), icon: "key", type: "item", routeName: "AdminKeyManagement" },
       { id: "account-management", name: t("admin.sidebar.accountManagement"), icon: "user", type: "item", routeName: "AdminAccountManagement" },
       { id: "backup", name: t("admin.sidebar.backup"), icon: "circle-stack", type: "item", routeName: "AdminBackup" },
@@ -649,7 +659,7 @@ const visibleMenuItems = computed(() => {
 
   // 任务管理：有挂载权限即可访问，具体任务根据权限类型在列表内过滤
   if (props.permissions.mount) {
-    items.push({ id: "tasks", name: t("admin.sidebar.tasks"), icon: "clipboard-list", type: "item", routeName: "AdminTasks" });
+    items.push({ id: "tasks", name: t("admin.sidebar.tasks"), icon: "list-bullet", type: "item", routeName: "AdminTasks" });
   }
 
   // 所有API密钥用户都可以访问账户管理（用于查看信息和登出）
@@ -658,9 +668,13 @@ const visibleMenuItems = computed(() => {
   return items;
 });
 
-// 切换系统设置菜单的展开状态
+// 切换菜单组的展开状态
 const toggleSystemSettings = () => {
   isSystemSettingsExpanded.value = !isSystemSettingsExpanded.value;
+};
+
+const toggleTaskManagement = () => {
+  isTaskManagementExpanded.value = !isTaskManagementExpanded.value;
 };
 
 // 收缩/展开切换函数
@@ -675,7 +689,9 @@ const handleGroupItemClick = () => {
   isCollapsed.value = false;
   saveCollapseState(false);
   emit("sidebar-toggle", { collapsed: false });
+  // 展开所有菜单组
   isSystemSettingsExpanded.value = true;
+  isTaskManagementExpanded.value = true;
 };
 
 // 退出登录
@@ -744,6 +760,18 @@ const getIconPath = (iconName) => {
     case "clipboard-list":
       // Heroicons v2: clipboard-document-list
       return "M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25zM6.75 12h.008v.008H6.75V12zm0 3h.008v.008H6.75V15zm0 3h.008v.008H6.75V18z";
+    case "list-bullet":
+      // Heroicons v2: list-bullet (项目符号列表图标，适合任务列表)
+      return "M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0M3.75 12h.007v.008H3.75zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0m-.375 5.25h.007v.008H3.75zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0";
+    case "bell-alert":
+      // Heroicons v2: bell-alert (闹钟提醒图标，适合定时任务)
+      return "M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0M3.124 7.5A8.969 8.969 0 0 1 5.292 3m13.416 0a8.969 8.969 0 0 1 2.168 4.5";
+    case "calendar-days":
+      // Heroicons v2: calendar-days (日历图标)
+      return "M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5m-9-6h.008v.008H12v-.008ZM12 15h.008v.008H12V15Zm0 2.25h.008v.008H12v-.008ZM9.75 15h.008v.008H9.75V15Zm0 2.25h.008v.008H9.75v-.008ZM7.5 15h.008v.008H7.5V15Zm0 2.25h.008v.008H7.5v-.008Zm6.75-4.5h.008v.008h-.008v-.008Zm0 2.25h.008v.008h-.008V15Zm0 2.25h.008v.008h-.008v-.008Zm2.25-4.5h.008v.008H16.5v-.008Zm0 2.25h.008v.008H16.5V15Z";
+    case "clock":
+      // Heroicons v2: clock (保留兼容性)
+      return "M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z";
     default:
       return "";
   }

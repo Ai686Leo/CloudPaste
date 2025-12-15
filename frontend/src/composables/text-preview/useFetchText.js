@@ -199,11 +199,18 @@ export function useFetchText() {
    */
   const reDecodeWithEncoding = async (encoding) => {
     if (!rawBuffer.value) {
-      // 如果没有原始数据，重新获取（仅基于 rawUrl）
-      if (fileInfo.value?.rawUrl) {
-        return await fetchText(fileInfo.value.rawUrl, fileInfo.value);
+      // 如果没有原始数据，严格依赖内容 URL（contentUrl）重新获取一次原始数据
+      const info = fileInfo.value;
+      const retryUrl = info && info.contentUrl;
+
+      if (!retryUrl) {
+        throw new Error("没有可用的内容 URL（contentUrl）用于重新解码");
       }
-      throw new Error("没有可用的文件数据");
+
+      const retryResult = await fetchText(retryUrl, info, { keepRawBuffer: true });
+      if (!retryResult.success) {
+        throw new Error(retryResult.error || "重新获取文件内容失败");
+      }
     }
 
     try {

@@ -16,7 +16,6 @@ import * as mountService from "./services/mountService";
 import * as systemService from "./services/systemService";
 import * as urlUploadService from "./services/urlUploadService";
 import * as fsService from "./services/fsService";
-import * as fileViewService from "./services/fileViewService";
 
 // 统一服务导出 - 按功能模块重新组织
 export const api = {
@@ -36,9 +35,6 @@ export const api = {
     batchDeleteFiles: fileService.batchDeleteFiles,
     getMaxUploadSize: systemService.getMaxUploadSize,
   },
-
-  // 文件分享查看相关（包含预览功能）
-  fileView: fileViewService,
 
   // 存储配置相关
   storage: {
@@ -109,7 +105,6 @@ export const api = {
     // 文件系统管理 - 使用统一API
     getDirectoryList: fsService.getDirectoryList,
     getFileInfo: fsService.getFileInfo,
-    getFileDownloadUrl: fsService.getFileDownloadUrl,
     getFileLink: fsService.getFileLink,
     createDirectory: fsService.createDirectory,
     uploadFile: fsService.uploadFile,
@@ -146,7 +141,6 @@ export const api = {
     fs: {
       getDirectoryList: fsService.getDirectoryList,
       getFileInfo: fsService.getFileInfo,
-      getFileDownloadUrl: fsService.getFileDownloadUrl,
       getFileLink: fsService.getFileLink,
       createDirectory: fsService.createDirectory,
       uploadFile: fsService.uploadFile,

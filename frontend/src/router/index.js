@@ -152,6 +152,33 @@ const routes = [
         },
       },
       {
+        path: "scheduled-jobs",
+        name: "AdminScheduledJobs",
+        component: createOfflineAwareImport(() => import("../modules/admin/views/ScheduledJobsView.vue"), "定时任务管理"),
+        meta: {
+          title: "定时任务管理 - CloudPaste",
+          adminOnly: true, // 只有管理员可访问
+        },
+      },
+      {
+        path: "scheduled-jobs/create",
+        name: "AdminScheduledJobCreate",
+        component: createOfflineAwareImport(() => import("../modules/admin/views/ScheduledJobFormView.vue"), "创建定时任务"),
+        meta: {
+          title: "创建定时任务 - CloudPaste",
+          adminOnly: true,
+        },
+      },
+      {
+        path: "scheduled-jobs/:id/edit",
+        name: "AdminScheduledJobEdit",
+        component: createOfflineAwareImport(() => import("../modules/admin/views/ScheduledJobFormView.vue"), "编辑定时任务"),
+        meta: {
+          title: "编辑定时任务 - CloudPaste",
+          adminOnly: true,
+        },
+      },
+      {
         path: "account",
         name: "AdminAccountManagement",
         component: createOfflineAwareImport(() => import("../modules/admin/views/AccountManagementView.vue"), "账号管理"),

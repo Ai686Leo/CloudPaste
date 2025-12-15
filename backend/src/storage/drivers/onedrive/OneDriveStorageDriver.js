@@ -27,13 +27,14 @@ import { DriverError } from "../../../http/errors.js";
 import { buildFullProxyUrl } from "../../../constants/proxy.js";
 import { getMimeTypeFromFilename } from "../../../utils/fileUtils.js";
 import { FILE_TYPES, FILE_TYPE_NAMES } from "../../../constants/index.js";
-import { GetFileType } from "../../../utils/fileTypeDetector.js";
 import {
   createUploadSessionRecord,
   listActiveUploadSessions,
   updateUploadSessionStatusByFingerprint,
   findUploadSessionByUploadUrl,
 } from "../../../utils/uploadSessions.js";
+import { buildFileInfo } from "../../utils/FileInfoBuilder.js";
+import { createWebStreamDescriptor } from "../../streaming/StreamDescriptorUtils.js";
 
 // 简单上传（Simple Upload）上限：4MB
 const SIMPLE_UPLOAD_MAX_BYTES = 4 * 1024 * 1024;
@@ -195,27 +196,15 @@ export class OneDriveStorageDriver extends BaseDriver {
     const etag = item.eTag || null;
     const lastModified = item.lastModifiedDateTime ? new Date(item.lastModifiedDateTime) : null;
 
-    // 返回 StorageStreamDescriptor
-    return {
+    return createWebStreamDescriptor({
       size,
       contentType,
       etag,
       lastModified,
-      getStream: async (streamOptions = {}) => {
-        const { signal } = streamOptions;
-        const stream = await this.graphClient.downloadContent(remotePath || "", { signal });
-        return {
-          stream,
-          close: async () => {
-            // Web ReadableStream 的关闭由消费者处理
-            if (stream.locked === false && typeof stream.cancel === "function") {
-              await stream.cancel();
-            }
-          },
-        };
+      openStream: async (signal) => {
+        return this.graphClient.downloadContent(remotePath || "", { signal });
       },
-      // getRange 可选实现，未实现时 StorageStreaming 层会降级处理
-    };
+    });
   }
 
   // ========== WRITER 能力：uploadFile / createDirectory / rename / copy / remove ==========
@@ -1524,20 +1513,28 @@ export class OneDriveStorageDriver extends BaseDriver {
     const name = item.name;
     const path = parentPath ? `${parentPath}/${name}`.replace(/[\\/]+/g, "/") : name;
 
-    const type = isDirectory ? FILE_TYPES.FOLDER : await GetFileType(name, db);
-    const typeName = FILE_TYPE_NAMES[type] || (isDirectory ? "folder" : "file");
+    // 统一目录路径约定：目录在 FS 视图中始终以斜杠结尾
+    const displayPath =
+      isDirectory && typeof path === "string" && !path.endsWith("/") ? `${path}/` : path;
 
-    return {
-      path,
+    const size = item.size || 0;
+    const modified = item.lastModifiedDateTime ? new Date(item.lastModifiedDateTime) : null;
+    const mimetype = isDirectory ? null : (item.file?.mimeType || getMimeTypeFromFilename(name));
+
+    const info = await buildFileInfo({
+      fsPath: displayPath,
       name,
       isDirectory,
-      size: item.size || 0,
-      modified: item.lastModifiedDateTime || null,
-      mimetype: isDirectory ? null : (item.file?.mimeType || getMimeTypeFromFilename(name)),
-      type,
-      typeName,
-      mount_id: mount?.id,
-      storage_type: this.type,
+      size,
+      modified,
+      mimetype,
+      mount,
+      storageType: this.type,
+      db,
+    });
+
+    return {
+      ...info,
       // OneDrive 特有字段（可选）
       webUrl: item.webUrl || null,
       downloadUrl: item["@microsoft.graph.downloadUrl"] || null,

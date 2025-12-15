@@ -228,20 +228,6 @@
       </div>
     </div>
 
-    <!-- 错误显示 -->
-    <div v-if="errorMessage" class="mt-4 p-3 rounded-md" :class="darkMode ? 'bg-red-900/20 border border-red-700' : 'bg-red-50 border border-red-200'">
-      <div class="flex items-center">
-        <svg class="w-4 h-4 mr-2 text-red-500" fill="currentColor" viewBox="0 0 20 20">
-          <path
-            fill-rule="evenodd"
-            d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-            clip-rule="evenodd"
-          />
-        </svg>
-        <span class="text-sm" :class="darkMode ? 'text-red-300' : 'text-red-700'">{{ errorMessage }}</span>
-      </div>
-    </div>
-
   </div>
 </template>
 
@@ -599,10 +585,10 @@ const buildShareResultEntry = (item) => {
   }
 
   // 预览与下载统一依赖 Link JSON + share URL：
-  // - 预览：优先使用 fileshareService 基于 Link JSON 构造的预览入口，其次退回分享页
-  // - 下载：始终使用 Down 路由（getPermanentDownloadUrl）
+  // - 预览：优先使用 fileshareService 基于 Link JSON 构造的 previewUrl，其次退回分享页
+  // - 下载：基于 Link JSON 构造的 downloadUrl；downloadUrl=null 时无下载入口
   const previewUrl = fileshareService.getPermanentPreviewUrl(record) || shareUrl;
-  const downloadUrl = slug ? fileshareService.getPermanentDownloadUrl({ slug }) : "";
+  const downloadUrl = fileshareService.getPermanentDownloadUrl(record);
 
   return {
     id: record.id || meta.fileId || item?.id || slug,

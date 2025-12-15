@@ -9,8 +9,8 @@
               v-for="header in headerGroup.headers"
               :key="header.id"
               scope="col"
-              class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider"
-              :class="props.columnClasses[header.column.id]"
+              class="px-3 py-3 text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider"
+              :class="[props.columnClasses[header.column.id] || 'text-left']"
             >
               <div v-if="!header.isPlaceholder" :class="getSortHeaderClass(header.column)" @click="handleSort(header.column)">
                 <FlexRender :render="header.column.columnDef.header" :props="header.getContext()" />

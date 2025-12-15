@@ -11,12 +11,14 @@ import { useAuthStore } from "@/stores/authStore.js";
 import { useTaskManager } from "@/utils/taskManager.js";
 import { api } from "@/api";
 import { formatNowForFilename } from "@/utils/timeUtils.js";
+import { usePathPassword } from "@/composables/usePathPassword.js";
 
 export function useFileBasket() {
   const { t } = useI18n();
   const fileBasketStore = useFileBasketStore();
   const authStore = useAuthStore();
   const taskManager = useTaskManager();
+  const pathPassword = usePathPassword();
 
   // ===== 全局清理状态跟踪 =====
 
@@ -494,9 +496,26 @@ export function useFileBasket() {
    */
   const getFileDownloadUrl = async (file) => {
     try {
-      // 使用统一API获取文件直链/代理 URL（file-link）
+      // 优先使用控制面提供的 downloadUrl；缺失时按需签发 file-link
+      if (file?.downloadUrl) {
+        return file.downloadUrl;
+      }
+
       const getFileLinkApi = api.fs.getFileLink;
-      const url = await getFileLinkApi(file.path, null, true); // 强制下载
+      const isAdmin = authStore.isAdmin;
+
+      /** @type {{ headers?: Record<string,string> }} */
+      const requestOptions = {};
+      if (!isAdmin) {
+        const token = pathPassword.getPathToken(file.path);
+        if (token) {
+          requestOptions.headers = {
+            "X-FS-Path-Token": token,
+          };
+        }
+      }
+
+      const url = await getFileLinkApi(file.path, null, true, requestOptions);
 
       if (url) {
         return url;

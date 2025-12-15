@@ -189,7 +189,9 @@ export function buildResponseHeaders(descriptor, range, channel) {
  * @returns {{ status: number, message: string }}
  */
 export function mapDriverErrorToHttpStatus(error) {
-  const code = error?.code || "";
+  // 某些驱动错误的 code 可能不是字符串（例如对象/数字），这里统一转为字符串避免运行时报错
+  const rawCode = error?.code;
+  const code = typeof rawCode === "string" ? rawCode : String(rawCode ?? "");
   const status = error?.status || ApiStatus.INTERNAL_ERROR;
 
   if (code.includes("NOT_FOUND") || status === ApiStatus.NOT_FOUND) {

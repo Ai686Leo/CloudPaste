@@ -101,19 +101,23 @@ export const useFileShareStore = defineStore("fileShare", () => {
   /**
    * 根据 ID 获取文件（带缓存）
    * @param {number|string} id
-   * @param {{useCache?:boolean}} [options]
+   * @param {{useCache?:boolean, includeLinks?:boolean}} [options]
    * @returns {Promise<FileshareItem | null>}
    */
-  const fetchById = async (id, { useCache = true } = {}) => {
+  const fetchById = async (id, { useCache = true, includeLinks = false } = {}) => {
     if (!id) {
       throw new Error("缺少文件 ID");
     }
 
     if (useCache && cacheById.value.has(id)) {
-      return cacheById.value.get(id) || null;
+      const cached = cacheById.value.get(id) || null;
+      const hasLinks = !!(cached && (cached.previewUrl || cached.downloadUrl));
+      if (!includeLinks || hasLinks) {
+        return cached;
+      }
     }
 
-    const file = await service.fetchById(id);
+    const file = await service.fetchById(id, includeLinks ? { includeLinks: true } : {});
     if (file) {
       if (file.id != null) {
         cacheById.value.set(file.id, file);
@@ -240,4 +244,3 @@ export const useFileShareStore = defineStore("fileShare", () => {
     resetState,
   };
 });
-
