@@ -434,8 +434,10 @@ export class LocalStorageDriver extends BaseDriver {
 
     try {
       await this._writeBodyToFile(targetOsPath, fileOrStream);
-      const basePath = this._buildMountPath(mount, effectiveSubPath || "");
-      const storagePath = this._joinMountPath(basePath, name, false);
+      // storagePath 语义对齐：
+      // - FS（mount 视图）：返回挂载路径（/mount/.../file）
+      // - storage-first（ObjectStore / ShareUpload）：返回对象 key（相对 root_path 的子路径）
+      const storagePath = mount ? this._buildMountPath(mount, targetSubPath) : targetSubPath;
       return { success: true, storagePath, message: undefined };
     } catch (error) {
       throw this._wrapFsError(error, "上传文件失败");
@@ -943,7 +945,7 @@ export class LocalStorageDriver extends BaseDriver {
   async _resolveLocalPath(subPath, { mustBeDirectory = false } = {}) {
     this._ensureInitialized();
     const safeSubPath = this._normalizeSubPath(subPath);
-    const joined = path.resolve(this.rootPath, safeSubPath || ".");
+    let joined = path.resolve(this.rootPath, safeSubPath || ".");
 
     const rel = path.relative(this.rootPath, joined);
     if (rel.startsWith("..") || path.isAbsolute(rel)) {
@@ -958,10 +960,10 @@ export class LocalStorageDriver extends BaseDriver {
     try {
       stat = await fs.promises.lstat(joined);
     } catch (error) {
-      if (error?.code === "ENOENT") {
-        throw new NotFoundError("文件或目录不存在");
+      if (error?.code !== "ENOENT") {
+        throw this._wrapFsError(error, "访问本地文件系统失败");
       }
-      throw this._wrapFsError(error, "访问本地文件系统失败");
+      throw new NotFoundError("文件或目录不存在");
     }
 
     // 符号链接：解析真实路径并再次检查是否仍在 root_path 内

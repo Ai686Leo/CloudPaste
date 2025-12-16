@@ -125,7 +125,8 @@ export async function copyItem(fs, sourcePath, targetPath, userIdOrInfo, userTyp
       ...options,
     });
 
-    fs.emitCacheInvalidation({ mount: sourceMount, paths: [sourcePath, targetPath], reason: "copy" });
+    // copy 不会改变 sourcePath 所在目录的列表内容；仅失效目标侧目录即可
+    fs.emitCacheInvalidation({ mount: sourceMount, paths: [targetPath], reason: "copy" });
     return result;
   }
 

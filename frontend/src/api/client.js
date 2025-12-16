@@ -175,6 +175,23 @@ export async function fetchApi(endpoint, options = {}) {
       headers: Object.fromEntries([...response.headers.entries()]),
     });
 
+    // 304 Not Modified：成熟项目常用的条件请求语义（If-None-Match）
+    // - 304 无响应体，不应尝试解析 JSON
+    // - 交由上层用本地缓存数据兜底
+    if (response.status === 304) {
+      const etag = response.headers.get("etag") || response.headers.get("ETag") || null;
+      if (import.meta?.env?.DEV) {
+        console.log(`📦 API响应(${url}): 304 Not Modified`, { url, etag });
+      }
+      return {
+        success: true,
+        notModified: true,
+        status: 304,
+        etag,
+        data: null,
+      };
+    }
+
     // 首先解析响应内容
     let responseData;
     const contentType = response.headers.get("content-type");

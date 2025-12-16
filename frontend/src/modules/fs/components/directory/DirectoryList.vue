@@ -126,7 +126,7 @@
             :is-selected="isItemSelected(sortedItems[virtualRow.index])"
             :is-context-highlight="isContextHighlight(sortedItems[virtualRow.index])"
             :current-path="currentPath"
-            :animations-enabled="false"
+            :animations-enabled="animationsEnabled"
             :file-name-overflow="fileNameOverflow"
             :show-action-buttons="showActionButtons"
             :style="{
@@ -393,7 +393,6 @@ const props = defineProps({
 
 const emit = defineEmits(["navigate", "download", "getLink", "rename", "delete", "preview", "item-select", "toggle-select-all", "show-message", "contextmenu"]);
 
-// 使用新的排序逻辑
 const sortedItems = createSortedItems(computed(() => props.items));
 
 // ===== 虚拟滚动实现（Window Virtualizer 模式）=====

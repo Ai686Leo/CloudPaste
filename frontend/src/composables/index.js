@@ -9,7 +9,6 @@ import { useThemeMode } from "./core/useThemeMode.js";
 // ===== 文件预览功能 =====
 import { usePreviewRenderers } from "./file-preview/usePreviewRenderers.js";
 import { useFilePreviewExtensions } from "./file-preview/useFilePreviewExtensions.js";
-import { useFilePreview } from "./file-preview/useFilePreview.js";
 
 // ===== 压缩文件功能 =====
 import { useArchivePreview } from "./archive/useArchivePreview.js";
@@ -33,7 +32,6 @@ export {
   useThemeMode,
   usePreviewRenderers,
   useFilePreviewExtensions,
-  useFilePreview,
   useArchivePreview,
   useFileOperations,
   useDirectorySort,
@@ -55,7 +53,6 @@ export {
 export const FilePreviewComposables = {
   usePreviewRenderers,
   useFilePreviewExtensions,
-  useFilePreview,
   useArchivePreview,
 };
 
@@ -158,7 +155,6 @@ export default {
   useThemeMode,
   usePreviewRenderers,
   useFilePreviewExtensions,
-  useFilePreview,
   useFileOperations,
   useDirectorySort,
   useFileBasket,

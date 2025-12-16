@@ -88,18 +88,34 @@ export class OneDriveGraphClient {
    * @returns {Promise<ReadableStream>} 文件内容流
    */
   async downloadContent(path, options = {}) {
-    const { signal } = options;
+    const response = await this.downloadContentResponse(path, options);
+    return response.body;
+  }
+
+  /**
+   * 下载文件内容（返回 Response，便于上层处理 Range / 响应头）
+   * @param {string} path 相对路径
+   * @param {{ signal?: AbortSignal, rangeHeader?: string }} options
+   * @returns {Promise<Response>}
+   */
+  async downloadContentResponse(path, options = {}) {
+    const { signal, rangeHeader } = options;
     const normalized = this._normalizePath(path);
     const apiPath = `${this.drivePath}/root:/${this._encodePath(normalized)}:/content`;
 
     const accessToken = await this.authManager.getAccessToken();
     const url = `${this.baseUrl}${apiPath}`;
 
+    const headers = {
+      Authorization: `Bearer ${accessToken}`,
+    };
+    if (rangeHeader) {
+      headers.Range = rangeHeader;
+    }
+
     const response = await fetch(url, {
       method: "GET",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
+      headers,
       signal,
       redirect: "follow",
     });
@@ -108,7 +124,7 @@ export class OneDriveGraphClient {
       await this._handleErrorResponse(response, path);
     }
 
-    return response.body;
+    return response;
   }
 
   // ========== 文件上传 ==========

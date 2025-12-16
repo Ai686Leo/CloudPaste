@@ -33,7 +33,7 @@ export function useFileSearch() {
   const searchHistory = ref([]);
   const maxHistoryItems = 10;
 
-  // 计算属性 - 复用useFilePreview的计算属性模式
+  // 计算属性
   const hasSearchQuery = computed(() => searchQuery.value.trim().length >= 2);
   const hasSearchResults = computed(() => searchResults.value.length > 0);
   const searchResultsCount = computed(() => searchResults.value.length);

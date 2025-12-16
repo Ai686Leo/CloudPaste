@@ -1,5 +1,7 @@
 export default {
   common: {
+    error: "Error",
+    retry: "Retry",
     unknown: "Unknown",
     loading: "Loading...",
     confirm: "Confirm",
@@ -141,5 +143,20 @@ export default {
     toggle: "Toggle language",
     zh: "中文",
     en: "English",
+  },
+  livePhoto: {
+    badge: "LIVE",
+    loading: "Loading...",
+    playHint: "Hover or long press to play",
+    errors: {
+      videoLoadFailed: "Failed to load video",
+      photoLoadFailed: "Failed to load photo",
+      playbackFailed: "Playback failed",
+      notAllowed: "Browser does not allow video autoplay",
+      notSupported: "Video format not supported",
+      networkError: "Network error, unable to load video",
+      aborted: "Video loading was aborted",
+      decodeFailed: "Video decode error",
+    },
   },
 };

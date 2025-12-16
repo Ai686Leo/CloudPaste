@@ -2,6 +2,9 @@ import { defineConfig, loadEnv } from "vite";
 import vue from "@vitejs/plugin-vue";
 import { VitePWA } from "vite-plugin-pwa";
 import { fileURLToPath, URL } from "node:url";
+import Icons from "unplugin-icons/vite";
+import Components from "unplugin-vue-components/vite";
+import IconsResolver from "unplugin-icons/resolver";
 
 // https://vitejs.dev/config/
 export default defineConfig(({ command, mode }) => {
@@ -9,7 +12,7 @@ export default defineConfig(({ command, mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
 
   // 统一版本管理
-  const APP_VERSION = "1.4.0";
+  const APP_VERSION = "1.5.0";
   const isDev = command === "serve";
 
   // 打印环境变量，帮助调试
@@ -32,6 +35,18 @@ export default defineConfig(({ command, mode }) => {
     },
     plugins: [
       vue(),
+      Components({
+        dts: false,
+        resolvers: [
+          IconsResolver({
+            prefix: "i",
+            enabledCollections: ["mdi"],
+          }),
+        ],
+      }),
+      Icons({
+        compiler: "vue3",
+      }),
       VitePWA({
         registerType: "autoUpdate",
         injectRegister: "auto", //自动注入更新检测代码
@@ -406,8 +421,7 @@ export default defineConfig(({ command, mode }) => {
       },
     },
     optimizeDeps: {
-      include: ["vue-i18n", "chart.js", "qrcode", "mime-db"],
-      // 移除vditor排除配置，因为现在从本地dist目录加载
+      include: ["vue-i18n", "chart.js", "qrcode", "mime-db", "docx-preview"],
     },
     build: {
       outDir: 'dist', // 显式指定输出目录
@@ -424,7 +438,8 @@ export default defineConfig(({ command, mode }) => {
             // 将大型库分离到单独的 chunk
             "vendor-vue": ["vue", "vue-router", "vue-i18n"],
             "vendor-charts": ["chart.js", "vue-chartjs"],
-            "vendor-utils": ["qrcode", "file-saver", "docx", "html-to-image"],
+            "vendor-utils": ["qrcode", "file-saver", "docx", "@zumer/snapdom"],
+            "office-viewer": ["docx-preview", "@vue-office/excel", "@vue-office/pptx"],
           },
         },
       },

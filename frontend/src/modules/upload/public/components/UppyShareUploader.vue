@@ -274,7 +274,7 @@ const props = defineProps({
 });
 
 // 事件
-const emit = defineEmits(["upload-success", "upload-error", "refresh-files", "share-results"]);
+const emit = defineEmits(["upload-success", "upload-error", "share-results"]);
 
 // 国际化
 const { locale, t } = useI18n();
@@ -737,7 +737,6 @@ const startUpload = async () => {
                 emit("upload-error", new Error(summary.message));
               } else if (summary.kind === "success") {
                 emit("upload-success", uploadResults);
-                emit("refresh-files");
                 formData.slug = "";
                 formData.remark = "";
                 formData.password = "";
@@ -809,7 +808,6 @@ const startUpload = async () => {
               emit("upload-error", new Error(summary.message));
             } else if (summary.kind === "success") {
               emit("upload-success", uploadResults);
-              emit("refresh-files");
               formData.slug = "";
               formData.remark = "";
               formData.password = "";

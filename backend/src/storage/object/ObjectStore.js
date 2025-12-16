@@ -39,10 +39,8 @@ export class ObjectStore {
   }
 
   async _composeKeyWithStrategy(storageConfig, directory, filename) {
-    // 对于 S3 等对象存储，key 中需要包含 default_folder；
-    // 对于 WebDAV 等驱动，default_folder 由驱动内部处理，这里只使用目录参数。
-    const baseDefaultFolder = storageConfig.storage_type === "WEBDAV" ? null : storageConfig.default_folder;
-    const dir = PathPolicy.composeDirectory(baseDefaultFolder, directory);
+    // 统一约定：storage_config.default_folder 仅作为“文件上传页/分享上传”的默认目录前缀；
+    const dir = PathPolicy.composeDirectory(storageConfig.default_folder, directory);
     let key = dir ? `${dir}/${filename}` : filename;
 
     // 命名策略：随机后缀模式时，如发生冲突，则为对象Key加短ID后缀（DB层冲突检测）

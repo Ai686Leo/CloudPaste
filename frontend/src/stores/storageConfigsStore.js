@@ -67,6 +67,28 @@ const STORAGE_TYPE_SCHEMA = {
       preview: "proxy",
     },
   },
+  GITHUB_API: {
+    type: "GITHUB_API",
+    label: "GitHub API 存储",
+    description: "将 GitHub 仓库映射为可读写文件系统（Contents + Git Database API）",
+    capabilities: {
+      multipart: false,
+      presigned: false,
+      requiresProxy: true,
+      preview: "proxy",
+    },
+  },
+  GITHUB_RELEASES: {
+    type: "GITHUB_RELEASES",
+    label: "GitHub Releases 存储",
+    description: "只读：将 GitHub Releases 的资产与 Source code 作为文件列表挂载",
+    capabilities: {
+      multipart: false,
+      presigned: false,
+      requiresProxy: true,
+      preview: "proxy",
+    },
+  },
   UNKNOWN: {
     type: "UNKNOWN",
     label: "未指定类型",
@@ -227,7 +249,13 @@ export const useStorageConfigsStore = defineStore("storageConfigs", () => {
 
   const getStorageTypeMeta = (type) => {
     if (!type) return STORAGE_TYPE_SCHEMA.UNKNOWN;
-    return STORAGE_TYPE_SCHEMA[type] || STORAGE_TYPE_SCHEMA.UNKNOWN;
+    if (STORAGE_TYPE_SCHEMA[type]) return STORAGE_TYPE_SCHEMA[type];
+    // 未在 schema 中登记的类型：显示原始 type，避免界面出现“未指定类型”造成误解
+    return {
+      ...STORAGE_TYPE_SCHEMA.UNKNOWN,
+      type,
+      label: type,
+    };
   };
 
   const getStorageTypeLabel = (type) => getStorageTypeMeta(type).label;

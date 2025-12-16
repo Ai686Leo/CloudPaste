@@ -178,7 +178,7 @@ const handleContextMenu = (event) => {
 
 // 格式化日期
 const formatDate = (dateString) => {
-  if (!dateString) return "";
+  if (!dateString) return "-";
   return formatDateTime(dateString);
 };
 </script>

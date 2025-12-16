@@ -35,6 +35,8 @@ import { UserType } from "../../constants/index.js";
 import { FsMetaService } from "../../services/fsMetaService.js";
 import { sortSearchResults } from "./utils/SearchUtils.js";
 import { TaskPermissionMap, PermissionChecker, Permission } from "../../constants/permissions.js";
+import { calculateSubPath, normalizeMountPath } from "./utils/MountResolver.js";
+import { normalizePath as normalizeFsPath } from "./utils/PathResolver.js";
 /**
  * 模块说明：
  * - 角色：FS 视图的门面层，连接路由/API 与底层存储驱动。
@@ -490,12 +492,71 @@ export class FileSystem {
       const { mount = null, mountId = null, storageConfigId = null, paths = [], reason = "fs_operation" } = payload;
       const resolvedMountId = mount?.id ?? mountId ?? null;
       const resolvedStorageConfigId = mount?.storage_config_id ?? storageConfigId ?? null;
-      const normalizedPaths = Array.isArray(paths) ? paths.filter((path) => typeof path === "string" && path.length > 0) : [];
+      const rawPaths = Array.isArray(paths) ? paths.filter((path) => typeof path === "string" && path.length > 0) : [];
+
+      // - 若能解析 mount.mount_path，则将 fullPath -> subPath；让 DirectoryCacheManager.invalidatePathAndAncestors 正确命中。
+      // - 若无法解析（缺少 mount 或路径不在 mount 内），降级为挂载点级失效（paths=[]），保证一致性优先。
+      let normalizedSubPaths = rawPaths;
+      if (rawPaths.length > 0) {
+        const mountPathRaw = mount?.mount_path || null;
+        if (!mountPathRaw) {
+          normalizedSubPaths = [];
+        } else {
+          const mountPath = normalizeMountPath(mountPathRaw);
+          const mapped = [];
+          let mappingFailed = false;
+
+          for (const p of rawPaths) {
+            // NOTE: 是否目录（以 / 结尾）只用于“失效粒度收敛”，不能在 normalizeFsPath 后判断。
+            const isDirectoryHint = p.endsWith("/");
+            const fullPath = normalizeFsPath(p);
+            if (fullPath === mountPath || fullPath === `${mountPath}/` || fullPath.startsWith(`${mountPath}/`)) {
+              mapped.push({ subPath: calculateSubPath(fullPath, mountPath), isDirectoryHint });
+            } else {
+              mappingFailed = true;
+              break;
+            }
+          }
+
+          if (mappingFailed) {
+            normalizedSubPaths = [];
+          } else {
+            // - 目录路径（以 / 结尾的 hint）：失效该目录自身（祖先级联会覆盖父目录）。
+            // - 文件路径：失效其父目录。
+            const toParentDir = (subPath) => {
+              const raw = typeof subPath === "string" && subPath ? subPath : "/";
+              const withLeading = raw.startsWith("/") ? raw : `/${raw}`;
+              const collapsed = withLeading.replace(/\/{2,}/g, "/");
+              if (collapsed === "/") return "/";
+              const normalized = collapsed.replace(/\/+$/, "");
+              const lastSlash = normalized.lastIndexOf("/");
+              if (lastSlash <= 0) return "/";
+              return normalized.slice(0, lastSlash) || "/";
+            };
+
+            const dirSet = new Set();
+            for (const item of mapped) {
+              const sp = item?.subPath;
+              if (!sp) continue;
+              if (item.isDirectoryHint) {
+                dirSet.add(sp);
+              } else {
+                dirSet.add(toParentDir(sp));
+              }
+            }
+
+            // KISS：超过阈值直接降级为 mount 级失效。
+            const MAX_INVALIDATION_DIRS = 200;
+            normalizedSubPaths = dirSet.size > MAX_INVALIDATION_DIRS ? [] : Array.from(dirSet);
+          }
+        }
+      }
+
       cacheBus.emit(CACHE_EVENTS.INVALIDATE, {
         target: "fs",
         mountId: resolvedMountId,
         storageConfigId: resolvedStorageConfigId,
-        paths: normalizedPaths,
+        paths: normalizedSubPaths,
         reason,
         db: this.mountManager.db,
       });

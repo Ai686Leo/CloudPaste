@@ -8,7 +8,6 @@ import { FileSystem } from "../../storage/fs/FileSystem.js";
 import { createWebDAVErrorResponse, withWebDAVErrorHandling } from "../utils/errorUtils.js";
 import { getStandardWebDAVHeaders } from "../utils/headerUtils.js";
 import { parseDestinationPath } from "../utils/webdavUtils.js";
-import { invalidateFsCache } from "../../cache/invalidation.js";
 import { lockManager } from "../utils/LockManager.js";
 import { checkLockPermission } from "../utils/lockUtils.js";
 
@@ -97,22 +96,6 @@ export async function handleCopy(c, path, userId, userType, db) {
     if (result.skipped === true || result.status === "skipped") {
       console.warn(`WebDAV COPY - 复制被跳过: ${path} -> ${destPath}`);
       return createWebDAVErrorResponse("目标已存在且不允许覆盖", 412, false); // Precondition Failed
-    }
-
-    // 12. 同存储复制的缓存清理（跨存储复制已在上面处理）
-    try {
-      const { mount: sourceMountResult } = await mountManager.getDriverByPath(path, userId, userType);
-      const { mount: destMountResult } = await mountManager.getDriverByPath(destPath, userId, userType);
-
-      if (sourceMountResult) {
-        invalidateFsCache({ mountId: sourceMountResult.id, reason: "webdav-copy", db });
-      }
-
-      if (destMountResult) {
-        invalidateFsCache({ mountId: destMountResult.id, reason: "webdav-copy", db });
-      }
-    } catch (cacheError) {
-      console.warn(`WebDAV COPY - 缓存清理失败: ${cacheError.message}`);
     }
 
     console.log(`WebDAV COPY - 复制成功: ${path} -> ${destPath}`);

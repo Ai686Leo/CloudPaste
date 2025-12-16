@@ -11,6 +11,7 @@ export default {
       onedrive: "OneDrive storage",
       googledrive: "Google Drive storage",
       github_releases: "GitHub Releases",
+      github_api: "GitHub API",
     },
 
     // group titles
@@ -85,6 +86,20 @@ export default {
         gh_proxy: "GitHub proxy URL",
         token: "GitHub access token",
       },
+
+      // GitHub API (repository contents) specific
+      github_api: {
+        owner: "Repository owner",
+        repo: "Repository name",
+        ref: "Ref (branch/tag/sha)",
+        api_base: "GitHub API base",
+        gh_proxy: "GitHub proxy URL",
+        committer_name: "Committer name (committer.name)",
+        committer_email: "Committer email (committer.email)",
+        author_name: "Author name (author.name)",
+        author_email: "Author email (author.email)",
+        token: "GitHub access token",
+      },
     },
 
     // placeholder texts
@@ -124,8 +139,22 @@ export default {
       github_releases: {
         repo_structure:
           "One per line: owner/repo (single repo mounts at root), alias:owner/repo (required for multiple repos), or full repo URL (https://github.com/owner/repo), e.g., 2512132839/test, test:2512132839/test or https://github.com/2512132839/test",
-        gh_proxy: "e.g., https://gh-proxy.com/github.com",
+        gh_proxy: "e.g., https://gh-proxy.com/https://github.com",
         token: "Recommended to set a personal access token to raise rate limits",
+      },
+
+      // GitHub API placeholders
+      github_api: {
+        owner: "e.g., ling-drag0n",
+        repo: "e.g., CloudPaste",
+        ref: "e.g., main, v1.0.0, or a 40-char commit sha (leave empty to use default branch)",
+        api_base: "e.g., https://api.github.com (leave empty for default)",
+        gh_proxy: "e.g., https://ghproxy.net/https://raw.githubusercontent.com (optional, affects direct links only)",
+        committer_name: "e.g., CloudPaste Bot (optional)",
+        committer_email: "{'e.g., bot@example.com (optional)'}",
+        author_name: "e.g., Your Name (optional)",
+        author_email: "{'e.g., you@example.com (optional)'}",
+        token: "Required: token with repo read/write permission",
       },
     },
 
@@ -171,18 +200,27 @@ export default {
           "Configure GitHub repositories, one per line. Supported formats: owner/repo (recommended, the directory name uses repo) or alias:owner/repo (custom directory name). Example: ling-drag0n/CloudPaste or cloudpaste:ling-drag0n/CloudPaste. The mount path itself is defined in the mount configuration.",
         show_all_version:
           "When enabled, create a subdirectory for each release (named by tagName) and list assets under that directory. When disabled, only show assets from the latest release at the repo root.",
-        show_source_code:
-          "When enabled, add virtual files \"Source code (zip)\" and \"Source code (tar.gz)\" for each release, pointing to GitHub provided source archives.",
-        show_readme:
-          "Mount README / LICENSE as virtual files at the repository root (when present in the repo). File content is fetched on demand via the GitHub API.",
-        show_release_notes:
-          "Add a virtual file RELEASE_NOTES.md under each release. Content is taken from the GitHub Release notes (Markdown).",
-        per_page:
-          "Number of releases to fetch per call from the GitHub Releases API. Default is 20. Larger values reduce API calls but increase response size.",
+        show_source_code: 'When enabled, add virtual files "Source code (zip)" and "Source code (tar.gz)" for each release, pointing to GitHub provided source archives.',
+        show_readme: "Mount README / LICENSE as virtual files at the repository root (when present in the repo). File content is fetched on demand via the GitHub API.",
+        show_release_notes: "Add a virtual file RELEASE_NOTES.md under each release. Content is taken from the GitHub Release notes (Markdown).",
+        per_page: "Number of releases to fetch per call from the GitHub Releases API. Default is 20. Larger values reduce API calls but increase response size.",
         gh_proxy:
           "Optional: Proxy prefix for accelerating GitHub downloads, e.g., fill in completely as https://gh-proxy.com/github.com or https://gh-proxy.com/https://github.com. Only effective for download links starting with https://github.com.",
-        token:
-          "Optional: GitHub personal access token. Used for private repositories or to increase API rate limits (strongly recommended for public-facing deployments).",
+        token: "Optional: GitHub personal access token. Used for private repositories or to increase API rate limits (strongly recommended for public-facing deployments).",
+      },
+
+      // GitHub API descriptions
+      github_api: {
+        owner: "GitHub repository owner (e.g., ling-drag0n).",
+        repo: "GitHub repository name (e.g., CloudPaste).",
+        ref: "Branch / tag / commit sha. Only branches support write; tags and commit sha are read-only. Leave empty to use the repository default branch.",
+        api_base: "Optional: custom API(for GitHub Enterprise). Default is https://api.github.com.",
+        gh_proxy: "Optional: accelerate raw direct links by replacing https://raw.githubusercontent.com with this value (direct-link output only).",
+        committer_name: "Optional: commit committer.name (must be paired with committer_email).",
+        committer_email: "Optional: commit committer.email (must be paired with committer_name).",
+        author_name: "Optional: commit author.name (must be paired with author_email).",
+        author_email: "Optional: commit author.email (must be paired with author_name).",
+        token: "Required: GitHub access token for higher rate limits and write operations (create commits / update refs).",
       },
     },
 

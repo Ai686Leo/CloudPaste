@@ -5,11 +5,25 @@
 
 import { ref, computed, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import api from "@/api";
 import { useFsService } from "@/modules/fs";
+import { decodeImagePreviewUrlToObjectUrl, revokeObjectUrl, shouldAttemptDecodeImagePreview } from "@/utils/imageDecode";
 
-export function useGalleryView() {
+const INITIAL_RENDER_LIMIT = 120;
+const RENDER_BATCH = 120;
+const MAX_CONCURRENT_IMAGE_REQUESTS = 6;
+
+/**
+ * @typedef {{ status: "idle" | "loading" | "loaded" | "error", url: string | null, decoded?: boolean, decodeAttempted?: boolean, naturalWidth?: number, naturalHeight?: number, aspectRatio?: number }} GalleryImageState
+ */
+
+/**
+ * 图廊逻辑入口
+ * @param {{ items: import("vue").Ref<Array<any>> | import("vue").ComputedRef<Array<any>> }} input
+ */
+export function useGalleryView(input = {}) {
   const { t } = useI18n();
+  const fsService = useFsService();
+  const itemsRef = input.items;
 
   // ===== localStorage设置管理 =====
 
@@ -56,7 +70,6 @@ export function useGalleryView() {
   // 工具栏状态管理
   const showSortMenu = ref(false);
   const showViewSettings = ref(false);
-  const fsService = useFsService();
 
   // ===== MasonryWall配置 =====
 
@@ -97,18 +110,30 @@ export function useGalleryView() {
 
   // ===== 图片数据处理 =====
 
-  // 状态驱动的图片管理 - 移除分页逻辑，实现真正的懒加载
-  const imageStates = ref(new Map()); // 每张图片的完整状态
-  // 状态结构：{ status: 'idle' | 'loading' | 'loaded' | 'error', url: string | null }
+  // 状态驱动的图片管理
+  /** @type {import("vue").Ref<Map<string, GalleryImageState>>} */
+  const imageStates = ref(new Map()); // key: image.path
+  const renderLimit = ref(INITIAL_RENDER_LIMIT);
 
-  // 智能分组函数（直接使用后端type字段）
-  const createImageGroups = (items) => {
-    const allFolders = items.filter((item) => item.isDirectory);
-    const allImages = items.filter((item) => !item.isDirectory && item.type === 5); // IMAGE = 5
-    const allOtherFiles = items.filter((item) => !item.isDirectory && item.type !== 5 && item.type !== 2); // 非图片非视频
-
-    return { allFolders, allImages, allOtherFiles };
+  const resetRenderWindow = () => {
+    renderLimit.value = INITIAL_RENDER_LIMIT;
   };
+
+  const clearImageStates = () => {
+    imageStates.value.forEach((state) => {
+      revokeObjectUrl(state?.url);
+    });
+    imageStates.value.clear();
+  };
+
+  // 智能分组（依赖后端 type 字段：IMAGE=5、VIDEO=2）
+  const groups = computed(() => {
+    const items = Array.isArray(itemsRef?.value) ? itemsRef.value : [];
+    const allFolders = items.filter((item) => item?.isDirectory);
+    const allImages = items.filter((item) => !item?.isDirectory && item?.type === 5);
+    const allOtherFiles = items.filter((item) => !item?.isDirectory && item?.type !== 5 && item?.type !== 2);
+    return { allFolders, allImages, allOtherFiles };
+  });
 
   // 排序函数
   const sortImages = (images) => {
@@ -132,106 +157,203 @@ export function useGalleryView() {
     }
   };
 
-  // 可见图片计算 - 移除分页限制，显示所有图片
-  const createVisibleImages = (allImages) => {
-    return computed(() => {
-      return sortImages(allImages);
-    });
-  };
+  const allImages = computed(() => sortImages(groups.value.allImages));
+  const allFolders = computed(() => groups.value.allFolders);
+  const allOtherFiles = computed(() => groups.value.allOtherFiles);
 
-  // 是否有更多图片 - 懒加载模式下不需要此概念
-  const createHasMoreImages = (allImages) => {
-    return computed(() => false); // 始终返回false，因为所有图片都会渲染占位符
+  // 渐进渲染窗口
+  const visibleImages = computed(() => {
+    return allImages.value.slice(0, renderLimit.value);
+  });
+
+  const hasMoreImages = computed(() => {
+    return renderLimit.value < allImages.value.length;
+  });
+
+  const loadMoreImages = () => {
+    if (!hasMoreImages.value) return;
+    renderLimit.value = Math.min(renderLimit.value + RENDER_BATCH, allImages.value.length);
   };
 
   // 将图片数据转换为MasonryWall需要的格式
-  const createMasonryItems = (visibleImages) => {
-    return computed(() => {
-      return visibleImages.value.map((image, index) => ({
-        id: image.path,
-        image: image,
-        index: index,
-      }));
-    });
-  };
+  const masonryItems = computed(() => {
+    return visibleImages.value.map((image, index) => ({
+      id: image.path,
+      image,
+      index,
+    }));
+  });
 
   // ===== 图片URL管理 =====
 
-  // 🔍 检测图片缓存状态的函数
-  const checkImageCacheStatus = async (imageUrl, imageName) => {
-    try {
-      if ("caches" in window) {
-        const galleryCache = await caches.open("gallery-images");
-        const cachedResponse = await galleryCache.match(imageUrl);
+  const inFlight = new Map(); // key: image.path => Promise<void>
+  /** @type {Array<{ image: any, signal?: AbortSignal, resolve: () => void, reject: (e: any) => void }>} */
+  const queueHigh = [];
+  /** @type {Array<{ image: any, signal?: AbortSignal, resolve: () => void, reject: (e: any) => void }>} */
+  const queueNormal = [];
+  let activeCount = 0;
 
-        if (cachedResponse) {
-          console.log(`🎯 ${imageName}: gallery-images 缓存命中`);
-        } else {
-          console.log(`📡 ${imageName}: 网络请求`);
-        }
-      }
-    } catch (error) {
-      console.log(`📡 ${imageName}: 网络请求`);
+  const ensureIdleState = (image) => {
+    if (!image?.path) return;
+    if (!imageStates.value.has(image.path)) {
+      imageStates.value.set(image.path, { status: "idle", url: null });
     }
   };
 
-  // 图片URL获取
-  const loadImageUrl = async (image) => {
-    const imagePath = image.path;
+  const dequeue = () => {
+    if (queueHigh.length > 0) return queueHigh.shift();
+    if (queueNormal.length > 0) return queueNormal.shift();
+    return null;
+  };
 
-    // 检查当前状态
-    const currentState = imageStates.value.get(imagePath);
+  const runQueue = () => {
+    while (activeCount < MAX_CONCURRENT_IMAGE_REQUESTS) {
+      const job = dequeue();
+      if (!job) return;
+      const { image, signal, resolve, reject } = job;
+      const path = image?.path;
+      if (!path) {
+        resolve();
+        continue;
+      }
+      if (signal?.aborted) {
+        resolve();
+        continue;
+      }
+      const state = imageStates.value.get(path);
+      if (state?.status === "loaded" || state?.status === "loading") {
+        resolve();
+        continue;
+      }
 
-    // 如果已经在加载中或已加载完成，直接返回
-    if (currentState?.status === "loading" || currentState?.status === "loaded") {
-      return;
+      activeCount += 1;
+      void (async () => {
+        try {
+          await loadImageUrlInternal(image, { signal });
+          resolve();
+        } catch (error) {
+          reject(error);
+        } finally {
+          activeCount -= 1;
+          runQueue();
+        }
+      })();
     }
+  };
 
-    // 设置加载状态
-    imageStates.value.set(imagePath, { status: "loading", url: null });
+  const scheduleLoad = (image, { priority = "normal", signal } = {}) => {
+    if (!image?.path) return Promise.resolve();
+    if (signal?.aborted) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const job = { image, signal, resolve, reject };
+      if (priority === "high") {
+        queueHigh.push(job);
+      } else {
+        queueNormal.push(job);
+      }
+      runQueue();
+    });
+  };
+
+  const loadImageUrlInternal = async (image, { signal } = {}) => {
+    const imagePath = image?.path || "";
+    if (!imagePath) return;
+    if (signal?.aborted) return;
+
+    const currentState = imageStates.value.get(imagePath);
+    if (currentState?.status === "loading" || currentState?.status === "loaded") return;
+
+    imageStates.value.set(imagePath, { ...(currentState || {}), status: "loading", url: null });
 
     try {
-      // 使用 FS service 获取文件信息，包含 Link JSON（previewUrl），并自动附带路径密码 token
-      const fileInfo = await fsService.getFileInfo(imagePath);
+      // 图廊允许并发：cancelPrevious=false（避免互相 Abort）
+      const fileInfo = await fsService.getFileInfo(imagePath, { cancelPrevious: false, signal });
+      if (signal?.aborted) return;
 
-      if (fileInfo?.previewUrl) {
-        // 设置加载完成状态
+      const previewUrl = fileInfo?.previewUrl || "";
+      if (!previewUrl) {
+        imageStates.value.set(imagePath, { status: "error", url: null });
+        return;
+      }
+
+      // HEIC/HEIF：按扩展名/类型预判，直接走 wasm 解码，避免“先失败再解码”的二次开销
+      if (shouldAttemptDecodeImagePreview({ filename: image?.name || "", mimetype: image?.mimetype || "" })) {
+        const decoded = await decodeImagePreviewUrlToObjectUrl({
+          url: previewUrl,
+          filename: image?.name || "",
+          mimetype: image?.mimetype || "",
+          signal,
+          outputType: "image/webp",
+          quality: 0.9,
+        });
+
+        const prevUrl = currentState?.url || "";
+        revokeObjectUrl(prevUrl);
+
         imageStates.value.set(imagePath, {
           status: "loaded",
-          url: fileInfo.previewUrl,
+          url: decoded.objectUrl,
+          decoded: true,
+          decodeAttempted: true,
+          naturalWidth: decoded.width,
+          naturalHeight: decoded.height,
+          aspectRatio: decoded.width && decoded.height ? decoded.width / decoded.height : undefined,
         });
-        console.log(`✅ 懒加载完成: ${image.name}`);
-
-        // 🔍 检测图片是否会走Service Worker缓存
-        checkImageCacheStatus(fileInfo.previewUrl, image.name);
-      } else {
-        // 设置错误状态
-        imageStates.value.set(imagePath, { status: "error", url: null });
-        console.error(`❌ 获取到的文件信息缺少 previewUrl: ${image.name}`, fileInfo);
+        return;
       }
+
+        imageStates.value.set(imagePath, { status: "loaded", url: previewUrl });
     } catch (error) {
-      console.error(`获取图片预览URL失败: ${image.name}`, error);
-      // 设置错误状态
+      if (error?.name === "AbortError" || signal?.aborted) return;
       imageStates.value.set(imagePath, { status: "error", url: null });
     }
   };
 
-  // 批量初始化图片状态 - 真正的懒加载：所有图片都初始化为idle状态
-  const initializeImageStates = (visibleImages) => {
-    visibleImages.forEach((image) => {
-      // 所有图片都初始化为idle状态，等待IntersectionObserver触发懒加载
-      if (!imageStates.value.has(image.path)) {
-        imageStates.value.set(image.path, { status: "idle", url: null });
-      }
-    });
+  /**
+   * 外部调用：调度加载（带优先级/并发控制）
+   * @param {any} image
+   * @param {{ priority?: "high" | "normal"; signal?: AbortSignal }} [options]
+   */
+  const loadImageUrl = async (image, options = {}) => {
+    const imagePath = image?.path || "";
+    if (!imagePath) return;
+
+    const currentState = imageStates.value.get(imagePath);
+    if (currentState?.status === "loaded" || currentState?.status === "loading") return;
+
+    if (inFlight.has(imagePath)) {
+      return inFlight.get(imagePath);
+    }
+
+    const promise = scheduleLoad(image, options);
+
+    inFlight.set(imagePath, promise);
+    try {
+      await promise;
+    } finally {
+      inFlight.delete(imagePath);
+    }
   };
+
+  // 随着可见窗口变化，确保新进入窗口的图片具备 idle state（供 Observer 判定）
+  watch(
+    visibleImages,
+    (images) => {
+      images.forEach((img) => ensureIdleState(img));
+    },
+    { immediate: true }
+  );
+
+  // items 切换（目录切换/刷新）：清空状态，重置渲染窗口
+  watch(
+    () => itemsRef?.value,
+    () => {
+      clearImageStates();
+      resetRenderWindow();
+    }
+  );
 
   // ===== 懒加载管理 =====
-
-  // 检查是否应该显示图片 - 现在所有图片都显示占位符
-  const shouldShowImage = (index) => {
-    return true; // 所有图片都显示占位符，由IntersectionObserver控制实际加载
-  };
 
   // ===== 设置管理方法 =====
 
@@ -256,8 +378,6 @@ export function useGalleryView() {
         console.warn(`清除图廊设置失败 (${key}):`, error);
       }
     });
-
-    console.log("图廊设置已重置为默认值");
   };
 
   // ===== 工具栏交互方法 =====
@@ -279,37 +399,47 @@ export function useGalleryView() {
   const handleSortChange = (sortValue) => {
     sortBy.value = sortValue;
     showSortMenu.value = false;
-    console.log(`图廊排序方式变更为: ${sortValue}`);
   };
 
   // ===== 监听器设置 =====
 
+  let watchersInitialized = false;
+
   // 监听设置变化并自动保存到localStorage
   const setupWatchers = () => {
+    // 避免重复注册
+    if (watchersInitialized) return;
+    watchersInitialized = true;
+
     watch(columnCount, (newValue) => {
       saveToStorage(STORAGE_KEYS.COLUMN_COUNT, newValue);
-      console.log(`图廊列数设置已保存: ${newValue}`);
     });
 
     watch(horizontalGap, (newValue) => {
       saveToStorage(STORAGE_KEYS.HORIZONTAL_GAP, newValue);
-      console.log(`图廊水平间距设置已保存: ${newValue}px`);
     });
 
     watch(verticalGap, (newValue) => {
       saveToStorage(STORAGE_KEYS.VERTICAL_GAP, newValue);
-      console.log(`图廊垂直间距设置已保存: ${newValue}px`);
     });
 
     watch(sortBy, (newValue) => {
       saveToStorage(STORAGE_KEYS.SORT_BY, newValue);
-      console.log(`图廊排序方式设置已保存: ${newValue}`);
     });
   };
 
   // 返回所有需要的状态和方法
   return {
-    // 设置状态
+    // 数据
+    allFolders,
+    allImages,
+    allOtherFiles,
+    visibleImages,
+    masonryItems,
+    hasMoreImages,
+    loadMoreImages,
+
+    // 状态
     columnCount,
     horizontalGap,
     verticalGap,
@@ -326,20 +456,13 @@ export function useGalleryView() {
     // 工具栏配置
     sortOptions,
 
-    // 图片数据处理
+    // 图片状态
     imageStates,
-    createImageGroups,
-    sortImages,
-    createVisibleImages,
-    createHasMoreImages,
-    createMasonryItems,
+    clearImageStates,
+    resetRenderWindow,
 
     // 图片URL管理
     loadImageUrl,
-    initializeImageStates,
-
-    // 懒加载管理
-    shouldShowImage,
 
     // 设置管理
     isDefaultSettings,

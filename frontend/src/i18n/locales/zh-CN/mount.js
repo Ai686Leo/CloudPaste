@@ -181,9 +181,12 @@ export default {
       browserNative: "原生预览",
       pdfjsLabel: "PDF.js",
       officeProvider: {
+        native: "本地预览",
         microsoft: "Microsoft Office Online",
         google: "Google Docs",
       },
+      nativeRenderFailed: "本地预览失败",
+      tryExternalProvider: "请尝试切换到 Microsoft 或 Google 预览",
       officePreview: "Office预览",
       useMicrosoftPreview: "使用Microsoft预览",
       useGooglePreview: "使用Google预览",

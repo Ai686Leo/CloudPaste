@@ -128,7 +128,7 @@ export function getPreviewComponent(fileObject) {
   if (type === FileType.DOCUMENT) return "PdfPreview";
 
   // Office类型
-  if (type === FileType.OFFICE) return "OfficePreview";
+  if (type === FileType.OFFICE) return "OfficeSharePreview";
 
   // Text类型的细分
   if (type === FileType.TEXT) {

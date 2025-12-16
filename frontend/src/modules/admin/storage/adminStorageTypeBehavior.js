@@ -98,6 +98,9 @@ const STORAGE_TYPE_BEHAVIOR_DEF = {
   GITHUB_RELEASES: {
     secretFields: ["token"],
   },
+  GITHUB_API: {
+    secretFields: ["token"],
+  },
 };
 
 /**
@@ -134,6 +137,11 @@ export function useAdminStorageTypeBehavior(options) {
       loaded: ref(false),
     },
     GITHUB_RELEASES: {
+      visible: ref(false),
+      revealing: ref(false),
+      loaded: ref(false),
+    },
+    GITHUB_API: {
       visible: ref(false),
       revealing: ref(false),
       loaded: ref(false),
@@ -199,6 +207,8 @@ export function useAdminStorageTypeBehavior(options) {
             formData.value.client_secret = data.client_secret || "";
             formData.value.refresh_token = data.refresh_token || "";
           } else if (type === "GITHUB_RELEASES") {
+            formData.value.token = data.token || "";
+          } else if (type === "GITHUB_API") {
             formData.value.token = data.token || "";
           }
           state.loaded.value = true;

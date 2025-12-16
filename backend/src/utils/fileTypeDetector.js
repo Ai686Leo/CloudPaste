@@ -166,7 +166,7 @@ function getFileTypeByExtensionFallback(extension) {
   }
 
   // 图片类型（与预览设置默认值保持一致）
-  const imageTypes = ["jpg", "tiff", "jpeg", "png", "gif", "bmp", "svg", "ico", "swf", "webp", "avif"];
+  const imageTypes = ["jpg", "tiff", "jpeg", "png", "gif", "bmp", "svg", "ico", "swf", "webp", "avif", "heic", "heif"];
   if (imageTypes.includes(ext)) {
     return FILE_TYPES.IMAGE;
   }

@@ -19,6 +19,7 @@ import { DriverError, NotFoundError, AppError } from "../../../http/errors.js";
 import { buildFileInfo } from "../../utils/FileInfoBuilder.js";
 import { createHttpStreamDescriptor, createWebStreamDescriptor } from "../../streaming/StreamDescriptorUtils.js";
 import { buildFullProxyUrl } from "../../../constants/proxy.js";
+import { getMimeTypeFromFilename } from "../../../utils/fileUtils.js";
 
 const RELEASE_NOTES_FILENAME = "RELEASE_NOTES.md";
 
@@ -70,6 +71,9 @@ export class GithubReleasesStorageDriver extends BaseDriver {
      * }>}
      */
     this._releaseCache = new Map();
+    // 仓库元信息缓存（用于判定 private/public，避免频繁请求 /repos/{owner}/{repo}）
+    // key: "owner/repo" -> { meta: any|null, fetchedAt: number }
+    this._repoMetaCache = new Map();
 
     this.apiBase = "https://api.github.com";
   }
@@ -358,7 +362,7 @@ export class GithubReleasesStorageDriver extends BaseDriver {
    * 构建 GitHub API 请求头
    * @returns {Record<string,string>}
    */
-  _buildHeaders() {
+  _buildHeaders(extra = {}) {
     const headers = {
       Accept: "application/vnd.github+json",
       "X-GitHub-Api-Version": "2022-11-28",
@@ -367,7 +371,7 @@ export class GithubReleasesStorageDriver extends BaseDriver {
     if (this.token && typeof this.token === "string" && this.token.trim().length > 0) {
       headers.Authorization = `Bearer ${this.token.trim()}`;
     }
-    return headers;
+    return { ...headers, ...(extra || {}) };
   }
 
   /**
@@ -408,6 +412,33 @@ export class GithubReleasesStorageDriver extends BaseDriver {
         details: { url, cause: error?.message },
       });
     }
+  }
+
+  /**
+   * 拉取仓库元信息（用于判定私有仓库），带 TTL 缓存
+   * @param {GithubRepoMapping} repo
+   * @param {{ refresh?: boolean, cacheTtlMs?: number }} options
+   * @returns {Promise<any|null>}
+   */
+  async _fetchRepoMeta(repo, options = {}) {
+    const { refresh = false, cacheTtlMs = 0 } = options;
+    const key = this._getRepoKey(repo);
+    const entry = this._repoMetaCache.get(key) || {};
+    const now = Date.now();
+
+    if (
+      !refresh &&
+      cacheTtlMs > 0 &&
+      typeof entry.fetchedAt === "number" &&
+      now - entry.fetchedAt < cacheTtlMs
+    ) {
+      return entry.meta ?? null;
+    }
+
+    const url = `${this.apiBase}/repos/${repo.owner}/${repo.repo}`;
+    const meta = await this._fetchJson(url);
+    this._repoMetaCache.set(key, { meta: meta ?? null, fetchedAt: now });
+    return meta ?? null;
   }
 
   /**
@@ -732,7 +763,7 @@ export class GithubReleasesStorageDriver extends BaseDriver {
         isDirectory: false,
         size,
         modified,
-        mimetype: null,
+        mimetype: getMimeTypeFromFilename(name),
         mount,
         storageType: mount?.storage_type,
         db,
@@ -831,6 +862,8 @@ export class GithubReleasesStorageDriver extends BaseDriver {
 
     const promises = entries.map(async (entry) => {
       const fsPath = this._joinChildPath(baseFsPath, entry.name);
+      const isZip = entry.name.includes("(zip)");
+      const mimetype = isZip ? "application/zip" : "application/gzip";
       const info = await buildFileInfo({
         fsPath,
         name: entry.name,
@@ -838,7 +871,7 @@ export class GithubReleasesStorageDriver extends BaseDriver {
         // 无法获得准确大小，统一标记为 1
         size: 1,
         modified: createdAt,
-        mimetype: "application/octet-stream",
+        mimetype,
         mount,
         storageType: mount?.storage_type,
         db,
@@ -1162,8 +1195,6 @@ export class GithubReleasesStorageDriver extends BaseDriver {
       ? this._getUtf8ByteLength(typeof release?.body === "string" ? release.body : "")
       : asset && typeof asset.size === "number"
       ? asset.size
-      : isSourceCode
-      ? 1
       : 0;
     const modified = asset?.updated_at
       ? new Date(asset.updated_at)
@@ -1177,7 +1208,7 @@ export class GithubReleasesStorageDriver extends BaseDriver {
       isDirectory,
       size,
       modified,
-      mimetype: isReleaseNotes ? "text/markdown" : null,
+      mimetype: isReleaseNotes ? "text/markdown" : isSourceCode ? (assetName.includes("(zip)") ? "application/zip" : "application/gzip") : getMimeTypeFromFilename(assetName),
       mount,
       storageType: mount?.storage_type,
       db,
@@ -1269,7 +1300,7 @@ export class GithubReleasesStorageDriver extends BaseDriver {
       throw new NotFoundError("文件不存在");
     }
 
-    const { assetName, asset, release, isSourceCode, isReleaseNotes } = assetResolved;
+    const { repo, assetName, asset, release, isSourceCode, isReleaseNotes } = assetResolved;
 
     if (isReleaseNotes) {
       const body = typeof release?.body === "string" ? release.body : "";
@@ -1293,8 +1324,21 @@ export class GithubReleasesStorageDriver extends BaseDriver {
     }
 
     let rawUrl = "";
-    if (asset && asset.browser_download_url) {
-      rawUrl = asset.browser_download_url;
+    // 私有仓库：资产的 browser_download_url 需要登录态（不支持 Bearer token），必须使用 API 资产下载端点
+    // - Releases API：GET /repos/{owner}/{repo}/releases/assets/{asset_id}（Accept: application/octet-stream）
+    const cacheTtlMs = this._getCacheTtlMs({ mount });
+    const repoMeta = await this._fetchRepoMeta(repo, { refresh: false, cacheTtlMs });
+    const isPrivateRepo = !!(repoMeta && repoMeta.private === true);
+
+    const hasToken = !!(this.token && typeof this.token === "string" && this.token.trim().length > 0);
+
+    if (asset) {
+      // 优先使用 API url（私库必须；公库在有 token 时也可用，但会增加 API 压力，因此默认仍用 browser_download_url）
+      if ((isPrivateRepo || hasToken) && asset.url) {
+        rawUrl = asset.url;
+      } else if (asset.browser_download_url) {
+        rawUrl = asset.browser_download_url;
+      }
     } else if (isSourceCode) {
       if (assetResolved.assetName === "Source code (zip)" && release.zipball_url) {
         rawUrl = release.zipball_url;
@@ -1312,21 +1356,45 @@ export class GithubReleasesStorageDriver extends BaseDriver {
     }
 
     const finalUrl = this._applyProxy(rawUrl);
-    const size =
-      asset && typeof asset.size === "number"
-        ? asset.size
-        : isSourceCode
-        ? 1
-        : null;
+    const size = asset && typeof asset.size === "number" ? asset.size : null;
 
-    const contentType = "application/octet-stream";
+    const contentType = isSourceCode
+      ? assetName.includes("(zip)")
+        ? "application/zip"
+        : "application/gzip"
+      : getMimeTypeFromFilename(assetName);
     const lastModified = release?.published_at ? new Date(release.published_at) : null;
+
+    const downloadHeaders = (extra = {}) => {
+      // 使用 API 资产下载端点时必须 Accept octet-stream，否则会返回 JSON 元信息
+      const isAssetApiUrl = /^https?:\/\/api\.github\.com\/repos\/[^/]+\/[^/]+\/releases\/assets\/\d+/i.test(finalUrl);
+      if (isAssetApiUrl) {
+        return this._buildHeaders({ Accept: "application/octet-stream", ...extra });
+      }
+      return this._buildHeaders(extra);
+    };
 
     return createHttpStreamDescriptor({
       fetchResponse: async (signal) => {
         const resp = await fetch(finalUrl, {
           method: "GET",
-          headers: this._buildHeaders(),
+          headers: downloadHeaders(),
+          signal,
+        });
+        return resp;
+      },
+      fetchRangeResponse: async (signal, rangeHeader) => {
+        const resp = await fetch(finalUrl, {
+          method: "GET",
+          headers: downloadHeaders({ Range: rangeHeader }),
+          signal,
+        });
+        return resp;
+      },
+      fetchHeadResponse: async (signal) => {
+        const resp = await fetch(finalUrl, {
+          method: "HEAD",
+          headers: downloadHeaders(),
           signal,
         });
         return resp;
@@ -1335,7 +1403,7 @@ export class GithubReleasesStorageDriver extends BaseDriver {
       contentType,
       etag: null,
       lastModified,
-      // GitHub 支持 Range，但此处不强制声明，交由上游探测
+      supportsRange: true,
     });
   }
 
@@ -1355,7 +1423,19 @@ export class GithubReleasesStorageDriver extends BaseDriver {
       throw new NotFoundError("文件不存在");
     }
 
-    const { asset, release, isSourceCode, isReleaseNotes } = assetResolved;
+    const { repo, asset, release, isSourceCode, isReleaseNotes } = assetResolved;
+
+    // 私有仓库：浏览器侧无法携带 GitHub token（也不应泄露），因此直链不可用，强制走本地 /api/p 代理
+    // - 对公共仓库仍保留直链能力，减少后端流量
+    const cacheTtlMs = this._getCacheTtlMs({ mount });
+    const repoMeta = await this._fetchRepoMeta(repo, { refresh: false, cacheTtlMs });
+    if (repoMeta && repoMeta.private === true) {
+      return {
+        url: buildFullProxyUrl(options.request || null, path, !!options.forceDownload),
+        type: "proxy",
+        expiresIn: null,
+      };
+    }
 
     // Release Notes 属于虚拟文件：不具备 GitHub 侧可用直链，回退为本地 /api/p 代理链接
     // - 注意：FsLinkStrategy 在非 mustProxy 挂载下会优先调用 DIRECT_LINK，因此这里必须给出可用 URL

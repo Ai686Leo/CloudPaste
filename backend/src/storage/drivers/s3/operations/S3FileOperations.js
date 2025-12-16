@@ -14,12 +14,13 @@ import {
   CopyObjectCommand,
   HeadObjectCommand,
 } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { getMimeTypeFromFilename } from "../../../../utils/fileUtils.js";
 import { handleFsError } from "../../../fs/utils/ErrorHandler.js";
 import { updateParentDirectoriesModifiedTime } from "../utils/S3DirectoryUtils.js";
 import { CAPABILITIES } from "../../../interfaces/capabilities/index.js";
 import { buildFileInfo } from "../../../utils/FileInfoBuilder.js";
-import { createWebStreamDescriptor } from "../../../streaming/StreamDescriptorUtils.js";
+import { createHttpStreamDescriptor } from "../../../streaming/StreamDescriptorUtils.js";
 
 export class S3FileOperations {
   /**
@@ -70,35 +71,54 @@ export class S3FileOperations {
     const etag = metadata.ETag ?? null;
     const lastModified = metadata.LastModified ? new Date(metadata.LastModified) : null;
 
-    // 使用统一的 Web 流描述构造器
-    return createWebStreamDescriptor({
+    // 使用统一的 HTTP 流描述构造器（Web ReadableStream）：
+    const expiresIn = 300;
+    const getUrl = await getSignedUrl(
+      s3Client,
+      new GetObjectCommand({
+        Bucket: s3Config.bucket_name,
+        Key: key,
+      }),
+      { expiresIn },
+    );
+
+    // 可选：用于 size 缺失/异常时探测 size（StorageStreaming 的 probeSize 会用到）
+    const headUrl = await getSignedUrl(
+      s3Client,
+      new HeadObjectCommand({
+        Bucket: s3Config.bucket_name,
+        Key: key,
+      }),
+      { expiresIn },
+    );
+
+    return createHttpStreamDescriptor({
       size,
       contentType,
       etag,
       lastModified,
-      async openStream(signal) {
-        try {
-          const getCommand = new GetObjectCommand({
-            Bucket: s3Config.bucket_name,
-            Key: key,
-          });
-          const response = await s3Client.send(getCommand, signal ? { abortSignal: signal } : undefined);
-
-          const stream = response.Body;
-          if (!stream) {
-            throw new S3DriverError("获取文件流失败: 响应 Body 为空");
-          }
-
-          return stream;
-        } catch (error) {
-          if (error instanceof AppError) {
-            throw error;
-          }
-          if (error?.$metadata?.httpStatusCode === 404) {
-            throw new NotFoundError("文件不存在");
-          }
-          throw new S3DriverError("获取文件流失败", { details: { cause: error?.message } });
-        }
+      supportsRange: true,
+      fetchResponse: async (signal) => {
+        return await fetch(getUrl, {
+          method: "GET",
+          signal,
+          redirect: "follow",
+        });
+      },
+      fetchRangeResponse: async (signal, rangeHeader) => {
+        return await fetch(getUrl, {
+          method: "GET",
+          headers: { Range: rangeHeader },
+          signal,
+          redirect: "follow",
+        });
+      },
+      fetchHeadResponse: async (signal) => {
+        return await fetch(headUrl, {
+          method: "HEAD",
+          signal,
+          redirect: "follow",
+        });
       },
     });
   }

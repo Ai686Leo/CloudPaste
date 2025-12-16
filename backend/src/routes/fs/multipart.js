@@ -3,7 +3,6 @@ import { ApiStatus } from "../../constants/index.js";
 import { generateFileId, jsonOk } from "../../utils/common.js";
 import { MountManager } from "../../storage/managers/MountManager.js";
 import { FileSystem } from "../../storage/fs/FileSystem.js";
-import { invalidateFsCache } from "../../cache/invalidation.js";
 import { getEncryptionSecret } from "../../utils/environmentUtils.js";
 import { usePolicy } from "../../security/policies/policies.js";
 import { findUploadSessionById } from "../../utils/uploadSessions.js";
@@ -319,9 +318,6 @@ export const registerMultipartRoutes = (router, helpers) => {
       etag,
       contentType,
     });
-
-    // 同时触发目录缓存失效（冗余保护，确保一致性）
-    invalidateFsCache({ mountId, reason: "presign-commit", db });
 
     return jsonOk(c, { ...result, publicUrl: result.publicUrl || null, fileName, targetPath, fileSize }, "文件上传完成");
   });

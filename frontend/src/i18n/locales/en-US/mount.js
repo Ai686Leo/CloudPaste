@@ -181,9 +181,12 @@ export default {
       browserNative: "Browser Native",
       pdfjsLabel: "PDF.js",
       officeProvider: {
+        native: "Native Preview",
         microsoft: "Microsoft Office Online",
         google: "Google Docs",
       },
+      nativeRenderFailed: "Native preview failed",
+      tryExternalProvider: "Please try switching to Microsoft or Google preview",
       officePreview: "Office Preview",
       useMicrosoftPreview: "Use Microsoft Preview",
       useGooglePreview: "Use Google Preview",
@@ -214,7 +217,7 @@ export default {
       selectedInfo: "Selected: {count} items ({folders} folders, {files} files)",
       targetLocation: "Target Location:",
       loading: "Loading...",
-      rootDirectory: "Root Directory",
+      rootDirectory: "Root",
       cancel: "Cancel",
       confirmCopy: "Confirm Copy",
       copying: "Copying...",
@@ -414,7 +417,7 @@ export default {
   },
   breadcrumb: {
     navigation: "Breadcrumb Navigation",
-    root: "Root Directory",
+    root: "Root",
     exitSelection: "Exit Selection", // Only keep this one, used in FloatingActionBar
   },
 };

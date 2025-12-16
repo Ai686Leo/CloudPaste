@@ -157,7 +157,7 @@ export const DEFAULT_SETTINGS = {
     options: null,
     sort_order: 4,
     flag: SETTING_FLAGS.PUBLIC,
-    default_value: "jpg,tiff,jpeg,png,gif,bmp,svg,ico,swf,webp,avif",
+    default_value: "jpg,tiff,jpeg,png,gif,bmp,svg,ico,swf,webp,avif,heic,heif",
   },
 
   preview_office_types: {

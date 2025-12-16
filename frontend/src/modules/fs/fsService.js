@@ -19,6 +19,19 @@ export function useFsService() {
   const authStore = useAuthStore();
   const pathPassword = usePathPassword();
 
+  // 目录列表条件请求缓存（强一致性路线：依赖后端 ETag；前端仅做“可验证缓存”）
+  const DIRECTORY_LIST_CACHE_LIMIT = 50;
+  /** @type {Map<string, { etag: string, data: FsDirectoryResponse }>} */
+  const directoryListCache = new Map();
+  const setDirectoryListCache = (key, value) => {
+    directoryListCache.set(key, value);
+    if (directoryListCache.size <= DIRECTORY_LIST_CACHE_LIMIT) return;
+    const firstKey = directoryListCache.keys().next().value;
+    if (firstKey) {
+      directoryListCache.delete(firstKey);
+    }
+  };
+
   // 请求取消控制器管理
   /** @type {{ directory: AbortController | null, fileInfo: AbortController | null }} */
   const abortControllers = {
@@ -57,6 +70,18 @@ export function useFsService() {
     cancelFileInfoRequest();
   };
 
+  const normalizeDirApiPath = (path) => {
+    const raw = typeof path === "string" && path ? path : "/";
+    const withLeading = raw.startsWith("/") ? raw : `/${raw}`;
+    const collapsed = withLeading.replace(/\/{2,}/g, "/");
+    if (collapsed === "/") return "/";
+    return collapsed.endsWith("/") ? collapsed : `${collapsed}/`;
+  };
+
+  const clearDirectoryListCache = () => {
+    directoryListCache.clear();
+  };
+
   /**
    * 获取目录列表
    * @param {string} path
@@ -64,7 +89,7 @@ export function useFsService() {
    * @returns {Promise<FsDirectoryResponse>}
    */
   const getDirectoryList = async (path, options = {}) => {
-    const normalizedPath = path || "/";
+    const normalizedPath = normalizeDirApiPath(path || "/");
     const isAdmin = authStore.isAdmin;
 
     // 取消之前的目录请求，避免竞态条件
@@ -75,27 +100,51 @@ export function useFsService() {
     abortControllers.directory = controller;
 
     /** @type {{ refresh?: boolean; headers?: Record<string,string>; signal?: AbortSignal }} */
-    const requestOptions = { 
+    const requestOptions = {
       refresh: options.refresh,
       signal: controller.signal,
     };
+
+    const cached = directoryListCache.get(normalizedPath) || null;
+    const shouldUseConditional = !options.refresh && !!cached?.etag;
 
     // 非管理员访问时，如果已有 token，则附带在请求头中
     if (!isAdmin) {
       const token = pathPassword.getPathToken(normalizedPath);
       if (token) {
         requestOptions.headers = {
+          ...(requestOptions.headers || {}),
           "X-FS-Path-Token": token,
         };
       }
     }
 
+    if (shouldUseConditional) {
+      requestOptions.headers = {
+        ...(requestOptions.headers || {}),
+        "If-None-Match": cached.etag,
+      };
+    }
+
     try {
       const response = await api.fs.getDirectoryList(normalizedPath, requestOptions);
+      if (response?.notModified) {
+        if (cached?.data) {
+          return cached.data;
+        }
+        // 理论上不会发生：只有命中缓存才会发 If-None-Match
+        throw new Error("目录缓存缺失（304 Not Modified 但本地无可用缓存）");
+      }
       if (!response?.success) {
         throw new Error(response?.message || "获取目录列表失败");
       }
-      return /** @type {FsDirectoryResponse} */ (response.data);
+
+      const data = /** @type {FsDirectoryResponse} */ (response.data);
+      const etag = typeof data?.dirEtag === "string" && data.dirEtag ? data.dirEtag : null;
+      if (etag && data) {
+        setDirectoryListCache(normalizedPath, { etag, data });
+      }
+      return data;
     } catch (error) {
       // 请求被取消时，静默处理，不抛出错误
       if (error.name === "AbortError") {
@@ -129,21 +178,26 @@ export function useFsService() {
   /**
    * 获取单个文件信息
    * @param {string} path
-   * @returns {Promise<FsDirectoryItem>}
+   * @param {{ headers?: Record<string,string>; signal?: AbortSignal; cancelPrevious?: boolean }} [options]
+   * - cancelPrevious=true：保持旧行为（新的请求会取消上一条 fileInfo 请求），适合“单文件预览/详情面板”
+   * - cancelPrevious=false：允许并发请求，适合“图廊懒加载/批量预取”
+   * @returns {Promise<FsDirectoryItem|null>}
    */
-  const getFileInfo = async (path) => {
+  const getFileInfo = async (path, options = {}) => {
     const isAdmin = authStore.isAdmin;
-
-    // 取消之前的文件信息请求，避免竞态条件
-    cancelFileInfoRequest();
+    const normalizedPath = path || "/";
 
     // 创建新的 AbortController
     const controller = new AbortController();
-    abortControllers.fileInfo = controller;
+    const shouldCancelPrevious = options.cancelPrevious !== false;
+    if (shouldCancelPrevious) {
+      cancelFileInfoRequest();
+      abortControllers.fileInfo = controller;
+    }
 
     /** @type {{ headers?: Record<string,string>; signal?: AbortSignal }} */
     const requestOptions = {
-      signal: controller.signal,
+      signal: options.signal || controller.signal,
     };
 
     // 非管理员访问时，为文件路径附加路径密码 token（如果存在）
@@ -154,6 +208,14 @@ export function useFsService() {
           "X-FS-Path-Token": token,
         };
       }
+    }
+
+    // 允许调用方追加 headers（如自定义 token/trace 等）
+    if (options.headers) {
+      requestOptions.headers = {
+        ...(requestOptions.headers || {}),
+        ...options.headers,
+      };
     }
 
     try {
@@ -168,12 +230,96 @@ export function useFsService() {
         console.log("文件信息请求已取消:", path);
         return null;
       }
+
+      // 文件路径也可能受“路径密码”保护：沿用目录列表的交互，触发密码弹窗
+      if (!isAdmin && error && error.code === "FS_PATH_PASSWORD_REQUIRED") {
+        // 文件的密码域通常属于其父目录，统一按父目录触发验证
+        const parentDir =
+          normalizedPath && normalizedPath !== "/" ? `${normalizedPath.replace(/\/+$/, "").split("/").slice(0, -1).join("/")}/` : "/";
+        const ownerPath = parentDir.startsWith("/") ? parentDir : `/${parentDir}`;
+
+        console.warn("文件需要路径密码，触发密码验证流程:", { path: normalizedPath, ownerPath, error });
+
+        // 旧 token 失效，清除后重新走验证
+        pathPassword.removePathToken(ownerPath);
+        pathPassword.setPendingPath(ownerPath);
+        pathPassword.openPasswordDialog();
+
+        const friendlyError = new Error(error.message || "目录需要密码访问");
+        friendlyError.code = "FS_PATH_PASSWORD_REQUIRED";
+        friendlyError.__logged = true;
+        throw friendlyError;
+      }
+
       throw error;
     } finally {
       // 清理 controller 引用
       if (abortControllers.fileInfo === controller) {
         abortControllers.fileInfo = null;
       }
+    }
+  };
+
+  /**
+   * 预热目录列表（不取消当前目录请求）
+   * - 用于面包屑 hover 等场景
+   * - 不写入内部 abortControllers.directory，避免影响主导航
+   * @param {string} path
+   * @param {{ refresh?: boolean; returnNullOnNotModified?: boolean }} [options]
+   * @returns {Promise<FsDirectoryResponse|null>}
+   */
+  const prefetchDirectoryList = async (path, options = {}) => {
+    const normalizedPath = normalizeDirApiPath(path || "/");
+    const isAdmin = authStore.isAdmin;
+
+    const controller = new AbortController();
+
+    /** @type {{ refresh?: boolean; headers?: Record<string,string>; signal?: AbortSignal }} */
+    const requestOptions = {
+      refresh: options.refresh ?? false,
+      signal: controller.signal,
+    };
+
+    if (!isAdmin) {
+      const token = pathPassword.getPathToken(normalizedPath);
+      if (token) {
+        requestOptions.headers = {
+          "X-FS-Path-Token": token,
+        };
+      }
+    }
+
+    try {
+      const cached = directoryListCache.get(normalizedPath) || null;
+      if (!options.refresh && cached?.etag) {
+        requestOptions.headers = {
+          ...(requestOptions.headers || {}),
+          "If-None-Match": cached.etag,
+        };
+      }
+
+      const response = await api.fs.getDirectoryList(normalizedPath, requestOptions);
+      if (response?.notModified) {
+        // 某些调用方（如后台无感 revalidate）不希望在 304 时回写 data（避免重复赋值引发微小闪烁）
+        if (options.returnNullOnNotModified) {
+          return null;
+        }
+        return cached?.data || null;
+      }
+      if (!response?.success) {
+        throw new Error(response?.message || "获取目录列表失败");
+      }
+      const data = /** @type {FsDirectoryResponse} */ (response.data);
+      const etag = typeof data?.dirEtag === "string" && data.dirEtag ? data.dirEtag : null;
+      if (etag && data) {
+        setDirectoryListCache(normalizedPath, { etag, data });
+      }
+      return data;
+    } catch (error) {
+      if (error.name === "AbortError") {
+        return null;
+      }
+      return null;
     }
   };
 
@@ -333,6 +479,8 @@ export function useFsService() {
   return {
     getDirectoryList,
     getFileInfo,
+    prefetchDirectoryList,
+    clearDirectoryListCache,
     renameItem,
     createDirectory,
     batchDeleteItems,

@@ -23,6 +23,7 @@ export const DRIVER_TYPES = Object.freeze({
   LOCAL: "LOCAL",
   ONEDRIVE: "ONEDRIVE",
   GOOGLE_DRIVE: "GOOGLE_DRIVE",
+  GITHUB_API: "GITHUB_API",
 });
 
 export const DEFAULT_DRIVER_CAPABILITIES = Object.freeze({

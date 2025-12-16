@@ -1,5 +1,4 @@
-import { ref, computed, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { ref, computed } from 'vue';
 import {
   ViewState,
   isLoadingState,
@@ -21,21 +20,12 @@ import {
  * @returns {Object} 状态机实例
  */
 export function useViewStateMachine() {
-  const route = useRoute();
-  const router = useRouter();
-
   // ==================== 核心状态 ====================
   /**
    * 当前视图状态
    * @type {import('vue').Ref<string>}
    */
   const viewState = ref(ViewState.INITIAL);
-
-  /**
-   * 当前路径
-   * @type {import('vue').Ref<string>}
-   */
-  const currentPath = ref('/');
 
   /**
    * 目录数据
@@ -55,19 +45,6 @@ export function useViewStateMachine() {
    */
   const errorInfo = ref(null);
 
-  // ==================== 请求控制 ====================
-  /**
-   * 目录请求的AbortController
-   * @type {AbortController|null}
-   */
-  let directoryAbortController = null;
-
-  /**
-   * 文件请求的AbortController
-   * @type {AbortController|null}
-   */
-  let fileAbortController = null;
-
   // ==================== 计算属性 ====================
   /**
    * 是否处于加载状态
@@ -82,7 +59,7 @@ export function useViewStateMachine() {
   /**
    * 是否应该显示文件预览
    */
-  const showFilePreview = computed(() => isInPreviewMode.value || shouldShowFilePreview(viewState.value));
+  const showFilePreview = computed(() => shouldShowFilePreview(viewState.value));
 
   /**
    * 是否有错误
@@ -95,37 +72,21 @@ export function useViewStateMachine() {
   const needsPassword = computed(() => needsPasswordState(viewState.value));
 
   /**
-   * 是否在预览模式下(从URL判断)
+   * 当前预览文件名（从已加载的 fileData 推导）
+   * @type {import('vue').ComputedRef<string|null>}
    */
-  const isInPreviewMode = computed(() => !!route.query.preview);
-
-  /**
-   * 预览文件名(从URL读取)
-   */
-  const previewFileName = computed(() => route.query.preview || null);
+  const previewFileName = computed(() => fileData.value?.name || null);
 
   // ==================== 状态转换方法 ====================
 
   /**
    * 开始加载目录
    * @param {string} path - 目录路径
-   * @returns {AbortSignal} AbortSignal用于取消请求
    */
   function startLoadingDirectory(path) {
-    // 取消之前的目录请求
-    if (directoryAbortController) {
-      directoryAbortController.abort();
-    }
-
-    // 创建新的AbortController
-    directoryAbortController = new AbortController();
-
     // 更新状态
-    currentPath.value = path;
     viewState.value = ViewState.LOADING_DIRECTORY;
     errorInfo.value = null;
-
-    return directoryAbortController.signal;
   }
 
   /**
@@ -135,30 +96,17 @@ export function useViewStateMachine() {
   function onDirectoryLoaded(data) {
     directoryData.value = data;
     viewState.value = ViewState.DIRECTORY_LOADED;
-    directoryAbortController = null;
   }
 
   /**
    * 开始加载文件预览
-   * @param {string} fileName - 文件名
-   * @param {string} path - 文件所在路径
-   * @returns {AbortSignal} AbortSignal用于取消请求
+   * @param {string} filePath - 文件路径（不以 / 结尾）
+   * @param {string} path - 文件所在目录路径（以 / 结尾）
    */
-  function startLoadingFile(fileName, path = currentPath.value) {
-    // 取消之前的文件请求
-    if (fileAbortController) {
-      fileAbortController.abort();
-    }
-
-    // 创建新的AbortController
-    fileAbortController = new AbortController();
-
+  function startLoadingFile(filePath, path) {
     // 更新状态
-    currentPath.value = path;
     viewState.value = ViewState.LOADING_FILE;
     errorInfo.value = null;
-
-    return fileAbortController.signal;
   }
 
   /**
@@ -168,18 +116,12 @@ export function useViewStateMachine() {
   function onFileLoaded(data) {
     fileData.value = data;
     viewState.value = ViewState.FILE_LOADED;
-    fileAbortController = null;
   }
 
   /**
    * 关闭文件预览,返回目录视图
    */
   function closeFilePreview() {
-    // 清除URL中的preview参数
-    const query = { ...route.query };
-    delete query.preview;
-    router.replace({ query });
-
     // 重置文件数据
     fileData.value = null;
 
@@ -217,26 +159,10 @@ export function useViewStateMachine() {
   }
 
   /**
-   * 取消所有进行中的请求
-   */
-  function cancelAllRequests() {
-    if (directoryAbortController) {
-      directoryAbortController.abort();
-      directoryAbortController = null;
-    }
-    if (fileAbortController) {
-      fileAbortController.abort();
-      fileAbortController = null;
-    }
-  }
-
-  /**
    * 重置状态机到初始状态
    */
   function reset() {
-    cancelAllRequests();
     viewState.value = ViewState.INITIAL;
-    currentPath.value = '/';
     directoryData.value = null;
     fileData.value = null;
     errorInfo.value = null;
@@ -253,30 +179,12 @@ export function useViewStateMachine() {
   }
 
   // ==================== URL变化监听 ====================
-  /**
-   * 监听URL中的preview参数变化
-   * 当preview参数被移除时,自动关闭预览
-   */
-  watch(
-    () => route.query.preview,
-    (newPreview, oldPreview) => {
-      // preview参数从有变成无,关闭预览
-      if (oldPreview && !newPreview) {
-        fileData.value = null;
-        if (directoryData.value) {
-          viewState.value = ViewState.DIRECTORY_LOADED;
-        } else {
-          viewState.value = ViewState.INITIAL;
-        }
-      }
-    }
-  );
+  // 注意：URL 的变化由 controller 统一驱动；状态机本身不直接依赖路由。
 
   // ==================== 返回状态机实例 ====================
   return {
     // 状态
     viewState,
-    currentPath,
     directoryData,
     fileData,
     errorInfo,
@@ -287,7 +195,6 @@ export function useViewStateMachine() {
     showFilePreview,
     hasError,
     needsPassword,
-    isInPreviewMode,
     previewFileName,
 
     // 状态转换方法
@@ -299,7 +206,6 @@ export function useViewStateMachine() {
     requirePassword,
     setError,
     clearError,
-    cancelAllRequests,
     reset,
   };
 }

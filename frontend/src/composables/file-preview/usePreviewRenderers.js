@@ -6,6 +6,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import { formatDateTime } from "@/utils/timeUtils.js";
 import { formatFileSize as formatFileSizeUtil, FileType, isArchiveFile } from "@/utils/fileTypes.js";
+import { decodeImagePreviewUrlToPngObjectUrl, revokeObjectUrl, shouldAttemptDecodeImagePreview } from "@/utils/imageDecode.js";
 
 export function usePreviewRenderers(file, emit, darkMode) {
   // ===== 状态管理 =====
@@ -13,6 +14,9 @@ export function usePreviewRenderers(file, emit, darkMode) {
   // 基本状态
   const loadError = ref(false);
   const authenticatedPreviewUrl = ref(null);
+  const hasTriedImageDecodeFallback = ref(false);
+  const isDecodingImage = ref(false);
+  const imageDecodeAbortController = ref(null);
 
   // Office预览相关
   const officePreviewLoading = ref(false);
@@ -70,6 +74,7 @@ export function usePreviewRenderers(file, emit, darkMode) {
       console.warn("预览URL为空，无法获取认证预览URL");
       return;
     }
+    revokeObjectUrl(authenticatedPreviewUrl.value);
     authenticatedPreviewUrl.value = url;
   };
 
@@ -199,8 +204,37 @@ export function usePreviewRenderers(file, emit, darkMode) {
   /**
    * 处理内容加载错误
    */
-  const handleContentError = (error) => {
+  const handleContentError = async (error) => {
     console.error("内容加载错误:", error);
+
+    const currentFile = file.value;
+    const currentUrl = authenticatedPreviewUrl.value || "";
+    const filename = currentFile?.name || "";
+    const mimetype = currentFile?.mimetype || "";
+
+    // 仅在“图片预览 + 首次加载失败 + 可解码格式”时做解码回退
+    if (
+      isImageFile.value &&
+      !hasTriedImageDecodeFallback.value &&
+      shouldAttemptDecodeImagePreview({ filename, mimetype }) &&
+      typeof currentUrl === "string" &&
+      !currentUrl.startsWith("blob:")
+    ) {
+      hasTriedImageDecodeFallback.value = true;
+      try {
+        console.info("图片解码回退开始:", { filename, mimetype, url: currentUrl });
+        const { objectUrl } = await decodeImagePreviewUrlToPngObjectUrl({ url: currentUrl, filename, mimetype });
+        revokeObjectUrl(authenticatedPreviewUrl.value);
+        authenticatedPreviewUrl.value = objectUrl;
+        loadError.value = false;
+        console.info("图片解码回退成功:", { filename, objectUrl });
+        return;
+      } catch (decodeError) {
+        console.error("图片解码回退失败:", decodeError);
+        // 继续走通用错误处理
+      }
+    }
+
     loadError.value = true;
     emit("error", error);
   };
@@ -239,7 +273,9 @@ export function usePreviewRenderers(file, emit, darkMode) {
   const initializeForFile = async (newFile) => {
     // 重置基本状态
     loadError.value = false;
+    revokeObjectUrl(authenticatedPreviewUrl.value);
     authenticatedPreviewUrl.value = null;
+    hasTriedImageDecodeFallback.value = false;
 
     // 重置Office预览状态
     officePreviewLoading.value = false;
@@ -280,7 +316,14 @@ export function usePreviewRenderers(file, emit, darkMode) {
     async (newFile) => {
       // 重置基本状态
       loadError.value = false;
+      revokeObjectUrl(authenticatedPreviewUrl.value);
       authenticatedPreviewUrl.value = null;
+      hasTriedImageDecodeFallback.value = false;
+      isDecodingImage.value = false;
+      if (imageDecodeAbortController.value) {
+        imageDecodeAbortController.value.abort();
+        imageDecodeAbortController.value = null;
+      }
 
       // 重置Office预览状态
       officePreviewLoading.value = false;
@@ -313,6 +356,7 @@ export function usePreviewRenderers(file, emit, darkMode) {
           isAudio: isAudioFile.value,
           isPdf: isPdfFile.value,
           isOffice: isOfficeFile.value,
+          isText: isTextFile.value,
         };
         console.log("📋 类型判断结果:", typeChecks);
 
@@ -321,8 +365,53 @@ export function usePreviewRenderers(file, emit, darkMode) {
         console.log(`✅ 最终预览类型: ${selectedType}`);
         console.groupEnd();
 
-        if (
-          typeChecks.isImage ||
+        if (typeChecks.isImage) {
+          const filename = newFile?.name || "";
+          const mimetype = newFile?.mimetype || "";
+          const url = previewUrl.value || "";
+
+          if (url && shouldAttemptDecodeImagePreview({ filename, mimetype })) {
+            const expectedFileName = filename;
+            const controller = new AbortController();
+            imageDecodeAbortController.value = controller;
+            isDecodingImage.value = true;
+            hasTriedImageDecodeFallback.value = true;
+
+            try {
+              console.info("图片预解码开始:", { filename, mimetype, url });
+              const decoded = await decodeImagePreviewUrlToPngObjectUrl({
+                url,
+                filename,
+                mimetype,
+                signal: controller.signal,
+              });
+
+              if (controller.signal.aborted) return;
+              if (file.value?.name !== expectedFileName) return;
+
+              revokeObjectUrl(authenticatedPreviewUrl.value);
+              authenticatedPreviewUrl.value = decoded.objectUrl;
+              loadError.value = false;
+              console.info("图片预解码成功:", { filename, objectUrl: decoded.objectUrl });
+            } catch (decodeError) {
+              if (controller.signal.aborted) return;
+              console.error("图片预解码失败:", decodeError);
+              loadError.value = true;
+              emit("error", decodeError);
+            } finally {
+              if (!controller.signal.aborted) {
+                isDecodingImage.value = false;
+              }
+              if (imageDecodeAbortController.value === controller) {
+                imageDecodeAbortController.value = null;
+              }
+            }
+
+            return;
+          }
+
+          authenticatedPreviewUrl.value = url;
+        } else if (
           typeChecks.isVideo ||
           typeChecks.isAudio ||
           typeChecks.isPdf ||
@@ -360,9 +449,11 @@ export function usePreviewRenderers(file, emit, darkMode) {
    */
   onUnmounted(() => {
     // 清理URL资源
-    if (authenticatedPreviewUrl.value) {
-      URL.revokeObjectURL(authenticatedPreviewUrl.value);
-      authenticatedPreviewUrl.value = null;
+    revokeObjectUrl(authenticatedPreviewUrl.value);
+    authenticatedPreviewUrl.value = null;
+    if (imageDecodeAbortController.value) {
+      imageDecodeAbortController.value.abort();
+      imageDecodeAbortController.value = null;
     }
 
     // 移除事件监听器

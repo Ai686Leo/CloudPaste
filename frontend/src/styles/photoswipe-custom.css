@@ -1,146 +1,621 @@
 /**
- * PhotoSwipe自定义UI元素样式
+ * PhotoSwipe + FS Lightbox 样式
+ *
  */
 
-/* ===== 自定义按钮 - 完全使用PhotoSwipe原生样式 ===== */
+/* =========================
+ * Lightbox Shell（容器骨架）
+ * ========================= */
 
-/* ===== 图片信息显示 ===== */
-.pswp__image-info {
-  position: absolute;
-  bottom: 20px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(0, 0, 0, 0.8);
+.p-lightbox {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100%;
+  z-index: 2500;
+  border-radius: 0;
+  background: #000;
   color: #fff;
-  padding: 12px 20px;
-  border-radius: 8px;
-  max-width: 80%;
-  text-align: center;
-  backdrop-filter: blur(10px);
-  transition: all 0.3s ease;
-  z-index: 10;
-  /* 与PhotoSwipe原生元素保持一致的隐藏/显示行为 */
+}
+
+.p-lightbox__underlay {
+  position: absolute;
+  inset: 0;
+  background: inherit;
+  border-radius: 0;
+  pointer-events: none;
   opacity: 1;
 }
 
-.pswp__image-info-content {
+.p-lightbox__container {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-wrap: nowrap;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: stretch;
+  overflow: hidden;
+  border-radius: 0;
+  z-index: 1;
+}
+
+.p-lightbox__container > .p-lightbox__content {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  flex-grow: 1;
+  height: 100%;
+}
+
+.p-lightbox__container > .p-lightbox__content .p-lightbox__pswp {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+.p-lightbox__container > .p-lightbox__sidebar {
+  position: relative;
+  display: block;
+  overflow: auto;
+  width: 300px;
+  user-select: none;
+  border-left: 1px solid #ffffff12;
+  background: #141517;
+  color: #fff;
+}
+
+/* 侧栏永远使用暗色 */
+.p-lightbox.is-light .p-lightbox__container > .p-lightbox__sidebar {
+  background: #141517;
+  color: #fff;
+  border-left-color: #ffffff12;
+}
+
+/* =========================
+ * Sidebar（信息栏）
+ * ========================= */
+
+.p-sidebar__toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  min-height: 48px;
+  padding: 2px 0;
+  border-bottom: 1px solid #ffffff12;
+  background: inherit;
+}
+
+.p-lightbox.is-light .p-lightbox__container > .p-lightbox__sidebar .p-sidebar__toolbar {
+  border-bottom-color: #ffffff12;
+}
+
+.p-sidebar__title {
+  font-size: 1.125rem;
+  font-weight: 500;
+  letter-spacing: normal;
+  line-height: 1.75rem;
+  flex: 1;
+}
+
+.p-sidebar__close {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+  margin-left: 6px;
+}
+
+.p-sidebar__close:hover {
+  background: #ffffff10;
+}
+
+.p-lightbox.is-light .p-lightbox__container > .p-lightbox__sidebar .p-sidebar__close:hover {
+  background: #ffffff10;
+}
+
+.p-sidebar__close-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.p-sidebar__content {
+  padding: 0;
+}
+
+.p-sidebar__empty {
+  font-size: 14px;
+  opacity: 0.7;
+}
+
+.metadata__item {
+  user-select: text;
+}
+
+.metadata__list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 0;
+  padding: 12px 12px 12px;
 }
 
-.pswp__image-name {
-  font-size: 16px;
-  font-weight: 600;
-  color: #fff;
+.metadata__divider {
+  height: 1px;
+  background: #ffffff12;
+  margin: 16px 0;
+}
+
+.meta-caption {
+  margin-top: 4px;
+  font-size: 14px;
+  opacity: 0.85;
+  white-space: pre-wrap;
   word-break: break-word;
-  line-height: 1.3;
+  hyphens: auto;
+  text-align: start;
 }
 
-.pswp__image-details {
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.8);
+.metadata__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 0;
+  border-radius: 0;
+}
+
+.metadata__row-icon {
+  width: 24px;
+  height: 24px;
+  opacity: 0.9;
+  flex-shrink: 0;
+}
+
+.metadata__row-body {
+  min-width: 0;
+}
+
+.meta-label {
+  font-size: 12px;
+  opacity: 0.6;
+  margin-bottom: 4px;
+}
+
+.metadata__section-title {
+  font-size: 12px;
+  opacity: 0.6;
+  margin: 8px 2px 2px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.meta-title {
+  font-weight: 700;
+  word-break: break-word;
+  hyphens: auto;
+  text-align: start;
+  font-size: 14px;
+}
+
+.meta-value {
+  font-size: 14px;
+  opacity: 0.92;
+}
+
+.p-sidebar__hint {
+  margin-top: 10px;
+  padding: 10px 10px;
+  border-radius: 6px;
+  border: 1px solid #ffffff12;
+  background: #ffffff08;
+  font-size: 14px;
+}
+
+.p-lightbox.is-light .p-lightbox__container > .p-lightbox__sidebar .p-sidebar__hint {
+  border-color: #ffffff12;
+  background: #ffffff08;
+}
+
+/* =========================
+ * Action Menu（更多菜单）
+ * ========================= */
+
+.p-lightbox-menu {
+  position: fixed;
+  top: 56px;
+  right: 12px;
+  z-index: 2600;
+}
+
+.action-menu.action-menu--lightbox {
+  min-width: 180px;
+  opacity: 0.9;
+  background: #191a1c;
+  color: #ffffff;
+  border: 1px solid #ffffff12;
+  border-radius: 6px;
+  padding: 2px 4px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+
+.action-menu__item {
+  width: 100%;
+  padding: 8px;
+  margin: 2px 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-radius: 6px;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  user-select: none;
+  text-align: start;
+}
+
+.action-menu__item:hover {
+  background: #ffffff10;
+}
+
+.action-menu__icon {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.95;
+}
+
+.action-menu__icon svg {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+
+.action-menu__text {
+  flex: 1 1 auto;
+  font-size: 14px;
+}
+
+.action-menu__shortcut {
+  margin-inline-start: 0.75rem;
+  opacity: 0.55;
+  font-size: 12px;
   font-weight: 400;
+  line-height: 1.667;
 }
 
-/* ===== 旋转动画效果 ===== */
-.pswp__img {
-  /* 为旋转功能添加平滑过渡 */
-  transition: transform 0.3s ease;
+.action-menu__divider {
+  height: 1px;
+  margin: 4px 0;
+  background: #ffffff12;
 }
 
-/* ===== 响应式设计 ===== */
-@media (max-width: 640px) {
-  .pswp__image-info {
-    bottom: 15px;
-    padding: 10px 16px;
-    max-width: 90%;
-  }
+/* =========================
+ * PhotoSwipe 顶栏按钮
+ * ========================= */
 
-  .pswp__image-name {
-    font-size: 14px;
-  }
-
-  .pswp__image-details {
-    font-size: 12px;
-  }
+.pswp__top-bar {
+  align-items: center;
 }
 
-/* ===== 暗色模式适配 ===== */
-.dark .pswp__image-info {
-  background: rgba(31, 41, 55, 0.9);
-  border: 1px solid rgba(75, 85, 99, 0.3);
+.pswp__top-bar .pswp__button {
+  height: 48px;
+  width: 44px;
+  display: flex;
+  align-items: center !important;
+  justify-content: center !important;
+  user-select: none;
+  /* 保障可点击：避免被内容层覆盖导致“看得见但点不到”（尤其是默认 zoom 按钮） */
+  pointer-events: auto;
+  z-index: 20;
 }
 
-/* ===== 可访问性优化 ===== */
-@media (prefers-contrast: high) {
-  .pswp__image-info {
-    background: rgba(0, 0, 0, 0.95);
-    border: 2px solid #fff;
-  }
+.pswp__top-bar .pswp__button .pswp__icn {
+  width: 32px;
+  height: 32px;
+  position: static;
 }
 
-/* ===== 性能优化 ===== */
-.pswp__image-info {
-  will-change: transform, opacity;
+.pswp__top-bar .pswp__button--mdi .pswp__icn {
+  width: 22px;
+  height: 22px;
 }
 
-/* ===== 与PhotoSwipe原生控制行为保持一致 ===== */
+.pswp__top-bar .pswp__button--info-button .pswp__icn {
+  width: 20px;
+  height: 20px;
+}
 
-/* 当控制栏隐藏时，图片信息也隐藏 */
-.pswp--ui-hidden .pswp__image-info {
+.pswp__button--sound-toggle .pswp__icn-sound-off {
+  display: none;
+}
+
+.pswp__button--sound-toggle.is-muted .pswp__icn-sound-on {
+  display: none;
+}
+
+.pswp__button--sound-toggle.is-muted .pswp__icn-sound-off {
+  display: block;
+}
+
+.p-lightbox__content.sidebar-visible .pswp__top-bar .pswp__button--info-button .pswp__icn {
+  display: none;
+}
+
+.pswp__top-bar .pswp__button.pswp__button--close-button {
+  margin-inline-start: 6px;
+}
+
+.pswp__top-bar .pswp__button.pswp__button--menu-button {
+  margin-inline-end: 6px;
+}
+
+.is-ltr .pswp__preloader {
+  margin-left: auto;
+  margin-right: 0;
+}
+
+/* 幻灯片按钮：通过 class 切换图标 */
+.pswp__button--slideshow-toggle .pswp__icn-slideshow-on {
+  display: none;
+}
+
+.pswp__button--slideshow-toggle.is-active .pswp__icn-slideshow-on {
+  display: block;
+}
+
+.pswp__button--slideshow-toggle.is-active .pswp__icn-slideshow-off {
+  display: none;
+}
+
+/* Slideshow（切图更“丝滑”） */
+.p-lightbox__container > .p-lightbox__content.slideshow-active .pswp__container {
+  transition: transform 0.8s ease-in-out;
+}
+
+/* =========================
+ * Zoom Toggle
+ * ========================= */
+
+.pswp__top-bar .pswp__button--zoom {
+  display: none;
+}
+
+.pswp--zoom-allowed .pswp__top-bar .pswp__button--zoom {
+  display: flex;
+}
+
+.p-lightbox__container > .p-lightbox__content:not(.is-zoomable) .pswp__button.pswp__button--zoom,
+.p-lightbox__container > .p-lightbox__content.slideshow-active .pswp__button.pswp__button--zoom {
+  display: none !important;
+}
+
+/* =========================
+ * Caption（固定：底部居中，不跟随图片尺寸）
+ * ========================= */
+
+.pswp__cloudpaste-caption {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translate(-50%, 0);
+  max-width: min(90vw, 700px);
+  padding: 0;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: #f3f3f3;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  text-shadow: -1px -1px 0 #0006, 1px -1px 0 #0006, -1px 1px 0 #0006, 1px 1px 0 #0006;
+  opacity: 1;
+  transition: opacity 120ms linear, transform 120ms ease-out;
+  will-change: opacity, transform;
+}
+
+.p-lightbox__content.sidebar-visible .pswp__cloudpaste-caption {
+  display: none !important;
+}
+
+.pswp__cloudpaste-caption.is-faded {
   opacity: 0;
-  pointer-events: none;
+  transform: translate(-50%, 8px);
 }
 
-/* 单张图片时的特殊处理 */
-.pswp--one-slide .pswp__image-info {
-  /* 可以根据需要调整单张图片时的显示 */
+.pswp--ui-hidden .pswp__cloudpaste-caption {
+  opacity: 0;
 }
 
-/* ===== 自定义按钮完全使用PhotoSwipe原生样式 ===== */
+/* =========================
+ * Live Photo（HTML Slide：图片 + 视频）
+ * ========================= */
 
-/* ===== 确保不干扰PhotoSwipe的手势操作 ===== */
-.pswp__image-info {
-  /* 确保信息显示不会干扰图片的手势操作 */
-  pointer-events: none;
+.pswp__media {
+  position: absolute;
+  inset: 0;
 }
 
-.pswp__image-info * {
-  pointer-events: none;
+.pswp__media .pswp__image,
+.pswp__media .pswp__video {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) var(--cloudpaste-media-transform, none);
 }
 
-/* ===== 打印样式 ===== */
-@media print {
-  .pswp__image-info {
-    display: none;
-  }
+.pswp__media .pswp__image,
+.pswp__media .pswp__video {
+  width: auto;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100vh;
+  object-fit: contain;
 }
 
-/* ===== 减少动画模式 ===== */
-@media (prefers-reduced-motion: reduce) {
-  .pswp__img {
-    transition: none;
-  }
-
-  .pswp__image-info {
-    transition: none;
-  }
+.pswp__media .pswp__video {
+  visibility: hidden;
 }
 
-/* ===== 高分辨率屏幕优化 ===== */
-@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
-  .pswp__image-info {
-    /* 高分辨率屏幕下的优化 */
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-  }
+.pswp__media.pswp__media--live.live-photo-viewer--playing .pswp__video {
+  visibility: visible;
 }
 
-/* ===== 触摸设备优化 ===== */
-@media (hover: none) and (pointer: coarse) {
-  .pswp__image-info {
-    /* 触摸设备上增加底部间距，避免被手势区域遮挡 */
-    bottom: 30px;
-  }
+.pswp__media.pswp__media--live.live-photo-viewer--playing .pswp__image {
+  opacity: 0;
+}
+
+/* Live Photo 角标 */
+.pswp__media.pswp__media--live .live-photo-viewer__badge {
+  pointer-events: auto;
+}
+
+/* Live Photo 播放/暂停（右下角） */
+.pswp__media.pswp__media--live {
+  position: relative;
+}
+
+.pswp__media.pswp__media--live .pswp__live-toggle {
+  position: absolute;
+  right: 16px;
+  bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  z-index: 12;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.92);
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.pswp__media.pswp__media--live .pswp__live-toggle:hover {
+  background: rgba(0, 0, 0, 0.34);
+  border-color: rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 1);
+}
+
+.pswp__media.pswp__media--live .pswp__live-toggle:active {
+  transform: translateY(1px);
+}
+
+.pswp__media.pswp__media--live .pswp__live-toggle-icon {
+  width: 20px;
+  height: 20px;
+  display: block;
+}
+
+.pswp__media.pswp__media--live .pswp__live-toggle-icon--pause {
+  display: none;
+}
+
+.pswp__media.pswp__media--live .pswp__live-toggle.is-playing .pswp__live-toggle-icon--play {
+  display: none;
+}
+
+.pswp__media.pswp__media--live .pswp__live-toggle.is-playing .pswp__live-toggle-icon--pause {
+  display: block;
+}
+
+.pswp__media.pswp__media--live.live-photo-viewer--loading .pswp__live-toggle {
+  opacity: 0.7;
+  cursor: default;
+}
+
+/* =========================
+ * Map Embed（地图嵌入）
+ * ========================= */
+
+.metadata__map-container {
+  margin-top: 12px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #ffffff12;
+  background: #1a1b1d;
+}
+
+.metadata__map-iframe {
+  display: block;
+  width: 100%;
+  height: 160px;
+  border: 0;
+  background: #1a1b1d;
+}
+
+.metadata__map-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 8px 10px;
+  border-top: 1px solid #ffffff12;
+  background: #1a1b1d;
+}
+
+.metadata__map-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  color: #ffffffcc;
+  background: transparent;
+  border: 1px solid #ffffff18;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.metadata__map-link:hover {
+  background: #ffffff10;
+  border-color: #ffffff28;
+  color: #fff;
+}
+
+.metadata__map-link-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.metadata__map-fallback {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid #ffffff12;
+  background: #1a1b1d;
+  text-align: center;
+}
+
+.metadata__map-fallback-text {
+  font-size: 13px;
+  color: #ffffff80;
+  margin-bottom: 10px;
+}
+
+.metadata__map-fallback .metadata__map-actions {
+  justify-content: center;
+  border-top: 0;
+  padding-top: 0;
 }

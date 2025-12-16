@@ -513,6 +513,19 @@ const submitForm = async () => {
     }
 
     success.value = props.isEdit ? "存储配置更新成功！" : "存储配置创建成功！";
+    try {
+      if (typeof window !== "undefined" && typeof window.dispatchEvent === "function") {
+        const configId = props.isEdit ? props.config?.id : savedConfig?.data?.id || savedConfig?.id;
+        window.dispatchEvent(
+          new CustomEvent("cloudpaste:storage-config-changed", {
+            detail: {
+              id: configId || null,
+              storage_type: formData.value.storage_type || null,
+            },
+          }),
+        );
+      }
+    } catch {}
     emit("success", savedConfig);
     setTimeout(() => {
       emit("close");

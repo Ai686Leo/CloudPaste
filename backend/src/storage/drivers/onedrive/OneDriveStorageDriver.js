@@ -34,7 +34,7 @@ import {
   findUploadSessionByUploadUrl,
 } from "../../../utils/uploadSessions.js";
 import { buildFileInfo } from "../../utils/FileInfoBuilder.js";
-import { createWebStreamDescriptor } from "../../streaming/StreamDescriptorUtils.js";
+import { createHttpStreamDescriptor } from "../../streaming/StreamDescriptorUtils.js";
 
 // 简单上传（Simple Upload）上限：4MB
 const SIMPLE_UPLOAD_MAX_BYTES = 4 * 1024 * 1024;
@@ -196,13 +196,17 @@ export class OneDriveStorageDriver extends BaseDriver {
     const etag = item.eTag || null;
     const lastModified = item.lastModifiedDateTime ? new Date(item.lastModifiedDateTime) : null;
 
-    return createWebStreamDescriptor({
+    return createHttpStreamDescriptor({
       size,
       contentType,
       etag,
       lastModified,
-      openStream: async (signal) => {
-        return this.graphClient.downloadContent(remotePath || "", { signal });
+      supportsRange: true,
+      fetchResponse: async (signal) => {
+        return await this.graphClient.downloadContentResponse(remotePath || "", { signal });
+      },
+      fetchRangeResponse: async (signal, rangeHeader) => {
+        return await this.graphClient.downloadContentResponse(remotePath || "", { signal, rangeHeader });
       },
     });
   }

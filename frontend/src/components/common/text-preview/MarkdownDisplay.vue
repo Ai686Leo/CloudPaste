@@ -31,7 +31,7 @@
 </template>
 
 <script setup>
-import { ref, watch, onMounted, onBeforeUnmount, nextTick } from "vue";
+import { ref, watch, onMounted, onBeforeUnmount, onActivated, onDeactivated, nextTick } from "vue";
 import { useI18n } from "vue-i18n";
 import { loadVditor, VDITOR_ASSETS_BASE } from "@/utils/vditorLoader.js";
 
@@ -58,12 +58,26 @@ const error = ref(null);
 const rendered = ref(false);
 const markdownContainer = ref(null);
 const isDestroyed = ref(false);
+const isActive = ref(true);
+let renderVersion = 0;
+
+/**
+ * 检查组件是否应该继续执行异步操作
+ * @param {number} version - 发起操作时的版本号
+ * @returns {boolean} - 是否应该继续
+ */
+const shouldContinue = (version) => {
+  return !isDestroyed.value && isActive.value && version === renderVersion;
+};
 
 /**
  * 渲染Markdown内容
  */
 const renderMarkdown = async () => {
-  if (!props.content || isDestroyed.value) return;
+  // 递增版本号，使之前的异步操作失效
+  const currentVersion = ++renderVersion;
+
+  if (!props.content || !shouldContinue(currentVersion)) return;
 
   try {
     loading.value = true;
@@ -73,9 +87,9 @@ const renderMarkdown = async () => {
     // 确保DOM更新后再初始化Vditor
     await nextTick();
 
-    // 更严格的组件状态检查
-    if (isDestroyed.value || !markdownContainer.value) {
-      console.warn("MarkdownDisplay组件已销毁或DOM不存在，跳过渲染");
+    // 更严格的组件状态检查（包含版本检查）
+    if (!shouldContinue(currentVersion) || !markdownContainer.value) {
+      console.warn("MarkdownDisplay组件已销毁/隐藏或DOM不存在，跳过渲染");
       return;
     }
 
@@ -92,10 +106,15 @@ const renderMarkdown = async () => {
       throw new Error(`Vditor 加载失败: ${loadError.message}`);
     }
 
-    // 再次检查组件状态
-    if (isDestroyed.value || !markdownContainer.value) {
-      console.warn("MarkdownDisplay组件已销毁，取消Vditor渲染");
+    // 再次检查组件状态（包含版本检查）
+    if (!shouldContinue(currentVersion) || !markdownContainer.value) {
+      console.warn("MarkdownDisplay组件已销毁/隐藏，取消Vditor渲染");
       return;
+    }
+
+    // 检查 Vditor 是否有效
+    if (!VditorConstructor || typeof VditorConstructor.preview !== "function") {
+      throw new Error("Vditor.preview 方法不可用");
     }
 
     try {
@@ -132,9 +151,9 @@ const renderMarkdown = async () => {
           inlineDigit: true,
         },
         after: () => {
-          // 检查组件是否已被销毁
-          if (isDestroyed.value || !markdownContainer.value) {
-            console.warn("MarkdownDisplay组件已销毁，跳过after回调");
+          // 检查组件是否已被销毁/隐藏，或者是否是过期的渲染操作
+          if (!shouldContinue(currentVersion) || !markdownContainer.value) {
+            console.warn("MarkdownDisplay组件已销毁/隐藏或渲染已过期，跳过after回调");
             return;
           }
 
@@ -184,15 +203,47 @@ onMounted(() => {
   }
 });
 
+// KeepAlive 激活时（如果父组件使用 KeepAlive）
+onActivated(() => {
+  isActive.value = true;
+  if (props.content && !rendered.value) {
+    renderMarkdown();
+  }
+});
+
+// KeepAlive 停用时
+onDeactivated(() => {
+  isActive.value = false;
+  renderVersion++;
+});
+
 // 组件销毁时清理
 onBeforeUnmount(() => {
   isDestroyed.value = true;
+  isActive.value = false;
+  // 递增版本号，取消正在进行的渲染操作
+  renderVersion++;
 
   // 清理 DOM
   if (markdownContainer.value) {
     markdownContainer.value.innerHTML = "";
   }
   console.log("MarkdownDisplay组件销毁");
+});
+
+defineExpose({
+  // 暂停渲染
+  pause: () => {
+    isActive.value = false;
+    renderVersion++;
+  },
+  // 恢复渲染
+  resume: () => {
+    isActive.value = true;
+    if (props.content && !rendered.value) {
+      renderMarkdown();
+    }
+  },
 });
 </script>
 

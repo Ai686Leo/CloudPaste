@@ -3,6 +3,10 @@ import { AppError, ValidationError, AuthenticationError, NotFoundError } from ".
 import { jsonOk } from "../../utils/common.js";
 import { getPasteBySlug, verifyPastePassword, incrementAndCheckPasteViews, isPasteAccessible } from "../../services/pasteService.js";
 import { resolvePrincipal } from "../../security/helpers/principal.js";
+import { getEncryptionSecret } from "../../utils/environmentUtils.js";
+import { useRepositories } from "../../utils/repositories.js";
+import { ProxySignatureService } from "../../services/ProxySignatureService.js";
+import { PASTE_URL_PROXY_TICKET_PATH } from "./urlProxyConfig.js";
 
 // 可选解析当前访问者身份（管理员 / API Key 用户），匿名时返回 null
 const resolveOptionalPrincipal = (c) => {
@@ -46,6 +50,35 @@ const ensurePasteVisibility = (c, paste) => {
 };
 
 export const registerPastesPublicRoutes = (router) => {
+  // URL 内容代理（Query Ticket 版）
+  // - 供 SnapDOM useProxy 使用：浏览器侧资源请求无法携带 Authorization Header
+  // - 通过 ticket 做短期校验，避免把 /api/share/url/proxy 直接开放给匿名请求
+  router.get("/api/paste/url/proxy", async (c) => {
+    const db = c.env.DB;
+    const url = c.req.query("url");
+    const ticket = c.req.query("ticket");
+
+    if (!url) {
+      throw new ValidationError("缺少URL参数");
+    }
+    if (!ticket) {
+      throw new AuthenticationError("缺少代理票据");
+    }
+
+    const encryptionSecret = getEncryptionSecret(c);
+    const repositoryFactory = useRepositories(c);
+
+    const signatureService = new ProxySignatureService(db, encryptionSecret, repositoryFactory);
+    const verifyResult = signatureService.verifyStorageSignature(PASTE_URL_PROXY_TICKET_PATH, ticket);
+    if (!verifyResult.valid) {
+      throw new AuthenticationError(`代理票据无效: ${verifyResult.reason}`);
+    }
+
+    const { FileShareService } = await import("../../services/fileShareService.js");
+    const shareService = new FileShareService(db, encryptionSecret);
+    return await shareService.proxyUrlContent(url);
+  });
+
   router.get("/api/paste/:slug", async (c) => {
     const db = c.env.DB;
     const slug = c.req.param("slug");

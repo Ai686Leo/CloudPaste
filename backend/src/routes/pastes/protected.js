@@ -1,6 +1,7 @@
 import { ValidationError, NotFoundError } from "../../http/errors.js";
 import { usePolicy } from "../../security/policies/policies.js";
 import { resolvePrincipal } from "../../security/helpers/principal.js";
+import { getEncryptionSecret } from "../../utils/environmentUtils.js";
 import {
   getAllPastes,
   getUserPastes,
@@ -13,6 +14,8 @@ import {
 import { ApiStatus, DbTables, UserType } from "../../constants/index.js";
 import { getPagination, jsonOk, jsonCreated } from "../../utils/common.js";
 import { useRepositories } from "../../utils/repositories.js";
+import { ProxySignatureService } from "../../services/ProxySignatureService.js";
+import { PASTE_URL_PROXY_TICKET_EXPIRES_IN_SECONDS, PASTE_URL_PROXY_TICKET_PATH } from "./urlProxyConfig.js";
 
 const getPrincipalContext = (c) => {
   const identity = resolvePrincipal(c, { allowedTypes: [UserType.ADMIN, UserType.API_KEY] });
@@ -25,6 +28,29 @@ const getPrincipalContext = (c) => {
 };
 
 export const registerPastesProtectedRoutes = (router) => {
+  // SnapDOM useProxy 需要浏览器侧发起 <img src> 请求（无法携带 Authorization Header）。
+  // 因此：通过 pastes.create 权限签发一个短期 ticket，供 /api/paste/url/proxy 验证后再代理上游内容。
+  router.post("/api/paste/url/proxy-ticket", usePolicy("pastes.create"), async (c) => {
+    const db = c.env.DB;
+    const encryptionSecret = getEncryptionSecret(c);
+    const repositoryFactory = useRepositories(c);
+
+    const signatureService = new ProxySignatureService(db, encryptionSecret, repositoryFactory);
+    const ticketInfo = await signatureService.generateStorageSignature(PASTE_URL_PROXY_TICKET_PATH, null, {
+      expiresIn: PASTE_URL_PROXY_TICKET_EXPIRES_IN_SECONDS,
+    });
+
+    return jsonOk(
+      c,
+      {
+        ticket: ticketInfo.signature,
+        expiresIn: ticketInfo.expiresIn,
+        expiresAt: ticketInfo.expiresAt,
+      },
+      "代理票据签发成功",
+    );
+  });
+
   router.post("/api/paste", usePolicy("pastes.create"), async (c) => {
     const db = c.env.DB;
     const body = await c.req.json();

@@ -102,7 +102,7 @@ export default {
       securityMessage: "Please keep your API key safe and do not use it in public places or insecure environments.",
       pathSelector: {
         title: "Select Basic Path",
-        rootDirectory: "Root Directory",
+        rootDirectory: "Root",
         selectDirectory: "Select Directory",
         currentPath: "Current Selection",
         confirm: "Confirm Path",
@@ -161,7 +161,7 @@ export default {
       securityMessage: "Please keep your API key safe and do not use it in public places or insecure environments.",
       pathSelector: {
         title: "Select Basic Path",
-        rootDirectory: "Root Directory",
+        rootDirectory: "Root",
         selectDirectory: "Select Directory",
         currentPath: "Current Selection",
         confirm: "Confirm Path",

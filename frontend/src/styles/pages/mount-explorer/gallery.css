@@ -77,6 +77,17 @@
   position: relative;
 }
 
+/* 图廊 Live Photo 徽章：图廊仅显示图标 */
+.masonry-image-wrapper .live-photo-viewer__badge {
+  left: auto;
+  right: 10px;
+  top: 10px;
+}
+
+.masonry-image-wrapper .live-photo-viewer__badge-text {
+  display: none;
+}
+
 .masonry-image-container:hover {
   transform: translateY(-2px);
   box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);

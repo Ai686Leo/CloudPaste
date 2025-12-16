@@ -43,6 +43,10 @@ const BADGE_THEME_CLASS = {
     light: "bg-red-100 text-red-800",
     dark: "bg-red-700 text-red-100",
   },
+  github: {
+    light: "bg-gray-900 text-white",
+    dark: "bg-gray-100 text-gray-900",
+  },
   local: {
     light: "bg-gray-100 text-gray-800",
     dark: "bg-gray-700 text-gray-100",

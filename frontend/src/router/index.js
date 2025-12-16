@@ -317,6 +317,21 @@ const router = createRouter({
   },
 });
 
+const normalizeFsPathForMountExplorer = (path) => {
+  const raw = typeof path === "string" && path ? path : "/";
+  const withLeading = raw.startsWith("/") ? raw : `/${raw}`;
+  const collapsed = withLeading.replace(/\/{2,}/g, "/");
+  if (collapsed === "/") return "/";
+  return collapsed.replace(/\/+$/, "");
+};
+
+const buildMountExplorerRoutePath = (fsPath) => {
+  const normalized = normalizeFsPathForMountExplorer(fsPath);
+  if (normalized === "/") return "/mount-explorer";
+  const segments = normalized.replace(/^\/+/, "").split("/").filter(Boolean);
+  return `/mount-explorer/${segments.map((seg) => encodeURIComponent(seg)).join("/")}`;
+};
+
 // 配置NProgress - 遵循官方默认值
 NProgress.configure({
   showSpinner: false, // 隐藏旋转器
@@ -533,7 +548,7 @@ router.beforeEach(async (to, from, next) => {
         if (!authStore.hasPathPermission(requestedPath)) {
           console.log("路由守卫：用户无此路径权限，重定向到基本路径");
           const basePath = authStore.userInfo.basicPath || "/";
-          const redirectPath = basePath === "/" ? "/mount-explorer" : `/mount-explorer${basePath}`;
+          const redirectPath = buildMountExplorerRoutePath(basePath);
           NProgress.done();
           next({ path: redirectPath });
           return;
@@ -725,23 +740,8 @@ export const routerUtils = {
 
       // 特殊处理 mount-explorer 的路径参数
       if (page === "mount-explorer") {
-        const query = {};
-        let routePath = "/mount-explorer";
-
-        // 处理路径参数
-        if (options.path && options.path !== "/") {
-          const normalizedPath = options.path.replace(/^\/+|\/+$/g, "");
-          if (normalizedPath) {
-            routePath = `/mount-explorer/${normalizedPath}`;
-          }
-        }
-
-        // 处理预览文件参数
-        if (options.previewFile) {
-          query.preview = options.previewFile;
-        }
-
-        router.push({ path: routePath, query });
+        const routePath = buildMountExplorerRoutePath(options.path || "/");
+        router.push({ path: routePath });
         return;
       }
 

@@ -8,13 +8,72 @@ import { getEncryptionSecret } from "../../utils/environmentUtils.js";
 import { LinkService } from "../../storage/link/LinkService.js";
 import { resolveDocumentPreview } from "../../services/documentPreviewService.js";
 import { StorageStreaming, STREAMING_CHANNELS } from "../../storage/streaming/index.js";
+import { normalizePath as normalizeFsPath } from "../../storage/fs/utils/PathResolver.js";
+
+const fnv1a32Init = () => 0x811c9dc5;
+
+const fnv1a32Update = (hash, input) => {
+  const str = typeof input === "string" ? input : String(input ?? "");
+  let next = hash >>> 0;
+  for (let i = 0; i < str.length; i += 1) {
+    next ^= str.charCodeAt(i);
+    // 32-bit FNV-1a: next *= 16777619
+    next = (next + ((next << 1) + (next << 4) + (next << 7) + (next << 8) + (next << 24))) >>> 0;
+  }
+  return next >>> 0;
+};
+
+const computeDirectoryListEtag = (result) => {
+  // 如果目录结果来自服务端缓存，可能已携带上次计算出的 ETag（避免重复 O(n) 扫描）。
+  if (result && typeof result.dirEtag === "string" && result.dirEtag.length > 0) {
+    return result.dirEtag;
+  }
+
+  if (!result || !Array.isArray(result.items)) {
+    return null;
+  }
+
+  const mountId = result.mount_id ?? "";
+  const dirPath = result.path ?? "";
+
+  // 强一致性优先：ETag 需要随目录条目变化而变化。
+  // - 使用轻量 hash（FNV-1a 32）
+  // - 参与字段：path/isDirectory/size/modified/etag（若存在）
+  // - 不依赖条目对象引用，确保跨缓存一致
+  let hash = fnv1a32Init();
+  hash = fnv1a32Update(hash, mountId);
+  hash = fnv1a32Update(hash, "|");
+  hash = fnv1a32Update(hash, dirPath);
+  hash = fnv1a32Update(hash, "|");
+  hash = fnv1a32Update(hash, result.type ?? "");
+  hash = fnv1a32Update(hash, "|");
+  hash = fnv1a32Update(hash, String(result.items.length));
+
+  for (const item of result.items) {
+    hash = fnv1a32Update(hash, "|");
+    hash = fnv1a32Update(hash, item?.path ?? "");
+    hash = fnv1a32Update(hash, ":");
+    hash = fnv1a32Update(hash, item?.isDirectory ? "1" : "0");
+    hash = fnv1a32Update(hash, ":");
+    hash = fnv1a32Update(hash, typeof item?.size === "number" ? String(item.size) : "");
+    hash = fnv1a32Update(hash, ":");
+    hash = fnv1a32Update(hash, item?.modified ? String(item.modified) : "");
+    hash = fnv1a32Update(hash, ":");
+    hash = fnv1a32Update(hash, item?.etag ? String(item.etag) : "");
+  }
+
+  const hex = (hash >>> 0).toString(16);
+  // 弱 ETag：目录列表是“派生视图”，避免中间层对比语义过强
+  return `W/"${mountId}:${hex}"`;
+};
 
 export const registerBrowseRoutes = (router, helpers) => {
   const { getAccessibleMounts, getServiceParams, verifyPathPasswordToken } = helpers;
 
   router.get("/api/fs/list", async (c) => {
     const db = c.env.DB;
-    const path = c.req.query("path") || "/";
+    const rawPath = c.req.query("path") || "/";
+    const path = normalizeFsPath(rawPath, true);
     const refresh = getQueryBool(c, "refresh", false);
     const userInfo = c.get("userInfo");
     const { userIdOrInfo, userType } = getServiceParams(userInfo);
@@ -56,12 +115,39 @@ export const registerBrowseRoutes = (router, helpers) => {
       const basicPath = userType === UserType.API_KEY ? userIdOrInfo.basicPath : null;
       const result = await getVirtualDirectoryListing(mounts, path, basicPath);
 
+      const etag = computeDirectoryListEtag(result);
+      if (etag) {
+        const ifNoneMatch = c.req.header("if-none-match") || null;
+        c.header("ETag", etag);
+        c.header("Cache-Control", "private, no-cache");
+        c.header("Vary", "Authorization, X-FS-Path-Token");
+
+        if (!refresh && ifNoneMatch === etag) {
+          return c.body(null, 304);
+        }
+
+        result.dirEtag = etag;
+      }
+
       return jsonOk(c, result, "获取目录列表成功");
     }
 
     const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
     const fileSystem = new FileSystem(mountManager);
     const result = await fileSystem.listDirectory(path, userIdOrInfo, userType, { refresh });
+    const etag = computeDirectoryListEtag(result);
+    if (etag) {
+      const ifNoneMatch = c.req.header("if-none-match") || null;
+      c.header("ETag", etag);
+      c.header("Cache-Control", "private, no-cache");
+      c.header("Vary", "Authorization, X-FS-Path-Token");
+
+      if (!refresh && ifNoneMatch === etag) {
+        return c.body(null, 304);
+      }
+
+      result.dirEtag = etag;
+    }
 
     return jsonOk(c, result, "获取目录列表成功");
   });

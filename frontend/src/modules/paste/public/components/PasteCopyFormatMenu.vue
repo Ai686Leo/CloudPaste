@@ -88,8 +88,9 @@ import { onMounted, onUnmounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { copyToClipboard as clipboardCopy } from "@/utils/clipboard";
 import markdownToWord from "@/utils/markdownToWord";
+import { formatNowForFilename } from "@/utils/timeUtils.js";
 import { saveAs } from "file-saver";
-import htmlToImage from "@/utils/htmlToImage";
+import { editorContentToPng as snapdomEditorContentToPng } from "@/utils/snapdomCapture";
 
 const { t } = useI18n();
 
@@ -255,87 +256,17 @@ const exportAsPng = async () => {
     const baseName = props.documentTitle || "markdown";
     const fileName = `${baseName}-${timestamp}.png`;
 
-    const editorContainer = document.getElementById("vditor");
     await new Promise((resolve) => setTimeout(resolve, 1000));
 
-    const result = await htmlToImage.editorContentToPng(props.editor, {
+    const result = await snapdomEditorContentToPng(props.editor, {
       filename: fileName,
-      imageOptions: {
-        quality: 1.0,
+      autoUseProxy: true,
+      snapdomOptions: {
         backgroundColor: props.darkMode ? "#1e1e1e" : "#ffffff",
-        style: {
-          "max-width": "100%",
-          width: "auto",
-        },
-        cacheBust: true,
-        imagePlaceholder:
-          "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
-        skipFonts: false,
-        pixelRatio: 4,
-        canvasWidth: editorContainer ? editorContainer.offsetWidth : undefined,
-        canvasHeight: undefined,
-      },
-      beforeCapture: async (targetElement) => {
-        const tempStyle = document.createElement("style");
-        tempStyle.id = "temp-export-style";
-        tempStyle.textContent = `
-          .vditor-reset {
-            padding: 20px !important;
-            box-sizing: border-box !important;
-          }
-          .vditor-reset pre {
-            white-space: pre-wrap !important;
-            word-break: break-all !important;
-            overflow: visible !important;
-            background-color: #f6f8fa !important;
-            border-radius: 4px !important;
-            padding: 12px 16px !important;
-            margin: 1em 0 !important;
-          }
-          .vditor-reset pre code {
-            font-family: monospace, Consolas, "Courier New", monospace !important;
-            font-size: 13px !important;
-            line-height: 1.5 !important;
-            white-space: pre-wrap !important;
-            tab-size: 4 !important;
-            word-break: keep-all !important;
-          }
-          .vditor-reset img {
-            max-width: 100% !important;
-            image-rendering: auto !important;
-          }
-          .vditor-reset table {
-            display: table !important;
-            width: auto !important;
-            max-width: 100% !important;
-            overflow: visible !important;
-            border-collapse: collapse !important;
-            margin: 1em 0 !important;
-          }
-          .vditor-reset table th,
-          .vditor-reset table td {
-            border: 1px solid #ddd !important;
-            padding: 8px 12px !important;
-          }
-        `;
-        document.head.appendChild(tempStyle);
-
-        const images = targetElement.querySelectorAll("img");
-        images.forEach((img) => {
-          if (!img.hasAttribute("crossorigin")) {
-            img.setAttribute("crossorigin", "anonymous");
-          }
-        });
-
-        await new Promise((resolve) => setTimeout(resolve, 500));
-        return Promise.resolve();
-      },
-      afterCapture: (targetElement) => {
-        const tempStyle = document.getElementById("temp-export-style");
-        if (tempStyle) {
-          document.head.removeChild(tempStyle);
-        }
-        return Promise.resolve();
+        cache: "auto",
+        embedFonts: true,
+        placeholders: true,
+        outerTransforms: true,
       },
       onSuccess: (dataUrl, blob) => {
         emit("status-message", t("markdown.messages.pngExported"));
@@ -361,6 +292,13 @@ const exportAsPng = async () => {
           : t("markdown.messages.pngExportFailed");
 
       throw result?.error || new Error(errorMsg);
+    }
+
+    if (Array.isArray(result.warnings) && result.warnings.length > 0) {
+      const proxyWarn = result.warnings.find((w) => w && w.code === "proxy_unavailable");
+      if (proxyWarn) {
+        emit("status-message", proxyWarn.message);
+      }
     }
   } catch (error) {
     console.error("导出PNG图片过程中发生错误:", error);

@@ -2,9 +2,16 @@ import { DriverError } from "../../../http/errors.js";
 import { ApiStatus } from "../../../constants/index.js";
 import { CAPABILITIES } from "../../interfaces/capabilities/index.js";
 import { generateFileLink as featureGenerateFileLink } from "./presign.js";
+import { normalizePath } from "../utils/PathResolver.js";
 
 export async function listDirectory(fs, path, userIdOrInfo, userType, options = {}) {
-  const { driver, mount, subPath } = await fs.mountManager.getDriverByPath(path, userIdOrInfo, userType);
+  // 目录列表接口的路径语义：目录路径必须以 / 结尾（root 除外）。
+  const dirPath = normalizePath(path, true);
+  if (typeof path === "string" && path !== dirPath) {
+    console.warn("[fs.listDirectory] 输入路径未按目录格式(缺少尾部/)，已自动规范化:", { path, dirPath });
+  }
+
+  const { driver, mount, subPath } = await fs.mountManager.getDriverByPath(dirPath, userIdOrInfo, userType);
 
   if (!driver.hasCapability(CAPABILITIES.READER)) {
     throw new DriverError(`存储驱动 ${driver.getType()} 不支持读取操作`, {
@@ -14,7 +21,7 @@ export async function listDirectory(fs, path, userIdOrInfo, userType, options = 
     });
   }
 
-  return await driver.listDirectory(path, {
+  return await driver.listDirectory(dirPath, {
     mount,
     subPath,
     db: fs.mountManager.db,

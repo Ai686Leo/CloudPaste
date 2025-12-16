@@ -1,6 +1,6 @@
 {
   "name": "cloudpaste-api",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "CloudPaste API基于Cloudflare Workers和D1数据库",
   "main": "workers.js",
   "scripts": {

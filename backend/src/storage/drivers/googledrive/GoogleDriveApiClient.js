@@ -117,11 +117,11 @@ export class GoogleDriveApiClient {
    * 统一流式下载接口
    * - 用于 downloadFile 内容
    * @param {string} path
-   * @param {{ searchParams?: Record<string,string>, signal?: AbortSignal }} options
+   * @param {{ searchParams?: Record<string,string>, signal?: AbortSignal, headers?: Record<string,string> }} options
    * @returns {Promise<ReadableStream>}
    */
   async _requestStream(path, options = {}) {
-    const { searchParams = {}, signal } = options;
+    const { searchParams = {}, signal, headers = {} } = options;
     const base = this.baseUrl;
     const baseUrl = base.endsWith("/") ? base : `${base}/`;
     const normalizedPath = typeof path === "string" ? path.replace(/^\/+/, "") : path;
@@ -138,6 +138,7 @@ export class GoogleDriveApiClient {
         method: "GET",
         headers: {
           Authorization: `Bearer ${token}`,
+          ...headers,
         },
         signal,
         redirect: "follow",
@@ -167,6 +168,63 @@ export class GoogleDriveApiClient {
       }
 
       return res.body;
+    });
+  }
+
+  /**
+   * 统一下载接口（返回 Response，便于上层处理 Range / 响应头）
+   * @param {string} path
+   * @param {{ searchParams?: Record<string,string>, signal?: AbortSignal, headers?: Record<string,string> }} options
+   * @returns {Promise<Response>}
+   */
+  async _requestResponse(path, options = {}) {
+    const { searchParams = {}, signal, headers = {} } = options;
+    const base = this.baseUrl;
+    const baseUrl = base.endsWith("/") ? base : `${base}/`;
+    const normalizedPath = typeof path === "string" ? path.replace(/^\/+/, "") : path;
+
+    return await this.authManager.withAccessToken(async (token) => {
+      const url = new URL(normalizedPath, baseUrl);
+      for (const [k, v] of Object.entries(searchParams)) {
+        if (v !== undefined && v !== null && v !== "") {
+          url.searchParams.set(k, String(v));
+        }
+      }
+
+      const res = await fetch(url.toString(), {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          ...headers,
+        },
+        signal,
+        redirect: "follow",
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        let json = null;
+        if (text) {
+          try {
+            json = JSON.parse(text);
+          } catch {
+            json = null;
+          }
+        }
+        const errPayload = json && json.error ? json.error : null;
+        const message = errPayload?.message || `Google Drive API 下载失败 (${res.status})`;
+        const code = errPayload?.code || "GOOGLE_DRIVE_API_ERROR";
+        const errors = errPayload?.errors || null;
+        throw new GoogleDriveApiError(message, {
+          status: res.status,
+          code,
+          errors,
+          reason: errPayload?.reason,
+          context: { path: url.pathname, status: res.status },
+        });
+      }
+
+      return res;
     });
   }
 
@@ -305,15 +363,32 @@ export class GoogleDriveApiClient {
    * @param {{ signal?: AbortSignal }} [options]
    */
   async downloadFileContent(fileId, options = {}) {
-    const { signal } = options;
+    const resp = await this.downloadFileResponse(fileId, options);
+    return resp.body;
+  }
+
+  /**
+   * 下载文件内容（返回 Response，支持 Range）
+   * @param {string} fileId
+   * @param {{ signal?: AbortSignal, rangeHeader?: string }} [options]
+   * @returns {Promise<Response>}
+   */
+  async downloadFileResponse(fileId, options = {}) {
+    const { signal, rangeHeader } = options;
+    const headers = {};
+    if (rangeHeader) {
+      headers.Range = rangeHeader;
+    }
+
     // alt=media 直接返回文件内容
-    return await this._requestStream(`/files/${encodeURIComponent(fileId)}`, {
+    return await this._requestResponse(`/files/${encodeURIComponent(fileId)}`, {
       searchParams: {
         alt: "media",
         supportsAllDrives: "true",
         includeItemsFromAllDrives: "true",
       },
       signal,
+      headers,
     });
   }
 

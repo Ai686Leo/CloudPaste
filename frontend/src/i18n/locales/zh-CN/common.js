@@ -1,5 +1,7 @@
 export default {
   common: {
+    error: "错误",
+    retry: "重试",
     unknown: "未知",
     loading: "加载中...",
     confirm: "确认",
@@ -142,5 +144,20 @@ export default {
     toggle: "切换语言",
     zh: "中文",
     en: "English",
+  },
+  livePhoto: {
+    badge: "实况",
+    loading: "加载中...",
+    playHint: "悬停或长按播放",
+    errors: {
+      videoLoadFailed: "视频加载失败",
+      photoLoadFailed: "图片加载失败",
+      playbackFailed: "播放失败",
+      notAllowed: "浏览器未允许视频自动播放",
+      notSupported: "不支持此视频格式",
+      networkError: "网络错误，无法加载视频",
+      aborted: "视频加载被中断",
+      decodeFailed: "视频解码错误",
+    },
   },
 };

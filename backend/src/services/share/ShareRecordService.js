@@ -85,8 +85,13 @@ export class ShareRecordService {
     const passwordHash = password ? await hashPassword(password) : null;
     const normalizedMimeType = mimeType ?? getEffectiveMimeType(undefined, filename) ?? "application/octet-stream";
 
+    // 存储路径语义：
+    // - FS 挂载创建分享：storageSubPath 来自 MountManager，可能带前导 "/"，这里统一去掉
+    // - storage-first（ObjectStore/share upload）：优先使用 uploadResult.storagePath（应为对象 key）
     const relativePath = (storageSubPath || "").replace(/^\/+/u, "");
-    const storagePath = mount?.storage_config_id ? relativePath : (uploadResult?.storagePath || fsPath || filename);
+    const storagePath = mount?.storage_config_id
+      ? relativePath
+      : (uploadResult?.storagePath || relativePath || fsPath || filename);
     const storageType = mount?.storage_type || storageConfig?.storage_type;
     if (!storageType) {
       throw new ValidationError("存储配置缺少 storage_type");

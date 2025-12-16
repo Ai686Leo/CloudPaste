@@ -9,7 +9,6 @@ import { MountManager } from "../../storage/managers/MountManager.js";
 import { getEncryptionSecret } from "../../utils/environmentUtils.js";
 import { createWebDAVErrorResponse, withWebDAVErrorHandling } from "../utils/errorUtils.js";
 import { getStandardWebDAVHeaders } from "../utils/headerUtils.js";
-import { invalidateFsCache } from "../../cache/invalidation.js";
 import { lockManager } from "../utils/LockManager.js";
 import { checkLockPermission } from "../utils/lockUtils.js";
 import { parseDestinationPath } from "../utils/webdavUtils.js";
@@ -134,22 +133,6 @@ export async function handleMove(c, path, userId, userType, db) {
       }
 
       return createWebDAVErrorResponse(`移动失败：删除源文件异常 - ${deleteError.message}`, 500, false);
-    }
-
-    // 12. 缓存清理
-    try {
-      const { mount: sourceMountResult } = await mountManager.getDriverByPath(path, userId, userType);
-      const { mount: destMountResult } = await mountManager.getDriverByPath(destPath, userId, userType);
-
-      if (sourceMountResult) {
-        invalidateFsCache({ mountId: sourceMountResult.id, reason: "webdav-move", db });
-      }
-
-      if (destMountResult) {
-        invalidateFsCache({ mountId: destMountResult.id, reason: "webdav-move", db });
-      }
-    } catch (cacheError) {
-      console.warn(`WebDAV MOVE - 缓存清理失败: ${cacheError.message}`);
     }
 
     // 13. 根据RFC 4918标准返回适当的状态码

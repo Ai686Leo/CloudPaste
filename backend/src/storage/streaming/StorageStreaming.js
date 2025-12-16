@@ -78,7 +78,17 @@ export class StorageStreaming {
         return this._create412Reader(descriptor, channel);
       }
 
-      // 4. 解析 Range 请求
+      // 解析 Range 请求
+      // Range 场景：若文件大小未知但描述符提供 probeSize，则优先探测 size 后再解析 Range
+      if (rangeHeader && (descriptor.size === null || descriptor.size <= 0) && typeof descriptor.probeSize === "function") {
+        try {
+          // 不将探测失败视为致命错误，失败则回退为 200 全量响应
+          await descriptor.probeSize({ signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined });
+        } catch (e) {
+          console.warn(`${logPrefix} Range size 探测失败，将回退为 200: ${e?.message || String(e)}`);
+        }
+      }
+
       const range = parseRangeHeader(rangeHeader, descriptor.size);
 
       // 文件大小未知（例如 WebDAV HEAD 未返回 Content-Length）时，

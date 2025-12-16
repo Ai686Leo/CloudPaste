@@ -6,6 +6,7 @@
         <a
           href="#"
           @click.prevent="navigateToRoot"
+          @mouseenter="prefetchRoot"
           :class="['flex items-center font-medium transition-colors duration-200', darkMode ? 'text-gray-300 hover:text-white' : 'text-gray-600 hover:text-gray-900']"
         >
           <!-- 根目录图标 -->
@@ -24,30 +25,24 @@
       <!-- 路径分隔符和目录段 -->
       <li v-for="(segment, index) in pathSegments" :key="index" class="flex items-center">
         <span :class="['mx-1', darkMode ? 'text-gray-500' : 'text-gray-400']"> / </span>
+        <span
+          v-if="index === pathSegments.length - 1"
+          :class="['font-medium', darkMode ? 'text-primary-400' : 'text-primary-600']"
+        >
+          {{ segment }}
+        </span>
         <a
+          v-else
           href="#"
           @click.prevent="navigateToSegment(index)"
+          @mouseenter="prefetchSegment(index)"
           :class="[
             'font-medium transition-colors duration-200',
-            index === pathSegments.length - 1 && !previewFileName
-              ? darkMode
-                ? 'text-primary-400'
-                : 'text-primary-600'
-              : darkMode
-              ? 'text-gray-300 hover:text-white'
-              : 'text-gray-600 hover:text-gray-900',
+            darkMode ? 'text-gray-300 hover:text-white' : 'text-gray-600 hover:text-gray-900',
           ]"
         >
           {{ segment }}
         </a>
-      </li>
-
-      <!-- 文件预览项 - 直接从URL读取，即时显示 -->
-      <li v-if="previewFileName" class="flex items-center">
-        <span :class="['mx-1', darkMode ? 'text-gray-500' : 'text-gray-400']"> / </span>
-        <span :class="['font-medium', darkMode ? 'text-primary-400' : 'text-primary-600']">
-          {{ previewFileName }}
-        </span>
       </li>
     </ol>
 
@@ -56,11 +51,6 @@
 
 <script setup>
 import { computed } from "vue";
-import { useRoute } from "vue-router";
-import { useI18n } from "vue-i18n";
-
-const { t } = useI18n();
-const route = useRoute();
 
 const props = defineProps({
   currentPath: {
@@ -82,100 +72,102 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(["navigate"]);
+const emit = defineEmits(["navigate", "prefetch"]);
 
-// 从URL直接读取预览文件名（即时响应，无需等待API）
-const previewFileName = computed(() => route.query.preview || null);
+const normalizePath = (path) => {
+  const raw = typeof path === "string" && path ? path : "/";
+  const withLeading = raw.startsWith("/") ? raw : `/${raw}`;
+  const collapsed = withLeading.replace(/\/{2,}/g, "/");
+  if (collapsed === "/") return "/";
+  return collapsed.replace(/\/+$/, "");
+};
+
+const normalizedBasicPath = computed(() => normalizePath(props.basicPath));
+const normalizedCurrentPath = computed(() => normalizePath(props.currentPath));
+
+const isApiKeyUser = computed(() => props.userType === "user" && normalizedBasicPath.value !== "/");
+
+const fullSegments = computed(() =>
+  normalizedCurrentPath.value
+    .replace(/^\/+/, "")
+    .split("/")
+    .filter((segment) => segment)
+);
+
+const basicSegments = computed(() =>
+  normalizedBasicPath.value
+    .replace(/^\/+/, "")
+    .split("/")
+    .filter((segment) => segment)
+);
+
+const isWithinBasicPath = computed(() => {
+  if (!isApiKeyUser.value) return true;
+  const base = basicSegments.value;
+  if (!base.length) return true;
+  return base.every((seg, index) => fullSegments.value[index] === seg);
+});
 
 // 计算路径段
 const pathSegments = computed(() => {
-  // 移除开头的斜杠，然后按斜杠分割
-  const segments = props.currentPath
-    .replace(/^\/+/, "") // 移除开头的斜杠
-    .split("/")
-    .filter((segment) => segment); // 过滤空字符串
+  if (!isApiKeyUser.value || !isWithinBasicPath.value) {
+    return fullSegments.value;
+  }
 
-  // 对于API密钥用户，需要根据基本路径过滤可显示的路径段
-  if (props.userType === "user" && props.basicPath !== "/") {
-    const normalizedBasicPath = props.basicPath.replace(/\/+$/, "");
-    const basicSegments = normalizedBasicPath
-      .replace(/^\/+/, "")
-      .split("/")
-      .filter((segment) => segment);
+  // 处于 basicPath 范围内时：面包屑 root 代表 basicPath，仅展示相对段
+  return fullSegments.value.slice(basicSegments.value.length);
+});
 
-    // 如果当前路径在基本路径范围内，只显示基本路径及其子路径的段
-    const currentPathNormalized = "/" + segments.join("/");
-    const basicPathNormalized = "/" + basicSegments.join("/");
+const buildTargetPath = (segmentIndex) => {
+  const segments = pathSegments.value.slice(0, segmentIndex + 1);
 
-    if (currentPathNormalized === basicPathNormalized) {
-      // 当前路径就是基本路径，显示为根路径（空数组）
-      return [];
-    } else if (currentPathNormalized.startsWith(basicPathNormalized + "/")) {
-      // 当前路径在基本路径范围内，显示从基本路径开始的段
-      return segments.slice(basicSegments.length);
-    } else if (basicPathNormalized.startsWith(currentPathNormalized + "/")) {
-      // 当前路径是基本路径的父级路径，显示到基本路径为止的段
-      return segments;
-    } else {
-      // 其他情况，显示所有段（这种情况理论上不应该发生，因为后端会阻止访问）
-      return segments;
+  let targetSegments = segments;
+  if (isApiKeyUser.value && isWithinBasicPath.value) {
+    targetSegments = [...basicSegments.value, ...segments];
+  }
+
+  const targetPath = targetSegments.length > 0 ? `/${targetSegments.join("/")}` : "/";
+
+  if (isApiKeyUser.value) {
+    const base = normalizedBasicPath.value;
+    if (targetPath !== base && !targetPath.startsWith(`${base}/`)) {
+      return null;
     }
   }
 
-  return segments;
-});
+  return targetPath;
+};
 
 // 导航到指定段
 const navigateToSegment = (segmentIndex) => {
-  // 对于API密钥用户，需要检查导航权限
-  if (props.userType === "user" && props.basicPath !== "/") {
-    const normalizedBasicPath = props.basicPath.replace(/\/+$/, "");
-    const basicSegments = normalizedBasicPath
-      .replace(/^\/+/, "")
-      .split("/")
-      .filter((segment) => segment);
-
-    // 构建目标路径
-    let targetSegments;
-    if (props.currentPath.startsWith(normalizedBasicPath)) {
-      // 当前在基本路径范围内，目标路径需要加上基本路径前缀
-      targetSegments = [...basicSegments, ...pathSegments.value.slice(0, segmentIndex + 1)];
-    } else {
-      // 当前在基本路径的父级路径，直接使用段
-      targetSegments = pathSegments.value.slice(0, segmentIndex + 1);
-    }
-
-    let targetPath = "/";
-    if (targetSegments.length > 0) {
-      targetPath += targetSegments.join("/") + "/";
-    }
-
-    // 检查目标路径是否在权限范围内
-    const basicPathNormalized = "/" + basicSegments.join("/");
-    const targetPathNormalized = "/" + targetSegments.join("/");
-
-    if (targetPathNormalized === basicPathNormalized || targetPathNormalized.startsWith(basicPathNormalized + "/") || basicPathNormalized.startsWith(targetPathNormalized + "/")) {
-      emit("navigate", targetPath);
-    }
-    // 如果无权限，不执行导航
-    return;
+  const targetPath = buildTargetPath(segmentIndex);
+  if (targetPath) {
+    emit("navigate", targetPath);
   }
+};
 
-  // 管理员用户或根路径用户，正常导航
-  let targetPath = "/";
-  if (segmentIndex >= 0) {
-    targetPath += pathSegments.value.slice(0, segmentIndex + 1).join("/") + "/";
+const prefetchSegment = (segmentIndex) => {
+  const targetPath = buildTargetPath(segmentIndex);
+  if (targetPath) {
+    emit("prefetch", targetPath);
   }
-  emit("navigate", targetPath);
 };
 
 // 导航到根目录
 const navigateToRoot = () => {
   // 对于API密钥用户，如果有基本路径限制，导航到基本路径而不是真正的根路径
-  if (props.userType === "user" && props.basicPath !== "/") {
-    emit("navigate", props.basicPath);
+  if (isApiKeyUser.value) {
+    emit("navigate", normalizedBasicPath.value);
   } else {
     emit("navigate", "/");
+  }
+};
+
+const prefetchRoot = () => {
+  if (isApiKeyUser.value) {
+    emit("prefetch", normalizedBasicPath.value);
+  } else {
+    emit("prefetch", "/");
   }
 };
 </script>

@@ -11,6 +11,9 @@ import { LocalStorageDriver } from "../drivers/local/LocalStorageDriver.js";
 import { OneDriveStorageDriver } from "../drivers/onedrive/OneDriveStorageDriver.js";
 import { GoogleDriveStorageDriver } from "../drivers/googledrive/GoogleDriveStorageDriver.js";
 import { GithubReleasesStorageDriver } from "../drivers/github/GithubReleasesStorageDriver.js";
+import { GithubApiStorageDriver } from "../drivers/github/GithubApiStorageDriver.js";
+import { githubApiTestConnection } from "../drivers/github/tester/GithubApiTester.js";
+import { githubReleasesTestConnection } from "../drivers/github/tester/GithubReleasesTester.js";
 import { googleDriveTestConnection } from "../drivers/googledrive/tester/GoogleDriveTester.js";
 import {
   CAPABILITIES,
@@ -157,6 +160,7 @@ export class StorageFactory {
     ONEDRIVE: "ONEDRIVE",
     GOOGLE_DRIVE: "GOOGLE_DRIVE",
     GITHUB_RELEASES: "GITHUB_RELEASES",
+    GITHUB_API: "GITHUB_API",
   };
 
   // 注册驱动
@@ -569,6 +573,75 @@ export class StorageFactory {
       if (!Number.isFinite(value) || value <= 0) {
         errors.push("GitHub Releases 配置字段 per_page 必须是大于 0 的数字");
       }
+    }
+
+    return { valid: errors.length === 0, errors };
+  }
+
+  /**
+   * GitHub API（仓库内容）配置校验：
+   * - owner/repo/token 必填（写入必须）
+   * - ref 可选：默认使用仓库 default_branch；支持 branch/tag/commit sha（仅分支可写）
+   * - default_folder 可选：仅作为“文件上传页/分享上传”的默认目录前缀（不影响挂载浏览/FS 操作）
+   * - api_base 可选：GitHub Enterprise/自定义 API Base（默认 https://api.github.com）
+   * - gh_proxy 可选：用于加速 raw 直链
+   * - committer/author 可选：自定义提交者与作者信息（需 name/email 成对出现）
+   * @param {object} config
+   * @returns {{valid:boolean,errors:string[]}}
+   */
+  static _validateGithubApiConfig(config) {
+    const errors = [];
+
+    if (!config?.owner) errors.push("GitHub API 配置缺少必填字段: owner");
+    if (!config?.repo) errors.push("GitHub API 配置缺少必填字段: repo");
+    if (!config?.token) errors.push("GitHub API 配置缺少必填字段: token");
+
+    if (config?.ref) {
+      const ref = String(config.ref).trim();
+      if (ref.startsWith("refs/") && !ref.startsWith("refs/heads/") && !ref.startsWith("refs/tags/")) {
+        errors.push("GitHub API 配置字段 ref 仅支持 refs/heads/* 或 refs/tags/*（或直接填写分支/标签/commit sha）");
+      }
+    }
+
+    if (config?.api_base) {
+      try {
+        const parsed = new URL(config.api_base);
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+          errors.push("GitHub API 配置字段 api_base 必须以 http:// 或 https:// 开头");
+        }
+      } catch {
+        errors.push("GitHub API 配置字段 api_base 格式无效");
+      }
+    }
+
+    if (config?.gh_proxy) {
+      try {
+        const parsed = new URL(config.gh_proxy);
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+          errors.push("GitHub API 配置字段 gh_proxy 必须以 http:// 或 https:// 开头");
+        }
+      } catch {
+        errors.push("GitHub API 配置字段 gh_proxy 格式无效");
+      }
+    }
+
+    if (config?.default_folder) {
+      const folder = config.default_folder.toString();
+      if (folder.includes("..")) {
+        errors.push("default_folder 不允许包含 .. 段");
+      }
+    }
+
+    const committerName = config?.committer_name ? String(config.committer_name).trim() : "";
+    const committerEmail = config?.committer_email ? String(config.committer_email).trim() : "";
+    if ((committerName && !committerEmail) || (!committerName && committerEmail)) {
+      errors.push("GitHub API 配置字段 committer_name 与 committer_email 必须同时填写或同时留空");
+    }
+
+    const authorName = config?.author_name ? String(config.author_name).trim() : "";
+    const authorEmail = config?.author_email ? String(config.author_email).trim() : "";
+    if ((authorName && !authorEmail) || (!authorName && authorEmail)) {
+      errors.push("GitHub API 配置字段 author_name 与 author_email 必须同时填写或同时留空");
     }
 
     return { valid: errors.length === 0, errors };
@@ -1360,7 +1433,7 @@ StorageFactory.registerDriver(StorageFactory.SUPPORTED_TYPES.GOOGLE_DRIVE, {
 // 注册 GitHub Releases 驱动（只读）
 StorageFactory.registerDriver(StorageFactory.SUPPORTED_TYPES.GITHUB_RELEASES, {
   ctor: GithubReleasesStorageDriver,
-  tester: null,
+  tester: githubReleasesTestConnection,
   displayName: "GitHub Releases 存储",
   validate: (cfg) => StorageFactory._validateGithubReleasesConfig(cfg),
   capabilities: [CAPABILITIES.READER, CAPABILITIES.DIRECT_LINK, CAPABILITIES.PROXY],
@@ -1489,6 +1562,157 @@ StorageFactory.registerDriver(StorageFactory.SUPPORTED_TYPES.GITHUB_RELEASES, {
         },
       ],
       summaryFields: ["repo_structure", "show_all_version", "show_source_code", "show_release_notes"],
+    },
+  },
+});
+
+// 注册 GitHub API 驱动（可读写）
+StorageFactory.registerDriver(StorageFactory.SUPPORTED_TYPES.GITHUB_API, {
+  ctor: GithubApiStorageDriver,
+  tester: githubApiTestConnection,
+  displayName: "GitHub API 存储",
+  validate: (cfg) => StorageFactory._validateGithubApiConfig(cfg),
+  capabilities: [CAPABILITIES.READER, CAPABILITIES.WRITER, CAPABILITIES.ATOMIC, CAPABILITIES.PROXY, CAPABILITIES.DIRECT_LINK],
+  ui: {
+    icon: "storage-github-api",
+    i18nKey: "admin.storage.type.github_api",
+    badgeTheme: "github",
+  },
+  configProjector(cfg, { withSecrets = false } = {}) {
+    const projected = {
+      owner: cfg?.owner,
+      repo: cfg?.repo,
+      ref: cfg?.ref,
+      default_folder: cfg?.default_folder,
+      api_base: cfg?.api_base,
+      gh_proxy: cfg?.gh_proxy,
+      committer_name: cfg?.committer_name,
+      committer_email: cfg?.committer_email,
+      author_name: cfg?.author_name,
+      author_email: cfg?.author_email,
+      total_storage_bytes: cfg?.total_storage_bytes,
+    };
+
+    if (withSecrets) {
+      projected.token = cfg?.token;
+    }
+
+    return projected;
+  },
+  configSchema: {
+    fields: [
+      {
+        name: "owner",
+        type: "string",
+        required: true,
+        labelKey: "admin.storage.fields.github_api.owner",
+        ui: { placeholderKey: "admin.storage.placeholder.github_api.owner" },
+      },
+      {
+        name: "repo",
+        type: "string",
+        required: true,
+        labelKey: "admin.storage.fields.github_api.repo",
+        ui: { placeholderKey: "admin.storage.placeholder.github_api.repo" },
+      },
+      {
+        name: "ref",
+        type: "string",
+        required: false,
+        labelKey: "admin.storage.fields.github_api.ref",
+        ui: {
+          placeholderKey: "admin.storage.placeholder.github_api.ref",
+          descriptionKey: "admin.storage.description.github_api.ref",
+        },
+      },
+      {
+        name: "default_folder",
+        type: "string",
+        required: false,
+        labelKey: "admin.storage.fields.default_folder",
+        ui: {
+          placeholderKey: "admin.storage.placeholder.default_folder",
+          emptyTextKey: "admin.storage.display.default_folder.root",
+        },
+      },
+      {
+        name: "api_base",
+        type: "string",
+        required: false,
+        labelKey: "admin.storage.fields.github_api.api_base",
+        validation: { rule: "url" },
+        ui: {
+          fullWidth: true,
+          placeholderKey: "admin.storage.placeholder.github_api.api_base",
+          descriptionKey: "admin.storage.description.github_api.api_base",
+        },
+      },
+      {
+        name: "gh_proxy",
+        type: "string",
+        required: false,
+        labelKey: "admin.storage.fields.github_api.gh_proxy",
+        validation: { rule: "url" },
+        ui: {
+          fullWidth: true,
+          placeholderKey: "admin.storage.placeholder.github_api.gh_proxy",
+          descriptionKey: "admin.storage.description.github_api.gh_proxy",
+        },
+      },
+      {
+        name: "committer_name",
+        type: "string",
+        required: false,
+        labelKey: "admin.storage.fields.github_api.committer_name",
+        ui: { placeholderKey: "admin.storage.placeholder.github_api.committer_name" },
+      },
+      {
+        name: "committer_email",
+        type: "string",
+        required: false,
+        labelKey: "admin.storage.fields.github_api.committer_email",
+        ui: { placeholderKey: "admin.storage.placeholder.github_api.committer_email" },
+      },
+      {
+        name: "author_name",
+        type: "string",
+        required: false,
+        labelKey: "admin.storage.fields.github_api.author_name",
+        ui: { placeholderKey: "admin.storage.placeholder.github_api.author_name" },
+      },
+      {
+        name: "author_email",
+        type: "string",
+        required: false,
+        labelKey: "admin.storage.fields.github_api.author_email",
+        ui: { placeholderKey: "admin.storage.placeholder.github_api.author_email" },
+      },
+      {
+        name: "token",
+        type: "secret",
+        required: true,
+        labelKey: "admin.storage.fields.github_api.token",
+        ui: {
+          fullWidth: true,
+          placeholderKey: "admin.storage.placeholder.github_api.token",
+          descriptionKey: "admin.storage.description.github_api.token",
+        },
+      },
+    ],
+    layout: {
+      groups: [
+        {
+          name: "basic",
+          titleKey: "admin.storage.groups.basic",
+          fields: [["owner", "repo"], ["ref", "default_folder"]],
+        },
+        {
+          name: "advanced",
+          titleKey: "admin.storage.groups.advanced",
+          fields: ["token", "api_base", "gh_proxy", ["committer_name", "committer_email"], ["author_name", "author_email"]],
+        },
+      ],
+      summaryFields: ["owner", "repo", "ref", "default_folder"],
     },
   },
 });

@@ -27,7 +27,7 @@ import { buildFullProxyUrl } from "../../../constants/proxy.js";
 import { isDirectoryPath } from "../../fs/utils/PathResolver.js";
 import { GoogleDriveUploadOperations } from "./GoogleDriveUploadOperations.js";
 import { buildFileInfo } from "../../utils/FileInfoBuilder.js";
-import { createWebStreamDescriptor } from "../../streaming/StreamDescriptorUtils.js";
+import { createHttpStreamDescriptor } from "../../streaming/StreamDescriptorUtils.js";
 import {
   SHARED_WITH_ME_SEGMENT,
   isSharedWithMePath,
@@ -363,13 +363,17 @@ export class GoogleDriveStorageDriver extends BaseDriver {
     const etag = driveItem.etag || null;
     const lastModified = driveItem.modifiedTime ? new Date(driveItem.modifiedTime) : null;
 
-    return createWebStreamDescriptor({
+    return createHttpStreamDescriptor({
       size,
       contentType,
       etag,
       lastModified,
-      openStream: async (signal) => {
-        return this.apiClient.downloadFileContent(fileId, { signal });
+      supportsRange: true,
+      fetchResponse: async (signal) => {
+        return await this.apiClient.downloadFileResponse(fileId, { signal });
+      },
+      fetchRangeResponse: async (signal, rangeHeader) => {
+        return await this.apiClient.downloadFileResponse(fileId, { signal, rangeHeader });
       },
     });
   }

@@ -26,6 +26,7 @@ import {
   ERR_INVALID_ENTRY_NAME,
 } from "@zip.js/zip.js";
 import { ARCHIVE_CONSTANTS, sharedFileBlobCache, getOrDownloadFileBlob } from "./archiveUtils.js";
+import { getZipJsDefaultConfig } from "@/utils/zipjsRuntimeUris.js";
 
 // 全局配置标志
 let isZipJSConfigured = false;
@@ -36,22 +37,17 @@ let isZipJSConfigured = false;
 function initializeZipJSConfig() {
   if (isZipJSConfigured) return;
 
-  configure({
-    chunkSize: 524288, // 512KB
-    maxWorkers: navigator.hardwareConcurrency || 2, // 根据硬件调整
-    terminateWorkerTimeout: 5000, // 5秒
-    useWebWorkers: true, // 启用Web Workers
-    useCompressionStream: true, // 使用原生压缩流
-    transferStreams: true, // 启用流传输优化
-  });
+  // 2.8+：显式配置 workerURI/wasmURI并统一全局默认参数
+  const config = getZipJsDefaultConfig();
+  configure(config);
 
   isZipJSConfigured = true;
   console.log(`zip.js 全局配置已初始化:
-    - chunkSize: 512KB
-    - maxWorkers: ${navigator.hardwareConcurrency || 2}
+    - chunkSize: ${Math.round((config.chunkSize || 0) / 1024)}KB
+    - maxWorkers: ${config.maxWorkers}
     - useWebWorkers: enabled
     - useCompressionStream: enabled
-    - transferStreams: enabled`);
+    - workerURI/wasmURI: configured`);
 }
 
 /**
@@ -362,7 +358,6 @@ class ZipService {
       // 使用HttpRangeReader进行智能Range请求
       const httpRangeReader = new HttpRangeReader(fileUrl, {
         useXHR: false,
-        preventHeadRequest: false,
       });
 
       // 创建ZipReader（HttpRangeReader已经内置了Range请求支持）

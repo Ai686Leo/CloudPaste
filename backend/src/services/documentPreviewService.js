@@ -60,6 +60,11 @@ export async function resolveDocumentPreview(fileMeta, linkJson) {
   // 基于扩展名与 preview_document_apps 配置选择 DocumentApp 模板
   const filename = fileMeta.filename || "";
   const extension = getFileExtension(filename);
+  const normalizedExt = (extension || "").toLowerCase();
+
+  // 仅对 Office OpenXML（docx/xlsx/pptx）启用
+  // - 不能对旧格式 doc/xls/ppt 注入 native：纯前端渲染不支持这些格式
+  const shouldInjectNativeOfficeProvider = ["docx", "xlsx", "pptx"].includes(normalizedExt);
 
   const appsConfig = previewSettingsCache.getDocumentAppsConfig();
   if (!appsConfig || !extension) {
@@ -72,6 +77,13 @@ export async function resolveDocumentPreview(fileMeta, linkJson) {
         configKeys: appsConfig ? Object.keys(appsConfig) : [],
       }),
     );
+    if (shouldInjectNativeOfficeProvider) {
+      return {
+        providers: {
+          native: "native",
+        },
+      };
+    }
     return baseResult;
   }
 
@@ -85,6 +97,13 @@ export async function resolveDocumentPreview(fileMeta, linkJson) {
         configKeys: Object.keys(appsConfig || {}),
       }),
     );
+    if (shouldInjectNativeOfficeProvider) {
+      return {
+        providers: {
+          native: "native",
+        },
+      };
+    }
     return baseResult;
   }
 
@@ -104,12 +123,26 @@ export async function resolveDocumentPreview(fileMeta, linkJson) {
 
   const providerKeys = Object.keys(providers);
   if (!providerKeys.length) {
+    if (shouldInjectNativeOfficeProvider) {
+      return {
+        providers: {
+          native: "native",
+        },
+      };
+    }
     return baseResult;
   }
 
-  return {
-    providers,
-  };
+  if (shouldInjectNativeOfficeProvider) {
+    return {
+      providers: {
+        native: "native",
+        ...providers,
+      },
+    };
+  }
+
+  return { providers };
 }
 
 /**

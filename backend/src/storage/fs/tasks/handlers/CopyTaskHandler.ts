@@ -2,6 +2,7 @@
 import type { TaskHandler, InternalJob, ExecutionContext } from "../TaskHandler.js";
 import type { TaskStats, CopyTaskPayload, ItemResult, RetryPolicy } from "../types.js";
 import { ValidationError } from "../../../../http/errors.js";
+import { invalidateFsCache } from "../../../../cache/invalidation.js";
 import { isRetryableError, calculateBackoffDelay, sleep, formatRetryLog, DEFAULT_RETRY_POLICY } from "../utils/retryUtils.js";
 
 // 进度上报节流：限制单个文件的进度写入次数，避免在 Workers Free 计划下触发 50 次子请求上限
@@ -312,6 +313,88 @@ export class CopyTaskHandler implements TaskHandler {
     }
 
     console.log(`[CopyTaskHandler] 作业 ${job.jobId} 执行完成: ` + `成功 ${successCount}, 失败 ${failedCount}, 跳过 ${skippedCount}, ` + `传输 ${totalBytesTransferred} 字节`);
+
+    // 写操作后的缓存一致性：复制成功后主动失效目标挂载点目录缓存
+    if (successCount > 0) {
+      try {
+        // 收敛失效粒度（更接近成熟系统的做法）：
+        // - 优先使用“子路径(subPath) + 祖先目录”失效，而不是整 mount 失效
+        // - 仅当无法解析 subPath 或路径数量过多时，降级为 mount 级失效（一致性优先）
+        const mountDirPaths = new Map<string, Set<string>>();
+        const mountFallback = new Set<string>();
+
+        const toParentDir = (subPath: string): string => {
+          const raw = subPath ? String(subPath) : "/";
+          const withLeading = raw.startsWith("/") ? raw : `/${raw}`;
+          const collapsed = withLeading.replace(/\/{2,}/g, "/");
+          if (collapsed === "/") return "/";
+          const normalized = collapsed.replace(/\/+$/, "");
+          const lastSlash = normalized.lastIndexOf("/");
+          if (lastSlash <= 0) return "/";
+          return normalized.slice(0, lastSlash) || "/";
+        };
+
+        for (const item of itemResults) {
+          if (item?.status !== "success") continue;
+          if (!item?.targetPath) continue;
+
+          const resolved = await fileSystem.mountManager.getDriverByPath(item.targetPath, job.userId, job.userType);
+          const mountId = resolved?.mount?.id || null;
+          const subPath = resolved?.subPath || null;
+          if (!mountId) continue;
+
+          if (!subPath) {
+            mountFallback.add(mountId);
+            continue;
+          }
+
+          const isDirectoryHint = item.targetPath.endsWith("/");
+          const dirPath = isDirectoryHint ? subPath : toParentDir(subPath);
+
+          if (!mountDirPaths.has(mountId)) {
+            mountDirPaths.set(mountId, new Set<string>());
+          }
+          mountDirPaths.get(mountId)?.add(dirPath);
+        }
+
+        const MAX_PATHS_PER_MOUNT = 200;
+        const mountsToLog: string[] = [];
+
+        for (const [mountId, dirPathSet] of mountDirPaths.entries()) {
+          if (mountFallback.has(mountId)) {
+            invalidateFsCache({ mountId, reason: "copy-job", db: fileSystem.mountManager?.db ?? null });
+            mountsToLog.push(`${mountId}(mount)`);
+            continue;
+          }
+
+          const dirPaths = Array.from(dirPathSet);
+          if (dirPaths.length === 0) continue;
+
+          if (dirPaths.length > MAX_PATHS_PER_MOUNT) {
+            invalidateFsCache({ mountId, reason: "copy-job", db: fileSystem.mountManager?.db ?? null });
+            mountsToLog.push(`${mountId}(mount,paths=${dirPaths.length})`);
+            continue;
+          }
+
+          invalidateFsCache({ mountId, paths: dirPaths, reason: "copy-job", db: fileSystem.mountManager?.db ?? null });
+          mountsToLog.push(`${mountId}(paths=${dirPaths.length})`);
+        }
+
+        // 仅出现在“所有成功项都无法解析 subPath”的情况下
+        for (const mountId of mountFallback) {
+          if (mountDirPaths.has(mountId)) continue;
+          invalidateFsCache({ mountId, reason: "copy-job", db: fileSystem.mountManager?.db ?? null });
+          mountsToLog.push(`${mountId}(mount)`);
+        }
+
+        if (mountsToLog.length > 0) {
+          console.log(`[CopyTaskHandler] 已触发目录缓存失效: ${mountsToLog.join(", ")}`);
+        }
+      } catch (error) {
+        // 缓存失效失败不应影响作业结果；但需要日志以便排查一致性问题
+        console.warn("[CopyTaskHandler] 目录缓存失效失败（已忽略）", error);
+      }
+    }
   }
 
   /** 创建统计模板 - 初始化所有项状态为 pending */

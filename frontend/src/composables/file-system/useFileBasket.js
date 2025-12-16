@@ -12,6 +12,10 @@ import { useTaskManager } from "@/utils/taskManager.js";
 import { api } from "@/api";
 import { formatNowForFilename } from "@/utils/timeUtils.js";
 import { usePathPassword } from "@/composables/usePathPassword.js";
+import { getZipJsDefaultConfig } from "@/utils/zipjsRuntimeUris.js";
+
+// zip.js 全局 configure
+let isZipJsConfigured = false;
 
 export function useFileBasket() {
   const { t } = useI18n();
@@ -28,6 +32,9 @@ export function useFileBasket() {
   // 跟踪所有事件监听器
   const globalEventListeners = new Set();
 
+  // 跟踪所有活动的 ZIP 写入流（File System Access API）
+  const globalActiveZipWritables = new Set();
+
   // 全局清理函数
   const globalCleanup = () => {
     // 取消所有活动的XMLHttpRequest
@@ -37,6 +44,18 @@ export function useFileBasket() {
       }
     });
     globalActiveXHRs.clear();
+
+    // 中止所有活动的 ZIP 写入流
+    globalActiveZipWritables.forEach((writable) => {
+      try {
+        if (writable && typeof writable.abort === "function") {
+          writable.abort();
+        }
+      } catch (e) {
+        console.warn("中止 ZIP 写入流失败:", e?.message || e);
+      }
+    });
+    globalActiveZipWritables.clear();
 
     // 移除所有事件监听器
     globalEventListeners.forEach(({ target, event, handler }) => {
@@ -257,6 +276,39 @@ export function useFileBasket() {
   // ===== 打包下载方法 =====
 
   /**
+   * 尝试使用 File System Access API 创建 ZIP 写入目标
+   * - 仅在 Chromium 系浏览器、且 secure context 下可用
+   * - 不可用时返回 null（由调用方降级到 BlobWriter + file-saver）
+   * @param {string} suggestedName
+   * @returns {Promise<null | { mode: "fs_access", writable: any, fileName: string }>}
+   */
+  const tryPickZipSaveTarget = async (suggestedName) => {
+    if (typeof window === "undefined") return null;
+    if (typeof window.showSaveFilePicker !== "function") return null;
+    if (!window.isSecureContext) return null;
+
+    const handle = await window.showSaveFilePicker({
+      suggestedName: suggestedName || "CloudPaste.zip",
+      types: [
+        {
+          description: "ZIP 文件",
+          accept: {
+            "application/zip": [".zip"],
+          },
+        },
+      ],
+      excludeAcceptAllOption: true,
+    });
+
+    const writable = await handle.createWritable();
+    return {
+      mode: "fs_access",
+      writable,
+      fileName: handle?.name || suggestedName || "CloudPaste.zip",
+    };
+  };
+
+  /**
    * 创建打包下载任务
    * @returns {Promise<Object>} 操作结果
    */
@@ -269,6 +321,34 @@ export function useFileBasket() {
         };
       }
 
+      // 先生成文件名（保持与旧逻辑一致），用于：
+      // - File System Access API 的 suggestedName
+      // - Blob 模式下 saveAs 的下载文件名
+      const timestamp = formatNowForFilename();
+      const suggestedZipFileName = `CloudPaste_${timestamp}.zip`;
+
+      // 优先尝试 File System Access API
+      /** @type {null | { mode: "fs_access", writable: any, fileName: string }} */
+      let outputTarget = null;
+      /** @type {string} */
+      let zipFileName = suggestedZipFileName;
+      try {
+        const picked = await tryPickZipSaveTarget(suggestedZipFileName);
+        if (picked) {
+          outputTarget = picked;
+          zipFileName = picked.fileName || suggestedZipFileName;
+        }
+      } catch (e) {
+        // 用户取消“保存为”对话框：不创建任务，直接提示
+        if (e?.name === "AbortError") {
+          return {
+            success: false,
+            message: "已取消保存",
+          };
+        }
+        throw e;
+      }
+
       // 创建任务
       const taskName = t("fileBasket.task.name", {
         count: collectionCount.value,
@@ -278,7 +358,7 @@ export function useFileBasket() {
       const taskId = taskManager.addTask("download", taskName, collectionCount.value);
 
       // 启动异步打包处理
-      processPackTask(taskId);
+      processPackTask(taskId, { outputTarget, zipFileName });
 
       return {
         success: true,
@@ -297,8 +377,9 @@ export function useFileBasket() {
   /**
    * 处理打包任务（异步）
    * @param {number} taskId - 任务ID
+   * @param {{ outputTarget?: null | { mode: "fs_access", writable: any, fileName: string }, zipFileName?: string }} [options]
    */
-  const processPackTask = async (taskId) => {
+  const processPackTask = async (taskId, options = {}) => {
     // 初始化文件状态跟踪
     const fileStates = new Map();
 
@@ -309,7 +390,15 @@ export function useFileBasket() {
       }
     };
 
+    const outputTarget = options?.outputTarget || null;
+    const zipFileName = options?.zipFileName || `CloudPaste_${formatNowForFilename()}.zip`;
+    const isFsAccessMode = outputTarget?.mode === "fs_access" && outputTarget?.writable;
+
     try {
+      if (isFsAccessMode) {
+        globalActiveZipWritables.add(outputTarget.writable);
+      }
+
       // 更新任务状态
       taskManager.updateTaskProgress(taskId, 0, {
         status: t("fileBasket.task.preparing"),
@@ -322,14 +411,22 @@ export function useFileBasket() {
       // 获取收集的文件
       const files = fileBasketStore.getCollectedFiles();
 
-      // 动态导入zip.js和file-saver
-      const { ZipWriter, BlobWriter, BlobReader, HttpReader } = await import("@zip.js/zip.js");
-      const { saveAs } = await import("file-saver");
+      // 动态导入 zip.js（file-saver 仅在 Blob 模式需要）
+      const { ZipWriter, BlobWriter, BlobReader, HttpReader, configure } = await import("@zip.js/zip.js");
+      const saveAs = isFsAccessMode ? null : (await import("file-saver")).saveAs;
+
+      // 显式配置 workerURI/wasmURI
+      if (!isZipJsConfigured) {
+        configure(getZipJsDefaultConfig());
+        isZipJsConfigured = true;
+      }
 
       // 创建 ZipWriter
       console.log(`处理 ${files.length} 个文件`);
-      const blobWriter = new BlobWriter();
-      const zipWriter = new ZipWriter(blobWriter, {
+      const zipOutput = isFsAccessMode ? outputTarget.writable : new BlobWriter("application/zip");
+      const zipWriter = new ZipWriter(zipOutput, {
+        // 生成 >4GB 的 zip，需要显式开启 zip64
+        zip64: true,
         keepOrder: true, // 保持文件顺序
         useWebWorkers: true, // 启用Web Workers
         useCompressionStream: true, // 使用原生压缩流
@@ -337,6 +434,53 @@ export function useFileBasket() {
       });
       const failedFiles = [];
       const addedFiles = new Set();
+
+      /**
+       * 预先分配 ZIP 内路径（避免并发下 addedFiles 竞态）
+       * @param {any} file
+       * @returns {string}
+       */
+      const reserveZipPath = (file) => {
+        const directoryName = (file?.sourceDirectory || "")
+          .replace(/^\//, "")
+          .replace(/\//g, "_") || "root";
+        const zipPath = `${directoryName}/${file.name}`;
+
+        let finalZipPath = zipPath;
+        let counter = 1;
+        while (addedFiles.has(finalZipPath)) {
+          const lastDotIndex = zipPath.lastIndexOf(".");
+          if (lastDotIndex > 0) {
+            const name = zipPath.substring(0, lastDotIndex);
+            const ext = zipPath.substring(lastDotIndex);
+            finalZipPath = `${name}_${counter}${ext}`;
+          } else {
+            finalZipPath = `${zipPath}_${counter}`;
+          }
+          counter++;
+        }
+        addedFiles.add(finalZipPath);
+        return finalZipPath;
+      };
+
+      /**
+       * 有限并发执行器（避免网络/Worker/内存峰值）
+       * @template T
+       * @param {T[]} items
+       * @param {number} limit
+       * @param {(item:T)=>Promise<any>} worker
+       */
+      const runWithConcurrency = async (items, limit, worker) => {
+        const safeLimit = Math.max(1, Math.min(limit || 1, items.length || 1));
+        let index = 0;
+        const runners = Array.from({ length: safeLimit }).map(async () => {
+          while (index < items.length) {
+            const current = items[index++];
+            await worker(current);
+          }
+        });
+        await Promise.all(runners);
+      };
 
       // 初始化文件状态
       files.forEach((file) => {
@@ -351,30 +495,10 @@ export function useFileBasket() {
         });
       });
 
-      // 并发添加文件到ZIP
-      const zipAddPromises = files.map(async (file) => {
+      const processOneFile = async (file) => {
         try {
+          const finalZipPath = reserveZipPath(file);
           const downloadUrl = await getFileDownloadUrl(file);
-
-          // 构建ZIP路径
-          const directoryName = file.sourceDirectory.replace(/^\//, "").replace(/\//g, "_") || "root";
-          const zipPath = `${directoryName}/${file.name}`;
-
-          // 处理文件名冲突
-          let finalZipPath = zipPath;
-          let counter = 1;
-          while (addedFiles.has(finalZipPath)) {
-            const lastDotIndex = zipPath.lastIndexOf(".");
-            if (lastDotIndex > 0) {
-              const name = zipPath.substring(0, lastDotIndex);
-              const ext = zipPath.substring(lastDotIndex);
-              finalZipPath = `${name}_${counter}${ext}`;
-            } else {
-              finalZipPath = `${zipPath}_${counter}`;
-            }
-            counter++;
-          }
-          addedFiles.add(finalZipPath);
 
           // 更新文件状态
           let fileState = fileStates.get(file.path);
@@ -387,13 +511,10 @@ export function useFileBasket() {
             new HttpReader(downloadUrl, {
               preventHeadRequest: true, // 避免额外的HEAD请求
               useXHR: false, // 使用fetch API
-              useCompressionStream: true, // 启用原生压缩流
-              transferStreams: true, // 启用流传输到Web Workers
             }),
             {
               useWebWorkers: true, // 启用Web Workers
               useCompressionStream: true, // 使用原生压缩流
-              transferStreams: true, // 启用流传输
               onprogress: (progress, total) => {
                 if (fileState) {
                   fileState.progress = total > 0 ? Math.round((progress / total) * 100) : 0;
@@ -401,7 +522,8 @@ export function useFileBasket() {
                   fileState.totalBytes = total;
 
                   const completedFiles = Array.from(fileStates.values()).filter((f) => f.status === "completed").length;
-                  const overallProgress = Math.round(((completedFiles + progress / total) / files.length) * 90);
+                  const currentRatio = total > 0 ? progress / total : 0;
+                  const overallProgress = Math.round(((completedFiles + currentRatio) / files.length) * 90);
 
                   taskManager.updateTaskProgress(taskId, overallProgress, {
                     status: t("fileBasket.task.downloading"),
@@ -434,10 +556,10 @@ export function useFileBasket() {
 
           return { success: false, fileName: file.name, error: error.message };
         }
-      });
+      };
 
-      // 等待所有文件完成
-      await Promise.all(zipAddPromises);
+      // 有限并发添加文件到 ZIP（避免峰值过高）
+      await runWithConcurrency(files, 4, processOneFile);
 
       // 添加错误报告
       if (failedFiles.length > 0) {
@@ -454,12 +576,11 @@ export function useFileBasket() {
         total: files.length,
       });
 
-      const zipBlob = await zipWriter.close();
-
-      // 下载ZIP文件
-      const timestamp = formatNowForFilename();
-      const zipFileName = `CloudPaste_${timestamp}.zip`;
-      saveAs(zipBlob, zipFileName);
+      // 目录结构显式用 Zip64 写入，避免超大包在 central directory 阶段触发边界问题
+      const zipResult = await zipWriter.close(undefined, { zip64: true });
+      if (!isFsAccessMode) {
+        saveAs(zipResult, zipFileName);
+      }
 
       // 完成任务
       const successCount = files.length - failedFiles.length;
@@ -479,12 +600,34 @@ export function useFileBasket() {
       fileBasketStore.clearBasket();
     } catch (error) {
       console.error("打包任务失败:", error);
-      taskManager.failTask(taskId, {
-        status: t("fileBasket.task.failed"),
-        error: error.message,
-        endTime: new Date().toISOString(),
-      });
+      taskManager.failTask(
+        taskId,
+        error?.message || String(error),
+        {
+          status: t("fileBasket.task.failed"),
+          error: error?.message || String(error),
+          endTime: new Date().toISOString(),
+        }
+      );
     } finally {
+      // File System Access 模式下，失败时尽量中止写入，避免留下不完整文件
+      if (isFsAccessMode && outputTarget?.writable) {
+        try {
+          const tasks = taskManager.getTasks();
+          const task = Array.isArray(tasks) ? tasks.find((t) => t.id === taskId) : null;
+          const shouldAbort = task?.status !== "completed";
+          if (shouldAbort && typeof outputTarget.writable.abort === "function") {
+            await outputTarget.writable.abort();
+          }
+        } catch (e) {
+          console.warn("中止 ZIP 写入失败:", e?.message || e);
+        }
+      }
+
+      if (isFsAccessMode && outputTarget?.writable) {
+        globalActiveZipWritables.delete(outputTarget.writable);
+      }
+
       cleanup();
     }
   };

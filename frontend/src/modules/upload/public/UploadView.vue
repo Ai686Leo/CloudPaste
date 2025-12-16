@@ -24,7 +24,6 @@
           :storage-configs="storageConfigsStore.sortedConfigs"
           @upload-success="handleUploadSuccess"
           @upload-error="handleUploadError"
-          @refresh-files="loadFiles"
           @share-results="handleShareResults"
         />
       </div>

@@ -11,6 +11,7 @@ export default {
       onedrive: "OneDrive",
       googledrive: "Google Drive",
       github_releases: "GitHub Releases",
+      github_api: "GitHub API",
     },
 
     // 分组标题
@@ -88,6 +89,20 @@ export default {
         gh_proxy: "GitHub 代理 URL",
         token: "GitHub 访问令牌",
       },
+
+      // GitHub API（仓库内容）特有字段
+      github_api: {
+        owner: "仓库所有者（owner）",
+        repo: "仓库名称（repo）",
+        ref: "引用（ref）",
+        api_base: "GitHub API Base",
+        gh_proxy: "GitHub 代理 URL",
+        committer_name: "提交者姓名（committer.name）",
+        committer_email: "提交者邮箱（committer.email）",
+        author_name: "作者姓名（author.name）",
+        author_email: "作者邮箱（author.email）",
+        token: "GitHub 访问令牌",
+      },
     },
 
     // 占位符文本
@@ -129,8 +144,22 @@ export default {
       github_releases: {
         repo_structure:
           "每行一条：owner/repo、别名:owner/repo 或完整仓库 URL（https://github.com/owner/repo），例如：ling-drag0n/CloudPaste、cloudpaste:ling-drag0n/CloudPaste 或 https://github.com/ling-drag0n/CloudPaste",
-        gh_proxy: "例如：https://gh-proxy.com/github.com",
+        gh_proxy: "例如：https://gh-proxy.com/https://github.com",
         token: "建议填写个人访问令牌以提升速率上限",
+      },
+
+      // GitHub API 占位符
+      github_api: {
+        owner: "例如：ling-drag0n",
+        repo: "例如：CloudPaste",
+        ref: "例如：main、v1.0.0 或 40 位 commit sha（留空使用默认分支）",
+        api_base: "例如：https://api.github.com（留空使用默认值）",
+        gh_proxy: "例如：https://ghproxy.net/https://raw.githubusercontent.com（可选，仅影响直链输出）",
+        committer_name: "例如：CloudPaste Bot（可选）",
+        committer_email: "{'例如：bot@example.com（可选）'}",
+        author_name: "例如：Your Name（可选）",
+        author_email: "{'例如：you@example.com（可选）'}",
+        token: "必填：建议使用具有仓库读写权限的访问令牌",
       },
     },
 
@@ -170,27 +199,35 @@ export default {
         refresh_token: "可为两种形态：1) 标准 OAuth refresh_token；2) 远程 Service Account JSON URL。",
         root_id: "Google Drive 根目录 ID，默认为 root；如需挂载 Shared Drive，请填写对应 driveId。",
         enable_disk_usage: "启用后，读取存储配额信息，用于管理端展示和配额分析。",
-        enable_shared_view: "启用后，将在对应挂载根目录下展示 \"Shared with me\" 虚拟目录，用于浏览“与我共享”文件。",
+        enable_shared_view: '启用后，将在对应挂载根目录下展示 "Shared with me" 虚拟目录，用于浏览“与我共享”文件。',
       },
 
       // GitHub Releases 描述
       github_releases: {
         repo_structure:
           "配置 GitHub 仓库列表，每行一条。单仓库可用 owner/repo 直接挂载到仓库根目录（不额外生成 repo 目录）；多仓库必须使用 别名:owner/repo 生成一级目录避免覆盖。挂载路径本身由挂载配置决定。",
-        show_all_version:
-          "开启后，将为每个版本创建一个子目录（按 tagName 命名），目录下包含该版本的所有发布资产；关闭时只展示最新版本的资产列表。",
-        show_source_code:
-          "开启后，为每个版本额外生成 \"Source code (zip)\" 和 \"Source code (tar.gz)\" 伪文件，指向 GitHub 提供的源码压缩包。",
-        show_readme:
-          "在仓库根目录挂载 README / LICENSE 虚拟文件（如果仓库存在对应文件），文件内容通过 GitHub API 实时读取。",
-        show_release_notes:
-          "在版本目录中额外生成 RELEASE_NOTES.md 虚拟文件，内容来自 GitHub Release 的说明（Markdown）。",
-        per_page:
-          "从 GitHub Releases 接口每次获取的最大版本数量，默认 20。数值越大，请求次数越少，但单次响应体越大。",
+        show_all_version: "开启后，将为每个版本创建一个子目录（按 tagName 命名），目录下包含该版本的所有发布资产；关闭时只展示最新版本的资产列表。",
+        show_source_code: '开启后，为每个版本额外生成 "Source code (zip)" 和 "Source code (tar.gz)" 伪文件，指向 GitHub 提供的源码压缩包。',
+        show_readme: "在仓库根目录挂载 README / LICENSE 虚拟文件（如果仓库存在对应文件），文件内容通过 GitHub API 实时读取。",
+        show_release_notes: "在版本目录中额外生成 RELEASE_NOTES.md 虚拟文件，内容来自 GitHub Release 的说明（Markdown）。",
+        per_page: "从 GitHub Releases 接口每次获取的最大版本数量，默认 20。数值越大，请求次数越少，但单次响应体越大。",
         gh_proxy:
           "可选：用于加速 GitHub 下载的代理前缀，例如 https://gh-proxy.com/github.com 或 https://gh-proxy.com/https://github.com 完整填入。仅对以 https://github.com 开头的下载链接生效。",
-        token:
-          "可选：GitHub 个人访问令牌。用于访问私有仓库或提升 API 速率限制（强烈推荐配置，尤其在公开站点中使用时）。",
+        token: "可选：GitHub 个人访问令牌。用于访问私有仓库或提升 API 速率限制（强烈推荐配置，尤其在公开站点中使用时）。",
+      },
+
+      // GitHub API 描述
+      github_api: {
+        owner: "GitHub 仓库 owner（例如 ling-drag0n）",
+        repo: "GitHub 仓库名称（例如 CloudPaste）",
+        ref: "可填写分支名 / 标签名 / commit sha。仅分支支持写入；标签与 commit sha 为只读。留空时自动使用仓库默认分支。",
+        api_base: "可选：自定义API（用于 GitHub Enterprise 等场景）。默认 https://api.github.com。",
+        gh_proxy: "可选：用于加速 raw 直链输出。会把直链中的 https://raw.githubusercontent.com 替换为该值。",
+        committer_name: "可选：自定义 commit 的 committer.name（与 committer_email 成对填写）。",
+        committer_email: "可选：自定义 commit 的 committer.email（与 committer_name 成对填写）。",
+        author_name: "可选：自定义 commit 的 author.name（与 author_email 成对填写）。",
+        author_email: "可选：自定义 commit 的 author.email（与 author_name 成对填写）。",
+        token: "必填：GitHub 访问令牌。用于提升 API 速率限制，并用于写入（创建 commit/更新 refs）。",
       },
     },
 
