@@ -154,9 +154,9 @@ export function buildDownloadUrl(file, options = {}) {
 }
 
 export async function getOfficePreviewUrl(file, options = {}) {
-  const preview = file?.documentPreview;
+  const preview = file?.previewSelection;
 
-  // 未提供 documentPreview 或不支持预览时直接返回 null
+  // 未提供 previewSelection 或不支持预览时直接返回 null
   const providers = preview?.providers || {};
   if (!preview || !Object.keys(providers).length) {
     return null;

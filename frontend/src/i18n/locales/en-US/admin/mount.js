@@ -15,6 +15,7 @@ export default {
       proxy: "Proxy",
       signature: "Signature",
       proxySign: "Proxy/Sign",
+      folderSummary: "Compute",
     },
     viewMode: {
       grid: "Grid View",
@@ -66,6 +67,8 @@ export default {
       sortOrderHint: "Lower numbers appear first",
       cacheTtl: "Cache TTL (seconds)",
       cacheTtlHint: "File list cache time, 0 means no cache",
+      enableFolderSummaryCompute: "Allow folder size/time compute (fallback)",
+      enableFolderSummaryComputeHint: "After activation: When the storage itself does not provide raw data and there is no index, it will recursively traverse and compute.",
       isActive: "Active Status",
       isActiveHint: "Whether to enable this mount point",
       webProxy: "Enable Web Proxy",

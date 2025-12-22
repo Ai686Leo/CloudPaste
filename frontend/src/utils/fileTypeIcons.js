@@ -31,6 +31,36 @@ const fileIconsMap = {
     </svg>
   `,
 
+  // 电子书（EPUB/MOBI/AZW3/FB2/CBZ 等）
+  book: (darkMode = false) => `
+    <svg xmlns="http://www.w3.org/2000/svg" class="w-full h-full" viewBox="0 0 24 24" fill="none">
+      <!-- 左页 -->
+      <path
+        d="M12 6.25C10.9 5.5 9.3 5 7.5 5C5.7 5 4.1 5.5 3 6.25V19C4.1 18.25 5.7 17.75 7.5 17.75C9.3 17.75 10.9 18.25 12 19"
+        stroke="${darkMode ? "#fbbf24" : "#f59e0b"}"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        fill="${darkMode ? "#fbbf24" : "#f59e0b"}"
+        fill-opacity="${darkMode ? "0.08" : "0.10"}"
+      />
+
+      <!-- 右页 -->
+      <path
+        d="M12 6.25C13.1 5.5 14.7 5 16.5 5C18.3 5 19.9 5.5 21 6.25V19C19.9 18.25 18.3 17.75 16.5 17.75C14.7 17.75 13.1 18.25 12 19"
+        stroke="${darkMode ? "#fbbf24" : "#f59e0b"}"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        fill="${darkMode ? "#fbbf24" : "#f59e0b"}"
+        fill-opacity="${darkMode ? "0.06" : "0.08"}"
+      />
+
+      <!-- 书脊 -->
+      <path d="M12 6.25V19" stroke="${darkMode ? "#fbbf24" : "#f59e0b"}" stroke-width="2" stroke-linecap="round" />
+    </svg>
+  `,
+
   // PDF 文件
   pdf: (darkMode = false) => `
     <svg xmlns="http://www.w3.org/2000/svg" class="w-full h-full" viewBox="0 0 24 24" fill="none">

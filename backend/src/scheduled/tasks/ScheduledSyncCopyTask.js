@@ -134,7 +134,7 @@ export class ScheduledSyncCopyTask {
 
   /**
    * 执行同步任务：只负责创建 copy Job，不直接复制文件
-   * @param {{ db: D1Database, env: any, now: string, config: any }} ctx
+   * @param {{ db: D1Database, env: any, now: string, config: any, scheduledJobId?: string }} ctx
    */
   async run(ctx) {
     const { db, env, now, config } = ctx;
@@ -147,6 +147,7 @@ export class ScheduledSyncCopyTask {
       db,
       env?.ENCRYPTION_SECRET,
       repositoryFactory,
+      { env },
     );
     const fileSystem = new FileSystem(mountManager, env);
 
@@ -165,6 +166,7 @@ export class ScheduledSyncCopyTask {
       jobPayload,
       systemUserId,
       systemUserType,
+      { triggerType: "scheduled", triggerRef: ctx?.scheduledJobId || this.id },
     );
 
     const summaryParts = [

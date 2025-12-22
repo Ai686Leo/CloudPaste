@@ -119,7 +119,7 @@ fsProxyRoutes.get(`${PROXY_CONFIG.ROUTE_PREFIX}/*`, async (c) => {
     }
 
     // 创建 MountManager 并验证驱动能力
-    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
+    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory, { env: c.env });
     const driver = await mountManager.getDriver(mountResult.mount);
     if (!driver.hasCapability(CAPABILITIES.PROXY)) {
       throw new AppError("当前存储驱动不支持代理访问", { status: ApiStatus.NOT_IMPLEMENTED, code: "PROXY_NOT_SUPPORTED", expose: true });

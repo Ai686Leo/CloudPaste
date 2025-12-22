@@ -49,70 +49,53 @@
   </tr>
 </table>
 
-## ✨ Features
+## ✨ Core Features
 
-### 📝 Markdown Editing and Sharing
+### Cloudflare Native Architecture
 
-- **Powerful Editor**: Integrated with [Vditor](https://github.com/Vanessa219/vditor), supporting GitHub-style Markdown, mathematical formulas, flowcharts, mind maps, etc.
-- **Secure Sharing**: Content can be password-protected
-- **Flexible Expiration**: Support for setting content expiration time
-- **Access Control**: Can limit maximum view count
-- **Personalization**: Custom share links and notes
-- **Support for Raw Text Direct Links**: Similar to GitHub's Raw direct links, used for services started via YAML configuration files
-- **Multi-format Export**: Support for PDF, Markdown, HTML, PNG images, Word document export
-- **Convenient Sharing**: One-click copy share link and generate QR code
-- **Auto-save**: Support for auto-save draft feature
+- **Edge Computing**: Based on Cloudflare Workers, WorkFlow, and D1 database, with 300+ global nodes for nearby responses
+- **Zero Maintenance**: No server management required, automatic scaling, pay-per-request billing
+- **Integrated Deployment**: Frontend and backend packaged in the same Worker, saving time and effort
+- **Separate Deployment**: Optional frontend-backend separation, flexible to adapt to personal needs
 
-### 📤 File Upload and Management
+### Multi-Storage Support
 
-- **Multiple Storage Support**: Object Storage (S3 compatible: Cloudflare R2, Backblaze B2, AWS S3, Alibaba Cloud OSS, Tencent COS, etc.), WebDAV, Local File System, OneDrive, Google Drive, GitHub Releases (read-only mount)
-- **Storage Configuration**: Visual interface for configuring multiple storage spaces, flexible switching of default storage sources
-- **Mount Points**: Unify multiple storages into file system paths, accessed by directory through mount browser
-- **Efficient Upload**: Support for various upload methods, including frontend pre-signed direct upload to storage and resumable chunked upload; others use streaming upload and other options
-- **Real-time Feedback**: Real-time display of upload progress
-- **Custom Limits**: Single upload limit and maximum capacity limit
-- **Metadata Management**: File notes, passwords, expiration time, access restrictions
-- **Data Analysis**: File access statistics and trend analysis
-- **Direct Server Upload**: Support for API calls for file upload, download, and other operations
+- **S3 Compatible**: Cloudflare R2, Backblaze B2, AWS S3, Alibaba Cloud OSS, Tencent Cloud COS, MinIO, etc.
+- **Cloud Storage Integration**: WebDAV, OneDrive, Google Drive, GitHub API/Releases (read-only), etc.
+- **Local Storage**: Docker deployment supports local file system
+- **Smart Upload**: Frontend pre-signed direct upload + streaming upload + chunked resumable upload, with real-time progress display, minimizing CF limitations
+- **File Preview**: Direct preview support for 30+ formats (images, videos, audio, PDF, Office, code, e-books, etc.), others can be previewed through external IFrame embedding [KKFileview](https://github.com/kekingcn/kkFileView)
+- **Scheduled Tasks**: Support for automated tasks like cleaning upload sessions, storage synchronization, search index rebuilding, etc.
+- **Unified Management**: Visual configuration for multiple storage, flexible switching of default storage sources
 
-### 🛠 Convenient File/Text Operations
+### Powerful Markdown Editor
 
-- **Unified Management**: Support for file/text creation, deletion, and attribute modification
-- **Online Preview**: Online preview and direct link generation for common documents, images, and media files
-- **Sharing Tools**: Generate short links and QR codes for cross-platform sharing
-- **Batch Management**: Batch operations and display of files/text
+- **Vditor Integration**: Support for GitHub-style Markdown, math formulas, flowcharts, mind maps
+- **Real-time Preview**: WYSIWYG editing experience
+- **Multi-format Export**: One-click export to PDF, HTML, PNG, Word
+- **Secure Sharing**: Password protection, expiration time, access count limits
+- **Raw Direct Links**: Similar to GitHub Raw, suitable for configuration file hosting
 
-### 🔄 WebDAV and Mount Point Management
+### WebDAV Protocol Support
 
-- **WebDAV Protocol Support**: Access and manage file system through standard WebDAV protocol
-- **Network Drive Mounting**: Support for direct mounting by some third-party clients
-- **Flexible Mount Points**: Support for creating multiple mount points, connecting to different storage services
-- **Local Proxy**: Preview/download can go through same-origin proxy via local proxy (CF deployment uses CF proxy)
-- **External Reverse Proxy**: Preview/download data traffic can be handed over to `Cloudpaste-Proxy.js` (Worker/VPS/Edge Runtime) for forwarding
-- **Cache TTL**: Mount points support controlling directory/metadata cache, reducing upstream requests
-- **Permission Control**: Fine-grained mount point access permission management
-- **API Key Integration**: Authorize WebDAV access through API keys
-- **Directory Operations**: Full support for directory creation, upload, deletion, renaming, and other operations
+- **Standard Protocol**: Supports mounting as a network drive with any WebDAV client
+- **Complete Operations**: Directory creation, file upload, deletion, renaming, moving
+- **Permission Control**: API key authorization, fine-grained access control
+- **Cache Optimization**: Configurable TTL, reducing upstream requests
 
-### 🔐 Lightweight Permission Management
+### Flexible Permission Management
 
-#### API Key Permission Control
+- **API Keys**: Create multi-permission read/write keys, bound to specific storage paths
+- **Time Control**: Custom validity period, automatic expiration and manual revocation
+- **JWT Authentication**: Secure administrator authentication system
+- **PWA Support**: Can be installed as a desktop application, usable offline
 
-- **Text Permissions**: Create/edit/delete text content
-- **File Permissions**: Upload/manage/delete files
-- **Storage Permissions**: Can select specific storage configurations
-- **Read/Write Separation**: Can set read-only or read-write permissions
-- **Time-based Control**: Custom validity period (from hours to months)
-- **Security Mechanism**: Auto-expiry and manual revocation functions
+### Multiple Deployment Methods
 
-### 💫 System Features
-
-- **Strong Adaptability**: Responsive design, compatible with mobile devices and desktop
-- **Multilingual**: Chinese/English bilingual interface support
-- **Visual Mode**: Light/dark theme switching
-- **Security Authentication**: JWT-based administrator authentication system
-- **Offline Experience**: PWA support, can be used offline and installed to desktop
-- **Scheduled Tasks**: Background scheduled tasks (Docker/Node environment), support for interval/cron configuration; built-in cleanup of chunked upload sessions, storage synchronization;
+- **Automatic Deployment**: One-click deployment via GitHub Actions, supports automatic triggering
+- **Manual Deployment**: Wrangler CLI deployment, flexible and controllable
+- **Docker Deployment**: Frontend and backend images + Docker Compose one-click startup
+- **Multi-platform**: Supports Cloudflare, Vercel, ClawCloud, HuggingFace,etc.
 
 ## 🚀 Deployment Guide
 

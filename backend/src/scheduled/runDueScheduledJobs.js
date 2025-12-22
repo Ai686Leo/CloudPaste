@@ -319,6 +319,7 @@ export async function runDueScheduledJobs(db, env, options = {}) {
       const handlerResult = await handler.run({
         db,
         env,
+        scheduledJobId: taskId,
         now: nowIso,
         config,
       });

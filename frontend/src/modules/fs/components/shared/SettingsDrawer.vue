@@ -31,9 +31,7 @@
             class="p-1.5 rounded-token-md transition-colors duration-token-fast"
             :class="darkMode ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-500'"
           >
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <IconClose size="md" class="w-5 h-5" aria-hidden="true" />
           </button>
         </div>
 
@@ -49,7 +47,7 @@
                 :dark-mode="darkMode"
                 @click="updateSetting('viewMode', mode.value)"
               >
-                <component :is="mode.icon" class="w-4 h-4" />
+                <component :is="mode.icon" size="sm" aria-hidden="true" />
                 <span class="text-xs">{{ t(mode.label) }}</span>
               </ViewModeButton>
             </div>
@@ -151,15 +149,12 @@
                   class="flex items-center gap-1 px-2 py-1 rounded-token-md text-sm transition-colors duration-token-fast"
                   :class="darkMode ? 'hover:bg-gray-700 text-gray-300' : 'hover:bg-gray-100 text-gray-600'"
                 >
-                  <svg 
-                    class="w-4 h-4 transition-transform duration-token-fast" 
+                  <IconChevronUp
+                    size="sm"
+                    class="w-4 h-4 transition-transform duration-token-fast"
                     :class="{ 'rotate-180': settings.sortOrder === 'desc' }"
-                    fill="none" 
-                    stroke="currentColor" 
-                    viewBox="0 0 24 24"
-                  >
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" />
-                  </svg>
+                    aria-hidden="true"
+                  />
                   <span>{{ settings.sortOrder === 'asc' ? t('mount.settings.ascending') : t('mount.settings.descending') }}</span>
                 </button>
               </div>
@@ -221,6 +216,7 @@ import { h } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { storeToRefs } from 'pinia'
 import { useExplorerSettings } from '@/composables/useExplorerSettings'
+import { IconChevronUp, IconClose, IconGallery, IconGrid, IconList } from '@/components/icons'
 
 // 子组件定义
 const SettingSection = (props, { slots }) => {
@@ -301,29 +297,17 @@ const viewModes = [
   { 
     value: 'list', 
     label: 'mount.settings.listView',
-    icon: {
-      render: () => h('svg', { fill: 'none', stroke: 'currentColor', viewBox: '0 0 24 24' }, [
-        h('path', { 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'stroke-width': '2', d: 'M4 6h16M4 12h16M4 18h16' })
-      ])
-    }
+    icon: IconList
   },
   { 
     value: 'grid', 
     label: 'mount.settings.gridView',
-    icon: {
-      render: () => h('svg', { fill: 'none', stroke: 'currentColor', viewBox: '0 0 24 24' }, [
-        h('path', { 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'stroke-width': '2', d: 'M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z' })
-      ])
-    }
+    icon: IconGrid
   },
   { 
     value: 'gallery', 
     label: 'mount.settings.galleryView',
-    icon: {
-      render: () => h('svg', { fill: 'none', stroke: 'currentColor', viewBox: '0 0 24 24' }, [
-        h('path', { 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'stroke-width': '2', d: 'M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z' })
-      ])
-    }
+    icon: IconGallery
   }
 ]
 

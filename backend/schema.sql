@@ -15,9 +15,14 @@ DROP TABLE IF EXISTS tasks;
 DROP TABLE IF EXISTS fs_meta;
 DROP TABLE IF EXISTS storage_mounts;
 DROP TABLE IF EXISTS system_settings;
+DROP TABLE IF EXISTS schema_migrations;
 DROP TABLE IF EXISTS scheduled_jobs;
 DROP TABLE IF EXISTS upload_sessions;
 DROP TABLE IF EXISTS scheduled_job_runs;
+DROP TABLE IF EXISTS fs_search_index_entries;
+DROP TABLE IF EXISTS fs_search_index_state;
+DROP TABLE IF EXISTS fs_search_index_dirty;
+DROP TABLE IF EXISTS fs_search_index_fts;
 
 -- 创建pastes表 - 存储文本分享数据
 CREATE TABLE pastes (
@@ -171,6 +176,81 @@ CREATE TABLE fs_meta (
 
 CREATE INDEX idx_fs_meta_path ON fs_meta(path);
 
+-- ================================
+-- FS 搜索索引（派生数据，可重建）
+-- - entries/state/dirty 为普通表，可迁移
+-- - fts 为 FTS5 虚表，作为加速结构，不参与 export/import（建议通过重建恢复）
+-- ================================
+
+CREATE TABLE fs_search_index_entries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  mount_id TEXT NOT NULL,
+  fs_path TEXT NOT NULL,
+  name TEXT NOT NULL,
+  is_dir BOOLEAN NOT NULL DEFAULT 0,
+  size INTEGER NOT NULL DEFAULT 0,
+  modified_ms INTEGER NOT NULL DEFAULT 0,
+  mimetype TEXT,
+  index_run_id TEXT,
+  updated_at_ms INTEGER NOT NULL DEFAULT 0,
+  UNIQUE (mount_id, fs_path)
+);
+
+CREATE TABLE fs_search_index_state (
+  mount_id TEXT PRIMARY KEY,
+  status TEXT NOT NULL,
+  last_indexed_ms INTEGER,
+  updated_at_ms INTEGER NOT NULL,
+  last_error TEXT
+);
+
+CREATE TABLE fs_search_index_dirty (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  mount_id TEXT NOT NULL,
+  fs_path TEXT NOT NULL,
+  op TEXT NOT NULL,
+  created_at_ms INTEGER NOT NULL,
+  dedupe_key TEXT NOT NULL UNIQUE
+);
+
+CREATE VIRTUAL TABLE fs_search_index_fts
+USING fts5(
+  name,
+  fs_path,
+  tokenize='trigram',
+  content='fs_search_index_entries',
+  content_rowid='id'
+);
+
+CREATE TRIGGER fs_search_index_ai
+AFTER INSERT ON fs_search_index_entries
+BEGIN
+  INSERT INTO fs_search_index_fts(rowid, name, fs_path)
+  VALUES (new.id, new.name, new.fs_path);
+END;
+
+CREATE TRIGGER fs_search_index_ad
+AFTER DELETE ON fs_search_index_entries
+BEGIN
+  INSERT INTO fs_search_index_fts(fs_search_index_fts, rowid, name, fs_path)
+  VALUES ('delete', old.id, old.name, old.fs_path);
+END;
+
+CREATE TRIGGER fs_search_index_au
+AFTER UPDATE ON fs_search_index_entries
+BEGIN
+  INSERT INTO fs_search_index_fts(fs_search_index_fts, rowid, name, fs_path)
+  VALUES ('delete', old.id, old.name, old.fs_path);
+  INSERT INTO fs_search_index_fts(rowid, name, fs_path)
+  VALUES (new.id, new.name, new.fs_path);
+END;
+
+CREATE INDEX idx_fs_search_entries_mount_path ON fs_search_index_entries(mount_id, fs_path);
+CREATE INDEX idx_fs_search_entries_mount_modified ON fs_search_index_entries(mount_id, modified_ms DESC, id DESC);
+CREATE INDEX idx_fs_search_entries_modified ON fs_search_index_entries(modified_ms DESC, id DESC);
+CREATE INDEX idx_fs_search_entries_mount_run ON fs_search_index_entries(mount_id, index_run_id);
+CREATE INDEX idx_fs_search_dirty_mount ON fs_search_index_dirty(mount_id, created_at_ms ASC);
+
 -- 创建file_passwords表 - 存储文件密码
 CREATE TABLE file_passwords (
   file_id TEXT PRIMARY KEY,
@@ -203,6 +283,12 @@ CREATE TABLE system_settings (
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 创建schema_migrations表 - 记录迁移执行历史（内部使用）
+CREATE TABLE schema_migrations (
+  id TEXT PRIMARY KEY,
+  applied_at TEXT NOT NULL
+);
+
 -- 创建storage_mounts表 - 存储挂载配置
 CREATE TABLE storage_mounts (
   id TEXT PRIMARY KEY,                  -- 唯一标识
@@ -219,6 +305,7 @@ CREATE TABLE storage_mounts (
   webdav_policy TEXT DEFAULT '302_redirect', -- WebDAV策略：'302_redirect' 或 'native_proxy'
   enable_sign BOOLEAN DEFAULT 0,        -- 是否启用代理签名
   sign_expires INTEGER DEFAULT NULL,    -- 签名过期时间（秒），NULL表示使用全局设置
+  enable_folder_summary_compute BOOLEAN DEFAULT 0, -- 是否启用“目录大小/时间”递归计算（兜底用）
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   last_used DATETIME                    -- 最后使用时间
@@ -308,6 +395,10 @@ CREATE TABLE tasks (
   user_id TEXT NOT NULL,
   user_type TEXT NOT NULL,           -- 'admin' | 'apikey'
 
+  -- 触发来源（用于任务列表展示/区分）
+  trigger_type TEXT NOT NULL DEFAULT 'manual', -- 'manual' | 'scheduled'
+  trigger_ref TEXT,                              -- 可选：来源引用（如 scheduled handlerId / 页面标识）
+
   -- Workflows 关联（仅 Workers 运行时使用，可选）
   workflow_instance_id TEXT,
 
@@ -372,38 +463,3 @@ CREATE TABLE scheduled_job_runs (
 
 CREATE INDEX idx_scheduled_job_runs_task_started
   ON scheduled_job_runs (task_id, started_at DESC);
-
-
--- 创建初始管理员账户
--- 默认账户: admin/admin123
--- 注意: 这是SHA-256哈希后的密码，实际部署时应更改
-INSERT INTO admins (id, username, password)
-VALUES (
-  '00000000-0000-0000-0000-000000000000',
-  'admin',
-  '240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9'  -- SHA-256('admin123')
-);
-
-
--- 创建示例文本分享（可选，仅用于测试）
-INSERT INTO pastes (id, slug, content, remark, created_at)
-VALUES (
-  '11111111-1111-1111-1111-111111111111',
-  'welcome',
-  '# 欢迎使用 CloudPaste！\n\n这是一个简单的文本分享平台，您可以在这里创建和分享文本内容。\n\n## 功能特性\n\n- 创建文本分享\n- 密码保护\n- 阅读次数限制\n- 过期时间设置\n\n祝您使用愉快！',
-  '欢迎信息',
-  CURRENT_TIMESTAMP
-);
-
--- 插入示例S3配置（加密密钥仅作示例，实际应用中应当由系统加密存储）
-INSERT INTO storage_configs (
-  id, name, storage_type, admin_id, is_public, is_default, remark, url_proxy, status, config_json, created_at, updated_at, last_used
-) VALUES (
-  '22222222-2222-2222-2222-222222222222',
-  'Cloudflare R2存储',
-  'S3',
-  '00000000-0000-0000-0000-000000000000',
-  0, 0, NULL, NULL, 'ENABLED',
-  '{"provider_type":"Cloudflare R2","endpoint_url":"https://account-id.r2.cloudflarestorage.com","bucket_name":"my-cloudpaste-bucket","region":"auto","path_style":0,"default_folder":"uploads/","custom_host":null,"signature_expires_in":3600,"total_storage_bytes":null,"access_key_id":"encrypted:access-key-id-placeholder","secret_access_key":"encrypted:secret-access-key-placeholder"}',
-  CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL
-);

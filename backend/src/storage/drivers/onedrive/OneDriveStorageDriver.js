@@ -1521,7 +1521,7 @@ export class OneDriveStorageDriver extends BaseDriver {
     const displayPath =
       isDirectory && typeof path === "string" && !path.endsWith("/") ? `${path}/` : path;
 
-    const size = item.size || 0;
+    const size = isDirectory ? null : Number(item.size ?? 0);
     const modified = item.lastModifiedDateTime ? new Date(item.lastModifiedDateTime) : null;
     const mimetype = isDirectory ? null : (item.file?.mimeType || getMimeTypeFromFilename(name));
 

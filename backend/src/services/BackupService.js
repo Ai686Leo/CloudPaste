@@ -2,14 +2,16 @@ import crypto from "crypto";
 import { DbTables } from "../constants/index.js";
 import { ValidationError, RepositoryError } from "../http/errors.js";
 import { StorageConfigUtils } from "../storage/utils/StorageConfigUtils.js";
+import { createDbRuntime } from "../db/runtime.js";
 
 /**
  * 数据备份与还原服务
  * 提供数据库的备份和还原功能
  */
 export class BackupService {
-  constructor(db) {
+  constructor(db, env = {}) {
     this.db = db;
+    this.dialect = createDbRuntime({ db, env }).dialect;
 
     // 模块与数据表的映射关系
     this.moduleTableMapping = {
@@ -21,7 +23,8 @@ export class BackupService {
       account_management: ["admins", "admin_tokens"],
       system_settings: ["system_settings"],
       fs_meta_management: ["fs_meta"],
-      task_management: ["tasks"],
+      task_management: ["tasks", "scheduled_jobs", "scheduled_job_runs"],
+      upload_sessions: ["upload_sessions"],
     };
 
     // 表的依赖关系（用于确定导入顺序）
@@ -33,7 +36,136 @@ export class BackupService {
       storage_configs: ["admins"], // storage_configs.admin_id -> admins.id
       storage_mounts: ["storage_configs"], // storage_mounts.storage_config_id -> storage_configs.id
       tasks: ["api_keys"], // tasks.user_id -> api_keys.id (当 user_type='apikey' 时)
+      principal_storage_acl: ["api_keys", "storage_configs"],
+      scheduled_job_runs: ["scheduled_jobs"],
+      upload_sessions: ["storage_configs", "storage_mounts"],
     };
+  }
+
+  async getExistingTableSet() {
+    try {
+      const existingTables = await this.db.prepare(`SELECT name FROM sqlite_master WHERE type='table'`).all();
+      const rows = existingTables?.results || [];
+      return new Set(rows.map((t) => t?.name).filter(Boolean));
+    } catch (error) {
+      console.warn(`[BackupService] 读取 sqlite_master 失败，将跳过“表存在性”检查: ${error.message}`);
+      return null;
+    }
+  }
+
+  async getTableColumnSet(tableName) {
+    try {
+      const info = await this.db.prepare(`PRAGMA table_info(${tableName})`).all();
+      const rows = info?.results || [];
+      return new Set(rows.map((r) => r?.name).filter(Boolean));
+    } catch (error) {
+      console.warn(`[BackupService] 读取表字段失败（可忽略）: table=${tableName}, error=${error.message}`);
+      return null;
+    }
+  }
+
+  collectBackupColumnsSample(records, sampleLimit = 50) {
+    const list = Array.isArray(records) ? records : [];
+    const cols = new Set();
+    const n = Math.min(sampleLimit, list.length);
+    for (let i = 0; i < n; i++) {
+      const row = list[i];
+      if (!row || typeof row !== "object") continue;
+      for (const k of Object.keys(row)) {
+        cols.add(k);
+      }
+    }
+    return cols;
+  }
+
+  estimateInsertStatementCount(tableName, records, options = {}) {
+    const { mode = "overwrite" } = options;
+    const list = Array.isArray(records) ? records : [];
+    if (list.length === 0) return 0;
+
+    const dialectName = this.dialect?.name || "unknown";
+    const canBulkInsert = dialectName === "sqlite";
+
+    // 估算列数：用前 N 条记录做采样（预检查只需要估算，不需要精确到每一条）
+    const sampleCols = this.collectBackupColumnsSample(list, 50);
+    const columnsCount = Math.max(1, sampleCols.size);
+
+    if (!canBulkInsert) {
+      // 非 sqlite：按“每行一条语句”保守估算
+      return list.length;
+    }
+
+    // D1/SQLite 的变量上限在不同环境里可能不同（D1 报错：too many SQL variables）
+    // 为了稳：统一用一个更保守的上限，宁可多跑几条语句，也不要导入时直接 500。
+    const MAX_BIND_VARS = 80;
+    const maxRowsPerStatement = Math.max(1, Math.floor(MAX_BIND_VARS / columnsCount));
+
+    // merge/overwrite 都可以走多行插入（merge 用 INSERT OR IGNORE）
+    // 这里仅估算语句数量
+    const statements = Math.ceil(list.length / maxRowsPerStatement);
+    return Math.max(1, statements);
+  }
+
+  /**
+   * FS 搜索索引表属于派生数据：不参与备份/恢复事实来源，默认通过重建恢复
+   * @returns {Set<string>}
+   */
+  getDerivedIndexTables() {
+    return new Set([
+      DbTables.FS_SEARCH_INDEX_ENTRIES,
+      DbTables.FS_SEARCH_INDEX_STATE,
+      DbTables.FS_SEARCH_INDEX_DIRTY,
+      DbTables.FS_SEARCH_INDEX_FTS,
+    ].filter(Boolean));
+  }
+
+  /**
+   * 还原后强制将 FS 搜索索引标记为“需重建”
+   * - D1 的 FTS5 虚表不适合 export/import；索引属于派生数据，必须可重建
+   */
+  async markFsSearchIndexNotReadyAfterRestore() {
+    const derived = this.getDerivedIndexTables();
+    if (!derived.size) return;
+
+    try {
+      const statements = [];
+      for (const tableName of derived) {
+        try {
+          statements.push(this.db.prepare(`DELETE FROM ${tableName}`));
+        } catch (error) {
+          // 旧 schema 或未创建索引表时：prepare 阶段就可能失败
+          console.warn(`[BackupService] 清理 FS 搜索索引表失败（可忽略）: ${error.message}`);
+        }
+      }
+
+      if (statements.length === 0) return;
+      await this.db.batch(statements);
+    } catch (error) {
+      // 旧 schema 或未创建索引表时可能失败；保持“尽力而为”
+      console.warn(`[BackupService] 清理 FS 搜索索引表失败（可忽略）: ${error.message}`);
+    }
+  }
+
+  async getSchemaVersionForBackup() {
+    try {
+      const resp = await this.db.prepare(`SELECT id FROM schema_migrations`).all();
+      const rows = resp?.results || [];
+      const ids = rows.map((r) => r?.id).filter(Boolean);
+
+      let maxVersion = null;
+      for (const id of ids) {
+        const match = String(id).match(/^app-v(\d{2})$/);
+        if (!match) continue;
+        const parsed = Number.parseInt(match[1], 10);
+        if (!Number.isFinite(parsed)) continue;
+        maxVersion = maxVersion === null ? parsed : Math.max(maxVersion, parsed);
+      }
+
+      return maxVersion === null ? null : String(maxVersion);
+    } catch (error) {
+      console.warn(`[BackupService] 读取 schema_migrations 失败: ${error.message}`);
+      return null;
+    }
   }
 
   /**
@@ -50,7 +182,8 @@ export class BackupService {
 
     if (backup_type === "full") {
       // 完整备份 - 所有表
-      tables = Object.values(DbTables);
+      const derived = this.getDerivedIndexTables();
+      tables = Object.values(DbTables).filter((t) => !derived.has(t));
     } else if (backup_type === "modules") {
       // 检查并自动包含依赖模块
       dependencies = this.getModuleDependencies(selected_modules);
@@ -68,18 +201,7 @@ export class BackupService {
     // 导出数据
     const data = await this.exportTables(tables);
 
-    // 读取当前 schema 版本（如果存在），用于在元数据中记录备份来源的结构版本
-    let schemaVersion = null;
-    try {
-      const row = await this.db
-        .prepare(`SELECT value FROM ${DbTables.SYSTEM_SETTINGS} WHERE key = ?`)
-        .bind("schema_version")
-        .first();
-      schemaVersion = row?.value ?? null;
-    } catch (error) {
-      console.warn(`[BackupService] 读取 schema_version 失败: ${error.message}`);
-      schemaVersion = null;
-    }
+    const schemaVersion = await this.getSchemaVersionForBackup();
 
     // 生成元数据
     const metadata = {
@@ -145,6 +267,10 @@ export class BackupService {
   async restoreBackup(backupData, options = {}) {
     const { mode = "overwrite", currentAdminId, skipIntegrityCheck = false, preserveTimestamps = false } = options;
 
+    if (mode !== "overwrite" && mode !== "merge") {
+      throw new ValidationError(`不支持的还原模式: ${mode}`);
+    }
+
     // 验证备份数据
     this.validateBackupData(backupData);
 
@@ -160,9 +286,26 @@ export class BackupService {
     // 验证表是否存在
     await this.validateTablesExist(tables);
 
+    // 关键前置校验：确保目标库“真的有这些表/字段”
+    // - 目的：避免 overwrite 先清表，后续才发现缺表/缺字段导致半成品
+    const preview = await this.previewRestoreBackup(backupData, {
+      mode,
+      currentAdminId,
+      // 这里仅做 schema 级别检查，不做跨表依赖完整性检查（由下方的 validateDataIntegrity 负责）
+      skipIntegrityCheck: true,
+      preserveTimestamps,
+    });
+    const hardErrors = Array.isArray(preview?.issues) ? preview.issues.filter((i) => i?.level === "error") : [];
+    if (hardErrors.length > 0) {
+      const first = hardErrors[0];
+      throw new ValidationError(`还原前置检查失败：${first?.message || "目标库结构不匹配"}`);
+    }
+
     // 数据完整性检查
+    // - 注意：这是“提醒级别”的检查（默认不会阻断 restore），但会把问题返回给前端用于展示“操作日志”
+    let integrityIssues = [];
     if (!skipIntegrityCheck) {
-      const integrityIssues = await this.validateDataIntegrity(data);
+      integrityIssues = await this.validateDataIntegrity(data);
       if (integrityIssues.length > 0) {
         console.warn(`[BackupService] 发现 ${integrityIssues.length} 个数据完整性问题:`);
         integrityIssues.forEach((issue) => console.warn(`  - ${issue.message}`));
@@ -180,6 +323,7 @@ export class BackupService {
     // 记录每个表的预期记录数和语句映射
     const expectedResults = {};
     const statementTableMap = []; // 记录每个语句对应的表名
+    const statementInsertRowCounts = []; // 记录每个插入语句包含的行数（用于统计 ignored/failed）
 
     try {
       // 收集所有需要执行的语句
@@ -188,6 +332,7 @@ export class BackupService {
       // 使用D1的延迟外键约束功能
       statements.push(this.db.prepare("PRAGMA defer_foreign_keys = ON"));
       statementTableMap.push("_pragma"); // 标记为系统语句
+      statementInsertRowCounts.push(0);
 
       // 在覆盖模式下，按正确顺序删除数据
       if (mode === "overwrite") {
@@ -196,6 +341,7 @@ export class BackupService {
         for (const tableName of reversedTables) {
           statements.push(this.db.prepare(`DELETE FROM ${tableName}`));
           statementTableMap.push(`_delete_${tableName}`); // 标记为删除语句
+          statementInsertRowCounts.push(0);
         }
       }
 
@@ -208,30 +354,16 @@ export class BackupService {
         };
 
         if (tableData && tableData.length > 0) {
-          // 准备插入语句
-          for (const record of tableData) {
-            // 处理时间戳字段
-            const processedRecord = this.processTimestampFields(record, tableName, {
-              preserveTimestamps,
-              updateTimestamps: mode === "merge", // 合并模式下更新时间戳
-            });
+          const insertPlans = this.buildInsertStatementsForTable(tableName, tableData, {
+            mode,
+            preserveTimestamps,
+          });
 
-            const fields = Object.keys(processedRecord);
-            const values = Object.values(processedRecord);
-            const placeholders = fields.map(() => "?").join(", ");
-
-            let sql;
-            if (mode === "overwrite") {
-              // 覆盖模式使用INSERT（表已清空）
-              sql = `INSERT INTO ${tableName} (${fields.join(", ")}) VALUES (${placeholders})`;
-            } else {
-              // 合并模式使用INSERT OR IGNORE（避免冲突）
-              sql = `INSERT OR IGNORE INTO ${tableName} (${fields.join(", ")}) VALUES (${placeholders})`;
-            }
-
+          for (const plan of insertPlans) {
             const statementIndex = statements.length;
-            statements.push(this.db.prepare(sql).bind(...values));
+            statements.push(plan.statement);
             statementTableMap.push(tableName);
+            statementInsertRowCounts.push(plan.rowCount);
             expectedResults[tableName].statementIndices.push(statementIndex);
           }
         }
@@ -240,25 +372,166 @@ export class BackupService {
       // 在batch结束时恢复外键约束检查（可选，因为事务结束时会自动恢复）
       statements.push(this.db.prepare("PRAGMA defer_foreign_keys = OFF"));
       statementTableMap.push("_pragma"); // 标记为系统语句
+      statementInsertRowCounts.push(0);
 
-      // 使用batch方法原子性执行所有语句
+      // 分批执行（避免单次 batch 过大导致失败）
+      // 注意：多次 batch 可能不具备“全局原子性”，但可以显著提升大备份的可恢复性。
+      const MAX_STATEMENTS_PER_BATCH = 80;
       let batchResults = [];
       if (statements.length > 0) {
-        batchResults = await this.db.batch(statements);
+        for (let i = 0; i < statements.length; i += MAX_STATEMENTS_PER_BATCH) {
+          const chunk = statements.slice(i, i + MAX_STATEMENTS_PER_BATCH);
+          // D1 batch 会返回与 chunk 同长度的结果数组
+          // 将其拼接后，索引仍然与 statementTableMap/statementInsertRowCounts 对齐
+          // eslint-disable-next-line no-await-in-loop
+          const chunkResults = await this.db.batch(chunk);
+          batchResults.push(...(chunkResults || []));
+        }
       }
 
       // 分析batch执行结果，计算实际的成功/失败统计
-      const results = this.analyzeBatchResults(batchResults, statementTableMap, expectedResults);
+      const results = this.analyzeBatchResults(batchResults, statementTableMap, statementInsertRowCounts, expectedResults, { mode });
+
+      // 还原后：索引类派生数据一律视为无效，强制清空并要求重建
+      await this.markFsSearchIndexNotReadyAfterRestore();
 
       return {
         restored_tables: Object.keys(results),
         total_records: Object.values(results).reduce((sum, r) => sum + r.success, 0),
         results,
+        integrityIssues,
       };
     } catch (error) {
       console.error("还原备份失败:", error);
       throw new RepositoryError(`还原备份失败: ${error.message}`);
     }
+  }
+
+  /**
+   * 仅做“预检查/预估”，不写入数据库
+   * - 用于在真正 restore 前，告诉用户：会影响哪些表/大概会跑多少语句/有哪些明显不匹配
+   * @param {Object} backupData
+   * @param {{ mode?: "overwrite"|"merge", currentAdminId?: string, skipIntegrityCheck?: boolean, preserveTimestamps?: boolean }} options
+   */
+  async previewRestoreBackup(backupData, options = {}) {
+    const { mode = "overwrite", currentAdminId, skipIntegrityCheck = false } = options;
+
+    if (mode !== "overwrite" && mode !== "merge") {
+      throw new ValidationError(`不支持的还原模式: ${mode}`);
+    }
+
+    this.validateBackupData(backupData);
+
+    let { data } = backupData;
+    if (currentAdminId && mode === "merge") {
+      data = this.mapAdminIds(data, currentAdminId);
+    }
+
+    const tables = Object.keys(data);
+    await this.validateTablesExist(tables);
+
+    const existingTables = await this.getExistingTableSet();
+
+    const issues = [];
+    const tablePlans = {};
+
+    // 完整性检查（只产出问题列表，不在预览阶段打印大量 warn）
+    let integrityIssues = [];
+    if (!skipIntegrityCheck) {
+      integrityIssues = await this.validateDataIntegrity(data);
+    }
+
+    // 按依赖排序（便于用户理解插入顺序）
+    const orderedTables = this.sortTablesByDependency(tables);
+    const deleteOrder = mode === "overwrite" ? [...orderedTables].reverse() : [];
+
+    let totalRecords = 0;
+    let estimatedInsertStatements = 0;
+
+    for (const tableName of orderedTables) {
+      const records = Array.isArray(data[tableName]) ? data[tableName] : [];
+      const recordCount = records.length;
+      totalRecords += recordCount;
+
+      const insertStatements = this.estimateInsertStatementCount(tableName, records, { mode });
+      estimatedInsertStatements += insertStatements;
+
+      const sampleCols = this.collectBackupColumnsSample(records, 50);
+      const dbCols = await this.getTableColumnSet(tableName);
+
+      const missingTable = existingTables ? !existingTables.has(tableName) : null;
+      if (missingTable === true) {
+        issues.push({
+          level: "error",
+          table: tableName,
+          code: "TABLE_NOT_FOUND",
+          message: `数据库中缺少表：${tableName}（请先初始化/迁移数据库结构）`,
+        });
+      }
+
+      if (dbCols && sampleCols.size > 0) {
+        const extraCols = [];
+        for (const c of sampleCols) {
+          if (!dbCols.has(c)) extraCols.push(c);
+        }
+        if (extraCols.length > 0) {
+          issues.push({
+            level: "error",
+            table: tableName,
+            code: "COLUMN_MISMATCH",
+            message: `备份数据包含数据库不存在的字段：${extraCols.join(", ")}`,
+          });
+        }
+      }
+
+      tablePlans[tableName] = {
+        records: recordCount,
+        estimatedInsertStatements: insertStatements,
+        sampleColumns: Array.from(sampleCols).sort(),
+      };
+    }
+
+    const PRAGMA_STATEMENTS = 2; // defer_foreign_keys ON/OFF
+    const estimatedDeleteStatements = mode === "overwrite" ? deleteOrder.length : 0;
+    const MAX_STATEMENTS_PER_BATCH = 80;
+    const estimatedTotalStatements = PRAGMA_STATEMENTS + estimatedDeleteStatements + estimatedInsertStatements;
+    const estimatedBatches = Math.ceil(estimatedTotalStatements / MAX_STATEMENTS_PER_BATCH);
+
+    const notes = [];
+    notes.push("这是“预检查”结果：不会写入数据库。");
+    notes.push("若导入到不同的 ENCRYPTION_SECRET 环境，部分加密配置可能无法解密（会表现为配置存在但不可用）。");
+    if (mode === "overwrite") {
+      notes.push("overwrite 会清空目标库中对应表的数据，再重新导入；建议先做一次全量备份留底。");
+    } else {
+      notes.push("merge 会尽量插入不存在的记录（主键冲突会忽略）；不保证把旧数据“更新成新值”。");
+    }
+
+    return {
+      mode,
+      backup: {
+        backup_type: backupData?.metadata?.backup_type || null,
+        timestamp: backupData?.metadata?.timestamp || null,
+        schema_version: backupData?.metadata?.schema_version || null,
+        total_records: totalRecords,
+      },
+      plan: {
+        tables,
+        orderedTables,
+        deleteOrder,
+        tablePlans,
+        estimated: {
+          totalRecords,
+          insertStatements: estimatedInsertStatements,
+          deleteStatements: estimatedDeleteStatements,
+          totalStatements: estimatedTotalStatements,
+          batches: estimatedBatches,
+          maxStatementsPerBatch: MAX_STATEMENTS_PER_BATCH,
+        },
+      },
+      issues,
+      integrityIssues,
+      notes,
+    };
   }
 
   /**
@@ -268,7 +541,8 @@ export class BackupService {
    * @param {Object} expectedResults - 预期结果统计
    * @returns {Object} 实际结果统计
    */
-  analyzeBatchResults(batchResults, statementTableMap, expectedResults) {
+  analyzeBatchResults(batchResults, statementTableMap, statementInsertRowCounts, expectedResults, options = {}) {
+    const { mode = "overwrite" } = options;
     const results = {};
 
     // 初始化结果统计
@@ -285,6 +559,7 @@ export class BackupService {
     for (let i = 0; i < batchResults.length; i++) {
       const result = batchResults[i];
       const tableName = statementTableMap[i];
+      const expectedRows = Array.isArray(statementInsertRowCounts) ? (statementInsertRowCounts[i] || 0) : 0;
 
       // 跳过系统语句（PRAGMA等）
       if (tableName.startsWith("_")) {
@@ -295,16 +570,19 @@ export class BackupService {
       if (result && result.success !== false) {
         // 对于INSERT语句，检查changes字段
         const changes = result.meta?.changes || result.changes || 0;
-        if (changes > 0) {
-          // 实际插入了记录
-          results[tableName].success += changes;
-        } else {
-          // INSERT OR IGNORE被忽略（记录已存在，主键冲突）
-          results[tableName].ignored += 1;
+        results[tableName].success += changes;
+
+        if (expectedRows > changes) {
+          if (mode === "merge") {
+            results[tableName].ignored += expectedRows - changes;
+          } else {
+            // overwrite 下：changes < expectedRows 通常意味着语句未按预期写入（可能是字段/约束问题）
+            results[tableName].failed += expectedRows - changes;
+          }
         }
       } else {
         // 语句执行失败
-        results[tableName].failed += 1;
+        results[tableName].failed += expectedRows > 0 ? expectedRows : 1;
       }
     }
 
@@ -412,20 +690,110 @@ export class BackupService {
     const processedRecord = { ...record };
 
     if (!preserveTimestamps) {
-      const now = new Date().toISOString();
+      const nowIso = new Date().toISOString();
+      const nowMs = Date.now();
 
       // 在合并模式下更新 updated_at 字段
-      if (updateTimestamps && processedRecord.updated_at) {
-        processedRecord.updated_at = now;
+      if (updateTimestamps && processedRecord.updated_at !== undefined && processedRecord.updated_at !== null) {
+        // tasks.updated_at 是 INTEGER（毫秒），不能写成 ISO 字符串
+        if (tableName === DbTables.TASKS || tableName === "tasks") {
+          processedRecord.updated_at = nowMs;
+        } else {
+          processedRecord.updated_at = nowIso;
+        }
       }
 
       // 可选：为新插入的记录更新 created_at（通常不建议）
       // if (processedRecord.created_at && options.updateCreatedAt) {
-      //   processedRecord.created_at = now;
+      //   processedRecord.created_at = nowIso;
       // }
     }
 
     return processedRecord;
+  }
+
+  /**
+   * 为单张表构建插入语句列表（尽量合并为“多行插入”，减少语句数量）
+   * - overwrite：INSERT INTO ... VALUES (...),(...)\n
+   * - merge：SQLite/D1 使用 INSERT OR IGNORE
+   * @param {string} tableName
+   * @param {Array<Object>} records
+   * @param {{ mode: "overwrite"|"merge", preserveTimestamps?: boolean }} options
+   * @returns {Array<{ statement: any, rowCount: number }>}
+   */
+  buildInsertStatementsForTable(tableName, records, options = {}) {
+    const { mode = "overwrite", preserveTimestamps = false } = options;
+
+    const list = Array.isArray(records) ? records : [];
+    if (list.length === 0) return [];
+
+    // 仅对 sqlite/d1 做“多行插入”优化；其它方言按原始单行语句走
+    const dialectName = this.dialect?.name || "unknown";
+    const canBulkInsert = dialectName === "sqlite";
+
+    // 统一收集列（取 union），并排序保证稳定性
+    const colSet = new Set();
+    for (const r of list) {
+      if (!r || typeof r !== "object") continue;
+      for (const k of Object.keys(r)) {
+        colSet.add(k);
+      }
+    }
+    const columns = Array.from(colSet).sort();
+    if (columns.length === 0) return [];
+
+    // 处理记录（时间戳字段）
+    const processed = list.map((r) =>
+      this.processTimestampFields(r, tableName, { preserveTimestamps, updateTimestamps: mode === "merge" }),
+    );
+
+    if (!canBulkInsert) {
+      // 回退：每行一个语句
+      const out = [];
+      for (const row of processed) {
+        const fields = Object.keys(row);
+        const values = Object.values(row);
+        const sql =
+          mode === "overwrite"
+            ? `INSERT INTO ${tableName} (${fields.join(", ")}) VALUES (${fields.map(() => "?").join(", ")})`
+            : this.dialect.buildInsertIgnoreSql({ table: tableName, columns: fields });
+        out.push({ statement: this.db.prepare(sql).bind(...values), rowCount: 1 });
+      }
+      return out;
+    }
+
+    // D1/SQLite 的变量上限在不同环境里可能不同（D1 报错：too many SQL variables）
+    // 为了稳：统一用一个更保守的上限，宁可多跑几条语句，也不要导入时直接失败。
+    const MAX_BIND_VARS = 80;
+    const maxRowsPerStatement = Math.max(1, Math.floor(MAX_BIND_VARS / columns.length));
+
+    const statements = [];
+    for (let i = 0; i < processed.length; i += maxRowsPerStatement) {
+      const chunk = processed.slice(i, i + maxRowsPerStatement);
+      const rowCount = chunk.length;
+
+      const rowPlaceholders = `(${columns.map(() => "?").join(", ")})`;
+      const valuesClause = Array.from({ length: rowCount }).map(() => rowPlaceholders).join(", ");
+
+      const baseSql =
+        mode === "merge"
+          ? `INSERT OR IGNORE INTO ${tableName} (${columns.join(", ")}) VALUES ${valuesClause}`
+          : `INSERT INTO ${tableName} (${columns.join(", ")}) VALUES ${valuesClause}`;
+
+      const binds = [];
+      for (const row of chunk) {
+        for (const col of columns) {
+          binds.push(Object.prototype.hasOwnProperty.call(row, col) ? row[col] : null);
+        }
+      }
+
+      statements.push({
+        statement: this.db.prepare(baseSql).bind(...binds),
+        rowCount,
+      });
+    }
+
+    return statements;
   }
 
   /**
@@ -647,6 +1015,8 @@ export class BackupService {
       key_management: "密钥管理",
       account_management: "账号管理",
       system_settings: "系统设置",
+      task_management: "任务与定时任务",
+      upload_sessions: "上传会话",
     };
     return names[moduleKey] || moduleKey;
   }
@@ -666,6 +1036,8 @@ export class BackupService {
       account_management: "管理员账号和令牌",
       system_settings: "系统全局设置",
       fs_meta_management: "目录元信息配置",
+      task_management: "通用任务队列 + 后台定时任务（jobs/runs）",
+      upload_sessions: "上传/分片/断点续传会话（可选迁移数据）",
     };
     return descriptions[moduleKey] || "";
   }

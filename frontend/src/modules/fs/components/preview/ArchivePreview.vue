@@ -43,26 +43,15 @@
             isExtracting ? 'cursor-not-allowed' : 'cursor-pointer hover:shadow-lg',
           ]"
         >
-          <svg v-if="isExtracting" class="animate-spin -ml-1 mr-3 h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-          </svg>
-          <svg v-else class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"></path>
-          </svg>
+          <IconRefresh v-if="isExtracting" class="animate-spin -ml-1 mr-3" aria-hidden="true" />
+          <IconArchive v-else class="mr-2" aria-hidden="true" />
           {{ isExtracting ? `正在${currentStage}... ${extractProgress.toFixed(1)}%` : "在线解压查看" }}
         </button>
 
         <!-- 不支持格式的提示 -->
         <div v-if="!archiveInfo.supported" class="mt-6 p-3 rounded-lg" :class="darkMode ? 'bg-yellow-900/20 border border-yellow-700' : 'bg-yellow-50 border border-yellow-200'">
           <div class="flex items-center justify-center">
-            <svg class="w-5 h-5 mr-2" :class="darkMode ? 'text-yellow-400' : 'text-yellow-600'" fill="currentColor" viewBox="0 0 20 20">
-              <path
-                fill-rule="evenodd"
-                d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
-                clip-rule="evenodd"
-              ></path>
-            </svg>
+            <IconExclamationSolid class="mr-2" :class="darkMode ? 'text-yellow-400' : 'text-yellow-600'" aria-hidden="true" />
             <span class="text-sm" :class="darkMode ? 'text-yellow-200' : 'text-yellow-800'"> 暂不支持 {{ archiveInfo.name }} 格式的在线解压 </span>
           </div>
         </div>
@@ -70,13 +59,7 @@
         <!-- 错误提示 -->
         <div v-if="extractError" class="mt-6 p-3 rounded-lg" :class="darkMode ? 'bg-red-900/20 border border-red-700' : 'bg-red-50 border border-red-200'">
           <div class="flex items-center justify-center">
-            <svg class="w-5 h-5 mr-2" :class="darkMode ? 'text-red-400' : 'text-red-600'" fill="currentColor" viewBox="0 0 20 20">
-              <path
-                fill-rule="evenodd"
-                d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                clip-rule="evenodd"
-              ></path>
-            </svg>
+            <IconXCircle class="mr-2" :class="darkMode ? 'text-red-400' : 'text-red-600'" aria-hidden="true" />
             <span class="text-sm" :class="darkMode ? 'text-red-200' : 'text-red-800'">{{ extractError }}</span>
           </div>
         </div>
@@ -92,12 +75,10 @@
             <button
               @click="handleBackToInfo"
               class="p-1.5 rounded-lg transition-colors"
-              :class="darkMode ? 'hover:bg-gray-700 text-gray-300' : 'hover:bg-gray-200 text-gray-600'"
-              title="返回文件信息"
-            >
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
-              </svg>
+            :class="darkMode ? 'hover:bg-gray-700 text-gray-300' : 'hover:bg-gray-200 text-gray-600'"
+            title="返回文件信息"
+          >
+              <IconChevronLeft size="sm" aria-hidden="true" />
             </button>
             <div class="flex-shrink-0">
               <div v-html="fileIcon" class="w-5 h-5"></div>
@@ -115,17 +96,10 @@
             <button
               @click="handleDownload"
               class="inline-flex items-center px-2 py-1 text-xs rounded-lg transition-colors"
-              :class="darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'"
-              title="下载原文件"
-            >
-              <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                ></path>
-              </svg>
+            :class="darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'"
+            title="下载原文件"
+          >
+              <IconDownload size="xs" class="mr-1" aria-hidden="true" />
               <span class="hidden sm:inline">下载</span>
             </button>
           </div>
@@ -135,14 +109,7 @@
       <!-- 文件列表表格 -->
       <div class="archive-file-list flex-1 overflow-auto">
         <div v-if="archiveEntries.length === 0" class="text-center py-12">
-          <svg class="w-12 h-12 mx-auto mb-4" :class="darkMode ? 'text-gray-500' : 'text-gray-400'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="1.5"
-              d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"
-            ></path>
-          </svg>
+          <IconDocument size="3xl" class="mx-auto mb-4" :class="darkMode ? 'text-gray-500' : 'text-gray-400'" aria-hidden="true" />
           <p class="text-lg font-medium mb-2" :class="darkMode ? 'text-gray-300' : 'text-gray-700'">压缩文件为空</p>
           <p class="text-sm" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">此压缩文件不包含任何内容</p>
         </div>
@@ -183,15 +150,12 @@
                   :class="darkMode ? 'hover:bg-gray-600' : 'hover:bg-gray-200'"
                   :title="isFolderExpanded(entry.path.replace(/\/$/, '')) ? '折叠文件夹' : '展开文件夹'"
                 >
-                  <svg
-                    class="w-3 h-3 transition-transform duration-200"
+                  <IconChevronRight
+                    size="xs"
+                    class="transition-transform duration-200"
                     :class="isFolderExpanded(entry.path.replace(/\/$/, '')) ? 'rotate-90' : ''"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
-                  </svg>
+                    aria-hidden="true"
+                  />
                 </div>
                 <!-- 占位符（非文件夹） -->
                 <div v-else class="w-4 h-4 flex-shrink-0"></div>
@@ -212,7 +176,7 @@
                   </div>
                   <!-- 移动端显示大小和类型信息 -->
                   <div class="text-xs block sm:hidden mt-0.5 flex items-center space-x-2" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
-                    <span v-if="!entry.isDirectory" class="flex-shrink-0">{{ formatFileSize(entry.size || 0) }}</span>
+                    <span v-if="!entry.isDirectory" class="flex-shrink-0">{{ typeof entry.size === 'number' ? formatFileSize(entry.size) : '-' }}</span>
                     <span class="truncate" :title="getMimeTypeDescription(entry)">{{ getMimeTypeDescription(entry) }}</span>
                   </div>
                 </div>
@@ -221,7 +185,7 @@
               <!-- 桌面端大小列 - 固定宽度 -->
               <div class="w-24 text-center text-sm hidden sm:block" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
                 <span v-if="entry.isDirectory">-</span>
-                <span v-else>{{ formatFileSize(entry.size || 0) }}</span>
+                <span v-else>{{ typeof entry.size === 'number' ? formatFileSize(entry.size) : '-' }}</span>
               </div>
 
               <!-- 桌面端类型列 - 固定宽度，内容过长时省略 -->
@@ -239,32 +203,22 @@
                     v-if="!entry.isDirectory && canPreviewFile(entry, true)"
                     @click.stop="handlePreviewFile(entry)"
                     class="p-1.5 sm:p-2 rounded-full transition-colors"
-                    :class="darkMode ? 'hover:bg-gray-600 text-blue-400 hover:text-blue-300' : 'hover:bg-gray-200 text-blue-600 hover:text-blue-700'"
-                    title="预览文件"
-                  >
-                    <svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-                      ></path>
-                    </svg>
-                  </button>
+                  :class="darkMode ? 'hover:bg-gray-600 text-blue-400 hover:text-blue-300' : 'hover:bg-gray-200 text-blue-600 hover:text-blue-700'"
+                  title="预览文件"
+                >
+                  <IconEye class="w-4 h-4 sm:w-5 sm:h-5" aria-hidden="true" />
+                </button>
 
                   <!-- 下载按钮（仅文件显示） -->
                   <button
                     v-if="!entry.isDirectory"
                     @click.stop="handleDownloadFile(entry)"
                     class="p-1.5 sm:p-2 rounded-full transition-colors"
-                    :class="darkMode ? 'hover:bg-gray-600 text-green-400 hover:text-green-300' : 'hover:bg-gray-200 text-green-600 hover:text-green-700'"
-                    title="下载文件"
-                  >
-                    <svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
-                    </svg>
-                  </button>
+                  :class="darkMode ? 'hover:bg-gray-600 text-green-400 hover:text-green-300' : 'hover:bg-gray-200 text-green-600 hover:text-green-700'"
+                  title="下载文件"
+                >
+                  <IconDownload class="w-4 h-4 sm:w-5 sm:h-5" aria-hidden="true" />
+                </button>
                 </div>
               </div>
             </div>
@@ -281,6 +235,7 @@ import { getArchiveType, formatFileSize, canPreviewFile, createMockFileObject, g
 import { getFileIcon } from "@/utils/fileTypeIcons.js";
 import { useArchivePreview } from "@/composables/archive/useArchivePreview.js";
 import ArchivePasswordInput from "./ArchivePasswordInput.vue";
+import { IconArchive, IconChevronLeft, IconChevronRight, IconDocument, IconDownload, IconEye, IconExclamationSolid, IconRefresh, IconXCircle } from "@/components/icons";
 
 // Props
 const props = defineProps({

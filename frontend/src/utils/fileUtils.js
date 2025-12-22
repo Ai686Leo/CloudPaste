@@ -12,6 +12,9 @@ import { formatFileSize as formatFileSizeUtil } from "./fileTypes.js";
  * @returns {string}
  */
 export const formatFileSize = (bytes, useChineseUnits = false) => {
+  if (typeof bytes !== "number" || !Number.isFinite(bytes) || bytes < 0) {
+    return "-";
+  }
   return formatFileSizeUtil(bytes, useChineseUnits);
 };
 

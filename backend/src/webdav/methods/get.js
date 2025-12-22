@@ -89,7 +89,7 @@ export async function handleGet(c, path, userId, userType, db) {
 
     // 创建FileSystem实例
     const repositoryFactory = c.get("repos");
-    const mountManager = new MountManager(db, getEncryptionSecret(c), repositoryFactory);
+    const mountManager = new MountManager(db, getEncryptionSecret(c), repositoryFactory, { env: c.env });
     const fileSystem = new FileSystem(mountManager);
 
     // 获取文件名并统一从文件名推断MIME类型

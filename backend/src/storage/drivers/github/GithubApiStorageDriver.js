@@ -16,8 +16,7 @@ import { getMimeTypeFromFilename } from "../../../utils/fileUtils.js";
 import { Buffer } from "buffer";
 
 const DEFAULT_API_BASE = "https://api.github.com";
-// GitHub Contents API 本身不提供“最后修改时间”，未知时间使用 Unix epoch（1970-01-01）
-const DEFAULT_MODIFIED_ISO = "1970-01-01T00:00:00Z";
+// GitHub Contents API 本身不提供“最后修改时间”，目录列表阶段不额外请求 commits（避免 N 次请求导致限流）
 const DEFAULT_FILE_MODE = "100644";
 const GITKEEP_FILENAME = ".gitkeep";
 // GitHub Git Database API 单个 blob 上限（官方限制）：100MB
@@ -220,15 +219,16 @@ export class GithubApiStorageDriver extends BaseDriver {
           const isSubmodule = item.type === "submodule";
           const name = item.name;
           // 约定：目录列表不拉取 modified（避免 N 次 commits 请求导致性能/限流问题）
-          // modified 在 getFileInfo（右侧详情/单文件信息）中按需 best-effort 获取
-          const modified = DEFAULT_MODIFIED_ISO;
+          // modified 在 getFileInfo（右侧详情/单文件信息）中按需 best-effort 获取；这里返回 null，让前端显示 "-"
+          const modified = null;
           const mimetype = isSubmodule ? SUBMODULE_MIMETYPE : isDirectory ? "application/x-directory" : getMimeTypeFromFilename(name);
           const fsPath = this._joinMountPath(basePath, name, isDirectory);
           const info = await buildFileInfo({
             fsPath,
             name,
             isDirectory,
-            size: isDirectory || isSubmodule ? 0 : Number(item.size) || 0,
+            // 目录/子模块大小通常无法可靠获取；未知就返回 null（前端显示 “-”，由上层按需 index/compute 兜底）
+            size: isDirectory || isSubmodule ? null : Number(item.size) || 0,
             modified,
             mimetype,
             mount,
@@ -260,8 +260,8 @@ export class GithubApiStorageDriver extends BaseDriver {
         fsPath: path,
         name: this._basename(path, true),
         isDirectory: true,
-        size: 0,
-        modified: DEFAULT_MODIFIED_ISO,
+        size: null,
+        modified: null,
         mimetype: null,
         mount,
         storageType: mount?.storage_type,
@@ -282,13 +282,13 @@ export class GithubApiStorageDriver extends BaseDriver {
     }
     const name = this._basename(path, isDirectory);
     const repoRelPath = this._toRepoRelPath(normalizedSubPath);
-    const modified = !isDirectory && repoRelPath ? await this._getLastModifiedIso(repoRelPath) : DEFAULT_MODIFIED_ISO;
+    const modified = !isDirectory && repoRelPath ? await this._getLastModifiedIso(repoRelPath) : null;
     const mimetype = isDirectory ? "application/x-directory" : getMimeTypeFromFilename(name);
     const info = await buildFileInfo({
       fsPath: path,
       name,
       isDirectory,
-      size: isDirectory ? 0 : Number(content?.size) || 0,
+      size: isDirectory ? null : Number(content?.size) || 0,
       modified,
       mimetype: content?.type === "submodule" ? SUBMODULE_MIMETYPE : mimetype,
       mount,
@@ -1229,7 +1229,7 @@ export class GithubApiStorageDriver extends BaseDriver {
 
   async _getLastModifiedIso(repoRelPath) {
     const rel = String(repoRelPath || "").replace(/^\/+/, "").replace(/\/+$/, "");
-    if (!rel) return DEFAULT_MODIFIED_ISO;
+    if (!rel) return null;
 
     const cacheKey = `${this._resolvedRef || ""}|${rel}`;
     const cached = this._modifiedCache.get(cacheKey) || null;
@@ -1240,12 +1240,14 @@ export class GithubApiStorageDriver extends BaseDriver {
       const data = await this._fetchJson(url);
       const first = Array.isArray(data) ? data[0] : null;
       const iso = first?.commit?.committer?.date || first?.commit?.author?.date || null;
-      const finalIso = iso ? String(iso) : DEFAULT_MODIFIED_ISO;
-      this._setModifiedCache(cacheKey, finalIso);
+      const finalIso = iso ? String(iso) : null;
+      if (finalIso) {
+        this._setModifiedCache(cacheKey, finalIso);
+      }
       return finalIso;
     } catch {
       // best-effort：时间获取失败不影响目录展示
-      return DEFAULT_MODIFIED_ISO;
+      return null;
     }
   }
 

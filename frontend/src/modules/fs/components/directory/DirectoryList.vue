@@ -30,17 +30,12 @@
       >
         <span class="truncate">{{ t("mount.fileList.name") }}</span>
         <!-- 排序图标 -->
-        <svg v-if="getSortIcon('name')" class="ml-1 w-3 h-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-          <path
-            v-if="sortField === 'name' && sortOrder === 'asc'"
-            d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
-          />
-          <path v-else d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" />
-        </svg>
+        <template v-if="getSortIcon('name')">
+          <IconChevronDown v-if="sortField === 'name' && sortOrder === 'asc'" size="xs" class="ml-1 flex-shrink-0" aria-hidden="true" />
+          <IconChevronUp v-else size="xs" class="ml-1 flex-shrink-0" aria-hidden="true" />
+        </template>
         <!-- 默认排序提示图标 -->
-        <svg v-else class="ml-1 w-3 h-3 flex-shrink-0 opacity-40" fill="currentColor" viewBox="0 0 20 20">
-          <path d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 10a1 1 0 011-1h6a1 1 0 110 2H4a1 1 0 01-1-1zM3 16a1 1 0 011-1h4a1 1 0 110 2H4a1 1 0 01-1-1z" />
-        </svg>
+        <IconHamburger v-else size="xs" class="ml-1 flex-shrink-0 opacity-40" aria-hidden="true" />
       </div>
 
       <!-- 可排序的大小列 -->
@@ -52,17 +47,12 @@
       >
         <span>{{ t("mount.fileList.size") }}</span>
         <!-- 排序图标 -->
-        <svg v-if="getSortIcon('size')" class="ml-1 w-3 h-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-          <path
-            v-if="sortField === 'size' && sortOrder === 'asc'"
-            d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
-          />
-          <path v-else d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" />
-        </svg>
+        <template v-if="getSortIcon('size')">
+          <IconChevronDown v-if="sortField === 'size' && sortOrder === 'asc'" size="xs" class="ml-1 flex-shrink-0" aria-hidden="true" />
+          <IconChevronUp v-else size="xs" class="ml-1 flex-shrink-0" aria-hidden="true" />
+        </template>
         <!-- 默认排序提示图标 -->
-        <svg v-else class="ml-1 w-3 h-3 flex-shrink-0 opacity-40" fill="currentColor" viewBox="0 0 20 20">
-          <path d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 10a1 1 0 011-1h6a1 1 0 110 2H4a1 1 0 01-1-1zM3 16a1 1 0 011-1h4a1 1 0 110 2H4a1 1 0 01-1-1z" />
-        </svg>
+        <IconHamburger v-else size="xs" class="ml-1 flex-shrink-0 opacity-40" aria-hidden="true" />
       </div>
 
       <!-- 可排序的修改时间列 -->
@@ -74,17 +64,12 @@
       >
         <span>{{ t("mount.fileList.modifiedTime") }}</span>
         <!-- 排序图标 -->
-        <svg v-if="getSortIcon('modified')" class="ml-1 w-3 h-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-          <path
-            v-if="sortField === 'modified' && sortOrder === 'asc'"
-            d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
-          />
-          <path v-else d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" />
-        </svg>
+        <template v-if="getSortIcon('modified')">
+          <IconChevronDown v-if="sortField === 'modified' && sortOrder === 'asc'" size="xs" class="ml-1 flex-shrink-0" aria-hidden="true" />
+          <IconChevronUp v-else size="xs" class="ml-1 flex-shrink-0" aria-hidden="true" />
+        </template>
         <!-- 默认排序提示图标 -->
-        <svg v-else class="ml-1 w-3 h-3 flex-shrink-0 opacity-40" fill="currentColor" viewBox="0 0 20 20">
-          <path d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 10a1 1 0 011-1h6a1 1 0 110 2H4a1 1 0 01-1-1zM3 16a1 1 0 011-1h4a1 1 0 110 2H4a1 1 0 01-1-1z" />
-        </svg>
+        <IconHamburger v-else size="xs" class="ml-1 flex-shrink-0 opacity-40" aria-hidden="true" />
       </div>
 
       <div v-if="showActionButtons" class="min-w-[80px] sm:min-w-32 text-center font-medium" :class="darkMode ? 'text-gray-300' : 'text-gray-700'">{{ t("mount.fileList.actions") }}</div>
@@ -96,14 +81,7 @@
     </div>
 
     <div v-else-if="!items.length" class="py-8 flex flex-col items-center justify-center" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
-      <svg class="w-12 h-12 mb-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          stroke-width="2"
-          d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z"
-        />
-      </svg>
+      <IconFolderOpen size="3xl" class="mb-2" aria-hidden="true" />
       <div>{{ isVirtual ? t("mount.fileList.noMountPoints") : t("mount.fileList.empty") }}</div>
     </div>
 
@@ -213,9 +191,7 @@
               class="p-1 sm:p-1 rounded-full"
               :class="darkMode ? 'hover:bg-gray-600 text-gray-300' : 'hover:bg-gray-200 text-gray-600'"
             >
-              <svg class="w-3.5 h-3.5 sm:w-4 sm:h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
+              <IconDownload class="w-3.5 h-3.5 sm:w-4 sm:h-4" aria-hidden="true" />
             </button>
 
             <!-- 直链按钮 (仅文件) -->
@@ -225,10 +201,7 @@
               class="p-1 sm:p-1 rounded-full"
               :class="darkMode ? 'hover:bg-gray-600 text-gray-300' : 'hover:bg-gray-200 text-gray-600'"
             >
-              <svg class="w-3.5 h-3.5 sm:w-4 sm:h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101" />
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.172 13.828a4 4 0 015.656 0l4 4a4 4 0 01-5.656 5.656l-1.102-1.101" />
-              </svg>
+              <IconLink class="w-3.5 h-3.5 sm:w-4 sm:h-4" aria-hidden="true" />
             </button>
 
             <!-- 重命名按钮 - 只对文件显示，文件夹暂时不显示重命名按钮 -->
@@ -238,33 +211,19 @@
               class="p-1 sm:p-1 rounded-full"
               :class="darkMode ? 'hover:bg-gray-600 text-gray-300' : 'hover:bg-gray-200 text-gray-600'"
             >
-              <svg class="w-3.5 h-3.5 sm:w-4 sm:h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
-                />
-              </svg>
+              <IconRename class="w-3.5 h-3.5 sm:w-4 sm:h-4" aria-hidden="true" />
             </button>
 
             <!-- 删除按钮 -->
             <button @click.stop="handleDelete(item)" class="p-1 sm:p-1 rounded-full" :class="darkMode ? 'hover:bg-gray-600 text-gray-300' : 'hover:bg-gray-200 text-gray-600'">
-              <svg class="w-3.5 h-3.5 sm:w-4 sm:h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                />
-              </svg>
+              <IconDelete class="w-3.5 h-3.5 sm:w-4 sm:h-4" aria-hidden="true" />
             </button>
           </div>
 
           <!-- 文件大小与修改时间提示 -->
           <div class="mt-1 text-xs text-center" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
             <span v-if="item.isDirectory && item.isVirtual">-</span>
-            <span v-else>{{ formatFileSize(item.size || 0) }}</span>
+            <span v-else>{{ formatSize(item.size) }}</span>
           </div>
         </div>
       </div>
@@ -313,6 +272,7 @@ import { useWindowVirtualizer } from "@tanstack/vue-virtual";
 import FileItem from "./FileItem.vue";
 import GalleryView from "./GalleryView.vue";
 import SkeletonLoader from "../shared/SkeletonLoader.vue";
+import { IconChevronDown, IconChevronUp, IconDelete, IconDownload, IconFolderOpen, IconHamburger, IconLink, IconRename } from "@/components/icons";
 import { getFileIcon } from "@/utils/fileTypeIcons.js";
 import { useDirectorySort, useFileOperations } from "@/composables/index.js";
 import InputDialog from "@/components/common/dialogs/InputDialog.vue";
@@ -477,6 +437,12 @@ const headerGridClass = computed(() => {
 
 // 导入统一的工具函数
 import { formatFileSize } from "@/utils/fileUtils.js";
+
+// 格式化大小：未知则显示 "-"
+const formatSize = (value) => {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return "-";
+  return formatFileSize(value);
+};
 
 // 判断一个项目是否被选中
 const isItemSelected = (item) => {

@@ -1,8 +1,10 @@
 /**
- * 全局消息管理系统 
+ * 全局消息管理系统
+ * 基于 Notivue 实现，保留向后兼容的 API
  */
 
 import { ref, computed } from "vue";
+import { push } from "notivue";
 
 // 全局消息状态 - 使用单例模式
 let globalMessageState = null;
@@ -70,21 +72,41 @@ function createMessageState() {
       currentTimeoutId = null;
     }
 
-    // 设置当前要展示的消息
+    // 兼容性：保留旧的“单条消息”状态（有些页面可能还在读 hasMessage/messageContent）
     message.value = {
       type,
       content,
       timestamp: Date.now(),
     };
 
-    // 自动清除消息（duration <= 0 时不自动清除，例如离线场景）
-    if (finalDuration > 0) {
-      currentTimeoutId = setTimeout(() => {
-        clearMessage();
-      }, finalDuration);
+    // Notivue 渲染（全局提示）
+    const notivueOptions = {
+      message: content,
+      duration: finalDuration > 0 ? finalDuration : Infinity,
+    };
+
+    switch (type) {
+      case "success":
+        push.success(notivueOptions);
+        break;
+      case "error":
+        push.error(notivueOptions);
+        break;
+      case "warning":
+        push.warning(notivueOptions);
+        break;
+      case "info":
+      default:
+        push.info(notivueOptions);
+        break;
     }
 
-    console.log(`[GlobalMessage] 显示消息: ${type} - ${content}`);
+    // 自动清除"兼容状态"（Notivue 自己会自动关闭提示，这里只清理 message.value）
+    if (finalDuration > 0) {
+      currentTimeoutId = setTimeout(() => {
+        message.value = null;
+      }, finalDuration);
+    }
   };
 
   /**
@@ -96,7 +118,7 @@ function createMessageState() {
       currentTimeoutId = null;
     }
     message.value = null;
-    console.log("[GlobalMessage] 清除消息");
+    push.clearAll();
   };
 
   // ===== 便捷方法 =====

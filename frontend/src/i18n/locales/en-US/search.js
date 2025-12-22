@@ -28,7 +28,7 @@ export default {
     },
 
     errors: {
-      queryTooShort: "Search keywords must be at least 2 characters",
+      queryTooShort: "Search keywords must be at least 3 characters",
       searchFailed: "Search failed, please try again later",
       loadMoreFailed: "Failed to load more results",
     },
@@ -40,6 +40,11 @@ export default {
 
     tips: {
       keywordTips: "Supports fuzzy file name search",
+    },
+
+    notices: {
+      pathRestricted: "Search scope has been restricted to: {path}",
+      passwordFiltered: "Hidden {count} password-protected results",
     },
   },
 };

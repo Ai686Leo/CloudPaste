@@ -44,6 +44,7 @@ export default {
     storageConfig: "Storage Management",
     mountManagement: "Mount Management",
     fsMetaManagement: "Meta Management",
+    fsIndexManagement: "Index Management",
     keyManagement: "Key Management",
     backup: "Data Backup",
     taskManagement: "Task Management",

@@ -81,6 +81,16 @@ export default {
       error: "预览加载失败",
       notSupported: "此文件类型不支持预览",
       downloadToView: "请下载文件查看",
+      fullscreen: "全屏",
+      exitFullscreen: "退出全屏",
+
+      // 文本预览模式切换（统一归属“文本预览”）
+      modes: {
+        text: "文本",
+        code: "代码",
+        markdown: "Markdown",
+        html: "HTML",
+      },
 
       // 通用预览
       generic: {
@@ -148,6 +158,31 @@ export default {
         error: "PDF加载失败",
         browserNative: "原生预览",
         pdfjsLabel: "PDF.js",
+      },
+
+      // EPUB预览
+      epub: {
+        title: "EPUB预览",
+        loading: "加载中...",
+        error: "EPUB加载失败",
+        browserNative: "本地预览",
+        toc: "目录",
+        closeToc: "关闭目录",
+        noToc: "无目录",
+        readingMode: "阅读模式",
+        modePaginated: "翻页",
+        modeScrolled: "滚动",
+        prevPage: "上一页",
+        nextPage: "下一页",
+        page: "第",
+        bookmarks: "书签",
+        addBookmark: "添加书签",
+        removeBookmark: "移除书签",
+        untitledBookmark: "未命名书签",
+        historyBack: "返回",
+        historyForward: "前进",
+        progressSaved: "进度已保存",
+        progressRestored: "已恢复到上次阅读位置",
       },
 
       // 图片预览

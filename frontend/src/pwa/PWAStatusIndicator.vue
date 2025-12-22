@@ -8,7 +8,7 @@
     <div v-if="showIndicator" :class="indicatorClasses" @click="toggleDetails" :title="statusText">
       <div class="flex items-center space-x-2">
         <!-- 状态图标 -->
-        <component :is="statusIcon" class="w-4 h-4" />
+        <component :is="statusIcon" size="sm" />
 
         <!-- 状态文本 -->
         <span v-if="showText" class="text-sm font-medium">
@@ -16,16 +16,7 @@
         </span>
 
         <!-- 更新进度 -->
-        <div v-if="pwaState.isUpdating" class="animate-spin">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-            />
-          </svg>
-        </div>
+        <IconRefresh v-if="pwaState.isUpdating" class="animate-spin w-4 h-4" aria-hidden="true" />
       </div>
     </div>
 
@@ -143,6 +134,7 @@
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { pwaState, pwaUtils } from "./pwaManager.js";
+import { IconCheckCircle, IconDownload, IconExclamation, IconRefresh } from "@/components/icons";
 
 // 国际化支持
 const { t } = useI18n();
@@ -219,12 +211,11 @@ const statusText = computed(() => {
 });
 
 const statusIcon = computed(() => {
-  // 返回对应的图标组件名或SVG
-  if (pwaState.isOffline) return "OfflineIcon";
-  if (pwaState.isUpdateAvailable) return "UpdateIcon";
-  if (pwaState.isUpdating) return "LoadingIcon";
-  if (pwaState.isInstallable) return "InstallIcon";
-  return "CheckIcon";
+  if (pwaState.isOffline) return IconExclamation;
+  if (pwaState.isUpdateAvailable) return IconRefresh;
+  if (pwaState.isUpdating) return IconRefresh;
+  if (pwaState.isInstallable) return IconDownload;
+  return IconCheckCircle;
 });
 
 const swStateText = computed(() => {

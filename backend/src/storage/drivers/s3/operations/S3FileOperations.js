@@ -48,28 +48,10 @@ export class S3FileOperations {
    * @returns {Promise<import('../../../streaming/types.js').StorageStreamDescriptor>} 流描述对象
    */
   async getFileFromS3(s3Config, s3SubPath, fileName, forceDownload = false, encryptionSecret, request = null) {
-    const s3Client = await createS3Client(s3Config, encryptionSecret);
+    // 注意：S3StorageDriver.initialize 已经创建并初始化了 this.s3Client。
+    // 这里优先复用，避免每次下载都重复解密/创建 client（Worker 冷启动时更容易抖动）。
+    const s3Client = this.s3Client || (await createS3Client(s3Config, encryptionSecret));
     const key = s3SubPath.startsWith("/") ? s3SubPath.slice(1) : s3SubPath;
-
-    // 先获取文件元数据
-    let metadata;
-    try {
-      const headCommand = new HeadObjectCommand({
-        Bucket: s3Config.bucket_name,
-        Key: key,
-      });
-      metadata = await s3Client.send(headCommand);
-    } catch (error) {
-      if (error?.$metadata?.httpStatusCode === 404) {
-        throw new NotFoundError("文件不存在");
-      }
-      throw new S3DriverError("获取文件元数据失败", { details: { cause: error?.message } });
-    }
-
-    const contentType = metadata.ContentType || getMimeTypeFromFilename(fileName);
-    const size = metadata.ContentLength ?? null;
-    const etag = metadata.ETag ?? null;
-    const lastModified = metadata.LastModified ? new Date(metadata.LastModified) : null;
 
     // 使用统一的 HTTP 流描述构造器（Web ReadableStream）：
     const expiresIn = 300;
@@ -91,6 +73,11 @@ export class S3FileOperations {
       }),
       { expiresIn },
     );
+
+    const contentType = getMimeTypeFromFilename(fileName);
+    const size = null;
+    const etag = null;
+    const lastModified = null;
 
     return createHttpStreamDescriptor({
       size,
@@ -164,8 +151,8 @@ export class S3FileOperations {
             fsPath: path,
             name: fileName,
             isDirectory,
-            size: isDirectory ? 0 : exactMatch.Size || 0,
-            modified: exactMatch.LastModified ? exactMatch.LastModified : new Date(),
+            size: isDirectory ? null : exactMatch.Size || 0,
+            modified: exactMatch.LastModified ? exactMatch.LastModified : null,
             mimetype: isDirectory ? "application/x-directory" : getMimeTypeFromFilename(fileName),
             mount,
             storageType: mount.storage_type,
@@ -202,8 +189,8 @@ export class S3FileOperations {
               fsPath: path,
               name: fileName,
               isDirectory,
-              size: isDirectory ? 0 : getResponse.ContentLength || 0,
-              modified: getResponse.LastModified ? getResponse.LastModified : new Date(),
+              size: isDirectory ? null : getResponse.ContentLength || 0,
+              modified: getResponse.LastModified ? getResponse.LastModified : null,
               mimetype: getResponse.ContentType || "application/octet-stream",
               mount,
               storageType: mount.storage_type,
@@ -261,6 +248,12 @@ export class S3FileOperations {
 
     return handleFsError(
       async () => {
+        const rawPath = typeof s3SubPath === "string" ? s3SubPath : "";
+        const trimmedPath = rawPath.trim();
+        if (!trimmedPath || trimmedPath.endsWith("/")) {
+          throw new ValidationError("目录不支持生成下载链接");
+        }
+
         const cacheOptions = {
           userType,
           userId,

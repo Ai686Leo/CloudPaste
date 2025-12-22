@@ -470,6 +470,77 @@ X-Custom-Auth-Key: <api_key>
     ```
   - 响应：清理结果
 
+### FS 搜索索引管理（管理员）
+
+> 说明：FS 搜索为 Index-only（不做实时遍历兜底）。
+>
+> - `scope=global`：仅搜索 **索引状态为 ready 的挂载点**；未就绪/不想索引/暂不可索引的挂载点会被跳过（不会阻塞全局搜索），并通过 `indexPartial/skippedMounts` 返回结构化信息。
+> - `scope=mount|directory`：目标挂载点索引未就绪时，返回 `indexReady=false` + `hint`，不返回“看似完整但实际不完整”的结果。
+
+#### 获取索引状态
+
+- `GET /api/admin/fs/index/status`
+  - 描述：获取每个挂载点的索引状态，并返回当前运行中的索引重建作业（若存在）
+  - 授权：需要管理员令牌
+  - 响应字段补充：
+    - `dirtyCount`：该挂载点待消费的 dirty 条目数（用于判断是否需要 apply-dirty）
+    - `recommendedAction`：后端建议动作（仅建议，不会自动执行）
+      - `none`：无需操作
+      - `wait`：索引作业执行中，建议等待
+      - `apply-dirty`：建议触发增量应用
+      - `rebuild`：建议触发全量重建
+    - `recommendedReason`：建议原因（可选）
+      - `indexing` / `index_not_ready` / `dirty_pending` / `dirty_too_large`
+  - 响应 hints：
+    - `hints.minQueryLength`：索引搜索最小字符数（当前为 3，trigram contains）
+    - `hints.dirtyRebuildThreshold`：dirty 条目过大时建议 rebuild 的阈值（当前为 5000）
+
+#### 触发索引重建（全量）
+
+- `POST /api/admin/fs/index/rebuild`
+  - 描述：创建 `fs_index_rebuild` 异步作业，遍历挂载点并重建索引
+  - 授权：需要管理员令牌
+  - 请求体（可选）：
+    ```json
+    {
+      "mountIds": ["mountId1", "mountId2"],
+      "options": { "batchSize": 200, "maxDepth": null, "maxMountsPerRun": null }
+    }
+    ```
+
+#### 取消索引重建
+
+- `POST /api/admin/fs/index/stop`
+  - 描述：取消索引重建作业
+  - 授权：需要管理员令牌
+  - 请求体：
+    ```json
+    { "jobId": "fs_index_rebuild_xxx" }
+    ```
+
+#### 清空索引（派生数据）
+
+- `POST /api/admin/fs/index/clear`
+  - 描述：清空索引派生数据（entries/state/dirty/fts），并将索引视为未就绪（需重建）
+  - 授权：需要管理员令牌
+  - 请求体（可选）：
+    ```json
+    { "mountIds": ["mountId1", "mountId2"] }
+    ```
+
+#### 应用增量更新（dirty）
+
+- `POST /api/admin/fs/index/apply-dirty`
+  - 描述：创建 `fs_index_apply_dirty` 异步作业，消费 dirty 队列以更新索引
+  - 授权：需要管理员令牌
+  - 请求体（可选）：
+    ```json
+    {
+      "mountIds": ["mountId1", "mountId2"],
+      "options": { "batchSize": 200, "maxItems": null, "rebuildDirectorySubtree": true, "maxDepth": null }
+    }
+    ```
+
 ### 备份与还原
 
 #### 创建备份
@@ -477,6 +548,9 @@ X-Custom-Auth-Key: <api_key>
 - `POST /api/admin/backup/create`
   - 描述：创建系统数据备份
   - 授权：需要管理员令牌
+  - 说明：
+    - FS 搜索索引（`fs_search_index_*`）属于派生数据，备份默认排除；恢复后需管理员触发重建。
+    - D1/SQLite 的 FTS5 虚表不适合依赖 export/import 作为事实来源，建议按“可重建索引”策略运维。
   - 请求体：
     ```json
     {
@@ -495,6 +569,23 @@ X-Custom-Auth-Key: <api_key>
     - `backup_file` - 备份文件（必填）
     - `mode` - 还原模式（可选，默认 overwrite）
   - 响应：还原结果
+  - 响应字段补充：
+    - `integrity_issues`：数据完整性问题列表（warning 级别，用于前端“操作日志”展示；不一定会阻断 restore）
+
+#### 还原预检查
+
+- `POST /api/admin/backup/restore/preview`
+  - 描述：对备份文件做“预检查/预估”，**不会写入数据库**；用于避免 overwrite 先清表后失败
+  - 授权：需要管理员令牌
+  - 请求体：FormData 格式
+    - `backup_file` - 备份文件（必填）
+    - `mode` - 还原模式（可选，默认 overwrite）
+    - `skipIntegrityCheck` - 是否跳过跨表依赖检查（可选，默认 false）
+    - `preserveTimestamps` - 是否保留时间戳（可选，默认 false）
+  - 响应字段（关键）：
+    - `ok`：是否通过（true/false）
+    - `preview.issues`：问题列表（level=error 时不建议继续 restore）
+    - `preview.plan.estimated`：预估语句数/批次数（用于判断大备份耗时）
 
 #### 获取备份模块
 
@@ -502,6 +593,101 @@ X-Custom-Auth-Key: <api_key>
   - 描述：获取可备份的模块列表和信息
   - 授权：需要管理员令牌
   - 响应：模块信息列表
+
+### 调度与定时任务（管理员）
+
+#### 获取调度任务类型（Handler Types）
+
+- `GET /api/admin/scheduled/types`
+  - 描述：列出所有可用的定时任务处理器类型（可用于前端下拉/配置引导）
+  - 授权：需要管理员令牌
+  - 响应：`{ items: [...] }`
+
+- `GET /api/admin/scheduled/types/:taskId`
+  - 描述：获取单个处理器类型详情
+  - 授权：需要管理员令牌
+  - 参数：taskId - 处理器类型 ID
+  - 响应：处理器详情
+
+#### 调度作业管理
+
+- `GET /api/admin/scheduled/jobs`
+  - 描述：列出调度作业
+  - 授权：需要管理员令牌
+  - 查询参数（可选）：
+    - `taskId` / `task_id` - 仅返回指定 taskId 的作业
+    - `enabled` - 过滤启用状态（true/false/1/0/yes/no/on/off）
+  - 响应：`{ items: [...] }`
+
+- `GET /api/admin/scheduled/jobs/:taskId`
+  - 描述：获取单个调度作业详情
+  - 授权：需要管理员令牌
+  - 参数：taskId - 作业 ID
+
+- `POST /api/admin/scheduled/jobs`
+  - 描述：创建调度作业
+  - 授权：需要管理员令牌
+  - 请求体示例（字段支持 camelCase 与 snake_case）：
+    ```json
+    {
+      "taskId": "jobId-xxx",
+      "handlerId": "handler-xxx",
+      "name": "可选",
+      "description": "可选",
+      "scheduleType": "cron",
+      "intervalSec": 60,
+      "cronExpression": "*/5 * * * *",
+      "enabled": true,
+      "config": {}
+    }
+    ```
+  - 响应：创建后的作业详情
+
+- `PUT /api/admin/scheduled/jobs/:taskId`
+  - 描述：更新调度作业（请求体为“部分更新”，只传需要改的字段即可）
+  - 授权：需要管理员令牌
+  - 参数：taskId - 作业 ID
+
+- `DELETE /api/admin/scheduled/jobs/:taskId`
+  - 描述：删除调度作业
+  - 授权：需要管理员令牌
+  - 参数：taskId - 作业 ID
+
+#### 运行记录与统计
+
+- `GET /api/admin/scheduled/jobs/:taskId/runs`
+  - 描述：获取某个作业的运行记录
+  - 授权：需要管理员令牌
+  - 参数：taskId - 作业 ID
+  - 查询参数（可选）：
+    - `limit` - 返回条数（不传则由后端决定默认值）
+  - 响应：`{ items: [...] }`
+
+- `GET /api/admin/scheduled/analytics`
+  - 描述：获取定时任务运行的按小时统计数据
+  - 授权：需要管理员令牌
+  - 查询参数（可选）：
+    - `windowHours` - 统计窗口（小时）
+
+#### 平台触发器（Ticker）
+
+- `GET /api/admin/scheduled/ticker`
+  - 描述：获取“外部触发器”的状态（用于管理面板显示“预计下次触发时间”）
+  - 授权：需要管理员令牌
+  - 响应字段（关键）：
+    - `runtime`: `cloudflare|docker`
+    - `cron.active`: 当前用于计算 next 的 cron（优先使用 lastSeen；Docker 环境会回退到配置值/默认值）
+    - `lastTick.ms/at`: 最近一次“真实触发”的时间（来自 system_settings）
+    - `nextTick.at`: 按 cron 规则算出来的“预计下次触发时间”（注意：不保证精确到秒，平台可能延迟）
+  - 说明：
+    - Cloudflare 环境在“首次真实触发”之前可能无法计算 nextTick，会返回“等待首次触发”的提示
+
+#### 手动触发一次
+
+- `POST /api/admin/scheduled/jobs/:taskId/run`
+  - 描述：立刻手动执行一次该任务，并写入运行记录（triggerType=manual）
+  - 授权：需要管理员令牌
+  - 参数：taskId - 作业 ID
 
 ---
 
@@ -552,6 +738,35 @@ X-Custom-Auth-Key: <api_key>
   - 查询参数：
     - `password` - 如果文本受密码保护，需提供密码
   - 响应：纯文本格式的内容
+
+### URL 代理（用于 SnapDOM useProxy）
+
+> 背景：浏览器侧的 `<img src>` / 资源请求通常无法携带 `Authorization` 请求头。  
+> 因此这里用“短期 ticket”来让前端能安全地代理拉取 URL 内容。
+
+#### 签发代理票据（ticket）
+
+- `POST /api/paste/url/proxy-ticket`
+  - 描述：签发一个短期 ticket，供 `/api/paste/url/proxy` 使用
+  - 授权：需要管理员令牌或具备文本创建权限的 API 密钥（pastes.create）
+  - 响应示例：
+    ```json
+    {
+      "ticket": "xxx",
+      "expiresIn": 60,
+      "expiresAt": "2025-12-20T12:00:00.000Z"
+    }
+    ```
+
+#### 代理 URL 内容（带 ticket）
+
+- `GET /api/paste/url/proxy`
+  - 描述：代理指定 URL 的内容（通常用于不支持 CORS 的资源）
+  - 授权：无需 Authorization，但必须提供有效 ticket
+  - 查询参数：
+    - `url` - 要代理的 URL（必填）
+    - `ticket` - 代理票据（必填，由 `/api/paste/url/proxy-ticket` 获取）
+  - 响应：原始 URL 的内容流（Content-Type 由上游决定）
 
 ### 更新文本分享
 
@@ -1005,6 +1220,19 @@ X-Custom-Auth-Key: <api_key>
     }
     ```
 
+#### 从文件系统创建分享
+
+- `POST /api/fs/create-share`
+  - 描述：把一个 FS 文件“转换成分享链接”（不复制文件，只创建分享记录）
+  - 授权：需要管理员令牌或有分享创建权限的 API 密钥（fs.share.create）
+  - 请求体：
+    ```json
+    {
+      "path": "/mount/path/file.ext"
+    }
+    ```
+  - 响应：分享记录（包含 slug 等信息）
+
 #### 创建目录
 
 - `POST /api/fs/mkdir`
@@ -1113,13 +1341,25 @@ X-Custom-Auth-Key: <api_key>
   - 描述：搜索文件和目录
   - 授权：需要管理员令牌或有文件权限的 API 密钥
   - 查询参数：
-    - `query` - 搜索关键词（必填，至少 2 个字符）
+    - `q` - 搜索关键词（必填，至少 3 个字符）
     - `scope` - 搜索范围（可选，默认为"global"）：global / mount / directory
     - `mount_id` - 挂载点 ID（当 scope 为"mount"时必填）
     - `path` - 搜索路径（当 scope 为"directory"时必填）
     - `limit` - 结果数量限制（可选，默认 50，最大 200）
-    - `offset` - 结果偏移量（可选，默认 0）
-  - 响应：搜索结果列表
+    - `cursor` - 分页游标（可选，不透明字符串；由上一次响应的 `nextCursor` 提供）
+  - 响应：搜索结果列表（Index-only）
+    - `indexReady`：是否存在可用索引并已执行索引检索
+      - `scope=global`：只要有至少一个 `ready` 挂载点即可为 true（未就绪挂载点会跳过）
+      - `scope=mount|directory`：目标挂载点未 `ready` 时为 false
+    - `indexPartial`：是否为“部分挂载点可搜索”（仅 `scope=global` 可能为 true）
+    - `searchableMountIds`：本次实际参与索引检索的挂载点 ID 列表
+    - `skippedMounts`：本次被跳过的挂载点信息（仅 `scope=global` 返回非空）
+      - `mountId`：挂载点 ID
+      - `status`：索引状态（ready/indexing/error/not_ready）
+      - `reason`：跳过原因（当前固定为 `index_not_ready`）
+    - `indexNotReadyMountIds`：索引未就绪的挂载点 ID 列表（兼容字段；`scope=global` 等同于 skippedMounts 的 mountId 集合）
+    - `hint`：索引不可用时的提示信息（引导管理员触发重建）
+    - `nextCursor`：下一页游标（为 null 表示无更多结果）
 
 ### 预签名上传
 
@@ -1171,19 +1411,25 @@ X-Custom-Auth-Key: <api_key>
     ```
   - 响应：初始化信息，包含 uploadId 和其他元数据
 
-#### 上传文件分片
+#### 上传分片（中转端点）
 
-- `POST /api/fs/multipart/part`
-  - 描述：上传文件分片
+- `PUT /api/fs/multipart/upload-chunk`
+  - 描述：前端分片上传的“中转端点”（主要用于 Google Drive resumable 会话）。浏览器把分片发到这里，后端再转发到上游。
   - 授权：需要管理员令牌或有文件权限的 API 密钥
   - 查询参数：
-    - `path` - 上传目标路径（必填）
-    - `uploadId` - 分片上传 ID（必填）
-    - `partNumber` - 分片编号（必填，从 1 开始）
-    - `isLastPart` - 是否为最后一个分片（可选）
-    - `key` - S3 存储键值（可选）
+    - `upload_id` - 上传会话 ID（必填）
+  - 请求头：
+    - `Content-Range` - 分片范围（必填）
+    - `Content-Length` - 分片大小（建议）
   - 请求体：分片内容（二进制）
-  - 响应：分片上传结果，包含 ETag 等信息
+  - 响应示例：
+    ```json
+    {
+      "success": true,
+      "done": false,
+      "status": 200
+    }
+    ```
 
 #### 完成分片上传
 
@@ -1266,12 +1512,46 @@ X-Custom-Auth-Key: <api_key>
 
 ### 作业系统
 
+#### 获取可用作业类型（给前端做下拉/能力发现）
+
+- `GET /api/fs/job-types`
+  - 描述：返回“当前用户可见”的作业类型清单（用于前端动态展示可创建的任务）
+  - 授权：需要管理员令牌或有挂载访问权限的 API 密钥（fs.base）
+  - 响应示例：
+    ```json
+    {
+      "types": [
+        {
+          "taskType": "copy",
+          "i18nKey": "fs.jobs.copy",
+          "displayName": "复制",
+          "category": "fs",
+          "capabilities": []
+        }
+      ]
+    }
+    ```
+
 #### 创建作业
 
 - `POST /api/fs/jobs`
-  - 描述：创建通用作业（如复制、移动等异步任务）
-  - 授权：需要管理员令牌或有文件权限的 API 密钥
-  - 请求体：
+  - 描述：创建通用作业（任务队列入口）
+  - 授权：
+    - `taskType=copy`：需要管理员令牌或有文件权限的 API 密钥
+    - `taskType=fs_index_rebuild`：仅管理员令牌（索引重建属于管理员操作）
+  - 请求体（推荐通用格式）：
+    ```json
+    {
+      "taskType": "copy",
+      "payload": {
+        "items": [
+          { "sourcePath": "源路径1", "targetPath": "目标路径1" }
+        ],
+        "options": { "skipExisting": false, "maxConcurrency": 10 }
+      }
+    }
+    ```
+  - 请求体（copy 兼容格式，旧客户端）：
     ```json
     {
       "taskType": "copy",
@@ -1283,6 +1563,16 @@ X-Custom-Auth-Key: <api_key>
       ],
       "skipExisting": false,
       "maxConcurrency": 10
+    }
+    ```
+  - 请求体（fs_index_rebuild，管理员）：
+    ```json
+    {
+      "taskType": "fs_index_rebuild",
+      "payload": {
+        "mountIds": ["mountId1", "mountId2"],
+        "options": { "batchSize": 200, "maxDepth": null, "maxMountsPerRun": null }
+      }
     }
     ```
   - 响应：作业描述符
@@ -1465,9 +1755,9 @@ X-Custom-Auth-Key: <api_key>
 
 ### 文件系统代理访问
 
-- `GET /p/*`
+- `GET /api/p/*`
   - 描述：文件系统代理访问路由（web_proxy 功能）
-  - 路径格式：`/p/mount/path/file.ext`
+  - 路径格式：`/api/p/mount/path/file.ext`
   - 授权：根据挂载点配置决定是否需要签名验证
   - 查询参数：
     - `download` - 是否强制下载（可选，默认 false）
@@ -1509,6 +1799,31 @@ X-Custom-Auth-Key: <api_key>
       }
     }
     ```
+
+### 直传即分享（storage-first）
+
+- `PUT /api/upload-direct/:filename`
+  - 描述：把文件数据直接上传到存储，并立刻创建分享记录（一次请求完成“上传 + 分享”）
+  - 授权：需要管理员令牌或具备文件创建权限的 API 密钥（files.create）
+  - 路径参数：
+    - `filename` - 文件名（必填）
+  - 查询参数（可选，按需使用）：
+    - `storage_config_id` - 指定存储配置 ID
+    - `path` - 指定存储子路径/目录（不同存储驱动含义可能不同）
+    - `slug` - 自定义分享 slug
+    - `remark` - 备注
+    - `password` - 分享访问密码
+    - `expires_in` - 过期时间（单位：小时）
+    - `max_views` - 最大访问次数
+    - `override` - 是否覆盖同名（true/false）
+    - `use_proxy` - 是否使用代理模式（true/false）
+    - `original_filename` - 是否保留原始文件名（true/false）
+    - `upload_id` - 上传进度 ID（可选，用于 `/api/upload/progress`）
+  - 请求头：
+    - `Content-Type` - 文件 MIME 类型（建议提供）
+    - `Content-Length` - 文件大小（建议提供）
+  - 请求体：文件原始字节流
+  - 响应：返回与 `/api/share/get/:slug` 对齐的“公开文件信息”（包含 `previewUrl` / `downloadUrl` / `linkType` / `documentPreview` 等字段）
 
 ### URL 上传
 

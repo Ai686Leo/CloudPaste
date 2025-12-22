@@ -30,9 +30,7 @@
               class="rounded-md p-1 transition-colors"
               :class="darkMode ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-500'"
             >
-              <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-              </svg>
+              <IconClose size="lg" />
             </button>
           </div>
 
@@ -84,9 +82,7 @@
             <div v-if="fileInfo" class="mb-4 p-4 rounded-lg border" :class="darkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-gray-50 border-gray-200'">
               <div class="flex items-center gap-3">
                 <div class="flex-shrink-0 text-blue-500">
-                  <svg class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
+                  <IconDocumentText size="2xl" />
                 </div>
                 <div class="flex-1 min-w-0">
                   <p class="font-medium truncate" :class="darkMode ? 'text-white' : 'text-gray-900'">
@@ -184,6 +180,7 @@
 import { ref, computed, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { formatFileSize as formatFileSizeUtil } from "@/utils/fileTypes.js";
+import { IconClose, IconDocumentText } from "@/components/icons";
 
 const props = defineProps({
   isOpen: { type: Boolean, default: false },

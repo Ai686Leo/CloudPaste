@@ -118,6 +118,20 @@ export function usePathPassword() {
   };
 
   /**
+   * 获取全部路径密码 token（用于搜索等需要汇总的场景）
+   * @returns {string[]}
+   */
+  const getAllPathTokens = () => {
+    const tokens = [];
+    pathTokens.forEach((token) => {
+      if (typeof token === "string" && token) {
+        tokens.push(token);
+      }
+    });
+    return tokens;
+  };
+
+  /**
    * 保存路径验证 token
    * @param {string} path - 路径
    * @param {string} token - 验证token
@@ -192,6 +206,7 @@ export function usePathPassword() {
     // Token 管理
     hasPathToken,
     getPathToken,
+    getAllPathTokens,
     savePathToken,
     removePathToken,
     clearAllTokens,

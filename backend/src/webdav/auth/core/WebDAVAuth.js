@@ -61,7 +61,7 @@ export class WebDAVAuth {
 
       // 3. 实际存储路径：保持原有挂载点 + 存储 ACL 校验逻辑，
       const { getEncryptionSecret } = await import("../../../utils/environmentUtils.js");
-      const mountManager = new MountManager(this.db, getEncryptionSecret(c), repositoryFactory);
+      const mountManager = new MountManager(this.db, getEncryptionSecret(c), repositoryFactory, { env: c.env });
 
       try {
         await mountManager.getDriverByPath(path, keyInfo, "apiKey");

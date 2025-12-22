@@ -21,6 +21,8 @@ import { UserType } from "../../constants/index.js";
 // 全局驱动缓存 - 永不过期策略，配置更新时主动清理
 const globalDriverCache = new Map();
 const MAX_CACHE_SIZE = 12;
+// 调试开关默认值（当 env / process.env 都没配置时生效）
+const DEFAULT_DEBUG_DRIVER_CACHE = false;
 
 // 缓存统计
 const cacheStats = {
@@ -93,14 +95,37 @@ function evictOldestEntries(targetSize = MAX_CACHE_SIZE * 0.8) {
 
 export class MountManager {
   /**
+   * 统一解析 DEBUG_DRIVER_CACHE
+   *
+   * - 未配置（undefined/null/空字符串） -> 使用 defaultValue
+   * - 配置了 -> 仅当值为 "true" 时返回 true，否则返回 false
+   */
+  static resolveDebugDriverCache({ env = null, defaultValue = DEFAULT_DEBUG_DRIVER_CACHE } = {}) {
+    const raw =
+      env?.DEBUG_DRIVER_CACHE ??
+      (typeof process !== "undefined" ? process.env?.DEBUG_DRIVER_CACHE : null);
+
+    if (raw == null || String(raw).trim() === "") {
+      return !!defaultValue;
+    }
+
+    return String(raw).trim().toLowerCase() === "true";
+  }
+
+  /**
    * 构造函数
    * @param {D1Database} db - 数据库实例
    * @param {string} encryptionSecret - 加密密钥
    */
-  constructor(db, encryptionSecret, repositoryFactory = null) {
+  constructor(db, encryptionSecret, repositoryFactory = null, options = {}) {
     this.db = db;
     this.encryptionSecret = encryptionSecret;
     this.repositoryFactory = ensureRepositoryFactory(db, repositoryFactory);
+
+    // 调试开关：驱动缓存日志
+    // 只认 true/false（不区分大小写）
+    const envEnabled = MountManager.resolveDebugDriverCache({ env: options?.env, defaultValue: DEFAULT_DEBUG_DRIVER_CACHE });
+    this.debugDriverCache = typeof options?.debugDriverCache === "boolean" ? options.debugDriverCache : envEnabled;
 
     // 记录管理器创建时间，用于统计
     this.createdAt = Date.now();
@@ -162,7 +187,9 @@ export class MountManager {
           // 更新访问时间（用于LRU）
           cached.lastAccessed = Date.now();
           const cacheAge = Math.round((Date.now() - cached.timestamp) / 1000 / 60);
-          console.log(`✅[MountManager]驱动缓存命中: ${cacheKey} (缓存年龄: ${cacheAge}分钟)`);
+          if (this.debugDriverCache) {
+            console.log(`✅[MountManager]驱动缓存命中: ${cacheKey} (缓存年龄: ${cacheAge}分钟)`);
+          }
           return cached.driver;
         }
       } catch (error) {
@@ -184,7 +211,9 @@ export class MountManager {
       storageType: mount.storage_type,
     });
 
-    console.log(`🆕[MountManager]创建新驱动: ${cacheKey} (当前缓存数量: ${globalDriverCache.size})`);
+    if (this.debugDriverCache) {
+      console.log(`🆕[MountManager]创建新驱动: ${cacheKey} (当前缓存数量: ${globalDriverCache.size})`);
+    }
     return driver;
   }
 

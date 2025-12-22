@@ -5,13 +5,17 @@
 // 顶层导入仅包含跨环境可用的模块（Hono 应用与公共工具）
 import app from "./src/index.js";
 import { ApiStatus } from "./src/constants/index.js";
-import { checkAndInitDatabase } from "./src/utils/database.js";
+import { ensureDatabaseReady } from "./src/db/index.js";
 import { registerTaskHandlers } from "./src/storage/fs/tasks/registerHandlers.js";
+import { registerJobTypes, validateJobTypesConsistency } from "./src/storage/fs/tasks/registerJobTypes.js";
 import { registerScheduledHandlers } from "./src/scheduled/ScheduledTaskRegistry.js";
 import { runDueScheduledJobs } from "./src/scheduled/runDueScheduledJobs.js";
+import { upsertSchedulerTickState } from "./src/services/schedulerTickerStateService.js";
 
 // 在模块加载时注册所有任务处理器和调度任务处理器
 registerTaskHandlers();
+registerJobTypes();
+validateJobTypesConsistency();
 registerScheduledHandlers();
 
 // 运行时环境检测：通过 caches.default 判断是否为 Cloudflare Workers
@@ -28,17 +32,34 @@ export const JobWorkflow = isCloudflareWorkers
   ? (await import("./src/workflows/JobWorkflow.ts")).JobWorkflow
   : class JobWorkflow {
       constructor() {
-        console.warn('JobWorkflow 在 Node 环境下不可用');
+        console.warn("JobWorkflow 在 Node 环境下不可用");
       }
       async run() {
-        throw new Error('JobWorkflow 仅在 Cloudflare Workers 环境下可用');
+        throw new Error("JobWorkflow 仅在 Cloudflare Workers 环境下可用");
       }
     };
 
-// ============ Cloudflare Workers 环境导出 ============ 
+// ============ Cloudflare Workers 环境导出 ============
 // 默认导出 fetch，只在 Workers 环境下由 Cloudflare 调用；
 // 在 Node 环境下不会被使用
-let isDbInitialized = false;
+let dbInitPromise = null;
+
+async function ensureDbReadyOnce(env) {
+  if (dbInitPromise) return dbInitPromise;
+  if (!env?.DB) {
+    throw new Error("DB 未绑定，请在 Cloudflare 绑定中配置 D1 数据库");
+  }
+
+  dbInitPromise = ensureDatabaseReady({ db: env.DB, env });
+  try {
+    await dbInitPromise;
+  } catch (error) {
+    // 初始化失败时允许后续请求重试，避免一次失败后永久跳过
+    dbInitPromise = null;
+    throw error;
+  }
+  return dbInitPromise;
+}
 
 export default {
   async fetch(request, env, ctx) {
@@ -53,15 +74,7 @@ export default {
         ENCRYPTION_SECRET: env.ENCRYPTION_SECRET,
       };
 
-      if (!isDbInitialized) {
-        console.log("首次请求，检查数据库状态...");
-        isDbInitialized = true;
-        try {
-          await checkAndInitDatabase(env.DB);
-        } catch (error) {
-          console.error("数据库初始化出错:", error);
-        }
-      }
+      await ensureDbReadyOnce(env);
 
       return app.fetch(request, bindings, ctx);
     } catch (error) {
@@ -89,12 +102,14 @@ export default {
         return;
       }
 
-      console.log(
-        "[scheduled] Cloudflare scheduled 触发，开始检查到期后台任务...",
-        new Date().toISOString(),
-      );
+      console.log("[scheduled] Cloudflare scheduled 触发，开始检查到期后台任务...", new Date().toISOString());
 
-      await checkAndInitDatabase(env.DB);
+      await ensureDbReadyOnce(env);
+      // 记录“真实触发发生”的证据
+      await upsertSchedulerTickState(env.DB, {
+        lastMs: Date.now(),
+        lastCron: controller?.cron ? String(controller.cron) : null,
+      });
       await runDueScheduledJobs(env.DB, env);
     } catch (error) {
       console.error("[scheduled] 执行维护任务时发生错误:", error);
@@ -102,16 +117,10 @@ export default {
   },
 };
 
-// ============ Node/Docker 环境启动逻辑 ============ 
+// ============ Node/Docker 环境启动逻辑 ============
 if (!isCloudflareWorkers) {
   const bootstrap = async () => {
-    const [
-      { serve },
-      { default: path },
-      { default: fs },
-      { fileURLToPath },
-      { createSQLiteAdapter },
-    ] = await Promise.all([
+    const [{ serve }, { default: path }, { default: fs }, { fileURLToPath }, { createSQLiteAdapter }] = await Promise.all([
       import("@hono/node-server"),
       import("path"),
       import("fs"),
@@ -131,7 +140,7 @@ if (!isCloudflareWorkers) {
     const dbPath = path.join(dataDir, "cloudpaste.db");
 
     const sqliteAdapter = await createSQLiteAdapter(dbPath);
-    await checkAndInitDatabase(sqliteAdapter);
+    await ensureDatabaseReady({ db: sqliteAdapter, env: process.env });
 
     const bindings = {
       DB: sqliteAdapter,
@@ -153,13 +162,15 @@ if (!isCloudflareWorkers) {
       scheduleJob(cronExpr, async () => {
         const tickStartedAt = new Date();
         const tickStartedIso = tickStartedAt.toISOString();
-        console.log(
-          "[scheduled] node-schedule tick 触发",
-          { time: tickStartedIso, cron: cronExpr },
-        );
+        console.log("[scheduled] node-schedule tick 触发", { time: tickStartedIso, cron: cronExpr });
 
         const startedMs = Date.now();
         try {
+          // 记录“真实触发发生”的证据
+          await upsertSchedulerTickState(sqliteAdapter, {
+            lastMs: startedMs,
+            lastCron: cronExpr,
+          });
           await runDueScheduledJobs(sqliteAdapter, bindings);
         } catch (error) {
           const durationMs = Date.now() - startedMs;
@@ -170,9 +181,7 @@ if (!isCloudflareWorkers) {
           });
         }
       });
-      console.log(
-        `[scheduled] 已在 Node/Docker 环境启动内部调度器，cron=${cronExpr}`,
-      );
+      console.log(`[scheduled] 已在 Node/Docker 环境启动内部调度器，cron=${cronExpr}`);
     } catch (error) {
       console.error("[scheduled] 启动内部调度器失败:", error);
     }
@@ -187,7 +196,7 @@ if (!isCloudflareWorkers) {
       (info) => {
         console.log(`CloudPaste 后端服务运行在 http://0.0.0.0:${info.port}`);
         // 启动 Docker/Node 环境内存监控（包括容器内存检测）
-        startMemoryMonitoring();
+        startMemoryMonitoring(fs);
       }
     );
   };
@@ -202,7 +211,7 @@ if (!isCloudflareWorkers) {
  * - 如在容器内运行，尝试读取 cgroup v2/v1 的内存使用与上限
  * - 在内存使用率较高时尝试触发一次 GC（如果启用了 --expose-gc）
  */
-function startMemoryMonitoring(interval = 1200000) {
+function startMemoryMonitoring(fs, interval = 1200000) {
   // 读取容器内存使用情况（优先 cgroup v2，其次 v1）
   const getContainerMemory = () => {
     try {
@@ -246,9 +255,7 @@ function startMemoryMonitoring(interval = 1200000) {
     };
 
     if (containerMem) {
-      memoryInfo.container = `${Math.round(containerMem.usage / 1024 / 1024)} MB / ${Math.round(
-        containerMem.limit / 1024 / 1024
-      )} MB`;
+      memoryInfo.container = `${Math.round(containerMem.usage / 1024 / 1024)} MB / ${Math.round(containerMem.limit / 1024 / 1024)} MB`;
       memoryInfo.containerUsage = `${Math.round((containerMem.usage / containerMem.limit) * 100)}%`;
     }
 
@@ -261,10 +268,7 @@ function startMemoryMonitoring(interval = 1200000) {
       shouldGC = containerMem.usage / containerMem.limit > 0.85;
     } else {
       // 非容器环境回退到进程内存判断
-      shouldGC =
-        mem.heapUsed / mem.heapTotal > 0.85 ||
-        mem.external > 50 * 1024 * 1024 ||
-        (mem.arrayBuffers && mem.arrayBuffers > 50 * 1024 * 1024);
+      shouldGC = mem.heapUsed / mem.heapTotal > 0.85 || mem.external > 50 * 1024 * 1024 || (mem.arrayBuffers && mem.arrayBuffers > 50 * 1024 * 1024);
     }
 
     if (global.gc && shouldGC) {

@@ -130,6 +130,16 @@ export const MountConfigSchema = {
         descriptionKey: "admin.mount.form.sortOrderHint",
       },
     },
+    {
+      name: "enable_folder_summary_compute",
+      type: "boolean",
+      required: false,
+      defaultValue: false,
+      labelKey: "admin.mount.form.enableFolderSummaryCompute",
+      ui: {
+        descriptionKey: "admin.mount.form.enableFolderSummaryComputeHint",
+      },
+    },
 
     // === 代理设置 ===
     {
@@ -216,7 +226,7 @@ export const MountConfigSchema = {
         id: "advanced",
         titleKey: "admin.mount.groups.advanced",
         // 使用 { row: [...] } 标记双列布局
-        fields: ["remark", { row: ["cache_ttl", "sort_order"] }],
+        fields: ["remark", { row: ["cache_ttl", "sort_order"] }, "enable_folder_summary_compute"],
       },
       {
         id: "proxy",

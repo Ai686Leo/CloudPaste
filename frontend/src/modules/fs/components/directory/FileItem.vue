@@ -41,20 +41,29 @@
       <!-- 移动端文件大小显示 -->
       <div class="file-item__size-mobile" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
         <span v-if="item.isDirectory && item.isVirtual">-</span>
-        <span v-else>{{ formatFileSize(item.size || 0) }}</span>
+        <span v-else :title="sizeTitle">
+          {{ formatSize(item.size) }}
+          <span v-if="sizeMarker" class="file-item__meta-marker">{{ sizeMarker }}</span>
+        </span>
       </div>
     </div>
 
     <!-- 文件大小（桌面端） -->
     <div class="file-item__size" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
       <span v-if="item.isDirectory && item.isVirtual">-</span>
-      <span v-else>{{ formatFileSize(item.size || 0) }}</span>
+      <span v-else :title="sizeTitle">
+        {{ formatSize(item.size) }}
+        <span v-if="sizeMarker" class="file-item__meta-marker">{{ sizeMarker }}</span>
+      </span>
     </div>
 
     <!-- 修改时间（桌面端） -->
     <div class="file-item__time" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
       <span v-if="item.isDirectory && item.isVirtual">-</span>
-      <span v-else>{{ formatDate(item.modified) }}</span>
+      <span v-else :title="modifiedTitle">
+        {{ formatDate(item.modified) }}
+        <span v-if="modifiedMarker" class="file-item__meta-marker">{{ modifiedMarker }}</span>
+      </span>
     </div>
 
     <!-- 操作按钮 (根据设置显示/隐藏) -->
@@ -68,9 +77,7 @@
           :class="darkMode ? 'file-item__action-btn--download-dark' : 'file-item__action-btn--download-light'"
           :title="t('mount.fileItem.download')"
         >
-          <svg class="w-4 h-4 sm:w-5 sm:h-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-          </svg>
+          <IconDownload class="w-4 h-4 sm:w-5 sm:h-5" aria-hidden="true" />
         </button>
 
         <!-- 直链按钮（只对文件显示）-->
@@ -81,10 +88,7 @@
           :class="darkMode ? 'file-item__action-btn--link-dark' : 'file-item__action-btn--link-light'"
           :title="t('mount.fileItem.getLink')"
         >
-          <svg class="w-4 h-4 sm:w-5 sm:h-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101" />
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.172 13.828a4 4 0 015.656 0l4 4a4 4 0 01-5.656 5.656l-1.102-1.101" />
-          </svg>
+          <IconLink class="w-4 h-4 sm:w-5 sm:h-5" aria-hidden="true" />
         </button>
 
         <!-- 重命名按钮 -->
@@ -95,9 +99,7 @@
           :class="darkMode ? 'file-item__action-btn--rename-dark' : 'file-item__action-btn--rename-light'"
           :title="t('mount.fileItem.rename')"
         >
-          <svg class="w-4 h-4 sm:w-5 sm:h-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-          </svg>
+          <IconRename class="w-4 h-4 sm:w-5 sm:h-5" aria-hidden="true" />
         </button>
 
         <!-- 删除按钮 -->
@@ -107,9 +109,7 @@
           :class="darkMode ? 'file-item__action-btn--delete-dark' : 'file-item__action-btn--delete-light'"
           :title="t('mount.fileItem.delete')"
         >
-          <svg class="w-4 h-4 sm:w-5 sm:h-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-          </svg>
+          <IconDelete class="w-4 h-4 sm:w-5 sm:h-5" aria-hidden="true" />
         </button>
       </div>
     </div>
@@ -119,6 +119,7 @@
 <script setup>
 import { ref, computed, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
+import { IconDelete, IconDownload, IconLink, IconRename } from "@/components/icons";
 import { formatFileSize } from "@/utils/fileUtils.js";
 import { getFileIcon as getFileIconSvg } from "@/utils/fileTypeIcons.js";
 import { formatDateTime } from "@/utils/timeUtils.js";
@@ -176,11 +177,51 @@ const handleContextMenu = (event) => {
   emit("contextmenu", { event, item: props.item });
 };
 
+const isValidSize = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0;
+
 // 格式化日期
 const formatDate = (dateString) => {
   if (!dateString) return "-";
   return formatDateTime(dateString);
 };
+
+// 格式化大小：未知则显示 "-"
+const formatSize = (value) => {
+  if (!isValidSize(value)) return "-";
+  return formatFileSize(value);
+};
+
+const sizeMarker = computed(() => {
+  if (!props.item?.isDirectory || props.item?.isVirtual) return "";
+  if (!isValidSize(props.item?.size)) return "";
+  if (props.item?.size_source === "index") return "≈";
+  if (props.item?.size_source === "compute") return "*";
+  return "";
+});
+
+const sizeTitle = computed(() => {
+  if (!props.item?.isDirectory || props.item?.isVirtual) return undefined;
+  if (!isValidSize(props.item?.size)) return undefined;
+  if (props.item?.size_source === "index") return "索引计算（无法实时）";
+  if (props.item?.size_source === "compute") return "递归计算（性能损耗）";
+  return undefined;
+});
+
+const modifiedMarker = computed(() => {
+  if (!props.item?.isDirectory || props.item?.isVirtual) return "";
+  if (!props.item?.modified) return "";
+  if (props.item?.modified_source === "index") return "≈";
+  if (props.item?.modified_source === "compute") return "*";
+  return "";
+});
+
+const modifiedTitle = computed(() => {
+  if (!props.item?.isDirectory || props.item?.isVirtual) return undefined;
+  if (!props.item?.modified) return undefined;
+  if (props.item?.modified_source === "index") return "时间来自索引兜底（不一定实时）";
+  if (props.item?.modified_source === "compute") return "时间来自递归计算（可能较慢）";
+  return undefined;
+});
 </script>
 
 <style scoped>
@@ -241,6 +282,12 @@ const formatDate = (dateString) => {
   .file-item:has(.file-item__checkbox):has(.file-item__actions) {
     grid-template-columns: auto var(--explorer-icon-size, 20px) 1fr 6rem 9rem auto;
   }
+}
+
+.file-item__meta-marker {
+  margin-left: 4px;
+  font-size: 0.75em;
+  opacity: 0.7;
 }
 
 /* 亮色模式 hover */

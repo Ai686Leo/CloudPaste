@@ -5,8 +5,18 @@
 
 import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import { formatDateTime } from "@/utils/timeUtils.js";
-import { formatFileSize as formatFileSizeUtil, FileType, isArchiveFile } from "@/utils/fileTypes.js";
+import { formatFileSize as formatFileSizeUtil, FileType, getExtension, isArchiveFile } from "@/utils/fileTypes.js";
 import { decodeImagePreviewUrlToPngObjectUrl, revokeObjectUrl, shouldAttemptDecodeImagePreview } from "@/utils/imageDecode.js";
+
+const EBOOK_EXTS = new Set(["epub", "mobi", "azw3", "azw", "fb2", "cbz"]);
+const EBOOK_MIMES = new Set([
+  "application/epub+zip",
+  "application/x-mobipocket-ebook",
+  "application/vnd.amazon.ebook",
+  "application/x-fictionbook+xml",
+  "application/vnd.comicbook+zip",
+  "application/x-cbz",
+]);
 
 export function usePreviewRenderers(file, emit, darkMode) {
   // ===== 状态管理 =====
@@ -54,6 +64,14 @@ export function usePreviewRenderers(file, emit, darkMode) {
 
   // 基于文件类型的判断
   const isPdfFile = computed(() => file.value?.type === FileType.DOCUMENT);
+  const isEbookFile = computed(() => {
+    if (!file.value) return false;
+    const filename = file.value?.name || file.value?.filename || "";
+    const ext = getExtension(filename);
+    const mime = String(file.value?.mimetype || "").toLowerCase();
+    if (EBOOK_EXTS.has(ext)) return true;
+    return EBOOK_MIMES.has(mime);
+  });
 
   /**
    * 预览URL - 基于 Link JSON 中的 previewUrl
@@ -355,6 +373,7 @@ export function usePreviewRenderers(file, emit, darkMode) {
           isVideo: isVideoFile.value,
           isAudio: isAudioFile.value,
           isPdf: isPdfFile.value,
+          isEbook: isEbookFile.value,
           isOffice: isOfficeFile.value,
           isText: isTextFile.value,
         };
@@ -415,6 +434,7 @@ export function usePreviewRenderers(file, emit, darkMode) {
           typeChecks.isVideo ||
           typeChecks.isAudio ||
           typeChecks.isPdf ||
+          typeChecks.isEbook ||
           typeChecks.isText ||
           (file.value?.name && isArchiveFile(file.value.name))
         ) {

@@ -35,14 +35,11 @@ export async function GetFileType(filename, db = null) {
   try {
     const extension = getFileExtension(filename);
 
-    // 如果没有扩展名，返回UNKNOWN
-    if (!extension) {
-      return FILE_TYPES.UNKNOWN;
-    }
-
     // 优先使用预览设置缓存
     if (previewSettingsCache.isLoaded()) {
-      const previewType = await previewSettingsCache.getFileType(extension, db);
+      const categoryFromProviders = previewSettingsCache.resolveTypeCategoryByProviders({ filename, extension });
+      const previewType =
+        categoryFromProviders !== "unknown" ? categoryFromProviders : extension ? await previewSettingsCache.getFileType(extension, db) : "unknown";
 
       switch (previewType) {
         case "text":
@@ -67,7 +64,9 @@ export async function GetFileType(filename, db = null) {
     if (db) {
       try {
         await previewSettingsCache.refresh(db);
-        const previewType = await previewSettingsCache.getFileType(extension, db);
+        const categoryFromProviders = previewSettingsCache.resolveTypeCategoryByProviders({ filename, extension });
+        const previewType =
+          categoryFromProviders !== "unknown" ? categoryFromProviders : extension ? await previewSettingsCache.getFileType(extension, db) : "unknown";
 
         switch (previewType) {
           case "text":

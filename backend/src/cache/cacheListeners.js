@@ -1,5 +1,6 @@
 import cacheBus, { CACHE_EVENTS } from "./cacheBus.js";
 import { directoryCacheManager } from "./DirectoryCache.js";
+import { fsFolderSummaryCacheManager } from "./FsFolderSummaryCache.js";
 import { clearUrlCache } from "./UrlCache.js";
 import { clearSearchCache } from "./SearchCache.js";
 import { previewSettingsCache } from "./PreviewSettingsCache.js";
@@ -14,19 +15,29 @@ const logEvent = (message, payload) => {
   }
 };
 
-const invalidateDirectoryCache = ({ mountId, paths = [] }) => {
+const invalidateDirectoryCache = ({ mountId, paths = [], dirPaths = [] }) => {
   if (!mountId) {
     return;
   }
 
   if (!paths.length) {
     directoryCacheManager.invalidateMount(mountId);
+    fsFolderSummaryCacheManager.invalidateMount(mountId);
     return;
+  }
+
+  // 目录级变更（例如删除目录/移动目录/重命名目录）需要清理子树缓存，避免“已删除目录”仍命中旧缓存。
+  for (const dirPath of dirPaths) {
+    if (typeof dirPath === "string" && dirPath.length > 0) {
+      directoryCacheManager.invalidatePathTree(mountId, dirPath);
+      fsFolderSummaryCacheManager.invalidatePathTree(mountId, dirPath);
+    }
   }
 
   for (const path of paths) {
     if (typeof path === "string" && path.length > 0) {
       directoryCacheManager.invalidatePathAndAncestors(mountId, path);
+      fsFolderSummaryCacheManager.invalidatePathAndAncestors(mountId, path);
     }
   }
 };
@@ -57,6 +68,7 @@ cacheBus.on(CACHE_EVENTS.INVALIDATE, async (payload = {}) => {
       target = "fs",
       mountId = null,
       paths = [],
+      dirPaths = [],
       storageConfigId = null,
       userType = null,
       userId = null,
@@ -72,6 +84,7 @@ cacheBus.on(CACHE_EVENTS.INVALIDATE, async (payload = {}) => {
 
     if (invalidateAll) {
       directoryCacheManager.invalidateAll();
+      fsFolderSummaryCacheManager.invalidateAll();
       await clearUrlCache();
       clearSearchCache();
       logEvent(`缓存全量失效(原因:${reason})`, payload);
@@ -79,7 +92,7 @@ cacheBus.on(CACHE_EVENTS.INVALIDATE, async (payload = {}) => {
     }
 
     if (target === "fs") {
-      invalidateDirectoryCache({ mountId, paths });
+      invalidateDirectoryCache({ mountId, paths, dirPaths });
       if (mountId) {
         clearSearchCache({ mountId });
       }

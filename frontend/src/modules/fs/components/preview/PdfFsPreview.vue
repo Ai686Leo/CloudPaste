@@ -12,37 +12,19 @@
 
       <!-- 加载中遮罩 -->
       <div v-if="loading" class="absolute inset-0 bg-white dark:bg-gray-800 bg-opacity-70 flex items-center justify-center">
-        <div class="text-center">
-          <svg class="animate-spin h-8 w-8 text-blue-500 mx-auto mb-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-            <path
-              class="opacity-75"
-              fill="currentColor"
-              d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 0 0 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-            ></path>
-          </svg>
-          <p class="text-blue-600 dark:text-blue-400">{{ $t("mount.filePreview.pdfLoading") || "加载 PDF 中..." }}</p>
-        </div>
+        <LoadingIndicator
+          :text="$t('mount.filePreview.pdfLoading') || '加载 PDF 中...'"
+          size="xl"
+          icon-class="text-blue-500 dark:text-blue-400"
+          text-class="text-blue-600 dark:text-blue-400"
+        />
       </div>
     </div>
 
     <!-- 无预览 URL 时的占位 -->
     <div v-else class="h-full flex items-center justify-center bg-gray-100 dark:bg-gray-800 rounded-lg">
       <div class="text-center p-4">
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          class="h-16 w-16 mx-auto mb-4 text-gray-400"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="1.5"
-            d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"
-          />
-        </svg>
+        <IconDocument size="4xl" class="mx-auto mb-4 text-gray-400" aria-hidden="true" />
         <p class="text-gray-600 dark:text-gray-300 mb-2">{{ $t("mount.filePreview.noPdfPreview") || "无法加载 PDF 预览" }}</p>
         <p class="text-sm text-gray-500 dark:text-gray-400">{{ errorMessage || $t("mount.filePreview.downloadToView") || "请下载文件后在本地查看" }}</p>
       </div>
@@ -53,6 +35,8 @@
 <script setup>
 import { ref } from "vue";
 import { useI18n } from "vue-i18n";
+import { IconDocument } from "@/components/icons";
+import LoadingIndicator from "@/components/common/LoadingIndicator.vue";
 
 const { t } = useI18n();
 

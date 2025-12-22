@@ -66,6 +66,21 @@ export default {
       more: "More",
     },
 
+    // Platform scheduler ticker (Cloudflare/Docker)
+    ticker: {
+      title: "Platform Trigger Countdown",
+      subtitle: "This is the external scheduler (Cloudflare Cron / Docker timer) that triggers backend scanning to run due jobs.",
+      refresh: "Refresh",
+      runtime: "Runtime",
+      cron: "Trigger rule (cron)",
+      next: "Next trigger",
+      last: "Last trigger",
+      dueNow: "Due soon",
+      waiting: "Waiting for trigger",
+      noNext: "No data",
+      loadFailed: "Failed to load trigger status",
+    },
+
     // Actions
     actions: {
       enable: "Enable",
@@ -207,6 +222,7 @@ export default {
       enabledJobs: "Enabled",
       pendingJobs: "Pending trigger",
       runningJobs: "Running",
+      nextTickCountdown: "Estimated next trigger",
     },
 
     // Sync task configuration (used by sync task form and path selector)
@@ -220,7 +236,7 @@ export default {
       sourcePath: "Source Path",
       targetPath: "Target Path",
       sourcePathHint: "Can be a file or folder path",
-      targetPathHint: "Must be a folder path",
+      targetPathHint: "Can be a folder path (auto-append source filename) or a full file path",
       quickInputPlaceholder: "Enter path and press Enter...",
       copyPath: "Copy Path",
       collapse: "Collapse",

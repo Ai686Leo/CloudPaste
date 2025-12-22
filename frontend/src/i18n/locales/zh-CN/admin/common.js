@@ -44,6 +44,7 @@ export default {
     storageConfig: "存储管理",
     mountManagement: "挂载管理",
     fsMetaManagement: "元信息管理",
+    fsIndexManagement: "索引管理",
     keyManagement: "密钥管理",
     backup: "数据备份",
     taskManagement: "任务管理",

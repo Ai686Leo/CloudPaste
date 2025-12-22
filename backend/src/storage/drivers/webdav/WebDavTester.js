@@ -109,7 +109,7 @@ export async function webDavTestConnection(config, encryptionSecret) {
       result.read.firstObjects = entries.slice(0, 3).map((item) => {
         const name = item.basename || item.filename || "";
         const size = typeof item.size === "number" ? item.size : 0;
-        const lastModified = item.lastmod ? new Date(item.lastmod).toISOString() : new Date().toISOString();
+        const lastModified = item.lastmod ? new Date(item.lastmod).toISOString() : null;
         return {
           key: name,
           size,

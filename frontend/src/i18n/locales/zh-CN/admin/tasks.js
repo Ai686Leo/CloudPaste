@@ -1,6 +1,6 @@
 export default {
   tasks: {
-    title: '任务管理',
+    title: '任务与操作',
     description: '查看和管理系统中的所有后台任务',
     loading: '加载中...',
 
@@ -12,14 +12,23 @@ export default {
     filters: {
       searchPlaceholder: '搜索任务名称、ID或路径...',
       allStatuses: '全部状态',
+      allTypes: '全部类型',
+      allCreators: '全部创建者',
+      allTriggers: '全部触发方式',
+    },
+
+    list: {
+      title: '任务列表',
     },
 
     table: {
       name: '名称',
       creator: '创建者',
       status: '状态',
-      progress: '进度',
+      progress: '统计/进度',
       actions: '操作',
+      details: '任务详情',
+      createdAt: '创建时间',
     },
 
     status: {
@@ -38,9 +47,22 @@ export default {
       collapseAll: '收起全部',
       delete: '删除任务',
       deleteShort: '删除',
+      viewDetails: '查看详情',
+      deleteTask: '删除任务',
       retryFile: '重试此文件',
       retryAllFailed: '重试所有失败文件',
       retrySelected: '重试选中文件',
+    },
+
+    labels: {
+      creator: '创建者',
+      created: '创建时间',
+      progress: '进度',
+    },
+
+    creator: {
+      admin: '管理员',
+      keyPrefix: '密钥: {key}',
     },
 
     time: {
@@ -48,11 +70,59 @@ export default {
     },
 
     details: {
+      trigger: '来源',
+      triggerRef: '来源引用',
       fileList: '文件列表',
+      itemList: '执行明细',
       sourcePath: '源路径',
       targetPath: '目标路径',
+      payload: '任务参数',
       errorInfo: '错误信息',
+      noFiles: '暂无文件信息',
       none: '无',
+    },
+
+    timeline: {
+      start: '开始',
+      finish: '完成',
+      duration: '耗时',
+    },
+
+    progress: {
+      items: '{count} 项',
+      empty: '-',
+    },
+
+    indexDetails: {
+      rebuildTitle: '挂载点索引重建',
+      applyDirtyTitle: '增量索引更新',
+      mountUnit: '挂载点',
+      queueUnit: '队列',
+      queueProcessed: '队列处理',
+      updated: '更新',
+      deleted: '删除',
+      skipped: '跳过',
+      duration: '耗时',
+      discovered: '发现文件/目录',
+      upserted: '写入索引',
+      path: '路径',
+      realtime: '实时进度',
+      scannedDirs: '已扫描目录',
+      discoveredShort: '已发现',
+      pending: '待写入',
+      noMounts: '暂无挂载点信息',
+      noRecords: '暂无处理记录',
+      unknownMount: '未知挂载点',
+      errors: {
+        indexNotReady: '索引未就绪',
+        mountNotFound: '挂载点不存在',
+        permissionDenied: '权限不足',
+      },
+    },
+
+    trigger: {
+      manual: '手动',
+      scheduled: '定时',
     },
 
     fileStatus: {
@@ -104,12 +174,45 @@ export default {
     empty: {
       title: '暂无任务',
       description: '当前没有任何任务记录',
+      tableNoData: '暂无任务',
     },
 
     taskName: {
       single: '{file}',
       batch: '{file} (+{count})',
       default: '任务 {id}',
+    },
+
+    taskType: {
+      copy: '复制',
+      fs_index_rebuild: '索引重建',
+      fs_index_apply_dirty: '索引增量应用',
+      unknown: '未知任务',
+      unknownWithType: '未知任务（{type}）',
+    },
+
+    // 阶段类任务的阶段名称
+    stages: {
+      scanning: '扫描文件',
+      indexing: '建立索引',
+      finalizing: '完成收尾',
+      loading: '加载变更',
+      applying: '应用变更',
+      committing: '提交更新',
+      pending: '等待中',
+      running: '执行中',
+      completed: '已完成',
+      failed: '失败',
+    },
+
+    // 统计信息
+    stats: {
+      total: '当前页合计',
+      running: '当前页运行中',
+      completed: '当前页已完成',
+      success: '成功',
+      failed: '当前页失败',
+      skipped: '跳过',
     },
 
     unknownFile: '未知文件',

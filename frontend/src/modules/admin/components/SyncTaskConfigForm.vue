@@ -22,15 +22,7 @@
                 :class="darkMode ? 'text-gray-400 group-hover/header:text-gray-300' : 'text-gray-500 group-hover/header:text-gray-600'"
                 :title="pair.collapsed ? $t('admin.scheduledJobs.syncTask.expandPair', '展开路径对') : $t('admin.scheduledJobs.syncTask.collapsePair', '收起路径对')"
               >
-                <svg
-                  class="w-4 h-4 transition-transform duration-200"
-                  :class="{ 'rotate-90': !pair.collapsed }"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-                </svg>
+                <IconChevronRight size="sm" class="transition-transform duration-200" :class="{ 'rotate-90': !pair.collapsed }" />
               </button>
               <span
                 class="inline-flex items-center justify-center w-6 h-6 rounded text-xs font-semibold"
@@ -42,15 +34,7 @@
                 {{ $t('admin.scheduledJobs.syncTask.pairNumber', '路径对 {n}', { n: index + 1 }) }}
               </span>
               <!-- 配置完成标记 -->
-              <svg
-                v-if="pair.sourcePath && pair.targetPath"
-                class="w-4 h-4"
-                :class="darkMode ? 'text-green-400' : 'text-green-500'"
-                fill="currentColor"
-                viewBox="0 0 20 20"
-              >
-                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
-              </svg>
+              <IconCheckCircle v-if="pair.sourcePath && pair.targetPath" size="sm" :class="darkMode ? 'text-green-400' : 'text-green-500'" />
 
               <!-- 收缩状态下显示路径摘要 -->
               <div
@@ -59,9 +43,7 @@
                 :class="darkMode ? 'text-gray-500' : 'text-gray-400'"
               >
                 <span class="truncate" :title="pair.sourcePath">{{ pair.sourcePath || '...' }}</span>
-                <svg class="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                </svg>
+                <IconChevronRight size="xs" class="flex-shrink-0" />
                 <span class="truncate" :title="pair.targetPath">{{ pair.targetPath || '...' }}</span>
               </div>
             </div>
@@ -71,9 +53,7 @@
               class="text-xs px-2 py-1 rounded transition-colors"
               :class="darkMode ? 'text-gray-500 hover:text-red-400 hover:bg-gray-800' : 'text-gray-400 hover:text-red-500 hover:bg-gray-100'"
             >
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-              </svg>
+              <IconClose size="sm" />
             </button>
           </div>
 
@@ -88,9 +68,7 @@
                 :class="darkMode ? 'bg-blue-900/30 border-gray-700' : 'bg-blue-50 border-gray-200'"
               >
                 <div class="flex items-center gap-2">
-                  <svg class="w-4 h-4" :class="darkMode ? 'text-blue-400' : 'text-blue-600'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                  </svg>
+                  <IconFolder size="sm" :class="darkMode ? 'text-blue-400' : 'text-blue-600'" />
                   <span class="text-sm font-medium" :class="darkMode ? 'text-blue-300' : 'text-blue-700'">
                     {{ $t('admin.scheduledJobs.syncTask.sourcePath', '源路径') }}
                   </span>
@@ -116,9 +94,7 @@
                     :class="darkMode ? 'hover:bg-gray-700 text-gray-400 hover:text-primary-400' : 'hover:bg-gray-100 text-gray-400 hover:text-primary-500'"
                     :title="$t('admin.scheduledJobs.syncTask.copyPath', '复制路径')"
                   >
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                    </svg>
+                    <IconCopy size="sm" />
                   </button>
                   <button
                     @click="toggleSourceExpand(pair)"
@@ -126,9 +102,7 @@
                     :class="darkMode ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-500'"
                     :title="pair.sourceExpanded ? $t('admin.scheduledJobs.syncTask.collapse', '收起') : $t('admin.scheduledJobs.syncTask.expand', '展开')"
                   >
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7" />
-                    </svg>
+                    <IconList size="sm" />
                   </button>
                   <button
                     v-if="pair.sourcePath"
@@ -137,9 +111,7 @@
                     :class="darkMode ? 'hover:bg-gray-700 text-gray-400 hover:text-red-400' : 'hover:bg-gray-100 text-gray-400 hover:text-red-500'"
                     :title="$t('admin.scheduledJobs.syncTask.clearPath', '清除')"
                   >
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
+                    <IconClose size="sm" />
                   </button>
                 </div>
               </div>
@@ -182,15 +154,11 @@
                       : (darkMode ? 'bg-gray-800 ring-1 ring-gray-700' : 'bg-gray-50 ring-1 ring-gray-200')
                   ]"
                 >
-                  <svg
-                    class="w-4 h-4 transition-colors"
+                  <IconChevronRight
+                    size="sm"
+                    class="transition-colors"
                     :class="pair.sourcePath && pair.targetPath ? (darkMode ? 'text-primary-400' : 'text-primary-500') : (darkMode ? 'text-gray-500' : 'text-gray-400')"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                  </svg>
+                  />
                 </div>
                 <!-- 连接线下段 -->
                 <div
@@ -205,9 +173,7 @@
                   :class="darkMode ? 'text-gray-500' : 'text-gray-400'"
                 >
                   <div class="h-px w-8" :class="darkMode ? 'bg-gray-700' : 'bg-gray-200'"></div>
-                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-                  </svg>
+                  <IconArrowUp size="md" class="rotate-180" />
                   <div class="h-px w-8" :class="darkMode ? 'bg-gray-700' : 'bg-gray-200'"></div>
                 </div>
               </div>
@@ -221,9 +187,7 @@
                 :class="darkMode ? 'bg-green-900/30 border-gray-700' : 'bg-green-50 border-gray-200'"
               >
                 <div class="flex items-center gap-2">
-                  <svg class="w-4 h-4" :class="darkMode ? 'text-green-400' : 'text-green-600'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                  </svg>
+                  <IconFolder size="sm" :class="darkMode ? 'text-green-400' : 'text-green-600'" />
                   <span class="text-sm font-medium" :class="darkMode ? 'text-green-300' : 'text-green-700'">
                     {{ $t('admin.scheduledJobs.syncTask.targetPath', '目标路径') }}
                   </span>
@@ -249,9 +213,7 @@
                     :class="darkMode ? 'hover:bg-gray-700 text-gray-400 hover:text-primary-400' : 'hover:bg-gray-100 text-gray-400 hover:text-primary-500'"
                     :title="$t('admin.scheduledJobs.syncTask.copyPath', '复制路径')"
                   >
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                    </svg>
+                    <IconCopy size="sm" />
                   </button>
                   <button
                     @click="toggleTargetExpand(pair)"
@@ -259,9 +221,7 @@
                     :class="darkMode ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-500'"
                     :title="pair.targetExpanded ? $t('admin.scheduledJobs.syncTask.collapse', '收起') : $t('admin.scheduledJobs.syncTask.expand', '展开')"
                   >
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7" />
-                    </svg>
+                    <IconList size="sm" />
                   </button>
                   <button
                     v-if="pair.targetPath"
@@ -270,9 +230,7 @@
                     :class="darkMode ? 'hover:bg-gray-700 text-gray-400 hover:text-red-400' : 'hover:bg-gray-100 text-gray-400 hover:text-red-500'"
                     :title="$t('admin.scheduledJobs.syncTask.clearPath', '清除')"
                   >
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
+                    <IconClose size="sm" />
                   </button>
                 </div>
               </div>
@@ -293,7 +251,7 @@
 
               <!-- 路径提示 -->
               <div class="panel-hint" :class="darkMode ? 'text-gray-500' : 'text-gray-400'">
-                {{ $t('admin.scheduledJobs.syncTask.targetPathHint', '必须是文件夹路径') }}
+                {{ $t('admin.scheduledJobs.syncTask.targetPathHint', '可以是文件夹路径（自动拼接源文件名），也可手动重命名文件路径') }}
               </div>
             </div>
           </div>
@@ -317,9 +275,7 @@
           ? 'border-gray-700 hover:border-gray-600 text-gray-500 hover:text-gray-400 hover:bg-gray-800/50'
           : 'border-gray-200 hover:border-gray-300 text-gray-400 hover:text-gray-500 hover:bg-gray-50'"
       >
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-        </svg>
+        <IconFolderPlus size="sm" />
         {{ $t('admin.scheduledJobs.syncTask.addPathPair', '添加路径对') }}
         <span class="text-xs opacity-60">({{ pathPairs.length }}/100)</span>
       </button>
@@ -330,9 +286,7 @@
           class="flex items-center gap-2 text-sm cursor-pointer select-none py-2"
           :class="darkMode ? 'text-gray-400 hover:text-gray-300' : 'text-gray-500 hover:text-gray-600'"
         >
-          <svg class="w-4 h-4 transition-transform details-chevron" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-          </svg>
+          <IconChevronRight size="sm" class="transition-transform details-chevron" />
           {{ $t('admin.scheduledJobs.syncTask.advancedOptions', '高级选项') }}
         </summary>
 
@@ -393,6 +347,7 @@
 <script setup>
 import { ref, watch, onMounted } from 'vue'
 import PathTreeSelector from './PathTreeSelector.vue'
+import { IconArrowUp, IconCheckCircle, IconChevronRight, IconClose, IconCopy, IconFolder, IconFolderPlus, IconList } from '@/components/icons'
 
 const props = defineProps({
   modelValue: {
@@ -561,7 +516,12 @@ const toggleTargetExpand = (pair) => {
 
 // 切换路径对整体展开/收缩
 const togglePairCollapsed = (pair) => {
-  pair.collapsed = !pair.collapsed
+  const willCollapse = !pair.collapsed
+  if (willCollapse) {
+    applyQuickPath(pair, 'source')
+    applyQuickPath(pair, 'target')
+  }
+  pair.collapsed = willCollapse
 }
 
 const applyQuickPath = (pair, type) => {

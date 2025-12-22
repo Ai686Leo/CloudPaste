@@ -27,9 +27,7 @@
                 :class="darkMode ? 'text-blue-400 hover:bg-gray-700' : 'text-blue-600 hover:bg-gray-100'"
                 title="编辑"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                </svg>
+                <IconRename aria-hidden="true" />
               </button>
               <button
                 @click="emit('delete', meta)"
@@ -37,9 +35,7 @@
                 :class="darkMode ? 'text-red-400 hover:bg-gray-700' : 'text-red-600 hover:bg-gray-100'"
                 title="删除"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
+                <IconDelete aria-hidden="true" />
               </button>
             </div>
           </div>
@@ -52,9 +48,7 @@
                 {{ $t("admin.fsMeta.table.headerMarkdown") }}:
               </span>
               <span v-if="meta.headerMarkdown" class="flex items-center" :class="darkMode ? 'text-green-400' : 'text-green-600'">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-                </svg>
+                <IconCheck size="sm" class="mr-1" aria-hidden="true" />
                 {{ $t("admin.fsMeta.common.set") }}{{ meta.headerInherit ? $t("admin.fsMeta.common.inheritedSuffix") : "" }}
               </span>
               <span v-else class="text-gray-400">
@@ -68,9 +62,7 @@
                 {{ $t("admin.fsMeta.table.footerMarkdown") }}:
               </span>
               <span v-if="meta.footerMarkdown" class="flex items-center" :class="darkMode ? 'text-green-400' : 'text-green-600'">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-                </svg>
+                <IconCheck size="sm" class="mr-1" aria-hidden="true" />
                 {{ $t("admin.fsMeta.common.set") }}{{ meta.footerInherit ? $t("admin.fsMeta.common.inheritedSuffix") : "" }}
               </span>
               <span v-else class="text-gray-400">
@@ -130,6 +122,7 @@
 import { computed, h } from "vue";
 import { useI18n } from "vue-i18n";
 import AdminTable from "@/components/common/AdminTable.vue";
+import { IconCheck, IconDelete, IconRename } from "@/components/icons";
 import { formatDateTime } from "@/utils/timeUtils.js";
 
 const props = defineProps({
@@ -462,11 +455,11 @@ const metaColumns = computed(() => [
 // 列样式配置
 const metaColumnClasses = computed(() => ({
   path: "",
-  headerMarkdown: "hidden sm:table-cell",
-  footerMarkdown: "hidden sm:table-cell",
-  hidePatterns: "hidden md:table-cell",
-  password: "hidden md:table-cell",
-  createdAt: "hidden lg:table-cell",
-  actions: "",
+  headerMarkdown: "hidden sm:table-cell text-center",
+  footerMarkdown: "hidden sm:table-cell text-center",
+  hidePatterns: "hidden md:table-cell text-center",
+  password: "hidden md:table-cell text-center",
+  createdAt: "hidden lg:table-cell text-center",
+  actions: "text-center",
 }));
 </script>

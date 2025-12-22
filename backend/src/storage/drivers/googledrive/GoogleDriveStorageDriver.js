@@ -269,7 +269,7 @@ export class GoogleDriveStorageDriver extends BaseDriver {
           childPath = `${childPath}/`;
         }
 
-        const size = isDir ? 0 : Number(item.size || 0);
+        const size = isDir ? null : Number(item.size || 0);
         const modified = item.modifiedTime ? new Date(item.modifiedTime) : null;
         const mimetype = isDir ? "application/x-directory" : item.mimeType || null;
 
@@ -325,7 +325,7 @@ export class GoogleDriveStorageDriver extends BaseDriver {
     const finalPath =
       isDir && typeof path === "string" && !path.endsWith("/") ? `${path}/` : path;
 
-    const size = isDir ? 0 : Number(driveItem?.size || 0);
+    const size = isDir ? null : Number(driveItem?.size || 0);
     const modified = driveItem?.modifiedTime ? new Date(driveItem.modifiedTime) : null;
     const mimetype = isDir ? "application/x-directory" : driveItem?.mimeType || null;
 
@@ -1090,7 +1090,7 @@ export class GoogleDriveStorageDriver extends BaseDriver {
     for (const item of files) {
       const isDirectory = item.mimeType === "application/vnd.google-apps.folder";
       const name = item.name;
-      const size = isDirectory ? 0 : Number(item.size || 0);
+      const size = isDirectory ? null : Number(item.size || 0);
       const modified = item.modifiedTime ? new Date(item.modifiedTime) : null;
       const mimetype = isDirectory ? "application/x-directory" : item.mimeType || null;
 

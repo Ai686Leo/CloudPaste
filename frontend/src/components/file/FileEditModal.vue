@@ -136,7 +136,7 @@
 </template>
 
 <script setup>
-import { defineProps, defineEmits, reactive, ref, watch } from "vue";
+import { reactive, ref, watch } from "vue";
 
 const props = defineProps({
   file: {

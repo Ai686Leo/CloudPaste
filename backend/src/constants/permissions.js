@@ -240,13 +240,3 @@ export class PermissionChecker {
     return descriptions;
   }
 }
-
-/**
- * 任务类型到权限的映射配置
- * 用于任务管理界面的细粒度权限控制
- *
- * 添加新任务类型时，在此映射表中添加对应的权限要求
- */
-export const TaskPermissionMap = {
-  copy: Permission.MOUNT_COPY, // 复制任务需要复制权限
-};

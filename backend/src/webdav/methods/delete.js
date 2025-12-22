@@ -43,7 +43,7 @@ export async function handleDelete(c, path, userId, userType, db) {
     }
 
     const repositoryFactory = c.get("repos");
-    const mountManager = new MountManager(db, getEncryptionSecret(c), repositoryFactory);
+    const mountManager = new MountManager(db, getEncryptionSecret(c), repositoryFactory, { env: c.env });
     const fileSystem = new FileSystem(mountManager);
 
     console.log(`WebDAV DELETE - 开始删除: ${path}, userType=${userType}`);

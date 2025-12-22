@@ -2,7 +2,7 @@ import { ApiStatus } from "../../../constants/index.js";
 import { AppError, DriverError } from "../../../http/errors.js";
 import { CAPABILITIES } from "../../interfaces/capabilities/index.js";
 import { findMountPointByPath } from "../utils/MountResolver.js";
-import { isDirectoryPath, isSelfOrSubPath, normalizePath } from "../utils/PathResolver.js";
+import { isDirectoryPath, isSelfOrSubPath, normalizePath, resolveCopyTargetPath } from "../utils/PathResolver.js";
 
 export async function renameItem(fs, oldPath, newPath, userIdOrInfo, userType) {
   // 分别解析旧路径和新路径，确保仍在同一挂载下
@@ -44,6 +44,9 @@ export async function renameItem(fs, oldPath, newPath, userIdOrInfo, userType) {
 }
 
 export async function copyItem(fs, sourcePath, targetPath, userIdOrInfo, userType, options = {}) {
+  // 目标是目录且源为文件时，自动拼接源文件名
+  targetPath = resolveCopyTargetPath(sourcePath, targetPath);
+
   // 先解析源与目标挂载与驱动，在 FS 层统一做跨存储决策
   const sourceCtx = await fs.mountManager.getDriverByPath(sourcePath, userIdOrInfo, userType);
   const targetCtx = await fs.mountManager.getDriverByPath(targetPath, userIdOrInfo, userType);

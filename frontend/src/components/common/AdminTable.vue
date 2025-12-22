@@ -215,7 +215,20 @@ const table = useVueTable({
 
 // 工具函数
 const getSortHeaderClass = (column) => {
-  return column.getCanSort() ? "cursor-pointer select-none flex items-center hover:text-gray-700 dark:hover:text-gray-200 transition-colors" : "flex items-center";
+  const baseClass = column.getCanSort()
+    ? "cursor-pointer select-none flex items-center hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+    : "flex items-center";
+
+  // 根据 columnClasses 中的对齐设置，添加对应的 justify 类
+  const columnClass = props.columnClasses[column.id] || "";
+  let justifyClass = "";
+  if (columnClass.includes("text-center")) {
+    justifyClass = "justify-center";
+  } else if (columnClass.includes("text-right")) {
+    justifyClass = "justify-end";
+  }
+
+  return `${baseClass} ${justifyClass}`.trim();
 };
 
 const handleSort = (column) => {

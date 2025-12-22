@@ -23,8 +23,12 @@
         @ready="handlePlayerReady"
       />
       <div v-else class="loading-indicator text-center py-8">
-        <div class="animate-spin rounded-full h-10 w-10 border-b-2 mx-auto" :class="darkMode ? 'border-primary-500' : 'border-primary-600'"></div>
-        <p class="mt-2 text-sm" :class="darkMode ? 'text-gray-400' : 'text-gray-600'">{{ $t("mount.videoPreview.loadingVideo") }}</p>
+        <LoadingIndicator
+          :text="$t('mount.videoPreview.loadingVideo')"
+          :dark-mode="darkMode"
+          size="2xl"
+          :icon-class="darkMode ? 'text-primary-500' : 'text-primary-600'"
+        />
       </div>
     </div>
   </div>
@@ -36,6 +40,7 @@ import { computed, ref, onMounted, onBeforeUnmount, watch } from "vue";
   import VideoPlayer from "@/components/common/VideoPlayer.vue";
   import { FileType } from "@/utils/fileTypes.js";
   import { useFsService } from "@/modules/fs";
+  import LoadingIndicator from "@/components/common/LoadingIndicator.vue";
   
   const { t } = useI18n();
   const fsService = useFsService();

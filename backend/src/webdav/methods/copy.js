@@ -63,7 +63,7 @@ export async function handleCopy(c, path, userId, userType, db) {
 
     // 6. 创建FileSystem实例
     const repositoryFactory = c.get("repos");
-    const mountManager = new MountManager(db, getEncryptionSecret(c), repositoryFactory);
+    const mountManager = new MountManager(db, getEncryptionSecret(c), repositoryFactory, { env: c.env });
     const fileSystem = new FileSystem(mountManager);
 
     console.log(`WebDAV COPY - 开始复制: ${path} -> ${destPath}, 用户类型: ${userType}`);

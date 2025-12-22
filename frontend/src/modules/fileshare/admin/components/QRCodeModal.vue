@@ -5,9 +5,7 @@
       <div class="px-4 sm:px-6 py-3 sm:py-4 border-b flex justify-between items-center" :class="darkMode ? 'border-gray-700' : 'border-gray-200'">
         <h3 class="text-base sm:text-lg font-medium" :class="darkMode ? 'text-white' : 'text-gray-900'">文件分享二维码</h3>
         <button @click="$emit('close')" class="text-gray-400 hover:text-gray-500">
-          <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-          </svg>
+          <IconClose class="h-6 w-6" />
         </button>
       </div>
 
@@ -22,9 +20,7 @@
         <div class="w-full flex space-x-3 mb-2">
           <button @click="downloadQRCode" class="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium transition-colors">
             <span class="flex items-center justify-center">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
+              <IconDownload class="h-4 w-4 mr-1.5" />
               下载二维码
             </span>
           </button>
@@ -43,7 +39,8 @@
 </template>
 
 <script setup>
-import { defineProps, defineEmits, computed } from "vue";
+import { computed } from "vue";
+import { IconClose, IconDownload } from "@/components/icons";
 
 const props = defineProps({
   qrCodeUrl: {

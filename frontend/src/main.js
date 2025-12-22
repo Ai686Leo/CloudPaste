@@ -11,11 +11,24 @@ import MasonryWall from "@yeger/vue-masonry-wall";
 import "@imengyu/vue3-context-menu/lib/vue3-context-menu.css";
 import ContextMenu from "@imengyu/vue3-context-menu";
 
+// 导入 Notivue（全局提示 / Toast）
+import { createNotivue } from "notivue";
+import "notivue/notification.css";
+import "notivue/notification-progress.css";
+import "notivue/animations.css";
+
 // 导入自定义指令
 import { contextMenuDirective } from "./components/common/contextMenu.js";
 
 // 导入PWA相关模块
 import { pwaManager, pwaUtils } from "./pwa/pwaManager.js";
+
+// 开发环境：清理旧的 Service Worker
+if (import.meta.env.DEV && "serviceWorker" in navigator) {
+  navigator.serviceWorker.getRegistrations?.().then((registrations) => {
+    registrations.forEach((reg) => reg.unregister());
+  });
+}
 
 // 创建应用实例
 const app = createApp(App);
@@ -86,6 +99,26 @@ app.use(MasonryWall);
 
 // 挂载vue3-context-menu - 全局注册上下文菜单组件
 app.use(ContextMenu);
+
+// 挂载 Notivue - 全局提示系统（右上角）
+app.use(
+  createNotivue({
+    position: "top-right",
+    limit: 4,
+    enqueue: true,
+    pauseOnHover: true,
+    pauseOnTouch: true,
+    avoidDuplicates: true,
+    notifications: {
+      global: {
+        duration: 2000,
+      },
+      error: {
+        duration: 5000,
+      },
+    },
+  })
+);
 
 // 注册自定义指令
 app.directive("context-menu", contextMenuDirective);

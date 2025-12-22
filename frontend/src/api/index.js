@@ -16,6 +16,7 @@ import * as mountService from "./services/mountService";
 import * as systemService from "./services/systemService";
 import * as urlUploadService from "./services/urlUploadService";
 import * as fsService from "./services/fsService";
+import * as fsIndexService from "./services/fsIndexService";
 
 // 统一服务导出 - 按功能模块重新组织
 export const api = {
@@ -113,6 +114,9 @@ export const api = {
     updateFile: fsService.updateFile,
     // 复制相关
     batchCopyItems: fsService.batchCopyItems,
+
+    // 索引管理
+    fsIndex: fsIndexService,
   },
 
   test: {

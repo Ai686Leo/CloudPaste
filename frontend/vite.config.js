@@ -12,8 +12,9 @@ export default defineConfig(({ command, mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
 
   // 统一版本管理
-  const APP_VERSION = "1.5.0";
+  const APP_VERSION = "1.6.0";
   const isDev = command === "serve";
+  const enablePwa = command === "build";
 
   // 打印环境变量，帮助调试
   console.log("Vite环境变量:", {
@@ -24,35 +25,52 @@ export default defineConfig(({ command, mode }) => {
     COMMAND: command,
   });
 
+  const foliatePdfStubPath = fileURLToPath(new URL("./src/vendor/foliate-js/pdf.js", import.meta.url));
+
+  // foliate-js 的 view.js 会动态 import('./pdf.js')，但其 pdf.js 使用了 Vite 不兼容的 glob。
+  // CloudPaste 自身已有 PDF 预览，不需要 foliate-js 的 PDF 支持，因此把它替换为 stub，避免构建失败。
+  const foliatePdfStubPlugin = () => ({
+    name: "cloudpaste-foliate-pdf-stub",
+    enforce: "pre",
+    resolveId(source, importer) {
+      if (source !== "./pdf.js") return null;
+      if (!importer) return null;
+      if (importer.replaceAll("\\\\", "/").includes("/node_modules/foliate-js/view.js")) {
+        return foliatePdfStubPath;
+      }
+      return null;
+    },
+  });
+
   return {
     base: '/',
     define: {
-      // 注入版本号到应用中
       __APP_VERSION__: JSON.stringify(APP_VERSION),
-      // 注入环境变量到应用中
       __APP_ENV__: JSON.stringify(env.VITE_APP_ENV || "production"),
       __BACKEND_URL__: JSON.stringify(env.VITE_BACKEND_URL || ""),
     },
     plugins: [
       vue(),
+      foliatePdfStubPlugin(),
       Components({
         dts: false,
         resolvers: [
           IconsResolver({
             prefix: "i",
-            enabledCollections: ["mdi"],
+            enabledCollections: ["mdi", "heroicons-outline", "heroicons-solid"],
           }),
         ],
       }),
       Icons({
         compiler: "vue3",
       }),
-      VitePWA({
-        registerType: "autoUpdate",
-        injectRegister: "auto", //自动注入更新检测代码
-        devOptions: {
-          enabled: true, // 开发环境启用PWA
-        },
+      enablePwa &&
+        VitePWA({
+          registerType: "autoUpdate",
+          injectRegister: "auto", //自动注入更新检测代码
+          devOptions: {
+            enabled: false, //开发环境PWA启用
+          },
         workbox: {
           globPatterns: ["**/*.{js,css,html,ico,png,svg,woff,woff2,ttf}"],
           maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
@@ -75,7 +93,7 @@ export default defineConfig(({ command, mode }) => {
                 cacheName: "app-static-resources",
                 expiration: {
                   maxEntries: 1000,
-                  maxAgeSeconds: 7 * 24 * 60 * 60, // 7天（依赖Vite版本控制）
+                  maxAgeSeconds: 7 * 24 * 60 * 60,
                 },
                 cacheableResponse: {
                   statuses: [0, 200],
@@ -91,7 +109,7 @@ export default defineConfig(({ command, mode }) => {
                 cacheName: "fonts",
                 expiration: {
                   maxEntries: 50,
-                  maxAgeSeconds: 30 * 24 * 60 * 60, // 30天（字体变化频率低）
+                  maxAgeSeconds: 30 * 24 * 60 * 60, 
                 },
                 cacheableResponse: {
                   statuses: [0, 200],
@@ -116,7 +134,7 @@ export default defineConfig(({ command, mode }) => {
                 cacheName: "external-cdn-resources",
                 expiration: {
                   maxEntries: 100,
-                  maxAgeSeconds: 30 * 24 * 60 * 60, // 30天
+                  maxAgeSeconds: 30 * 24 * 60 * 60, 
                 },
                 cacheableResponse: {
                   statuses: [0, 200],
@@ -135,7 +153,7 @@ export default defineConfig(({ command, mode }) => {
               },
             },
 
-            // 图廊图片 - StaleWhileRevalidate（图片适合后台更新）
+            // 图廊图片 - StaleWhileRevalidate
             {
               urlPattern: ({ request, url }) =>
                 request.destination === "image" && (url.pathname.includes("/api/") || url.searchParams.has("X-Amz-Algorithm") || url.hostname !== self.location.hostname),
@@ -215,7 +233,7 @@ export default defineConfig(({ command, mode }) => {
                 cacheName: "system-api",
                 expiration: {
                   maxEntries: 10,
-                  maxAgeSeconds: 30 * 60, // 30分钟
+                  maxAgeSeconds: 30 * 60,
                 },
                 networkTimeoutSeconds: 3,
                 cacheableResponse: {
@@ -242,7 +260,7 @@ export default defineConfig(({ command, mode }) => {
               },
             },
 
-            // 文本分享API - NetworkOnly（涉及访问计数，必须实时）
+            // 文本分享API - NetworkOnly
             {
               urlPattern: /^.*\/api\/(pastes|paste|raw)\/.*$/,
               handler: "NetworkOnly",
@@ -277,7 +295,7 @@ export default defineConfig(({ command, mode }) => {
                 cacheName: "public-api",
                 expiration: {
                   maxEntries: 50,
-                  maxAgeSeconds: 60 * 60, // 1小时（公共内容相对稳定）
+                  maxAgeSeconds: 60 * 60,
                 },
                 cacheableResponse: {
                   statuses: [0, 200],
@@ -388,8 +406,8 @@ export default defineConfig(({ command, mode }) => {
             },
           ],
         },
-      }),
-    ],
+        }),
+    ].filter(Boolean),
     resolve: {
       alias: {
         "@": fileURLToPath(new URL("./src", import.meta.url)),
@@ -420,11 +438,22 @@ export default defineConfig(({ command, mode }) => {
         },
       },
     },
+    // foliate-js 的部分模块（例如 pdf.js）使用了 top-level await。
+    // 为了让 Vite/esbuild 在 dev 与 build 阶段都能正常处理，我们将 target 提升到 ES2022。
+    esbuild: {
+      target: "es2022",
+    },
     optimizeDeps: {
       include: ["vue-i18n", "chart.js", "qrcode", "mime-db", "docx-preview"],
+      // 跳过预构建，让 Vite 按原始 ESM 处理
+      exclude: ["foliate-js"],
+      esbuildOptions: {
+        target: "es2022",
+      },
     },
     build: {
       outDir: 'dist', // 显式指定输出目录
+      target: "es2022",
       minify: "terser",
       terserOptions: {
         compress: {
@@ -439,7 +468,7 @@ export default defineConfig(({ command, mode }) => {
             "vendor-vue": ["vue", "vue-router", "vue-i18n"],
             "vendor-charts": ["chart.js", "vue-chartjs"],
             "vendor-utils": ["qrcode", "file-saver", "docx", "@zumer/snapdom"],
-            "office-viewer": ["docx-preview", "@vue-office/excel", "@vue-office/pptx"],
+            "office-viewer": ["docx-preview", "@vue-office/excel/lib/v3/index.js", "@vue-office/pptx/lib/v3/index.js"],
           },
         },
       },

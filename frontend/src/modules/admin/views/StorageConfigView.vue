@@ -9,6 +9,8 @@ import { formatDateTimeWithSeconds } from "@/utils/timeUtils.js";
 import { useThemeMode } from "@/composables/core/useThemeMode.js";
 import { useConfirmDialog } from "@/composables/core/useConfirmDialog.js";
 import { useStorageTypePresentation } from "@/modules/admin/storage/useStorageTypePresentation.js";
+import { useStorageTypeIcon } from "@/composables/core/useStorageTypeIcon.js";
+import { IconArchive, IconCalendar, IconCheck, IconCheckCircle, IconChevronRight, IconClose, IconCloud, IconDelete, IconError, IconFolderPlus, IconLink, IconRefresh, IconRename, IconXCircle } from "@/components/icons";
 
 const { isDarkMode: darkMode } = useThemeMode();
 
@@ -58,9 +60,11 @@ const {
   handleSetDefaultConfig,
   testConnection,
   showTestDetailsModal,
-  getProviderIcon,
   STORAGE_TYPE_UNKNOWN,
 } = useStorageConfigManagement({ confirmFn });
+
+// 存储类型图标
+const { getStorageTypeIcon, getStorageTypeIconClass } = useStorageTypeIcon();
 
 // 存储类型展示/样式 helper（统一从 /api/storage-types 加载）
 const { storageTypesMeta, getTypeMeta, getTypeLabel, getBadgeClass, ensureLoaded } = useStorageTypePresentation();
@@ -190,9 +194,7 @@ onMounted(async () => {
 
     <div class="flex flex-wrap gap-3 mb-5 items-center">
       <button @click="addNewConfig" class="px-3 py-2 rounded-md flex items-center space-x-1 bg-primary-500 hover:bg-primary-600 text-white font-medium transition text-sm">
-        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-        </svg>
+        <IconFolderPlus class="h-4 w-4" />
         <span>添加新配置</span>
       </button>
 
@@ -201,14 +203,7 @@ onMounted(async () => {
         class="px-3 py-2 rounded-md flex items-center space-x-1 font-medium transition text-sm"
         :class="darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-200 hover:bg-gray-300 text-gray-700'"
       >
-        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-          />
-        </svg>
+        <IconRefresh class="h-4 w-4" />
         <span>刷新列表</span>
       </button>
 
@@ -235,18 +230,14 @@ onMounted(async () => {
     <div v-if="error" class="mb-4 p-3 rounded-md text-sm" :class="darkMode ? 'bg-red-900/40 border border-red-800 text-red-200' : 'bg-red-50 text-red-800 border border-red-200'">
       <div class="flex justify-between items-start">
         <div class="flex items-start">
-          <svg class="h-5 w-5 text-red-400 mr-2 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
+          <IconError class="h-5 w-5 text-red-400 mr-2 mt-0.5 flex-shrink-0" />
           <div>
             <div class="font-medium">操作失败</div>
             <div class="mt-1">{{ error }}</div>
           </div>
         </div>
         <button @click="error = ''" class="text-red-400 hover:text-red-500" :class="darkMode ? 'hover:text-red-300' : 'hover:text-red-600'">
-          <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-          </svg>
+          <IconClose class="h-5 w-5" />
         </button>
       </div>
     </div>
@@ -255,10 +246,7 @@ onMounted(async () => {
     <div class="flex-1 flex flex-col">
       <!-- 加载状态 -->
       <div v-if="loading" class="flex justify-center items-center h-40">
-        <svg class="animate-spin h-8 w-8 text-primary-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-        </svg>
+        <IconRefresh class="animate-spin h-8 w-8 text-primary-500" />
       </div>
 
       <!-- 存储配置列表 -->
@@ -277,9 +265,10 @@ onMounted(async () => {
             >
               <div class="px-2 py-2 sm:px-3 sm:py-2.5 flex flex-wrap justify-between items-center gap-2 border-b" :class="darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'">
                 <div class="flex items-center gap-1 sm:gap-2 flex-wrap min-w-0">
-                  <svg class="h-4 w-4 sm:h-5 sm:w-5 flex-shrink-0" :class="getProviderIcon(config.storage_type, config.provider_type).color" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="getProviderIcon(config.storage_type, config.provider_type).path" />
-                  </svg>
+                  <component
+                    :is="getStorageTypeIcon(config.storage_type)"
+                    :class="['h-4 w-4 sm:h-5 sm:w-5 flex-shrink-0', getStorageTypeIconClass(config.storage_type, darkMode)]"
+                  />
                   <h3 class="font-medium text-sm" :class="[darkMode ? 'text-gray-100' : 'text-gray-900', config.is_default ? 'font-semibold' : '']">
                     {{ config.name }}
                   </h3>
@@ -296,9 +285,7 @@ onMounted(async () => {
                     :class="darkMode ? 'bg-blue-600/20 text-blue-300 border border-blue-500/30' : 'bg-blue-100 text-blue-700 border border-blue-200'"
                     :title="`代理URL: ${config.url_proxy}`"
                   >
-                    <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-                    </svg>
+                    <IconLink class="h-3 w-3" />
                     <span class="hidden sm:inline">代理</span>
                   </span>
                 </div>
@@ -349,18 +336,8 @@ onMounted(async () => {
                     <div class="flex justify-between">
                       <span class="font-medium">API密钥可见:</span>
                       <span class="flex items-center">
-                        <svg class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" :class="config.is_public ? 'text-green-500' : 'text-gray-400'">
-                          <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="2"
-                            :d="
-                              config.is_public
-                                ? 'M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z'
-                                : 'M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636'
-                            "
-                          />
-                        </svg>
+                        <IconCheckCircle v-if="config.is_public" class="h-4 w-4 mr-1 text-green-500" />
+                        <IconXCircle v-else class="h-4 w-4 mr-1 text-gray-400" />
                         {{ config.is_public ? "允许" : "禁止" }}
                       </span>
                     </div>
@@ -405,9 +382,7 @@ onMounted(async () => {
                     class="flex items-center px-3 py-1.5 rounded text-sm font-medium transition"
                     :class="darkMode ? 'bg-primary-600 hover:bg-primary-700 text-white' : 'bg-primary-100 hover:bg-primary-200 text-primary-800'"
                   >
-                    <svg class="h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-                    </svg>
+                    <IconCheck class="h-4 w-4 mr-1.5" />
                     设为默认
                   </button>
 
@@ -424,25 +399,11 @@ onMounted(async () => {
                     :disabled="testResults[config.id]?.loading"
                   >
                     <template v-if="testResults[config.id]?.loading">
-                      <svg class="animate-spin h-4 w-4 mr-1.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                        <path
-                          class="opacity-75"
-                          fill="currentColor"
-                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                        ></path>
-                      </svg>
+                      <IconRefresh class="animate-spin h-4 w-4 mr-1.5" />
                       测试中...
                     </template>
                     <template v-else>
-                      <svg class="h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          stroke-width="2"
-                          d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-                        />
-                      </svg>
+                      <IconCalendar class="h-4 w-4 mr-1.5" />
                       测试连接
                     </template>
                   </button>
@@ -452,14 +413,7 @@ onMounted(async () => {
                     class="flex items-center px-3 py-1.5 rounded text-sm font-medium transition"
                     :class="darkMode ? 'bg-gray-600 hover:bg-gray-700 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-800'"
                   >
-                    <svg class="h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                      />
-                    </svg>
+                    <IconRename class="h-4 w-4 mr-1.5" />
                     编辑
                   </button>
 
@@ -468,14 +422,7 @@ onMounted(async () => {
                     class="flex items-center px-3 py-1.5 rounded text-sm font-medium transition"
                     :class="darkMode ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-red-100 hover:bg-red-200 text-red-800'"
                   >
-                    <svg class="h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                      />
-                    </svg>
+                    <IconDelete class="h-4 w-4 mr-1.5" />
                     删除
                   </button>
                 </div>
@@ -508,15 +455,11 @@ onMounted(async () => {
         class="rounded-lg p-6 text-center transition-colors duration-200 flex-1 flex flex-col justify-center items-center bg-white dark:bg-gray-800 shadow-md"
         :class="darkMode ? 'text-gray-300' : 'text-gray-600'"
       >
-        <svg class="mx-auto h-16 w-16 mb-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
-        </svg>
+        <IconCloud class="mx-auto h-16 w-16 mb-4 text-gray-400" />
         <h3 class="text-lg font-medium mb-2" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">尚未配置任何存储</h3>
         <p class="mb-5 text-sm max-w-md">添加您的第一个存储配置，支持多种对象存储或 WebDAV 服务。</p>
         <button @click="addNewConfig" class="px-4 py-2 rounded-md bg-primary-500 hover:bg-primary-600 text-white font-medium transition inline-flex items-center">
-          <svg class="h-5 w-5 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-          </svg>
+          <IconFolderPlus class="h-5 w-5 mr-1.5" />
           添加配置
         </button>
       </div>
@@ -545,13 +488,7 @@ onMounted(async () => {
         <div class="p-3 sm:p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
           <h3 class="text-base sm:text-lg font-medium text-gray-900 dark:text-white">存储连接测试结果</h3>
           <button @click="showTestDetails = false" class="text-gray-400 hover:text-gray-500">
-            <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
-              <path
-                fill-rule="evenodd"
-                d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
-                clip-rule="evenodd"
-              ></path>
-            </svg>
+            <IconClose class="h-5 w-5" />
           </button>
         </div>
 
@@ -590,9 +527,7 @@ onMounted(async () => {
               @click="showDetailedResults = !showDetailedResults"
               class="text-sm flex items-center text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
             >
-              <svg class="h-4 w-4 mr-1 transition-transform duration-200" :class="showDetailedResults ? 'rotate-90' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-              </svg>
+              <IconChevronRight class="h-4 w-4 mr-1 transition-transform duration-200" :class="showDetailedResults ? 'rotate-90' : ''" />
               {{ showDetailedResults ? "隐藏详细结果" : "显示详细结果" }}
             </button>
           </div>
@@ -750,14 +685,8 @@ onMounted(async () => {
               <div class="bg-gray-50 dark:bg-gray-900/50 rounded p-2 sm:p-3 text-xs sm:text-sm">
                 <div class="flex items-center mb-1">
                   <span class="mr-1" :class="selectedTestResult.result?.read?.success ? 'text-green-500' : 'text-red-500'">
-                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        :d="selectedTestResult.result?.read?.success ? 'M5 13l4 4L19 7' : 'M6 18L18 6M6 6l12 12'"
-                      ></path>
-                    </svg>
+                    <IconCheck v-if="selectedTestResult.result?.read?.success" class="h-4 w-4" />
+                    <IconClose v-else class="h-4 w-4" />
                   </span>
                   <span :class="selectedTestResult.result?.read?.success ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'">
                     {{ selectedTestResult.result?.read?.success ? "读取权限测试成功" : "读取权限测试失败" }}
@@ -766,9 +695,7 @@ onMounted(async () => {
 
                 <!-- 添加测试说明 -->
                 <div v-if="selectedTestResult.result?.read?.note" class="mb-2 pl-5 text-amber-600 dark:text-amber-400 text-xs italic">
-                  <svg class="h-3 w-3 inline-block mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
+                  <IconError class="h-3 w-3 inline-block mr-1" />
                   {{ selectedTestResult.result.read.note }}
                 </div>
 
@@ -813,14 +740,8 @@ onMounted(async () => {
               <div class="bg-gray-50 dark:bg-gray-900/50 rounded p-2 sm:p-3 text-xs sm:text-sm">
                 <div class="flex items-center mb-1">
                   <span class="mr-1" :class="selectedTestResult.result?.write?.success ? 'text-green-500' : 'text-red-500'">
-                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        :d="selectedTestResult.result?.write?.success ? 'M5 13l4 4L19 7' : 'M6 18L18 6M6 6l12 12'"
-                      ></path>
-                    </svg>
+                    <IconCheck v-if="selectedTestResult.result?.write?.success" class="h-4 w-4" />
+                    <IconClose v-else class="h-4 w-4" />
                   </span>
                   <span :class="selectedTestResult.result?.write?.success ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'">
                     {{ selectedTestResult.result?.write?.success ? "写入权限测试成功" : "写入权限测试失败" }}
@@ -829,9 +750,7 @@ onMounted(async () => {
 
                 <!-- 添加测试说明 -->
                 <div v-if="selectedTestResult.result?.write?.note" class="mb-2 pl-5 text-amber-600 dark:text-amber-400 text-xs italic">
-                  <svg class="h-3 w-3 inline-block mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
+                  <IconError class="h-3 w-3 inline-block mr-1" />
                   {{ selectedTestResult.result.write.note }}
                 </div>
 
@@ -892,14 +811,8 @@ onMounted(async () => {
               <div class="bg-gray-50 dark:bg-gray-900/50 rounded p-2 sm:p-3 text-xs sm:text-sm">
                 <div class="flex items-center mb-1">
                   <span class="mr-1" :class="selectedTestResult.result?.cors?.success ? 'text-green-500' : 'text-red-500'">
-                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        :d="selectedTestResult.result?.cors?.success ? 'M5 13l4 4L19 7' : 'M6 18L18 6M6 6l12 12'"
-                      ></path>
-                    </svg>
+                    <IconCheck v-if="selectedTestResult.result?.cors?.success" class="h-4 w-4" />
+                    <IconClose v-else class="h-4 w-4" />
                   </span>
                   <span :class="selectedTestResult.result?.cors?.success ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'">
                     {{ selectedTestResult.result?.cors?.success ? "CORS预检请求测试通过" : "CORS预检请求测试失败" }}
@@ -1035,14 +948,8 @@ onMounted(async () => {
               <div class="bg-gray-50 dark:bg-gray-900/50 rounded p-2 sm:p-3 text-xs sm:text-sm">
                 <div class="flex items-center mb-1">
                   <span class="mr-1" :class="selectedTestResult.result?.frontendSim?.success ? 'text-green-500' : 'text-red-500'">
-                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        :d="selectedTestResult.result?.frontendSim?.success ? 'M5 13l4 4L19 7' : 'M6 18L18 6M6 6l12 12'"
-                      ></path>
-                    </svg>
+                    <IconCheck v-if="selectedTestResult.result?.frontendSim?.success" class="h-4 w-4" />
+                    <IconClose v-else class="h-4 w-4" />
                   </span>
                   <span :class="selectedTestResult.result?.frontendSim?.success ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'">
                   {{ selectedTestResult.result?.frontendSim?.success ? "上传测试通过" : "上传测试失败" }}
@@ -1051,9 +958,7 @@ onMounted(async () => {
 
                 <!-- 添加测试说明 -->
                 <div v-if="selectedTestResult.result?.frontendSim?.note" class="mb-2 pl-5 text-amber-600 dark:text-amber-400 text-xs italic">
-                  <svg class="h-3 w-3 inline-block mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
+                  <IconError class="h-3 w-3 inline-block mr-1" />
                   {{ selectedTestResult.result.frontendSim.note }}
                 </div>
 
@@ -1070,14 +975,8 @@ onMounted(async () => {
                       </span>
                       <span class="font-medium">{{ selectedTestResult.result.frontendSim.steps.step1?.name || "获取预签名URL" }}</span>
                       <span class="ml-auto" :class="selectedTestResult.result.frontendSim.steps.step1?.success ? 'text-green-500' : 'text-red-500'">
-                        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="2"
-                            :d="selectedTestResult.result.frontendSim.steps.step1?.success ? 'M5 13l4 4L19 7' : 'M6 18L18 6M6 6l12 12'"
-                          ></path>
-                        </svg>
+                        <IconCheck v-if="selectedTestResult.result.frontendSim.steps.step1?.success" class="h-4 w-4" />
+                        <IconClose v-else class="h-4 w-4" />
                       </span>
                     </div>
                     <!-- 步骤1详情 -->
@@ -1091,9 +990,7 @@ onMounted(async () => {
                           @click="$event.currentTarget.previousElementSibling.classList.toggle('whitespace-nowrap')"
                           class="text-blue-500 hover:text-blue-600 text-xs ml-1 inline-flex items-center"
                         >
-                          <svg class="h-3 w-3 mr-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
-                          </svg>
+                          <IconChevronRight class="h-3 w-3 mr-0.5" />
                           <span>展开/收起</span>
                         </button>
                       </div>
@@ -1124,14 +1021,8 @@ onMounted(async () => {
                         class="ml-auto"
                         :class="selectedTestResult.result.frontendSim.steps.step2?.success ? 'text-green-500' : 'text-red-500'"
                       >
-                        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="2"
-                            :d="selectedTestResult.result.frontendSim.steps.step2?.success ? 'M5 13l4 4L19 7' : 'M6 18L18 6M6 6l12 12'"
-                          ></path>
-                        </svg>
+                        <IconCheck v-if="selectedTestResult.result.frontendSim.steps.step2?.success" class="h-4 w-4" />
+                        <IconClose v-else class="h-4 w-4" />
                       </span>
                     </div>
                     <!-- 步骤2详情 -->
@@ -1182,14 +1073,8 @@ onMounted(async () => {
                         class="ml-auto"
                         :class="selectedTestResult.result.frontendSim.steps.step3?.success ? 'text-green-500' : 'text-red-500'"
                       >
-                        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="2"
-                            :d="selectedTestResult.result.frontendSim.steps.step3?.success ? 'M5 13l4 4L19 7' : 'M6 18L18 6M6 6l12 12'"
-                          ></path>
-                        </svg>
+                        <IconCheck v-if="selectedTestResult.result.frontendSim.steps.step3?.success" class="h-4 w-4" />
+                        <IconClose v-else class="h-4 w-4" />
                       </span>
                     </div>
                     <!-- 步骤3详情 -->

@@ -14,14 +14,7 @@
           <div class="flex items-center gap-3">
             <div class="flex items-center gap-2">
               <!-- 图廊图标 -->
-              <svg class="w-5 h-5" :class="darkMode ? 'text-blue-400' : 'text-blue-600'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-                />
-              </svg>
+              <IconGallery :class="darkMode ? 'text-blue-400' : 'text-blue-600'" aria-hidden="true" />
               <span class="font-medium text-sm" :class="darkMode ? 'text-gray-200' : 'text-gray-900'">
                 {{ t("gallery.viewModeName") }}
               </span>
@@ -45,13 +38,9 @@
                 class="flex items-center gap-1 px-3 py-1.5 text-sm rounded-md transition-colors"
                 :class="darkMode ? 'hover:bg-gray-700 text-gray-300' : 'hover:bg-gray-100 text-gray-700'"
               >
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" />
-                </svg>
+                <IconSortAscending size="sm" aria-hidden="true" />
                 <span class="hidden sm:inline">{{ t("gallery.sort") }}</span>
-                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-                </svg>
+                <IconChevronDown size="xs" aria-hidden="true" />
               </button>
 
               <!-- 排序菜单 -->
@@ -88,14 +77,7 @@
               class="flex items-center gap-1 px-3 py-1.5 text-sm rounded-md transition-colors"
               :class="darkMode ? 'hover:bg-gray-700 text-gray-300' : 'hover:bg-gray-100 text-gray-700'"
             >
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4"
-                />
-              </svg>
+              <IconAdjustments size="sm" aria-hidden="true" />
               <span class="hidden sm:inline">{{ t("gallery.settings") }}</span>
             </button>
           </div>
@@ -286,14 +268,7 @@
                 <div v-else-if="getImageState(item.image)?.status === 'error'" class="masonry-placeholder bg-red-100 dark:bg-red-900/20" :style="getPlaceholderStyle()">
                   <div class="placeholder-content">
                     <div class="w-8 h-8 mx-auto mb-2 opacity-50">
-                      <svg class="w-full h-full text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          stroke-width="2"
-                          d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"
-                        />
-                      </svg>
+                      <IconExclamation class="w-full h-full text-red-500" aria-hidden="true" />
                     </div>
                     <span class="text-xs opacity-75 text-red-600 dark:text-red-400"> {{ t("gallery.loadError") }} </span>
                   </div>
@@ -332,14 +307,7 @@
       <div class="max-w-md mx-auto">
         <!-- 图片图标 -->
         <div class="w-24 h-24 mx-auto mb-6 opacity-30">
-          <svg class="w-full h-full" :class="darkMode ? 'text-gray-500' : 'text-gray-400'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="1.5"
-              d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-            />
-          </svg>
+          <IconGallery class="w-full h-full" :class="darkMode ? 'text-gray-500' : 'text-gray-400'" aria-hidden="true" />
         </div>
 
         <!-- 主要消息 -->
@@ -372,6 +340,7 @@ import { useI18n } from "vue-i18n";
 import { useGalleryView } from "@/composables/ui-interaction/useGalleryView";
 import { useContextMenu } from "@/composables/useContextMenu";
 import { detectLivePhoto } from "@/utils/livePhotoUtils.js";
+import { IconAdjustments, IconChevronDown, IconExclamation, IconGallery, IconSortAscending } from "@/components/icons";
 import { getFileIcon } from "@/utils/fileTypeIcons";
 import { formatFileSize } from "@/utils/fileUtils";
 import MasonryWall from "@yeger/vue-masonry-wall";

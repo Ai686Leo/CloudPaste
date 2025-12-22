@@ -1,31 +1,93 @@
 <template>
   <div class="audio-preview-container">
-    <!-- 音频预览 -->
+    <!-- 音频预览提示 -->
     <div class="audio-preview p-4">
-      <AudioPlayer
-        ref="audioPlayerRef"
-        v-if="audioUrl && audioData"
-        :audio-list="finalAudioList"
-        :current-audio="null"
-        :dark-mode="darkMode"
-        :autoplay="false"
-        :show-playlist="true"
-        :list-folded="true"
-        :list-max-height="'380px'"
-        :mode="'normal'"
-        :volume="0.7"
-        :loop="'all'"
-        :order="'list'"
-        @play="handlePlay"
-        @pause="handlePause"
-        @error="handleError"
-        @canplay="handleCanPlay"
-        @ended="handleAudioEnded"
-        @listswitch="handleListSwitch"
-      />
-      <div v-else class="loading-indicator text-center py-8">
-        <div class="animate-spin rounded-full h-10 w-10 border-b-2 mx-auto" :class="darkMode ? 'border-primary-500' : 'border-primary-600'"></div>
-        <p class="mt-2 text-sm" :class="darkMode ? 'text-gray-400' : 'text-gray-600'">{{ $t("mount.audioPreview.loadingAudio") }}</p>
+      <!-- 加载中状态 -->
+      <div v-if="isLoadingPlaylist" class="text-center py-8">
+        <LoadingIndicator
+          :text="$t('mount.audioPreview.loadingAudio')"
+          :dark-mode="darkMode"
+          size="2xl"
+          :icon-class="darkMode ? 'text-primary-500' : 'text-primary-600'"
+        />
+      </div>
+
+      <!-- 已发送到全局播放器的提示 -->
+      <div v-else-if="sentToGlobalPlayer" class="flex flex-col items-center max-w-sm mx-auto py-8">
+        <!-- 标题和描述 -->
+        <div class="text-center mb-6">
+          <h3
+            class="text-lg font-semibold mb-1.5"
+            :class="darkMode ? 'text-gray-100' : 'text-gray-900'"
+          >
+            {{ $t('mount.audioPreview.playingInGlobalPlayer') }}
+          </h3>
+          <p
+            class="text-sm"
+            :class="darkMode ? 'text-gray-400' : 'text-gray-600'"
+          >
+            {{ currentFileName }}
+          </p>
+        </div>
+        <!-- 按钮 -->
+        <div class="flex w-full gap-2">
+          <button
+            class="flex-1 px-4 py-2 rounded-md border transition-colors flex items-center justify-center gap-1.5 text-sm font-medium"
+            :class="[
+              darkMode
+                ? 'border-gray-600 text-gray-300 hover:bg-gray-700'
+                : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+            ]"
+            @click="backToLocalPreview"
+          >
+            <span>{{ $t('mount.audioPreview.backToPreview') }}</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 本地预览模式（可选，用于首次加载时显示） -->
+      <div v-else-if="!sentToGlobalPlayer && audioUrl && audioData" class="audio-player-wrapper">
+        <AudioPlayer
+          ref="audioPlayerRef"
+          :audio-list="finalAudioList"
+          :current-audio="null"
+          :dark-mode="darkMode"
+          :autoplay="false"
+          :show-playlist="true"
+          :list-folded="true"
+          :list-max-height="'380px'"
+          :mode="'normal'"
+          :volume="0.7"
+          :loop="'all'"
+          :order="'list'"
+          @play="handlePlay"
+          @pause="handlePause"
+          @error="handleError"
+          @canplay="handleCanPlay"
+          @ended="handleAudioEnded"
+          @leftswitch="handleListSwitch"
+        />
+        <!-- 发送到全局播放器按钮 - 悬浮在播放器右上角 -->
+        <button
+          class="send-to-global-btn"
+          :class="{ 'dark': darkMode }"
+          :title="$t('mount.audioPreview.sendToGlobalPlayer')"
+          @click="sendToGlobalPlayer"
+        >
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- 无音频数据 -->
+      <div v-else class="text-center py-8">
+        <LoadingIndicator
+          :text="$t('mount.audioPreview.loadingAudio')"
+          :dark-mode="darkMode"
+          size="2xl"
+          :icon-class="darkMode ? 'text-primary-500' : 'text-primary-600'"
+        />
       </div>
     </div>
   </div>
@@ -33,13 +95,18 @@
 
 <script setup>
 import { computed, ref, onMounted, onBeforeUnmount, watch, nextTick } from "vue";
-  import { useI18n } from "vue-i18n";
-  import AudioPlayer from "@/components/common/AudioPlayer.vue";
-  import { FileType } from "@/utils/fileTypes.js";
-  import { useFsService } from "@/modules/fs";
-  
-  const { t } = useI18n();
-  const fsService = useFsService();
+import { useI18n } from "vue-i18n";
+import AudioPlayer from "@/components/common/AudioPlayer.vue";
+import { FileType } from "@/utils/fileTypes.js";
+import { useFsService } from "@/modules/fs";
+import LoadingIndicator from "@/components/common/LoadingIndicator.vue";
+import { useGlobalPlayer } from "@/composables/useGlobalPlayer.js";
+
+const { t } = useI18n();
+const fsService = useFsService();
+
+// 全局播放器
+const globalPlayer = useGlobalPlayer();
 
 // Props 定义
 const props = defineProps({
@@ -83,19 +150,24 @@ const audioPlayerRef = ref(null);
 const isPlaying = ref(false);
 const originalTitle = ref("");
 
+// 是否已发送到全局播放器
+const sentToGlobalPlayer = ref(false);
+
 // 播放列表相关
-const audioPlaylist = ref([]); // 存储完整的音频播放列表数据
+const audioPlaylist = ref([]);
 const isLoadingPlaylist = ref(false);
 
 // 当前音频数据（响应式）
 const currentAudioData = ref(null);
 
-// 计算最终的播放列表（确保至少有当前音频）
+// 当前文件名
+const currentFileName = computed(() => props.file?.name || t("mount.audioPreview.unknownAudio"));
+
+// 计算最终的播放列表
 const finalAudioList = computed(() => {
   if (audioPlaylist.value.length > 0) {
     return audioPlaylist.value;
   } else if (currentAudioData.value) {
-    // 即使只有一个音频文件，也创建一个数组，这样 APlayer 会显示播放列表按钮
     return [currentAudioData.value];
   }
   return [];
@@ -106,9 +178,7 @@ const audioData = computed(() => currentAudioData.value);
 
 // 更新页面标题
 const updatePageTitle = (playing = false, fileName = null) => {
-  // 使用传入的文件名，如果没有则使用默认值
   const title = fileName || t("mount.audioPreview.audioPlayer");
-
   document.title = playing ? `🎵 ${title}` : `${title}`;
 };
 
@@ -117,6 +187,40 @@ const restoreOriginalTitle = () => {
   if (originalTitle.value) {
     document.title = originalTitle.value;
   }
+};
+
+// 发送到全局播放器
+const sendToGlobalPlayer = () => {
+  if (finalAudioList.value.length === 0) {
+    console.warn("没有可播放的音频");
+    return;
+  }
+
+  // 找到当前文件在播放列表中的索引
+  const currentIndex = finalAudioList.value.findIndex(
+    (audio) => audio.originalFile?.path === props.file?.path || audio.name === props.file?.name
+  );
+
+  // 发送到全局播放器
+  globalPlayer.playAudio(finalAudioList.value, Math.max(0, currentIndex));
+
+  // 标记已发送
+  sentToGlobalPlayer.value = true;
+
+  // 停止本地播放器
+  if (audioPlayerRef.value) {
+    const player = audioPlayerRef.value.getInstance?.();
+    if (player) {
+      player.pause();
+    }
+  }
+
+  console.log("🎵 音频已发送到全局播放器");
+};
+
+// 返回本地预览模式
+const backToLocalPreview = () => {
+  sentToGlobalPlayer.value = false;
 };
 
 // 事件处理函数
@@ -135,12 +239,10 @@ const handlePause = (data) => {
 };
 
 const handleError = (error) => {
-  // 忽略Service Worker相关的误报错误
   if (error?.target?.src?.includes(window.location.origin) && currentAudioData.value?.url) {
-    console.log("🎵 忽略Service Worker相关的误报错误，音频实际可以正常播放");
+    console.log("🎵 忽略Service Worker相关的误报错误");
     return;
   }
-
   isPlaying.value = false;
   emit("error", error);
 };
@@ -150,42 +252,29 @@ const handleCanPlay = () => {
   emit("loaded");
 };
 
-// 处理音频播放结束
 const handleAudioEnded = () => {
   console.log("音频播放结束");
-  // APlayer 会根据 loop 和 order 参数自动处理下一首播放
-  // 不需要手动调用 playNext()
 };
 
-// 处理 APlayer 的列表切换事件
 const handleListSwitch = (data) => {
-  // 解析索引
   const audioIndex = data?.index?.index ?? data?.index;
-
-  // 获取音频名称
   let audioName = null;
   if (data?.audio?.name) {
     audioName = data.audio.name;
   } else if (typeof audioIndex === "number" && finalAudioList.value[audioIndex]) {
     audioName = finalAudioList.value[audioIndex].name;
   }
-
   updatePageTitle(isPlaying.value, audioName);
 };
 
 // 获取当前目录下的音频文件列表
 const loadAudioPlaylist = async () => {
   console.log("🎵 开始加载音频播放列表...");
-  console.log("当前路径:", props.currentPath);
-  console.log("是否为管理员:", props.isAdmin);
-  console.log("目录项目数量:", props.directoryItems?.length || 0);
 
   if (!props.currentPath || isLoadingPlaylist.value) {
-    console.log("❌ 跳过加载: 路径为空或正在加载中");
     return;
   }
 
-  // 防重复加载：如果播放列表已存在且路径相同，跳过
   if (audioPlaylist.value.length > 0) {
     console.log("✅ 播放列表已存在，跳过重复加载");
     return;
@@ -196,43 +285,26 @@ const loadAudioPlaylist = async () => {
 
     let directoryItems = [];
 
-    // 优先使用传入的目录数据，避免重复API调用
     if (props.directoryItems && props.directoryItems.length > 0) {
-      console.log("✅ 使用已有的目录数据，避免重复API调用");
       directoryItems = props.directoryItems;
     } else {
-      console.log("📡 目录数据为空，调用FS service获取");
       const data = await fsService.getDirectoryList(props.currentPath);
-
-      console.log("📁 目录列表响应:", data);
-
       if (data?.items) {
         directoryItems = data.items;
       } else {
-        console.log("❌ FS service 调用失败或无数据");
         return;
       }
     }
 
-    // 过滤出音频文件
     const audioFileList = directoryItems.filter((item) => {
       if (item.isDirectory) return false;
-      // 使用后端返回的type字段判断是否为音频文件
-      const isAudioFile = item.type === FileType.AUDIO;
-      return isAudioFile;
+      return item.type === FileType.AUDIO;
     });
 
-    console.log("🎵 过滤后的音频文件:", audioFileList);
-
-    // 按文件名排序
     audioFileList.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
 
-    // 生成播放列表（即使只有一个文件也生成，这样可以显示播放列表按钮）
     if (audioFileList.length > 0) {
-      console.log(`🎵 找到 ${audioFileList.length} 个音频文件，开始生成播放列表...`);
       await generateAudioPlaylist(audioFileList);
-    } else {
-      console.log("❌ 当前目录下没有找到音频文件");
     }
   } catch (error) {
     console.error("❌ 加载音频播放列表失败:", error);
@@ -243,30 +315,22 @@ const loadAudioPlaylist = async () => {
 
 // 生成音频播放列表数据
 const generateAudioPlaylist = async (audioFileList) => {
-  console.log("🎵 开始生成播放列表，文件数量:", audioFileList.length);
   const playlist = [];
 
   for (const audioFile of audioFileList) {
-    console.log(`🎵 处理音频文件: ${audioFile.name}`);
-
-    //如果是当前正在播放的音频，直接使用已有数据，避免重复请求
     if (audioFile.name === props.file?.name && currentAudioData.value) {
-      console.log(`✅ 跳过当前音频的重复请求，直接使用已有数据: ${audioFile.name}`);
       playlist.push(currentAudioData.value);
       continue;
     }
 
     try {
-      // 只对其他音频文件生成 S3 预签名 URL
       const presignedUrl = await generateS3PresignedUrl(audioFile);
-
       if (presignedUrl) {
         const audioItem = {
           name: audioFile.name || "unknown",
           artist: "unknown",
-          url: presignedUrl, // 使用 S3 预签名 URL，APlayer 可以直接访问
+          url: presignedUrl,
           cover: generateDefaultCover(audioFile.name),
-          // 保存原始文件信息
           originalFile: audioFile,
         };
         playlist.push(audioItem);
@@ -276,30 +340,22 @@ const generateAudioPlaylist = async (audioFileList) => {
     }
   }
 
-  // 确保当前播放的文件排在第一位
   const currentFileIndex = playlist.findIndex((audio) => audio.originalFile?.path === props.file.path);
   if (currentFileIndex > 0) {
     const currentFile = playlist.splice(currentFileIndex, 1)[0];
     playlist.unshift(currentFile);
   }
 
-  console.log("🎵 播放列表生成完成，总数:", playlist.length);
   audioPlaylist.value = playlist;
 
-  // 延迟更新 APlayer
   if (audioPlayerRef.value && playlist.length > 0) {
-    // 使用 setTimeout 确保所有异步操作完成
     setTimeout(() => {
       nextTick(() => {
         const player = audioPlayerRef.value?.getInstance();
         if (player && player.list && playlist.length > 0) {
           try {
-            // 使用官方 API 清空并重新添加播放列表
             player.list.clear();
-
-            // 验证并添加音频项目
             const validPlaylist = playlist.filter((audio) => audio?.url && audio?.name);
-
             validPlaylist.forEach((audio) => {
               try {
                 player.list.add(audio);
@@ -307,8 +363,6 @@ const generateAudioPlaylist = async (audioFileList) => {
                 console.error(`添加音频失败: ${audio.name}`, error);
               }
             });
-
-            // 切换到第一个音频
             if (validPlaylist.length > 0) {
               player.list.switch(0);
             }
@@ -321,10 +375,9 @@ const generateAudioPlaylist = async (audioFileList) => {
   }
 };
 
-// 生成 S3 预签名 URL（直接调用后端API，后端已有缓存机制）
+// 生成 S3 预签名 URL
 const generateS3PresignedUrl = async (audioFile) => {
   try {
-    // 使用 fsService 统一获取预签名链接
     const presignedUrl = await fsService.getFileLink(audioFile.path, null, false);
     return presignedUrl;
   } catch (error) {
@@ -341,11 +394,9 @@ const generateDefaultCover = (name) => {
   canvas.height = 100;
   const ctx = canvas.getContext("2d");
 
-  // 背景色
   ctx.fillStyle = props.darkMode ? "#60a5fa" : "#3b82f6";
   ctx.fillRect(0, 0, 100, 100);
 
-  // 文字
   ctx.fillStyle = "#ffffff";
   ctx.font = "bold 40px Arial";
   ctx.textAlign = "center";
@@ -355,22 +406,17 @@ const generateDefaultCover = (name) => {
   return canvas.toDataURL();
 };
 
-// 初始化当前音频数据（架构修复：统一使用S3预签名URL，消除重复请求）
+// 初始化当前音频数据
 const initializeCurrentAudio = async () => {
   if (!props.file) {
-    console.log("❌ 无法初始化当前音频：文件信息为空");
     return;
   }
 
-  console.log("🎵 开始初始化当前音频:", props.file.name);
-
-  // 使用S3预签名URL
   if (props.audioUrl) {
-    console.log("🎵 使用传入的S3预签名URL:", props.audioUrl);
     currentAudioData.value = {
       name: props.file.name || "unknown",
       artist: "unknown",
-      url: props.audioUrl, // 直接使用，与播放列表保持一致
+      url: props.audioUrl,
       cover: generateDefaultCover(props.file.name),
       contentType: props.file.contentType,
       originalFile: props.file,
@@ -378,8 +424,7 @@ const initializeCurrentAudio = async () => {
     return;
   }
 
-  // 🔄 降级方案：理论上不应该到达这里，因为audioUrl应该总是存在
-  console.warn("⚠️ audioUrl为空，这表明上游有问题");
+  console.warn("⚠️ audioUrl为空");
   currentAudioData.value = {
     name: props.file.name || "unknown",
     artist: "unknown",
@@ -389,22 +434,35 @@ const initializeCurrentAudio = async () => {
   };
 };
 
-// 监听 audioUrl 变化，当准备好时初始化当前音频
+// 监听 audioUrl 变化
 watch(
   () => props.audioUrl,
   async (newAudioUrl, oldAudioUrl) => {
-    // 只有当audioUrl真正变化时才重新初始化（避免重复初始化）
     if (newAudioUrl && props.file && newAudioUrl !== oldAudioUrl) {
-      console.log("🎵 检测到 audioUrl 变化，开始重新初始化当前音频:", newAudioUrl);
       await initializeCurrentAudio();
+    }
+  }
+);
+
+// 监听全局播放器状态，自动同步 sentToGlobalPlayer
+watch(
+  [() => globalPlayer.isVisible.value, () => globalPlayer.hasPlaylist.value],
+  ([visible, hasPlaylist]) => {
+    // 当全局播放器关闭或播放列表清空时，自动返回本地预览
+    if (sentToGlobalPlayer.value && (!visible || !hasPlaylist)) {
+      sentToGlobalPlayer.value = false;
     }
   }
 );
 
 // 快捷键处理
 const handleKeydown = (event) => {
-  // 如果用户正在输入框中输入，不处理快捷键
   if (event.target.tagName === "INPUT" || event.target.tagName === "TEXTAREA") {
+    return;
+  }
+
+  // 如果已发送到全局播放器，不处理本地快捷键
+  if (sentToGlobalPlayer.value) {
     return;
   }
 
@@ -414,51 +472,41 @@ const handleKeydown = (event) => {
   switch (event.code) {
     case "Space":
       event.preventDefault();
-      player.toggle(); // 播放/暂停
+      player.toggle();
       break;
     case "ArrowLeft":
       event.preventDefault();
-      player.seek(Math.max(0, player.audio.currentTime - 10)); // 后退10秒
+      player.seek(Math.max(0, player.audio.currentTime - 10));
       break;
     case "ArrowRight":
       event.preventDefault();
-      player.seek(Math.min(player.audio.duration, player.audio.currentTime + 10)); // 前进10秒
+      player.seek(Math.min(player.audio.duration, player.audio.currentTime + 10));
       break;
     case "ArrowUp":
       event.preventDefault();
-      player.volume(Math.min(1, player.audio.volume + 0.1)); // 音量+10%
+      player.volume(Math.min(1, player.audio.volume + 0.1));
       break;
     case "ArrowDown":
       event.preventDefault();
-      player.volume(Math.max(0, player.audio.volume - 0.1)); // 音量-10%
+      player.volume(Math.max(0, player.audio.volume - 0.1));
       break;
   }
 };
 
 // 生命周期钩子
 onMounted(() => {
-  // 保存原始页面标题
   originalTitle.value = document.title;
-
-  // 添加键盘事件监听
   document.addEventListener("keydown", handleKeydown);
 
-  // 延迟加载播放列表和初始化当前音频，确保props已经传递完成
   nextTick(async () => {
-    // 先初始化当前音频，确保audioData有值
     await initializeCurrentAudio();
-    // 然后加载播放列表
     loadAudioPlaylist();
   });
 });
 
 onBeforeUnmount(() => {
-  // 恢复原始页面标题
   restoreOriginalTitle();
-
-  // 移除键盘事件监听
   document.removeEventListener("keydown", handleKeydown);
-
   console.log("🧹 音频预览组件已卸载");
 });
 </script>

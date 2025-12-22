@@ -1,6 +1,6 @@
 export default {
   tasks: {
-    title: 'Task Management',
+    title: 'Tasks & Operations',
     description: 'View and manage all background tasks in the system',
     loading: 'Loading...',
 
@@ -12,14 +12,23 @@ export default {
     filters: {
       searchPlaceholder: 'Search task name, ID or path...',
       allStatuses: 'All Statuses',
+      allTypes: 'All Types',
+      allCreators: 'All Creators',
+      allTriggers: 'All Triggers',
+    },
+
+    list: {
+      title: 'Task List',
     },
 
     table: {
       name: 'Name',
       creator: 'Creator',
       status: 'Status',
-      progress: 'Progress',
+      progress: 'Stats / Progress',
       actions: 'Actions',
+      details: 'Job Details',
+      createdAt: 'Created At',
     },
 
     status: {
@@ -38,9 +47,22 @@ export default {
       collapseAll: 'Collapse All',
       delete: 'Delete Task',
       deleteShort: 'Delete',
+      viewDetails: 'View Details',
+      deleteTask: 'Delete Task',
       retryFile: 'Retry this file',
       retryAllFailed: 'Retry all failed files',
       retrySelected: 'Retry selected files',
+    },
+
+    labels: {
+      creator: 'Creator',
+      created: 'Created',
+      progress: 'Progress',
+    },
+
+    creator: {
+      admin: 'Admin',
+      keyPrefix: 'Key: {key}',
     },
 
     time: {
@@ -48,11 +70,59 @@ export default {
     },
 
     details: {
+      trigger: 'Source',
+      triggerRef: 'Source Ref',
       fileList: 'File List',
+      itemList: 'Details',
       sourcePath: 'Source Path',
       targetPath: 'Target Path',
+      payload: 'Payload',
       errorInfo: 'Error Info',
+      noFiles: 'No file info',
       none: 'None',
+    },
+
+    timeline: {
+      start: 'Start',
+      finish: 'Finish',
+      duration: 'Duration',
+    },
+
+    progress: {
+      items: '{count} items',
+      empty: '-',
+    },
+
+    indexDetails: {
+      rebuildTitle: 'Index Rebuild',
+      applyDirtyTitle: 'Apply Index Dirty',
+      mountUnit: 'mounts',
+      queueUnit: 'queue',
+      queueProcessed: 'Queue Processed',
+      updated: 'Updated',
+      deleted: 'Deleted',
+      skipped: 'Skipped',
+      duration: 'Duration',
+      discovered: 'Discovered Files/Dirs',
+      upserted: 'Indexed',
+      path: 'Path',
+      realtime: 'Realtime Progress',
+      scannedDirs: 'Scanned Dirs',
+      discoveredShort: 'Discovered',
+      pending: 'Pending Write',
+      noMounts: 'No mount info',
+      noRecords: 'No records',
+      unknownMount: 'Unknown Mount',
+      errors: {
+        indexNotReady: 'Index not ready',
+        mountNotFound: 'Mount not found',
+        permissionDenied: 'Permission denied',
+      },
+    },
+
+    trigger: {
+      manual: 'Manual',
+      scheduled: 'Scheduled',
     },
 
     fileStatus: {
@@ -104,12 +174,45 @@ export default {
     empty: {
       title: 'No Tasks',
       description: 'There are no task records currently',
+      tableNoData: 'No tasks found',
     },
 
     taskName: {
       single: '{file}',
       batch: '{file} (+{count})',
       default: 'Task {id}',
+    },
+
+    taskType: {
+      copy: 'Copy',
+      fs_index_rebuild: 'Index Rebuild',
+      fs_index_apply_dirty: 'Apply Index Dirty',
+      unknown: 'Unknown Task',
+      unknownWithType: 'Unknown ({type})',
+    },
+
+    // Stage names for staged tasks
+    stages: {
+      scanning: 'Scanning Files',
+      indexing: 'Building Index',
+      finalizing: 'Finalizing',
+      loading: 'Loading Changes',
+      applying: 'Applying Changes',
+      committing: 'Committing Updates',
+      pending: 'Pending',
+      running: 'Running',
+      completed: 'Completed',
+      failed: 'Failed',
+    },
+
+    // Statistics
+    stats: {
+      total: 'This Page Total',
+      running: 'Running (This Page)',
+      completed: 'Completed (This Page)',
+      success: 'Success',
+      failed: 'Failed (This Page)',
+      skipped: 'Skipped',
     },
 
     unknownFile: 'Unknown file',

@@ -15,6 +15,9 @@ export { UrlCacheManager, urlCacheManager, clearUrlCache } from "./UrlCache.js";
 // ==================== 搜索缓存 ====================
 export { SearchCacheManager, searchCacheManager, clearSearchCache } from "./SearchCache.js";
 
+// ==================== FS 目录摘要缓存 ====================
+export { FsFolderSummaryCacheManager, fsFolderSummaryCacheManager } from "./FsFolderSummaryCache.js";
+
 // ==================== 预览设置缓存 ====================
 export { PreviewSettingsCache, previewSettingsCache } from "./PreviewSettingsCache.js";
 

@@ -1,6 +1,7 @@
 <script setup>
 import { reactive, watch } from "vue";
 // 编辑文本属性的弹窗
+import { IconClose } from "@/components/icons";
 
 // 组件接收的属性定义
 const props = defineProps({
@@ -194,9 +195,7 @@ const saveEdit = () => {
             class="rounded-md p-1 inline-flex items-center justify-center text-gray-400 hover:text-gray-500 dark:hover:text-gray-300 focus:outline-none"
           >
             <span class="sr-only">关闭</span>
-            <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <IconClose class="h-5 w-5" />
           </button>
         </div>
 

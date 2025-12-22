@@ -17,6 +17,7 @@
  */
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
+import { IconCollection, IconGrid, IconList } from "@/components/icons";
 
 const props = defineProps({
   /**
@@ -72,11 +73,9 @@ const getOptionTitle = (option) => {
 const sizeConfig = computed(() => ({
   sm: {
     button: "px-2 py-1.5 text-xs",
-    icon: "h-3.5 w-3.5",
   },
   md: {
     button: "px-3 py-2 text-sm",
-    icon: "h-4 w-4",
   },
 }));
 
@@ -137,24 +136,15 @@ const handleClick = (value) => {
   }
 };
 
-/**
- * 图标路径映射
- */
-const iconPaths = {
-  // 表格视图 - 三条横线
-  table: "M4 6h16M4 12h16M4 18h16",
-  // 列表视图 - 四条横线
-  list: "M4 6h16M4 10h16M4 14h16M4 18h16",
-  // 卡片/网格/瀑布流视图 - 2x2 网格 (使用多个路径)
-  card: null, // 使用特殊渲染
-  grid: null,
-  masonry: null,
+const iconComponentMap = {
+  table: IconList,
+  list: IconList,
+  card: IconCollection,
+  grid: IconGrid,
+  masonry: IconGrid,
 };
 
-/**
- * 判断是否为网格类图标
- */
-const isGridIcon = (icon) => ["card", "grid", "masonry"].includes(icon);
+const getIconComponent = (icon) => iconComponentMap[icon] || IconList;
 </script>
 
 <template>
@@ -167,30 +157,7 @@ const isGridIcon = (icon) => ["card", "grid", "masonry"].includes(icon);
       :title="getOptionTitle(option)"
       @click="handleClick(option.value)"
     >
-      <!-- 网格类图标 (card/grid/masonry) -->
-      <svg
-        v-if="isGridIcon(option.icon)"
-        :class="currentSize.icon"
-        fill="none"
-        viewBox="0 0 24 24"
-        stroke="currentColor"
-      >
-        <path
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          stroke-width="2"
-          d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zM14 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"
-        />
-      </svg>
-      <!-- 线条类图标 (table/list) -->
-      <svg v-else :class="currentSize.icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          stroke-width="2"
-          :d="iconPaths[option.icon] || iconPaths.table"
-        />
-      </svg>
+      <component :is="getIconComponent(option.icon)" :size="props.size" class="shrink-0" />
     </button>
   </div>
 </template>

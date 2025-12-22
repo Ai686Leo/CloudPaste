@@ -73,7 +73,7 @@ router.put("/api/upload-direct/:filename", requireFilesCreate, async (c) => {
     { ...shareParams, uploadId: uploadId || null }
   );
 
-  // 对齐 /api/share/get/:slug：统一返回公开文件信息（含 previewUrl/downloadUrl/linkType/documentPreview），不再返回分享页 URL
+  // 对齐 /api/share/get/:slug：统一返回公开文件信息（含 previewUrl/downloadUrl/linkType/previewSelection），不再返回分享页 URL
   // upload-direct 属于受信任调用场景：
   // - 即使设置了密码，这里也视为“已通过校验”，始终返回 preview/download 入口，方便调用方直接使用
   // - 对于代理模式（share 内容路由），自动在预览/下载 URL 上附加 password 查询参数

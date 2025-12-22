@@ -1,6 +1,7 @@
 import { api } from "@/api";
 import { useAuthStore } from "@/stores/authStore.js";
 import { usePathPassword } from "@/composables/usePathPassword.js";
+import { useExplorerSettings } from "@/composables/useExplorerSettings.js";
 
 /** @typedef {import("@/types/fs").FsDirectoryResponse} FsDirectoryResponse */
 /** @typedef {import("@/types/fs").FsDirectoryItem} FsDirectoryItem */
@@ -18,6 +19,7 @@ import { usePathPassword } from "@/composables/usePathPassword.js";
 export function useFsService() {
   const authStore = useAuthStore();
   const pathPassword = usePathPassword();
+  const explorerSettings = useExplorerSettings();
 
   // 目录列表条件请求缓存（强一致性路线：依赖后端 ETag；前端仅做“可验证缓存”）
   const DIRECTORY_LIST_CACHE_LIMIT = 50;

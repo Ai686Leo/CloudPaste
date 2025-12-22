@@ -12,6 +12,7 @@ import {
 } from "@/modules/storage-core/schema/adminStorageSchemas.js";
 import { useAdminStorageTypeBehavior } from "@/modules/admin/storage/adminStorageTypeBehavior.js";
 import { api } from "@/api";
+import { IconEye, IconEyeOff, IconRefresh } from "@/components/icons";
 
 const { t } = useI18n();
 
@@ -737,31 +738,9 @@ onMounted(async () => {
                             :class="darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'"
                             :disabled="isSecretRevealing(fieldName)"
                           >
-                            <svg
-                              v-if="!isSecretRevealing(fieldName) && !isSecretVisible(fieldName)"
-                              xmlns="http://www.w3.org/2000/svg"
-                              class="h-4 w-4"
-                              fill="none"
-                              viewBox="0 0 24 24"
-                              stroke="currentColor"
-                            >
-                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.477 0 8.268 2.943 9.542 7-1.274 4.057-5.065 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                              <circle cx="12" cy="12" r="3" stroke-width="2" />
-                            </svg>
-                            <svg
-                              v-else-if="!isSecretRevealing(fieldName) && isSecretVisible(fieldName)"
-                              xmlns="http://www.w3.org/2000/svg"
-                              class="h-4 w-4"
-                              fill="none"
-                              viewBox="0 0 24 24"
-                              stroke="currentColor"
-                            >
-                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.477 0-8.268-2.943-9.542-7a10.05 10.05 0 013.47-5.23M6.1 6.1C7.93 5.103 9.91 4.5 12 4.5c4.477 0 8.268 2.943 9.542 7-.337 1.075-.84 2.08-1.48 2.985M3 3l18 18" />
-                            </svg>
-                            <svg v-else class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-                              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                            </svg>
+                            <IconEye v-if="!isSecretRevealing(fieldName) && !isSecretVisible(fieldName)" size="sm" />
+                            <IconEyeOff v-else-if="!isSecretRevealing(fieldName) && isSecretVisible(fieldName)" size="sm" />
+                            <IconRefresh v-else size="sm" class="animate-spin" />
                           </button>
                         </div>
                         <input
@@ -875,31 +854,9 @@ onMounted(async () => {
                           :class="darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'"
                           :disabled="isSecretRevealing(row.field)"
                         >
-                          <svg
-                            v-if="!isSecretRevealing(row.field) && !isSecretVisible(row.field)"
-                            xmlns="http://www.w3.org/2000/svg"
-                            class="h-4 w-4"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
-                          >
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.477 0 8.268 2.943 9.542 7-1.274 4.057-5.065 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                            <circle cx="12" cy="12" r="3" stroke-width="2" />
-                          </svg>
-                          <svg
-                            v-else-if="!isSecretRevealing(row.field) && isSecretVisible(row.field)"
-                            xmlns="http://www.w3.org/2000/svg"
-                            class="h-4 w-4"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
-                          >
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.477 0-8.268-2.943-9.542-7a10.05 10.05 0 013.47-5.23M6.1 6.1C7.93 5.103 9.91 4.5 12 4.5c4.477 0 8.268 2.943 9.542 7-.337 1.075-.84 2.08-1.48 2.985M3 3l18 18" />
-                          </svg>
-                          <svg v-else class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                          </svg>
+                          <IconEye v-if="!isSecretRevealing(row.field) && !isSecretVisible(row.field)" size="sm" />
+                          <IconEyeOff v-else-if="!isSecretRevealing(row.field) && isSecretVisible(row.field)" size="sm" />
+                          <IconRefresh v-else size="sm" class="animate-spin" />
                         </button>
                       </div>
                       <!-- OneDrive refresh_token 字段：仅输入框，由外部授权站点提供令牌 -->
@@ -1011,10 +968,7 @@ onMounted(async () => {
           class="w-full sm:w-auto flex justify-center items-center px-4 py-2 rounded-md text-sm font-medium transition-colors duration-200 bg-primary-500 hover:bg-primary-600 text-white"
           :class="{ 'opacity-50 cursor-not-allowed': !formValid || loading }"
         >
-          <svg v-if="loading" class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-          </svg>
+          <IconRefresh v-if="loading" size="sm" class="animate-spin -ml-1 mr-2 text-white" />
           {{ loading ? "保存中..." : "保存配置" }}
         </button>
       </div>

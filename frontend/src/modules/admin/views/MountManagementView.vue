@@ -8,6 +8,7 @@ import ViewModeToggle from "@/components/common/ViewModeToggle.vue";
 import { useMountManagement } from "@/modules/admin/storage/useMountManagement.js";
 import { useThemeMode } from "@/composables/core/useThemeMode.js";
 import { useConfirmDialog } from "@/composables/core/useConfirmDialog.js";
+import { IconArchive, IconCalculator, IconCalendar, IconCheckCircle, IconClock, IconDelete, IconEye, IconFolder, IconFolderPlus, IconGlobeAlt, IconInformationCircle, IconRefresh, IconRename, IconSearch, IconShieldCheck, IconUser, IconXCircle } from "@/components/icons";
 
 /**
  * 挂载管理视图
@@ -112,9 +113,7 @@ onMounted(() => {
           :disabled="loading"
         >
           <span class="flex items-center">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-            </svg>
+            <IconFolderPlus class="h-4 w-4 mr-1.5" />
             {{ $t("admin.mount.createMount") }}
           </span>
         </button>
@@ -124,14 +123,7 @@ onMounted(() => {
           :class="darkMode ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-blue-500 hover:bg-blue-600 text-white'"
         >
           <span class="flex items-center">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-              />
-            </svg>
+            <IconRefresh class="h-4 w-4 mr-1.5" />
             {{ $t("admin.mount.refresh") }}
           </span>
         </button>
@@ -147,9 +139,7 @@ onMounted(() => {
     <div class="flex justify-between items-center mb-3 sm:mb-4" v-if="lastRefreshTime">
       <div class="text-xs sm:text-sm text-gray-500 dark:text-gray-400">
         <span class="inline-flex items-center">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 sm:h-4 sm:w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
+          <IconClock class="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
           {{ $t("admin.mount.info.lastRefresh") }}: {{ lastRefreshTime }}
         </span>
       </div>
@@ -171,9 +161,7 @@ onMounted(() => {
               "
             />
             <div class="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-              <svg class="h-4 w-4" :class="darkMode ? 'text-gray-400' : 'text-gray-400'" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
+              <IconSearch class="h-4 w-4" :class="darkMode ? 'text-gray-400' : 'text-gray-400'" />
             </div>
           </div>
         </div>
@@ -190,25 +178,13 @@ onMounted(() => {
 
     <!-- 加载中指示器 -->
     <div v-if="loading" class="flex justify-center my-8">
-      <svg class="animate-spin h-8 w-8" :class="darkMode ? 'text-blue-400' : 'text-blue-500'" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-      </svg>
+      <IconRefresh class="animate-spin h-8 w-8" :class="darkMode ? 'text-blue-400' : 'text-blue-500'" />
     </div>
 
     <!-- 挂载点列表为空 -->
     <div v-else-if="filteredMounts.length === 0" class="flex-grow flex items-center justify-center p-6">
       <div class="text-center">
-        <svg
-          class="mx-auto h-12 w-12 mb-4"
-          :class="darkMode ? 'text-gray-500' : 'text-gray-400'"
-          xmlns="http://www.w3.org/2000/svg"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-        >
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12H3v8h18v-8H5zm0 0a2 2 0 100-4h14a2 2 0 100 4M5 8a2 2 0 100-4h14a2 2 0 100 4" />
-        </svg>
+        <IconArchive class="mx-auto h-12 w-12 mb-4" :class="darkMode ? 'text-gray-500' : 'text-gray-400'" />
         <h3 class="text-lg font-medium mb-2" :class="darkMode ? 'text-white' : 'text-gray-900'">
           {{ searchQuery ? $t("admin.mount.searchResults.noResults") : isApiKeyUser ? $t("admin.mount.empty.title") : $t("admin.mount.empty.title") }}
         </h3>
@@ -301,7 +277,11 @@ onMounted(() => {
                           :class="darkMode ? 'bg-green-900/50 text-green-200' : 'bg-green-100 text-green-800'">
                       {{ $t("admin.mount.status.signature") }}
                     </span>
-                    <span v-if="!mount.web_proxy && !mount.enable_sign" class="text-xs" :class="darkMode ? 'text-gray-500' : 'text-gray-400'">-</span>
+                    <span v-if="mount.enable_folder_summary_compute" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
+                          :class="darkMode ? 'bg-purple-900/50 text-purple-200' : 'bg-purple-100 text-purple-800'">
+                      {{ $t("admin.mount.status.folderSummary") }}
+                    </span>
+                    <span v-if="!mount.web_proxy && !mount.enable_sign && !mount.enable_folder_summary_compute" class="text-xs" :class="darkMode ? 'text-gray-500' : 'text-gray-400'">-</span>
                   </div>
                 </td>
                 <!-- 创建时间 -->
@@ -320,10 +300,7 @@ onMounted(() => {
                         class="p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                         :class="darkMode ? 'text-indigo-400 hover:text-indigo-300' : 'text-indigo-600 hover:text-indigo-900'"
                         :title="$t('admin.mount.actions.edit')">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                        </svg>
+                        <IconRename class="h-5 w-5" />
                       </button>
                       <!-- 启用/禁用按钮 -->
                       <button
@@ -333,14 +310,8 @@ onMounted(() => {
                           ? (darkMode ? 'text-yellow-400 hover:text-yellow-300' : 'text-yellow-600 hover:text-yellow-900')
                           : (darkMode ? 'text-green-400 hover:text-green-300' : 'text-green-600 hover:text-green-900')"
                         :title="mount.is_active ? $t('admin.mount.actions.disable') : $t('admin.mount.actions.enable')">
-                        <svg v-if="mount.is_active" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-                        </svg>
-                        <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
+                        <IconXCircle v-if="mount.is_active" class="h-5 w-5" />
+                        <IconCheckCircle v-else class="h-5 w-5" />
                       </button>
                       <!-- 删除按钮 -->
                       <button
@@ -348,10 +319,7 @@ onMounted(() => {
                         class="p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                         :class="darkMode ? 'text-red-400 hover:text-red-300' : 'text-red-600 hover:text-red-900'"
                         :title="$t('admin.mount.actions.delete')">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
+                        <IconDelete class="h-5 w-5" />
                       </button>
                     </template>
                     <template v-else>
@@ -387,11 +355,13 @@ onMounted(() => {
                 <div class="mb-2 text-sm font-mono" :class="darkMode ? 'text-gray-300' : 'text-gray-600'">{{ mount.mount_path }}</div>
                 <div class="mb-2 text-sm" :class="darkMode ? 'text-gray-300' : 'text-gray-600'">{{ formatStorageType(mount) }}</div>
                 <div v-if="mount.remark" class="mb-2 text-sm truncate" :class="darkMode ? 'text-gray-400' : 'text-gray-500'" :title="mount.remark">{{ mount.remark }}</div>
-                <div v-if="mount.web_proxy || mount.enable_sign" class="mb-2 flex flex-wrap gap-1">
+                <div v-if="mount.web_proxy || mount.enable_sign || mount.enable_folder_summary_compute" class="mb-2 flex flex-wrap gap-1">
                   <span v-if="mount.web_proxy" class="inline-flex items-center px-2 py-0.5 rounded text-xs"
                         :class="darkMode ? 'bg-blue-900/50 text-blue-200' : 'bg-blue-100 text-blue-800'">{{ $t("admin.mount.status.proxy") }}</span>
                   <span v-if="mount.enable_sign" class="inline-flex items-center px-2 py-0.5 rounded text-xs"
                         :class="darkMode ? 'bg-green-900/50 text-green-200' : 'bg-green-100 text-green-800'">{{ $t("admin.mount.status.signature") }}</span>
+                  <span v-if="mount.enable_folder_summary_compute" class="inline-flex items-center px-2 py-0.5 rounded text-xs"
+                        :class="darkMode ? 'bg-purple-900/50 text-purple-200' : 'bg-purple-100 text-purple-800'">{{ $t("admin.mount.status.folderSummary") }}</span>
                 </div>
               </div>
               <div class="flex justify-end space-x-2 mt-3">
@@ -460,16 +430,10 @@ onMounted(() => {
               <!-- 挂载路径 - 改进显示 -->
               <div class="mb-3">
                 <div class="flex items-center">
-                  <svg
+                  <IconFolder
                     class="flex-shrink-0 mr-1.5 h-4 w-4"
                     :class="darkMode ? 'text-gray-400' : 'text-gray-500'"
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                  </svg>
+                  />
                   <p class="text-sm font-mono truncate" :class="darkMode ? 'text-gray-300' : 'text-gray-600'" :title="mount.mount_path">
                     {{ mount.mount_path }}
                   </p>
@@ -479,16 +443,10 @@ onMounted(() => {
               <!-- 存储类型和配置 - 改进显示 -->
               <div class="mb-3">
                 <div class="flex items-center text-sm" :class="darkMode ? 'text-gray-300' : 'text-gray-600'">
-                  <svg
+                  <IconArchive
                     class="flex-shrink-0 mr-1.5 h-4 w-4"
                     :class="darkMode ? 'text-gray-400' : 'text-gray-500'"
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12H3v8h18v-8H5zm0 0a2 2 0 100-4h14a2 2 0 100 4M5 8a2 2 0 100-4h14a2 2 0 100 4" />
-                  </svg>
+                  />
                   <span class="truncate" :title="formatStorageType(mount)">{{ formatStorageType(mount) }}</span>
                 </div>
               </div>
@@ -496,21 +454,10 @@ onMounted(() => {
               <!-- 备注说明 - 固定高度确保对齐 -->
               <div class="mb-3 min-h-[24px]">
                 <div v-if="mount.remark" class="flex items-start">
-                  <svg
+                  <IconInformationCircle
                     class="flex-shrink-0 mr-1.5 h-4 w-4 mt-0.5"
                     :class="darkMode ? 'text-gray-400' : 'text-gray-500'"
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"
-                    />
-                  </svg>
+                  />
                   <p class="text-sm truncate" :class="darkMode ? 'text-gray-400' : 'text-gray-500'" :title="mount.remark">
                     {{ mount.remark }}
                   </p>
@@ -521,14 +468,12 @@ onMounted(() => {
             <!-- 卡片底部信息区 -->
             <div>
               <!-- 代理和签名状态 -->
-              <div v-if="mount.web_proxy" class="mb-2 flex flex-wrap gap-1">
+              <div v-if="mount.web_proxy || mount.enable_folder_summary_compute" class="mb-2 flex flex-wrap gap-1">
                 <span
                   class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
                   :class="darkMode ? 'bg-blue-900/50 text-blue-200 border border-blue-800/50' : 'bg-blue-100 text-blue-800 border border-blue-200'"
                 >
-                  <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9v-9m0-9v9"></path>
-                  </svg>
+                  <IconGlobeAlt class="w-3 h-3 mr-1" />
                   {{ $t("admin.mount.status.proxy") }}
                 </span>
                 <span
@@ -536,36 +481,26 @@ onMounted(() => {
                   class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
                   :class="darkMode ? 'bg-green-900/50 text-green-200 border border-green-800/50' : 'bg-green-100 text-green-800 border border-green-200'"
                 >
-                  <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"
-                    ></path>
-                  </svg>
+                  <IconShieldCheck class="w-3 h-3 mr-1" />
                   {{ $t("admin.mount.status.signature") }}
+                </span>
+                <span
+                  v-if="mount.enable_folder_summary_compute"
+                  class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
+                  :class="darkMode ? 'bg-purple-900/50 text-purple-200 border border-purple-800/50' : 'bg-purple-100 text-purple-800 border border-purple-200'"
+                >
+                  <IconCalculator class="w-3 h-3 mr-1" />
+                  {{ $t("admin.mount.status.folderSummary") }}
                 </span>
               </div>
 
               <!-- 创建时间 -->
               <div class="text-xs mb-3" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
                 <div class="flex items-center">
-                  <svg
+                  <IconCalendar
                     class="flex-shrink-0 mr-1.5 h-3.5 w-3.5"
                     :class="darkMode ? 'text-gray-500' : 'text-gray-400'"
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-                    />
-                  </svg>
+                  />
                   <span>{{ $t("admin.mount.info.createdAt") }}: {{ formatDate(mount.created_at) }}</span>
                 </div>
               </div>
@@ -573,16 +508,10 @@ onMounted(() => {
               <!-- 创建者信息 -->
               <div class="text-xs mb-3" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
                 <div class="flex items-center">
-                  <svg
+                  <IconUser
                     class="flex-shrink-0 mr-1.5 h-3.5 w-3.5"
                     :class="darkMode ? 'text-gray-500' : 'text-gray-400'"
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                  </svg>
+                  />
                   <span>{{ $t("admin.mount.info.createdBy") }}: </span>
                   <span class="ml-1 px-1.5 py-0.5 text-xs rounded" :class="getCreatorClass(mount)">
                     {{ formatCreator(mount) }}
@@ -603,14 +532,7 @@ onMounted(() => {
                         : 'bg-gray-100 hover:bg-gray-200 text-gray-700 focus:ring-blue-500 focus:ring-offset-white'
                     "
                   >
-                    <svg class="h-3.5 w-3.5 mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                      />
-                    </svg>
+                    <IconRename class="h-3.5 w-3.5 mr-1" />
                     {{ $t("admin.mount.actions.edit") }}
                   </button>
                   <!-- 启用/禁用切换按钮 -->
@@ -627,17 +549,8 @@ onMounted(() => {
                         : 'bg-green-100 hover:bg-green-200 text-green-800 focus:ring-green-500 focus:ring-offset-white'
                     "
                   >
-                    <svg v-if="mount.is_active" class="h-3.5 w-3.5 mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"
-                      />
-                    </svg>
-                    <svg v-else class="h-3.5 w-3.5 mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
+                    <IconXCircle v-if="mount.is_active" class="h-3.5 w-3.5 mr-1" />
+                    <IconCheckCircle v-else class="h-3.5 w-3.5 mr-1" />
                     {{ mount.is_active ? $t("admin.mount.actions.disable") : $t("admin.mount.actions.enable") }}
                   </button>
                   <button
@@ -649,29 +562,14 @@ onMounted(() => {
                         : 'bg-red-100 hover:bg-red-200 text-red-800 focus:ring-red-500 focus:ring-offset-white'
                     "
                   >
-                    <svg class="h-3.5 w-3.5 mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                      />
-                    </svg>
+                    <IconDelete class="h-3.5 w-3.5 mr-1" />
                     {{ $t("admin.mount.actions.delete") }}
                   </button>
                 </template>
                 <!-- API密钥用户只能查看，显示只读提示 -->
                 <template v-else>
                   <span class="inline-flex items-center px-2.5 py-1.5 rounded-md text-xs font-medium" :class="darkMode ? 'bg-gray-700 text-gray-400' : 'bg-gray-100 text-gray-500'">
-                    <svg class="h-3.5 w-3.5 mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-                      />
-                    </svg>
+                    <IconEye class="h-3.5 w-3.5 mr-1" />
                     {{ $t("admin.mount.actions.view") }}
                   </span>
                 </template>

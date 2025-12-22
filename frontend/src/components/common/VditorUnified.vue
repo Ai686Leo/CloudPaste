@@ -168,7 +168,7 @@ const getEditorConfig = () => {
     "insert-before",
     "insert-after",
     "|",
-    "upload",
+    // "upload",
     "table",
     "|",
     "undo",

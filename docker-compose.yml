@@ -26,11 +26,13 @@ services:
       - NODE_ENV=production # 生产环境模式
       - PORT=8787 # 应用监听端口
       # 重要: 请修改为您自己的安全密钥，用于加密数据
-      - ENCRYPTION_SECRET=xxxxxxx
+      - ENCRYPTION_SECRET=default-encryption-key
       # 管理员Token过期天数，默认7天
       - ADMIN_TOKEN_EXPIRY_DAYS=7
       # 任务并发数 (默认 2)
       - TASK_WORKER_POOL_SIZE=2
+      # 调试驱动缓存 (默认 false)
+      #- DEBUG_DRIVER_CACHE=false
     volumes:
       - ./sql_data:/data # 将当前目录下的sql_data映射到容器的/data目录
     ports:

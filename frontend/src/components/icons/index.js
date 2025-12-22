@@ -1,14 +1,164 @@
 /**
  * 统一图标组件库
  * 集中管理所有 SVG 图标
+ *
  */
 
 import { h } from 'vue'
 
-// 基础图标组件
-const createIcon = (pathData, strokeWidth = 2) => {
+import IconUploadSvg from '~icons/heroicons-outline/upload'
+import IconDownloadSvg from '~icons/heroicons-outline/download'
+import IconShoppingCartSvg from '~icons/heroicons-outline/shopping-cart'
+import IconSettingsSvg from '~icons/heroicons-outline/cog'
+import IconCheckboxSvg from '~icons/heroicons-outline/check-circle'
+import IconTaskListSvg from '~icons/heroicons-outline/clipboard-list'
+import IconChartBarSvg from '~icons/heroicons-outline/chart-bar'
+import IconCalculatorSvg from '~icons/heroicons-outline/calculator'
+import IconFolderPlusSvg from '~icons/heroicons-outline/folder-add'
+import IconPlusSvg from '~icons/heroicons-outline/plus'
+import IconMinusSvg from '~icons/heroicons-outline/minus'
+import IconRefreshSvg from '~icons/heroicons-outline/refresh'
+import IconCloseSvg from '~icons/heroicons-outline/x'
+import IconMenuSvg from '~icons/heroicons-outline/dots-vertical'
+import IconLinkSvg from '~icons/heroicons-outline/link'
+import IconCopySvg from '~icons/heroicons-outline/duplicate'
+import IconRenameSvg from '~icons/heroicons-outline/pencil-alt'
+import IconDeleteSvg from '~icons/heroicons-outline/trash'
+import IconSearchSvg from '~icons/heroicons-outline/search'
+import IconFolderSvg from '~icons/heroicons-outline/folder'
+import IconListSvg from '~icons/heroicons-outline/view-list'
+import IconGridSvg from '~icons/heroicons-outline/view-grid'
+import IconGallerySvg from '~icons/heroicons-outline/photograph'
+import IconBackSvg from '~icons/heroicons-outline/arrow-left'
+import IconArrowUpSvg from '~icons/heroicons-outline/arrow-up'
+import IconChevronLeftSvg from '~icons/heroicons-outline/chevron-left'
+import IconChevronDownSvg from '~icons/heroicons-outline/chevron-down'
+import IconChevronRightSvg from '~icons/heroicons-outline/chevron-right'
+import IconChevronUpSvg from '~icons/heroicons-outline/chevron-up'
+import IconSortAscendingSvg from '~icons/heroicons-outline/sort-ascending'
+import IconExternalLinkSvg from '~icons/heroicons-outline/external-link'
+import IconErrorSvg from '~icons/heroicons-outline/exclamation-circle'
+import IconExclamationSvg from '~icons/heroicons-outline/exclamation'
+import IconInformationCircleSvg from '~icons/heroicons-outline/information-circle'
+import IconArchiveSvg from '~icons/heroicons-outline/archive'
+import IconHomeSvg from '~icons/heroicons-outline/home'
+import IconCloudSvg from '~icons/heroicons-outline/cloud'
+import IconServerStackSvg from '~icons/heroicons-outline/server-stack'
+import IconBellAlertSvg from '~icons/heroicons-outline/bell-alert'
+import IconGlobeAltSvg from '~icons/heroicons-outline/globe-alt'
+import IconCircleStackSvg from '~icons/heroicons-outline/circle-stack'
+import IconLogoutSvg from '~icons/heroicons-outline/arrow-right-on-rectangle'
+import IconQrCodeSvg from '~icons/heroicons-outline/qr-code'
+import IconDocumentTextSvg from '~icons/heroicons-outline/document-text'
+import IconCodeSvg from '~icons/heroicons-outline/code'
+import IconBookOpenSvg from '~icons/heroicons-outline/book-open'
+import IconCheckSvg from '~icons/heroicons-solid/check'
+import IconCheckCircleSvg from '~icons/heroicons-solid/check-circle'
+import IconXCircleSvg from '~icons/heroicons-solid/x-circle'
+import IconExclamationSolidSvg from '~icons/heroicons-solid/exclamation'
+import IconMoonSvg from '~icons/heroicons-outline/moon'
+import IconSunSvg from '~icons/heroicons-outline/sun'
+import IconComputerDesktopSvg from '~icons/heroicons-outline/computer-desktop'
+import IconHamburgerSvg from '~icons/heroicons-outline/menu'
+import IconEyeSvg from '~icons/heroicons-outline/eye'
+import IconEyeOffSvg from '~icons/heroicons-outline/eye-off'
+import IconUserSvg from '~icons/heroicons-outline/user'
+import IconUsersSvg from '~icons/heroicons-outline/users'
+import IconCalendarSvg from '~icons/heroicons-outline/calendar'
+import IconClockSvg from '~icons/heroicons-outline/clock'
+import IconCameraSvg from '~icons/heroicons-outline/camera'
+import IconLocationMarkerSvg from '~icons/heroicons-outline/location-marker'
+import IconShieldCheckSvg from '~icons/heroicons-outline/shield-check'
+import IconShareSvg from '~icons/heroicons-outline/share'
+import IconFolderOpenSvg from '~icons/heroicons-outline/folder-open'
+import IconAdjustmentsSvg from '~icons/heroicons-outline/adjustments'
+import IconSaveSvg from '~icons/heroicons-outline/save'
+import IconExpandSvg from '~icons/heroicons-outline/arrows-pointing-out'
+import IconCollapseSvg from '~icons/heroicons-outline/arrows-pointing-in'
+import IconKeySvg from '~icons/heroicons-outline/key'
+import IconLockClosedSvg from '~icons/heroicons-outline/lock-closed'
+import IconDocumentSvg from '~icons/heroicons-outline/document'
+import IconCollectionSvg from '~icons/heroicons-outline/collection'
+import IconGithubSvg from '~icons/mdi/github'
+import IconWeiboSvg from '~icons/mdi/sina-weibo'
+import IconQqSvg from '~icons/mdi/qqchat'
+import IconTwitterSvg from '~icons/mdi/twitter'
+import IconTelegramSvg from '~icons/mdi/telegram'
+import IconFacebookSvg from '~icons/mdi/facebook'
+import IconMdiChevronLeftSvg from '~icons/mdi/chevron-left'
+import IconMdiClockOutlineSvg from '~icons/mdi/clock-outline'
+import IconMdiFileOutlineSvg from '~icons/mdi/file-outline'
+import IconMdiDatabaseOutlineSvg from '~icons/mdi/database-outline'
+import IconMdiAspectRatioSvg from '~icons/mdi/aspect-ratio'
+import IconMdiCalendarSvg from '~icons/mdi/calendar'
+import IconMdiMapMarkerOutlineSvg from '~icons/mdi/map-marker-outline'
+import IconMdiCameraSvg from '~icons/mdi/camera'
+import IconMdiFocusAutoSvg from '~icons/mdi/focus-auto'
+import IconMdiRulerSvg from '~icons/mdi/ruler'
+import IconMdiCameraIrisSvg from '~icons/mdi/camera-iris'
+import IconMdiTimerOutlineSvg from '~icons/mdi/timer-outline'
+import IconMdiAlphaICircleOutlineSvg from '~icons/mdi/alpha-i-circle-outline'
+import IconMdiInformationOutlineSvg from '~icons/mdi/information-outline'
+import IconMdiGoogleMapsSvg from '~icons/mdi/google-maps'
+import IconMdiMapMarkerSvg from '~icons/mdi/map-marker'
+import IconTranslateSvg from '~icons/mdi/translate'
+import IconTableCellsSvg from '~icons/heroicons-outline/table-cells'
+import IconBoltSvg from '~icons/heroicons-outline/bolt'
+import IconArrowPathSvg from '~icons/heroicons-outline/arrow-path'
+import IconChartPieSvg from '~icons/heroicons-outline/chart-pie'
+import IconActivitySvg from '~icons/heroicons-outline/lightning-bolt'
+import IconAlertCircleSvg from '~icons/heroicons-outline/exclamation-circle'
+import IconDatabaseSvg from '~icons/heroicons-outline/circle-stack'
+import IconFilterSvg from '~icons/heroicons-outline/funnel'
+import IconLoaderSvg from '~icons/heroicons-outline/arrow-path'
+import IconMoreHorizontalSvg from '~icons/heroicons-outline/ellipsis-horizontal'
+import IconSyncSvg from '~icons/heroicons-outline/arrow-path'
+import IconPlaySvg from '~icons/heroicons-outline/play'
+import IconBanSvg from '~icons/heroicons-outline/ban'
+import IconBellSvg from '~icons/heroicons-outline/bell'
+import IconQueueListSvg from '~icons/heroicons-outline/queue-list'
+
+// 书签和导航图标
+import IconBookmarkSvg from '~icons/heroicons-outline/bookmark'
+import IconBookmarkSolidSvg from '~icons/heroicons-solid/bookmark'
+import IconArrowLeftSvg from '~icons/heroicons-outline/arrow-left'
+import IconArrowRightSvg from '~icons/heroicons-outline/arrow-right'
+
+// 存储类型图标
+import IconMicrosoftOneDriveSvg from '~icons/mdi/microsoft-onedrive'
+import IconGoogleDriveSvg from '~icons/mdi/google-drive'
+import IconStorageGitHubSvg from '~icons/mdi/github'
+import IconCloudSyncOutlineSvg from '~icons/mdi/cloud-sync-outline'
+import IconMdiFolderSvg from '~icons/mdi/folder'
+
+// 压缩文件类型图标
+import IconFolderZipSvg from '~icons/mdi/folder-zip'
+import IconFolderZipOutlineSvg from '~icons/mdi/folder-zip-outline'
+import IconZipBoxSvg from '~icons/mdi/zip-box'
+import IconZipBoxOutlineSvg from '~icons/mdi/zip-box-outline'
+import IconPackageVariantSvg from '~icons/mdi/package-variant'
+import IconPackageVariantClosedSvg from '~icons/mdi/package-variant-closed'
+import IconArchiveOutlineSvg from '~icons/mdi/archive-outline'
+import IconDiscSvg from '~icons/mdi/disc'
+import IconFileTreeSvg from '~icons/mdi/file-tree'
+
+const normalizeClassName = (value) => {
+  if (!value) return ''
+  if (Array.isArray(value)) return value.filter(Boolean).join(' ')
+  if (typeof value === 'object') {
+    return Object.entries(value)
+      .filter(([, enabled]) => enabled)
+      .map(([key]) => key)
+      .join(' ')
+  }
+  return String(value)
+}
+
+// 基础图标组件（基于 Iconify 图标组件进行二次封装）
+const createIcon = (IconComponent, defaultStrokeWidth = 2) => {
   return {
     name: 'Icon',
+    inheritAttrs: false,
     props: {
       size: {
         type: String,
@@ -16,10 +166,10 @@ const createIcon = (pathData, strokeWidth = 2) => {
       },
       strokeWidth: {
         type: [String, Number],
-        default: strokeWidth
+        default: defaultStrokeWidth
       }
     },
-    setup(props) {
+    setup(props, { attrs }) {
       const sizeMap = {
         xs: 'w-3 h-3',
         sm: 'w-4 h-4',
@@ -27,90 +177,270 @@ const createIcon = (pathData, strokeWidth = 2) => {
         lg: 'w-6 h-6',
         xl: 'w-8 h-8',
         '2xl': 'w-10 h-10',
-        '3xl': 'w-12 h-12'
+        '3xl': 'w-12 h-12',
+        '4xl': 'w-16 h-16',
+        '5xl': 'w-20 h-20'
       }
 
-      return () => h('svg', {
-        class: sizeMap[props.size] || sizeMap.md,
-        fill: 'none',
-        stroke: 'currentColor',
-        viewBox: '0 0 24 24'
-      }, Array.isArray(pathData) 
-        ? pathData.map(d => h('path', {
-            'stroke-linecap': 'round',
-            'stroke-linejoin': 'round',
-            'stroke-width': props.strokeWidth,
-            d
-          }))
-        : h('path', {
-            'stroke-linecap': 'round',
-            'stroke-linejoin': 'round',
-            'stroke-width': props.strokeWidth,
-            d: pathData
-          })
-      )
+      return () => {
+        const sizeClass = sizeMap[props.size] || sizeMap.md
+        const extraClass = normalizeClassName(attrs.class)
+        const mergedClass = extraClass ? `${sizeClass} ${extraClass}` : sizeClass
+
+        const forwardedAttrs = { ...attrs }
+        delete forwardedAttrs.class
+
+        return h(IconComponent, {
+          ...forwardedAttrs,
+          class: mergedClass,
+          'stroke-width': props.strokeWidth,
+          'aria-hidden': forwardedAttrs['aria-hidden'] ?? 'true',
+        })
+      }
     }
   }
 }
 
 // 常用图标定义
-export const IconUpload = createIcon('M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12')
+export const IconUpload = createIcon(IconUploadSvg)
 
-export const IconDownload = createIcon('M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4')
+export const IconDownload = createIcon(IconDownloadSvg)
 
-export const IconShoppingCart = createIcon('M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z')
+export const IconShoppingCart = createIcon(IconShoppingCartSvg)
 
-export const IconSettings = createIcon([
-  'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z',
-  'M15 12a3 3 0 11-6 0 3 3 0 016 0z'
-], 1.5)
+export const IconSettings = createIcon(IconSettingsSvg)
 
-export const IconCheckbox = createIcon('M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4', 1.5)
+export const IconCheckbox = createIcon(IconCheckboxSvg)
 
-export const IconTaskList = createIcon('M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01', 1.5)
+export const IconTaskList = createIcon(IconTaskListSvg)
 
-export const IconFolderPlus = createIcon('M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z', 1.5)
+export const IconChartBar = createIcon(IconChartBarSvg)
+export const IconChartPie = createIcon(IconChartPieSvg)
+export const IconCalculator = createIcon(IconCalculatorSvg)
 
-export const IconRefresh = createIcon('M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15', 1.5)
+export const IconFolderPlus = createIcon(IconFolderPlusSvg)
 
-export const IconClose = createIcon('M6 18L18 6M6 6l12 12')
+export const IconPlus = createIcon(IconPlusSvg)
 
-export const IconMenu = createIcon('M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z')
+export const IconMinus = createIcon(IconMinusSvg)
 
-export const IconLink = createIcon('M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1')
+export const IconRefresh = createIcon(IconRefreshSvg)
 
-export const IconCopy = createIcon('M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z')
+export const IconClose = createIcon(IconCloseSvg)
 
-export const IconRename = createIcon('M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z')
+export const IconMenu = createIcon(IconMenuSvg)
 
-export const IconDelete = createIcon('M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16')
+export const IconLink = createIcon(IconLinkSvg)
 
-export const IconSearch = createIcon('M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z')
+export const IconCopy = createIcon(IconCopySvg)
 
-export const IconFolder = createIcon('M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z', 1.5)
+export const IconRename = createIcon(IconRenameSvg)
 
-export const IconList = createIcon('M4 6h16M4 12h16M4 18h16')
+export const IconDelete = createIcon(IconDeleteSvg)
 
-export const IconGrid = createIcon('M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z')
+export const IconSearch = createIcon(IconSearchSvg)
 
-export const IconGallery = createIcon('M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z')
+export const IconFolder = createIcon(IconFolderSvg)
 
-export const IconBack = createIcon('M10 19l-7-7m0 0l7-7m-7 7h18')
+export const IconList = createIcon(IconListSvg)
 
-export const IconChevronDown = createIcon('M19 9l-7 7-7-7', 1.5)
+export const IconGrid = createIcon(IconGridSvg)
 
-export const IconChevronUp = createIcon('M5 15l7-7 7 7')
+export const IconGallery = createIcon(IconGallerySvg)
 
-export const IconExternalLink = createIcon('M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14', 1.75)
+export const IconBack = createIcon(IconBackSvg)
 
-export const IconError = createIcon('M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z')
+export const IconArrowUp = createIcon(IconArrowUpSvg)
 
-export const IconArchive = createIcon([
-  'M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z',
-  'M8 7V3a2 2 0 012-2h4a2 2 0 012 2v4'
-])
+export const IconChevronLeft = createIcon(IconChevronLeftSvg)
 
-export const IconHome = createIcon('M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6')
+export const IconChevronDown = createIcon(IconChevronDownSvg)
+
+export const IconChevronRight = createIcon(IconChevronRightSvg)
+
+export const IconChevronUp = createIcon(IconChevronUpSvg)
+
+export const IconSortAscending = createIcon(IconSortAscendingSvg)
+
+export const IconExternalLink = createIcon(IconExternalLinkSvg)
+
+export const IconError = createIcon(IconErrorSvg)
+
+export const IconExclamation = createIcon(IconExclamationSvg)
+
+export const IconInformationCircle = createIcon(IconInformationCircleSvg)
+
+export const IconArchive = createIcon(IconArchiveSvg)
+
+export const IconHome = createIcon(IconHomeSvg)
+
+export const IconCloud = createIcon(IconCloudSvg)
+
+export const IconServerStack = createIcon(IconServerStackSvg)
+
+export const IconBellAlert = createIcon(IconBellAlertSvg)
+
+export const IconGlobeAlt = createIcon(IconGlobeAltSvg)
+
+export const IconCircleStack = createIcon(IconCircleStackSvg)
+
+export const IconLogout = createIcon(IconLogoutSvg)
+
+export const IconQrCode = createIcon(IconQrCodeSvg)
+
+export const IconDocumentText = createIcon(IconDocumentTextSvg)
+
+export const IconBookOpen = createIcon(IconBookOpenSvg)
+
+export const IconCode = createIcon(IconCodeSvg)
+
+export const IconCheck = createIcon(IconCheckSvg)
+
+export const IconCheckCircle = createIcon(IconCheckCircleSvg)
+
+export const IconXCircle = createIcon(IconXCircleSvg)
+
+export const IconExclamationSolid = createIcon(IconExclamationSolidSvg)
+
+export const IconMoon = createIcon(IconMoonSvg)
+
+export const IconSun = createIcon(IconSunSvg)
+
+export const IconComputerDesktop = createIcon(IconComputerDesktopSvg)
+
+export const IconHamburger = createIcon(IconHamburgerSvg)
+
+export const IconEye = createIcon(IconEyeSvg)
+
+export const IconEyeOff = createIcon(IconEyeOffSvg)
+
+export const IconUser = createIcon(IconUserSvg)
+
+export const IconUsers = createIcon(IconUsersSvg)
+
+export const IconCalendar = createIcon(IconCalendarSvg)
+
+export const IconClock = createIcon(IconClockSvg)
+
+export const IconCamera = createIcon(IconCameraSvg)
+
+export const IconLocationMarker = createIcon(IconLocationMarkerSvg)
+
+export const IconShieldCheck = createIcon(IconShieldCheckSvg)
+
+export const IconShare = createIcon(IconShareSvg)
+
+export const IconFolderOpen = createIcon(IconFolderOpenSvg)
+
+export const IconAdjustments = createIcon(IconAdjustmentsSvg)
+
+export const IconSave = createIcon(IconSaveSvg)
+
+export const IconExpand = createIcon(IconExpandSvg)
+
+export const IconCollapse = createIcon(IconCollapseSvg)
+
+export const IconKey = createIcon(IconKeySvg)
+
+export const IconLockClosed = createIcon(IconLockClosedSvg)
+
+export const IconDocument = createIcon(IconDocumentSvg)
+
+export const IconCollection = createIcon(IconCollectionSvg)
+
+export const IconGithub = createIcon(IconGithubSvg)
+
+export const IconWeibo = createIcon(IconWeiboSvg)
+
+export const IconQQ = createIcon(IconQqSvg)
+
+export const IconTwitter = createIcon(IconTwitterSvg)
+
+export const IconTelegram = createIcon(IconTelegramSvg)
+
+export const IconFacebook = createIcon(IconFacebookSvg)
+
+// Lightbox（信息侧栏）专用：保持与旧版一致的 MDI 图标，但统一走 @/components/icons 出口
+export const IconMdiChevronLeft = createIcon(IconMdiChevronLeftSvg)
+
+export const IconMdiClockOutline = createIcon(IconMdiClockOutlineSvg)
+
+export const IconMdiFileOutline = createIcon(IconMdiFileOutlineSvg)
+
+export const IconMdiDatabaseOutline = createIcon(IconMdiDatabaseOutlineSvg)
+
+export const IconMdiAspectRatio = createIcon(IconMdiAspectRatioSvg)
+
+export const IconMdiCalendar = createIcon(IconMdiCalendarSvg)
+
+export const IconMdiMapMarkerOutline = createIcon(IconMdiMapMarkerOutlineSvg)
+
+export const IconMdiCamera = createIcon(IconMdiCameraSvg)
+
+export const IconMdiFocusAuto = createIcon(IconMdiFocusAutoSvg)
+
+export const IconMdiRuler = createIcon(IconMdiRulerSvg)
+
+export const IconMdiCameraIris = createIcon(IconMdiCameraIrisSvg)
+
+export const IconMdiTimerOutline = createIcon(IconMdiTimerOutlineSvg)
+
+export const IconMdiAlphaICircleOutline = createIcon(IconMdiAlphaICircleOutlineSvg)
+
+export const IconMdiInformationOutline = createIcon(IconMdiInformationOutlineSvg)
+
+export const IconMdiGoogleMaps = createIcon(IconMdiGoogleMapsSvg)
+
+export const IconMdiMapMarker = createIcon(IconMdiMapMarkerSvg)
+
+// 语言/翻译图标（用于 LanguageSwitcher）
+export const IconTranslate = createIcon(IconTranslateSvg)
+
+// 索引管理专用图标
+export const IconTable = createIcon(IconTableCellsSvg)
+export const IconRebuild = createIcon(IconArrowPathSvg)
+export const IconUpdate = createIcon(IconBoltSvg)
+export const IconBolt = createIcon(IconBoltSvg)
+export const IconTrash = createIcon(IconDeleteSvg)
+
+// 任务管理专用图标
+export const IconActivity = createIcon(IconActivitySvg)
+export const IconAlertCircle = createIcon(IconAlertCircleSvg)
+export const IconDatabase = createIcon(IconDatabaseSvg)
+export const IconFilter = createIcon(IconFilterSvg)
+export const IconLoader = createIcon(IconLoaderSvg)
+export const IconMoreHorizontal = createIcon(IconMoreHorizontalSvg)
+export const IconSync = createIcon(IconSyncSvg)
+export const IconPlay = createIcon(IconPlaySvg)
+export const IconBan = createIcon(IconBanSvg)
+export const IconBell = createIcon(IconBellSvg)
+export const IconQueueList = createIcon(IconQueueListSvg)
+export const IconX = createIcon(IconCloseSvg)
+
+// 书签和导航图标
+export const IconBookmark = createIcon(IconBookmarkSvg)
+export const IconBookmarkSolid = createIcon(IconBookmarkSolidSvg)
+export const IconArrowLeft = createIcon(IconArrowLeftSvg)
+export const IconArrowRight = createIcon(IconArrowRightSvg)
+
+// 存储类型图标（MDI）
+export const IconStorageS3 = createIcon(IconMdiDatabaseOutlineSvg)
+export const IconStorageOneDrive = createIcon(IconMicrosoftOneDriveSvg)
+export const IconStorageGoogleDrive = createIcon(IconGoogleDriveSvg)
+export const IconStorageGitHub = createIcon(IconStorageGitHubSvg)
+export const IconStorageWebDAV = createIcon(IconCloudSyncOutlineSvg)
+export const IconStorageLocal = createIcon(IconMdiFolderSvg)
+
+// 压缩文件类型图标（MDI）
+export const IconFolderZip = createIcon(IconFolderZipSvg)
+export const IconFolderZipOutline = createIcon(IconFolderZipOutlineSvg)
+export const IconZipBox = createIcon(IconZipBoxSvg)
+export const IconZipBoxOutline = createIcon(IconZipBoxOutlineSvg)
+export const IconPackageVariant = createIcon(IconPackageVariantSvg)
+export const IconPackageVariantClosed = createIcon(IconPackageVariantClosedSvg)
+export const IconArchiveOutline = createIcon(IconArchiveOutlineSvg)
+export const IconDisc = createIcon(IconDiscSvg)
+export const IconFileTree = createIcon(IconFileTreeSvg)
 
 // 导出所有图标
 export default {
@@ -120,7 +450,12 @@ export default {
   IconSettings,
   IconCheckbox,
   IconTaskList,
+  IconChartBar,
+  IconChartPie,
+  IconCalculator,
   IconFolderPlus,
+  IconPlus,
+  IconMinus,
   IconRefresh,
   IconClose,
   IconMenu,
@@ -134,10 +469,111 @@ export default {
   IconGrid,
   IconGallery,
   IconBack,
+  IconArrowUp,
+  IconChevronLeft,
   IconChevronDown,
+  IconChevronRight,
   IconChevronUp,
+  IconSortAscending,
   IconExternalLink,
   IconError,
+  IconExclamation,
+  IconInformationCircle,
   IconArchive,
-  IconHome
+  IconHome,
+  IconCloud,
+  IconServerStack,
+  IconBellAlert,
+  IconGlobeAlt,
+  IconCircleStack,
+  IconLogout,
+  IconQrCode,
+  IconDocumentText,
+  IconBookOpen,
+  IconCode,
+  IconCheck,
+  IconCheckCircle,
+  IconXCircle,
+  IconExclamationSolid,
+  IconMoon,
+  IconSun,
+  IconComputerDesktop,
+  IconHamburger,
+  IconEye,
+  IconEyeOff,
+  IconUser,
+  IconUsers,
+  IconCalendar,
+  IconClock,
+  IconCamera,
+  IconLocationMarker,
+  IconShieldCheck,
+  IconShare,
+  IconFolderOpen,
+  IconAdjustments,
+  IconSave,
+  IconExpand,
+  IconCollapse,
+  IconKey,
+  IconLockClosed,
+  IconDocument,
+  IconCollection,
+  IconGithub,
+  IconWeibo,
+  IconQQ,
+  IconTwitter,
+  IconTelegram,
+  IconFacebook,
+  IconMdiChevronLeft,
+  IconMdiClockOutline,
+  IconMdiFileOutline,
+  IconMdiDatabaseOutline,
+  IconMdiAspectRatio,
+  IconMdiCalendar,
+  IconMdiMapMarkerOutline,
+  IconMdiCamera,
+  IconMdiFocusAuto,
+  IconMdiRuler,
+  IconMdiCameraIris,
+  IconMdiTimerOutline,
+  IconMdiAlphaICircleOutline,
+  IconMdiInformationOutline,
+  IconMdiGoogleMaps,
+  IconMdiMapMarker,
+  IconTranslate,
+  IconTable,
+  IconRebuild,
+  IconUpdate,
+  IconTrash,
+  IconActivity,
+  IconAlertCircle,
+  IconDatabase,
+  IconFilter,
+  IconLoader,
+  IconMoreHorizontal,
+  IconSync,
+  IconPlay,
+  IconBan,
+  IconBell,
+  IconQueueList,
+  IconX,
+  IconBookmark,
+  IconBookmarkSolid,
+  IconArrowLeft,
+  IconArrowRight,
+  IconStorageS3,
+  IconStorageOneDrive,
+  IconStorageGoogleDrive,
+  IconStorageGitHub,
+  IconStorageWebDAV,
+  IconStorageLocal,
+  IconFolderZip,
+  IconFolderZipOutline,
+  IconZipBox,
+  IconZipBoxOutline,
+  IconPackageVariant,
+  IconPackageVariantClosed,
+  IconArchiveOutline,
+  IconDisc,
+  IconFileTree
 }

@@ -66,6 +66,21 @@ export default {
       more: "更多",
     },
 
+    // 平台触发器（Cloudflare/Docker）倒计时
+    ticker: {
+      title: "平台触发器倒计时",
+      subtitle: "这是外部定时器（Cloudflare Cron / Docker 定时器）的下一次触发时间，用于驱动后台扫描执行到期任务。",
+      refresh: "刷新",
+      runtime: "运行环境",
+      cron: "触发规则（cron）",
+      next: "下次触发",
+      last: "上次触发",
+      dueNow: "即将触发",
+      waiting: "等待触发",
+      noNext: "暂无数据",
+      loadFailed: "获取触发器状态失败",
+    },
+
     // 操作按钮
     actions: {
       enable: "启用",
@@ -206,6 +221,7 @@ export default {
       enabledJobs: "已启用",
       pendingJobs: "等待触发",
       runningJobs: "运行中",
+      nextTickCountdown: "预计下次触发时间",
     },
 
     // 同步任务配置（同步任务表单和路径选择器使用）
@@ -219,7 +235,7 @@ export default {
       sourcePath: "源路径",
       targetPath: "目标路径",
       sourcePathHint: "可以是文件或文件夹路径",
-      targetPathHint: "必须是文件夹路径",
+      targetPathHint: "可以是文件夹路径（自动拼接源文件名），也可手动重命名文件路径",
       quickInputPlaceholder: "输入路径后按回车...",
       copyPath: "复制路径",
       collapse: "收起",

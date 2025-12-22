@@ -618,8 +618,8 @@ export class GithubReleasesStorageDriver extends BaseDriver {
         fsPath: dirPath,
         name,
         isDirectory: true,
-        size: 0,
-        modified: new Date(),
+        size: null,
+        modified: null,
         mimetype: "application/x-directory",
         mount,
         storageType: mount?.storage_type,
@@ -643,12 +643,12 @@ export class GithubReleasesStorageDriver extends BaseDriver {
           const promises = releases.map(async (release) => {
             const dirName = release.tag_name || release.name || `release-${release.id}`;
             const dirPath = this._joinChildPath(currentFsPath, dirName);
-            const modified = release.published_at ? new Date(release.published_at) : new Date();
+            const modified = release.published_at ? new Date(release.published_at) : null;
             const info = await buildFileInfo({
               fsPath: dirPath,
               name: dirName,
               isDirectory: true,
-              size: 0,
+              size: null,
               modified,
               mimetype: "application/x-directory",
               mount,
@@ -756,7 +756,7 @@ export class GithubReleasesStorageDriver extends BaseDriver {
       const name = asset.name || "asset";
       const fsPath = this._joinChildPath(baseFsPath, name);
       const size = typeof asset.size === "number" ? asset.size : 0;
-      const modified = asset.updated_at ? new Date(asset.updated_at) : new Date();
+      const modified = asset.updated_at ? new Date(asset.updated_at) : null;
       const info = await buildFileInfo({
         fsPath,
         name,
@@ -822,7 +822,7 @@ export class GithubReleasesStorageDriver extends BaseDriver {
       ? new Date(release.published_at)
       : release?.created_at
       ? new Date(release.created_at)
-      : new Date();
+      : null;
     const size = this._getUtf8ByteLength(body);
 
     const info = await buildFileInfo({
@@ -853,7 +853,7 @@ export class GithubReleasesStorageDriver extends BaseDriver {
    */
   async _buildSourceCodeEntries(release, baseFsPath, mount, db) {
     const results = [];
-    const createdAt = release.created_at ? new Date(release.created_at) : new Date();
+    const createdAt = release.created_at ? new Date(release.created_at) : null;
 
     const entries = [
       { name: "Source code (zip)", url: release.zipball_url },
@@ -916,7 +916,7 @@ export class GithubReleasesStorageDriver extends BaseDriver {
       const name = typeof meta.name === "string" && meta.name.length > 0 ? meta.name : fallbackName;
       const fsPath = this._joinChildPath(baseFsPath, name);
       const size = typeof meta.size === "number" ? meta.size : 0;
-      const modified = meta.updated_at ? new Date(meta.updated_at) : new Date();
+      const modified = meta.updated_at ? new Date(meta.updated_at) : null;
 
       const info = await buildFileInfo({
         fsPath,
@@ -1086,8 +1086,8 @@ export class GithubReleasesStorageDriver extends BaseDriver {
         fsPath: path,
         name,
         isDirectory: true,
-        size: 0,
-        modified: new Date(),
+        size: null,
+        modified: null,
         mimetype: "application/x-directory",
         mount,
         storageType: mount?.storage_type,
@@ -1114,8 +1114,8 @@ export class GithubReleasesStorageDriver extends BaseDriver {
         fsPath: path,
         name,
         isDirectory: true,
-        size: 0,
-        modified: new Date(),
+        size: null,
+        modified: null,
         mimetype: "application/x-directory",
         mount,
         storageType: mount?.storage_type,
@@ -1140,8 +1140,8 @@ export class GithubReleasesStorageDriver extends BaseDriver {
         fsPath: path,
         name,
         isDirectory: true,
-        size: 0,
-        modified: new Date(),
+        size: null,
+        modified: null,
         mimetype: "application/x-directory",
         mount,
         storageType: mount?.storage_type,
@@ -1163,12 +1163,12 @@ export class GithubReleasesStorageDriver extends BaseDriver {
         const tagName = segments[0];
         const release = await this._fetchReleaseByTag(repo, tagName, { cacheTtlMs });
         if (release) {
-          const modified = release?.published_at ? new Date(release.published_at) : new Date();
+          const modified = release?.published_at ? new Date(release.published_at) : null;
           const info = await buildFileInfo({
             fsPath: path,
             name: tagName,
             isDirectory: true,
-            size: 0,
+            size: null,
             modified,
             mimetype: "application/x-directory",
             mount,
@@ -1200,7 +1200,7 @@ export class GithubReleasesStorageDriver extends BaseDriver {
       ? new Date(asset.updated_at)
       : release?.published_at
       ? new Date(release.published_at)
-      : new Date();
+      : null;
 
     const info = await buildFileInfo({
       fsPath: path,

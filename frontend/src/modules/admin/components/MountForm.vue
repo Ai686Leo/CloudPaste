@@ -4,6 +4,7 @@ import { useI18n } from "vue-i18n";
 import { useAdminMountService } from "@/modules/admin/services/mountService.js";
 import { useAdminStorageConfigService } from "@/modules/admin/services/storageConfigService.js";
 import { api } from "@/api";
+import { IconClose, IconRefresh } from "@/components/icons";
 
 const { t } = useI18n();
 const { updateMount, createMount } = useAdminMountService();
@@ -444,9 +445,7 @@ watch([() => formData.value.storage_type, () => formData.value.storage_config_id
         <div class="flex justify-between items-center">
           <h3 class="text-base sm:text-lg font-semibold">{{ formTitle }}</h3>
           <button @click="closeForm" class="rounded-md text-gray-400 hover:text-gray-500 focus:outline-none">
-            <svg class="h-5 w-5 sm:h-6 sm:w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <IconClose size="lg" />
           </button>
         </div>
       </div>
@@ -455,10 +454,7 @@ watch([() => formData.value.storage_type, () => formData.value.storage_config_id
       <div class="p-3 sm:p-6 space-y-2 sm:space-y-4 flex-1 overflow-y-auto">
         <!-- 加载状态 -->
         <div v-if="loading" class="flex justify-center items-center py-8">
-          <svg class="animate-spin h-8 w-8 text-primary-500" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-          </svg>
+          <IconRefresh size="xl" class="animate-spin text-primary-500" />
         </div>
 
         <template v-else-if="schema">
@@ -679,10 +675,7 @@ watch([() => formData.value.storage_type, () => formData.value.storage_config_id
           class="w-full sm:w-auto flex justify-center items-center px-4 py-2 rounded-md text-sm font-medium transition-colors text-white"
           :class="[submitting ? 'opacity-75 cursor-not-allowed' : 'hover:bg-primary-600', darkMode ? 'bg-primary-600' : 'bg-primary-500']"
         >
-          <svg v-if="submitting" class="animate-spin -ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-          </svg>
+          <IconRefresh v-if="submitting" size="sm" class="animate-spin -ml-1 mr-2" />
           {{ submitting ? t("admin.mount.form.saving") : isEditMode ? t("admin.mount.form.save") : t("admin.mount.form.create") }}
         </button>
       </div>

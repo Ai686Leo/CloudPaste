@@ -25,6 +25,7 @@ import { PasteRepository } from "./PasteRepository.js";
 import { SystemRepository } from "./SystemRepository.js";
 import { PrincipalStorageAclRepository } from "./PrincipalStorageAclRepository.js";
 import { FsMetaRepository } from "./FsMetaRepository.js";
+import { createDbRuntime } from "../db/runtime.js";
 
 /**
  * Repository工厂类
@@ -34,9 +35,14 @@ export class RepositoryFactory {
   /**
    * 构造函数
    * @param {D1Database} db - 数据库实例
+   * @param {{ env?: any, providerName?: string }} [options]
    */
-  constructor(db) {
-    this.db = db;
+  constructor(db, options = {}) {
+    const { env = {}, providerName = null } = options || {};
+    const runtime = createDbRuntime({ db, env, providerName });
+    this.db = runtime.db;
+    this.dialect = runtime.dialect;
+    this.providerName = runtime.providerName;
     this._repositories = new Map();
   }
 
@@ -46,7 +52,7 @@ export class RepositoryFactory {
    */
   getFileRepository() {
     if (!this._repositories.has("file")) {
-      this._repositories.set("file", new FileRepository(this.db));
+      this._repositories.set("file", new FileRepository(this.db, this.dialect));
     }
     return this._repositories.get("file");
   }
@@ -57,7 +63,7 @@ export class RepositoryFactory {
    */
   getMountRepository() {
     if (!this._repositories.has("mount")) {
-      this._repositories.set("mount", new MountRepository(this.db));
+      this._repositories.set("mount", new MountRepository(this.db, this.dialect));
     }
     return this._repositories.get("mount");
   }
@@ -68,7 +74,7 @@ export class RepositoryFactory {
    */
   getStorageConfigRepository() {
     if (!this._repositories.has("storageconfig")) {
-      this._repositories.set("storageconfig", new StorageConfigRepository(this.db));
+      this._repositories.set("storageconfig", new StorageConfigRepository(this.db, this.dialect));
     }
     return this._repositories.get("storageconfig");
   }
@@ -79,7 +85,7 @@ export class RepositoryFactory {
    */
   getAdminRepository() {
     if (!this._repositories.has("admin")) {
-      this._repositories.set("admin", new AdminRepository(this.db));
+      this._repositories.set("admin", new AdminRepository(this.db, this.dialect));
     }
     return this._repositories.get("admin");
   }
@@ -90,7 +96,7 @@ export class RepositoryFactory {
    */
   getApiKeyRepository() {
     if (!this._repositories.has("apikey")) {
-      this._repositories.set("apikey", new ApiKeyRepository(this.db));
+      this._repositories.set("apikey", new ApiKeyRepository(this.db, this.dialect));
     }
     return this._repositories.get("apikey");
   }
@@ -101,7 +107,7 @@ export class RepositoryFactory {
    */
   getPasteRepository() {
     if (!this._repositories.has("paste")) {
-      this._repositories.set("paste", new PasteRepository(this.db));
+      this._repositories.set("paste", new PasteRepository(this.db, this.dialect));
     }
     return this._repositories.get("paste");
   }
@@ -112,7 +118,7 @@ export class RepositoryFactory {
    */
   getSystemRepository() {
     if (!this._repositories.has("system")) {
-      this._repositories.set("system", new SystemRepository(this.db));
+      this._repositories.set("system", new SystemRepository(this.db, this.dialect));
     }
     return this._repositories.get("system");
   }
@@ -123,7 +129,7 @@ export class RepositoryFactory {
    */
   getPrincipalStorageAclRepository() {
     if (!this._repositories.has("principalStorageAcl")) {
-      this._repositories.set("principalStorageAcl", new PrincipalStorageAclRepository(this.db));
+      this._repositories.set("principalStorageAcl", new PrincipalStorageAclRepository(this.db, this.dialect));
     }
     return this._repositories.get("principalStorageAcl");
   }
@@ -159,7 +165,7 @@ export class RepositoryFactory {
    */
   getFsMetaRepository() {
     if (!this._repositories.has("fsMeta")) {
-      this._repositories.set("fsMeta", new FsMetaRepository(this.db));
+      this._repositories.set("fsMeta", new FsMetaRepository(this.db, this.dialect));
     }
     return this._repositories.get("fsMeta");
   }

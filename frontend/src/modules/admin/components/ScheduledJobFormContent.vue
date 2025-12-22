@@ -7,6 +7,7 @@ import { useI18n } from "vue-i18n";
 import cronstrue from "cronstrue/i18n";
 import DynamicFormField from "./DynamicFormField.vue";
 import SyncTaskConfigForm from "./SyncTaskConfigForm.vue";
+import { IconCheck, IconCheckCircle, IconInformationCircle, IconRefresh, IconTaskList } from "@/components/icons";
 
 const props = defineProps({
   darkMode: {
@@ -33,7 +34,7 @@ const props = defineProps({
 
 const emit = defineEmits(["submit", "cancel"]);
 
-const { t, locale } = useI18n();
+const { t, tm, locale } = useI18n();
 
 // 状态
 const loading = ref(false);
@@ -62,6 +63,11 @@ const intervalUnit = ref(3600);
 // JSON配置文本
 const configText = ref("{}");
 const configError = ref("");
+
+const configPlaceholder = computed(() => {
+  const message = tm("admin.scheduledJobs.form.configPlaceholder");
+  return typeof message === "string" ? message : '{\n  "key": "value"\n}';
+});
 
 // 时间单位选项
 const timeUnits = [
@@ -393,9 +399,7 @@ const handleCancel = () => {
                   ? 'bg-green-500 text-white'
                   : (darkMode ? 'bg-gray-600 text-gray-300' : 'bg-gray-200 text-gray-600')"
               >
-                <svg v-if="handlerValid" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-                </svg>
+                <IconCheck v-if="handlerValid" size="sm" />
                 <span v-else>1</span>
               </span>
               {{ t("admin.scheduledJobs.handlerType.title") }}
@@ -471,9 +475,7 @@ const handleCancel = () => {
             :class="darkMode ? 'border-gray-700' : 'border-gray-200'"
           >
             <h3 class="text-sm font-semibold flex items-center gap-2" :class="darkMode ? 'text-gray-100' : 'text-gray-900'">
-              <svg class="w-4 h-4" :class="darkMode ? 'text-gray-400' : 'text-gray-500'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
+              <IconInformationCircle size="sm" :class="darkMode ? 'text-gray-400' : 'text-gray-500'" />
               {{ t("admin.scheduledJobs.form.name") }} &amp; {{ t("admin.scheduledJobs.form.description") }}
             </h3>
           </div>
@@ -538,9 +540,7 @@ const handleCancel = () => {
                   ? 'bg-green-500 text-white'
                   : (darkMode ? 'bg-gray-600 text-gray-300' : 'bg-gray-200 text-gray-600')"
               >
-                <svg v-if="scheduleValid" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-                </svg>
+                <IconCheck v-if="scheduleValid" size="sm" />
                 <span v-else>3</span>
               </span>
               {{ t("admin.scheduledJobs.form.step3Title") }}
@@ -681,9 +681,7 @@ const handleCancel = () => {
                 ? 'bg-green-500 text-white'
                 : (darkMode ? 'bg-gray-600 text-gray-300' : 'bg-gray-200 text-gray-600')"
             >
-              <svg v-if="configValid" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-              </svg>
+              <IconCheck v-if="configValid" size="sm" />
               <span v-else>2</span>
             </span>
             {{ t("admin.scheduledJobs.form.configParams") }}
@@ -720,9 +718,7 @@ const handleCancel = () => {
             v-if="!formData.handlerId"
             class="h-full flex flex-col items-center justify-center text-center py-12"
           >
-            <svg class="w-16 h-16 mb-4" :class="darkMode ? 'text-gray-600' : 'text-gray-300'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-            </svg>
+            <IconTaskList size="4xl" class="mb-4" :class="darkMode ? 'text-gray-600' : 'text-gray-300'" />
             <p class="text-sm" :class="darkMode ? 'text-gray-500' : 'text-gray-400'">
               {{ t("admin.scheduledJobs.handlerType.selectPlaceholder") }}
             </p>
@@ -749,9 +745,7 @@ const handleCancel = () => {
               v-if="!currentHandlerType?.configSchema?.length"
               class="flex flex-col items-center justify-center py-12 text-center"
             >
-              <svg class="w-12 h-12 mb-3" :class="darkMode ? 'text-gray-600' : 'text-gray-300'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
+              <IconCheckCircle size="3xl" class="mb-3" :class="darkMode ? 'text-gray-600' : 'text-gray-300'" />
               <p class="text-sm" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
                 {{ t("admin.scheduledJobs.form.noConfigParams") }}
               </p>
@@ -766,7 +760,7 @@ const handleCancel = () => {
               :class="darkMode
                 ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400'
                 : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400'"
-              :placeholder="t('admin.scheduledJobs.form.configPlaceholder')"
+              :placeholder="configPlaceholder"
             ></textarea>
             <p v-if="configError" class="mt-2 text-xs text-red-500">
               {{ configError }}
@@ -833,10 +827,7 @@ const handleCancel = () => {
             :disabled="!formValid || submitting"
             class="flex-1 sm:flex-none px-4 sm:px-6 py-2 rounded-md text-sm font-medium transition bg-primary-500 hover:bg-primary-600 text-white disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
           >
-            <svg v-if="submitting" class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
+            <IconRefresh v-if="submitting" size="sm" class="animate-spin" />
             {{ isEdit ? t("admin.scheduledJobs.form.save") : t("admin.scheduledJobs.form.create") }}
           </button>
         </div>

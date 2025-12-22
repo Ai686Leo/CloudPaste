@@ -14,9 +14,7 @@
           :title="isPlainTextMode ? '切换到Markdown模式' : '切换到纯文本模式'"
         >
           <span class="inline-flex items-center">
-            <svg class="w-3 h-3 mr-0.5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15v-4H8l4-8v4h3l-4 8z" fill="currentColor" />
-            </svg>
+            <IconRefresh size="xs" class="w-3 h-3 mr-0.5" />
             {{ isPlainTextMode ? "切换MD" : "切换TXT" }}
           </span>
         </button>
@@ -219,6 +217,7 @@
 import { ref, watch, onBeforeUnmount, onMounted } from "vue";
 import { useGlobalMessage } from "@/composables/core/useGlobalMessage.js";
 import { getInputClasses } from "./PasteViewUtils";
+import { IconRefresh } from "@/components/icons";
 import VditorUnified from "@/components/common/VditorUnified.vue";
 import PasteCopyFormatMenu from "./PasteCopyFormatMenu.vue";
 

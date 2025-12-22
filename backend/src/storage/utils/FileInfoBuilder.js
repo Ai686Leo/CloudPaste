@@ -16,8 +16,8 @@ import { GetFileType, getFileTypeName } from "../../utils/fileTypeDetector.js";
  * @param {string} params.fsPath        挂载视图下的完整路径（例如 /s3/docs/file.txt）
  * @param {string} [params.name]        文件名（可选，不传则从 fsPath 中推导）
  * @param {boolean} params.isDirectory  是否为目录
- * @param {number|null|undefined} [params.size]           大小（字节），目录会被归一为 0
- * @param {Date|string|null|undefined} [params.modified]   最后修改时间
+ * @param {number|null|undefined} [params.size]           大小（字节）；未知请传 null/undefined（不要伪造 0）
+ * @param {Date|string|null|undefined} [params.modified]   最后修改时间；未知请传 null/undefined（不要伪造当前时间）
  * @param {string|null|undefined} [params.mimetype]        MIME 类型（文件时可选）
  * @param {Object|null|undefined} [params.mount]           挂载对象
  * @param {string|null|undefined} [params.storageType]     存储类型（优先显式传入，其次 mount.storage_type）
@@ -40,7 +40,9 @@ export async function buildFileInfo({
   const type = isDirectory ? FILE_TYPES.FOLDER : await GetFileType(finalName, db);
   const typeName = isDirectory ? FILE_TYPE_NAMES[FILE_TYPES.FOLDER] : await getFileTypeName(finalName, db);
 
-  const finalSize = isDirectory ? 0 : typeof size === "number" && Number.isFinite(size) && size >= 0 ? size : 0;
+  // - 目录大小：存储无法直接给出“文件夹总大小”，未知就保持 null，显示 “-”。
+  // - 文件大小：若存储未给出也保持 null
+  const finalSize = typeof size === "number" && Number.isFinite(size) && size >= 0 ? size : null;
 
   let finalModified;
   if (modified instanceof Date) {
@@ -50,7 +52,8 @@ export async function buildFileInfo({
   } else if (modified && typeof modified.toISOString === "function") {
     finalModified = modified.toISOString();
   } else {
-    finalModified = new Date().toISOString();
+    // 不要伪造“当前时间”，未知就保持 null
+    finalModified = null;
   }
 
   const finalMimetype = isDirectory

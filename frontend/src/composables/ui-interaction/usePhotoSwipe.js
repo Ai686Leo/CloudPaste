@@ -747,12 +747,8 @@ export function usePhotoSwipe() {
     control.setAttribute("aria-label", "播放实况");
     control.setAttribute("title", "播放 / 暂停");
     control.innerHTML = `
-      <svg class="pswp__live-toggle-icon pswp__live-toggle-icon--play" viewBox="0 0 24 24" aria-hidden="true">
-        <path fill="currentColor" d="M8 5v14l11-7-11-7z" />
-      </svg>
-      <svg class="pswp__live-toggle-icon pswp__live-toggle-icon--pause" viewBox="0 0 24 24" aria-hidden="true">
-        <path fill="currentColor" d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
-      </svg>
+      <span class="pswp__live-toggle-icon pswp__live-toggle-icon--play" aria-hidden="true">▶</span>
+      <span class="pswp__live-toggle-icon pswp__live-toggle-icon--pause" aria-hidden="true">❚❚</span>
     `;
 
     root.appendChild(img);

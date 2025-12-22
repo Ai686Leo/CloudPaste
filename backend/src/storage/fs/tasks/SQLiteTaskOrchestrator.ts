@@ -15,7 +15,7 @@ import type {
   JobStatus,
 } from './TaskOrchestratorAdapter.js';
 import { TaskStatus } from './types.js';
-import type { JobFilter, TaskStats } from './types.js';
+import type { JobFilter, JobListResult, TaskStats } from './types.js';
 
 export class SQLiteTaskOrchestrator implements TaskOrchestratorAdapter {
   private db: Database.Database;
@@ -59,7 +59,16 @@ export class SQLiteTaskOrchestrator implements TaskOrchestratorAdapter {
    * 创建任意类型的作业
    */
   async createJob(params: CreateJobParams): Promise<JobDescriptor> {
-    const { taskType, payload, userId, userType } = params;
+    const {
+      taskType,
+      payload,
+      userId,
+      userType,
+      triggerType: triggerTypeRaw,
+      triggerRef: triggerRefRaw,
+    } = params;
+    const triggerType = triggerTypeRaw ?? 'manual';
+    const triggerRef = triggerRefRaw ?? null;
 
     // 验证任务类型并获取处理器
     const handler = taskRegistry.getHandler(taskType);
@@ -77,9 +86,10 @@ export class SQLiteTaskOrchestrator implements TaskOrchestratorAdapter {
       INSERT INTO ${DbTables.TASKS} (
         task_id, task_type, status, payload, stats,
         user_id, user_type,
+        trigger_type, trigger_ref,
         created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       jobId,
       taskType,  // 动态任务类型
@@ -88,6 +98,8 @@ export class SQLiteTaskOrchestrator implements TaskOrchestratorAdapter {
       JSON.stringify(stats),
       userId,
       userType,
+      triggerType,
+      triggerRef,
       now,
       now
     );
@@ -103,6 +115,8 @@ export class SQLiteTaskOrchestrator implements TaskOrchestratorAdapter {
       stats,
       createdAt: new Date(now),
       updatedAt: new Date(now),
+      triggerType,
+      triggerRef,
     };
   }
 
@@ -139,6 +153,8 @@ export class SQLiteTaskOrchestrator implements TaskOrchestratorAdapter {
       payload,
       userId: row.user_id,
       keyName: row.key_name || null,  // API 密钥名称
+      triggerType: row.trigger_type || 'manual',
+      triggerRef: row.trigger_ref ?? null,
     };
   }
 
@@ -166,38 +182,47 @@ export class SQLiteTaskOrchestrator implements TaskOrchestratorAdapter {
   /**
    * 列出作业 (支持任务类型过滤)
    */
-  async listJobs(filter?: JobFilter): Promise<JobDescriptor[]> {
-    // JOIN api_keys 表获取密钥名称
+  async listJobs(filter?: JobFilter): Promise<JobListResult> {
+    let whereClause = 'WHERE 1=1';
+    const baseParams: (string | number)[] = [];
+
+    if (filter?.taskType) {
+      whereClause += ' AND t.task_type = ?';
+      baseParams.push(filter.taskType);
+    } else if (filter?.taskTypes && filter.taskTypes.length > 0) {
+      const placeholders = filter.taskTypes.map(() => '?').join(', ');
+      whereClause += ` AND t.task_type IN (${placeholders})`;
+      baseParams.push(...filter.taskTypes);
+    }
+
+    if (filter?.status) {
+      whereClause += ' AND t.status = ?';
+      baseParams.push(filter.status);
+    }
+
+    if (filter?.userId) {
+      whereClause += ' AND t.user_id = ?';
+      baseParams.push(filter.userId);
+    }
+
+    const countQuery = `
+      SELECT COUNT(1) as total
+      FROM ${DbTables.TASKS} t
+      ${whereClause}
+    `;
+    const countRow = this.db.prepare(countQuery).get(...baseParams) as any;
+    const total = Number(countRow?.total || 0);
+
     let query = `
       SELECT 
         t.*,
         ak.name as key_name
       FROM ${DbTables.TASKS} t
       LEFT JOIN ${DbTables.API_KEYS} ak ON t.user_id = ak.id
-      WHERE 1=1
+      ${whereClause}
+      ORDER BY t.created_at DESC
     `;
-    const params: (string | number)[] = [];
-
-    // 任务类型过滤
-    if (filter?.taskType) {
-      query += ' AND t.task_type = ?';
-      params.push(filter.taskType);
-    }
-
-    // 状态过滤
-    if (filter?.status) {
-      query += ' AND t.status = ?';
-      params.push(filter.status);
-    }
-
-    // 用户过滤
-    if (filter?.userId) {
-      query += ' AND t.user_id = ?';
-      params.push(filter.userId);
-    }
-
-    // 排序和分页
-    query += ' ORDER BY t.created_at DESC';
+    const params = [...baseParams];
 
     if (filter?.limit) {
       query += ' LIMIT ?';
@@ -210,8 +235,7 @@ export class SQLiteTaskOrchestrator implements TaskOrchestratorAdapter {
     }
 
     const results = this.db.prepare(query).all(...params) as any[];
-
-    return results.map((row) => ({
+    const jobs = results.map((row) => ({
       jobId: row.task_id,
       taskType: row.task_type,
       status: row.status as TaskStatus,
@@ -223,7 +247,11 @@ export class SQLiteTaskOrchestrator implements TaskOrchestratorAdapter {
       payload: JSON.parse(row.payload),
       userId: row.user_id,
       keyName: row.key_name || null,  // API 密钥名称
+      triggerType: row.trigger_type || 'manual',
+      triggerRef: row.trigger_ref ?? null,
     }));
+
+    return { jobs, total };
   }
 
   /**

@@ -30,6 +30,35 @@ export function isDirectoryPath(path) {
 }
 
 /**
+ * 解析复制目标路径：
+ * - 源是文件且目标是目录时，自动拼接源文件名
+ * - 其它情况保持原样
+ * @param {string} sourcePath
+ * @param {string} targetPath
+ * @returns {string}
+ */
+export function resolveCopyTargetPath(sourcePath, targetPath) {
+  if (isDirectoryPath(sourcePath) || !isDirectoryPath(targetPath)) {
+    return targetPath;
+  }
+
+  const fileName = getPathBasename(sourcePath);
+  if (!fileName) {
+    return targetPath;
+  }
+
+  const targetDir = normalizePath(targetPath, true);
+  return `${targetDir}${fileName}`;
+}
+
+function getPathBasename(path) {
+  const normalized = String(path || "").replace(/\\\\/g, "/");
+  const trimmed = normalized.replace(/\/+$/g, "");
+  const parts = trimmed.split("/").filter(Boolean);
+  return parts[parts.length - 1] || "";
+}
+
+/**
  * 判断目标路径是否为源路径本身或其子路径
  * - 统一处理 / 与 \\ 分隔符，并去除首尾多余分隔符
  * - 仅用于逻辑判断，不访问底层存储

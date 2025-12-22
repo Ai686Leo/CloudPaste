@@ -40,6 +40,26 @@ export class BackupService {
   }
 
   /**
+   * 还原预检查
+   * @param {File} file - 备份文件
+   * @param {string} mode - 还原模式 ('overwrite' | 'merge')
+   * @param {Object} options
+   * @param {boolean} options.skipIntegrityCheck - 是否跳过完整性检查
+   * @param {boolean} options.preserveTimestamps - 是否保留时间戳
+   * @returns {Promise<Object>} 预检查结果
+   */
+  static async previewRestoreBackup(file, mode = "overwrite", options = {}) {
+    const { skipIntegrityCheck = false, preserveTimestamps = false } = options;
+    const formData = new FormData();
+    formData.append("backup_file", file);
+    formData.append("mode", mode);
+    formData.append("skipIntegrityCheck", skipIntegrityCheck ? "true" : "false");
+    formData.append("preserveTimestamps", preserveTimestamps ? "true" : "false");
+
+    return post("/admin/backup/restore/preview", formData);
+  }
+
+  /**
    * 下载备份文件
    * @param {Blob} blob - 备份数据
    * @param {string} filename - 文件名

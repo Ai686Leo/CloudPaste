@@ -28,7 +28,7 @@ export default {
     },
 
     errors: {
-      queryTooShort: "搜索关键词至少需要2个字符",
+      queryTooShort: "搜索关键词至少需要3个字符",
       searchFailed: "搜索失败，请稍后重试",
       loadMoreFailed: "加载更多结果失败",
     },
@@ -40,6 +40,11 @@ export default {
 
     tips: {
       keywordTips: "支持文件名模糊搜索",
+    },
+
+    notices: {
+      pathRestricted: "已按你的权限将搜索范围限制为：{path}",
+      passwordFiltered: "已隐藏 {count} 条受密码保护的结果",
     },
   },
 };

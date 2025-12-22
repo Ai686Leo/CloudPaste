@@ -4,7 +4,6 @@ import { NotFoundError, AppError, DriverError } from "../../http/errors.js";
 /**
  * StorageStreamDescriptor 构造工具
  *
- * 目标：
  * - 为各驱动提供统一的 StorageStreamDescriptor 构造方式
  * - 封装 NodeReadable / Web ReadableStream 差异
  * - 简化 AbortSignal / 关闭逻辑
@@ -20,14 +19,7 @@ import { NotFoundError, AppError, DriverError } from "../../http/errors.js";
  * @param {Date|null} [params.lastModified]
  * @returns {import("./types.js").StorageStreamDescriptor}
  */
-export function createNodeStreamDescriptor({
-  openStream,
-  openRangeStream,
-  size,
-  contentType,
-  etag = null,
-  lastModified = null,
-}) {
+export function createNodeStreamDescriptor({ openStream, openRangeStream, size, contentType, etag = null, lastModified = null }) {
   return {
     size: typeof size === "number" ? size : null,
     contentType: contentType || null,
@@ -113,6 +105,56 @@ export function createHttpStreamDescriptor({
 }) {
   let currentSize = typeof size === "number" ? size : null;
 
+  const RETRYABLE_HTTP_STATUS = new Set([429, 500, 502, 503, 504]);
+
+  const isAbortError = (error) => error?.name === "AbortError";
+
+  const sleep = async (ms, signal) => {
+    if (!ms || ms <= 0) return;
+    if (signal?.aborted) {
+      const abortError = new Error("Aborted");
+      abortError.name = "AbortError";
+      throw abortError;
+    }
+
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(resolve, ms);
+      if (!signal) return;
+      const onAbort = () => {
+        clearTimeout(timer);
+        const abortError = new Error("Aborted");
+        abortError.name = "AbortError";
+        reject(abortError);
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+    });
+  };
+
+  const fetchWithRetry = async (label, fn, { signal } = {}) => {
+    const maxAttempts = 2;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const resp = await fn();
+        const retryable = resp && RETRYABLE_HTTP_STATUS.has(resp.status);
+
+        if (retryable && attempt < maxAttempts) {
+          console.warn(`[StreamDescriptorUtils] ${label} HTTP ${resp.status}，将重试 (${attempt}/${maxAttempts})`);
+          await sleep(200 * attempt, signal);
+          continue;
+        }
+
+        return resp;
+      } catch (error) {
+        if (isAbortError(error) || attempt >= maxAttempts) throw error;
+        console.warn(`[StreamDescriptorUtils] ${label} fetch 失败，将重试 (${attempt}/${maxAttempts}):`, error?.message || error);
+        await sleep(200 * attempt, signal);
+      }
+    }
+
+    throw new DriverError(`${label} fetch 失败（重试耗尽）`);
+  };
+
   const tryInferSizeFromResponse = (resp) => {
     if (!resp || !resp.headers) return null;
     const contentRange = resp.headers.get("content-range");
@@ -144,7 +186,7 @@ export function createHttpStreamDescriptor({
       if (typeof fetchHeadResponse !== "function") return currentSize;
 
       const { signal } = options;
-      const resp = await fetchHeadResponse(signal);
+      const resp = await fetchWithRetry("HEAD", () => fetchHeadResponse(signal), { signal });
       if (!resp) return currentSize;
       if (!resp.ok) return currentSize;
 
@@ -156,7 +198,7 @@ export function createHttpStreamDescriptor({
     },
     async getStream(options = {}) {
       const { signal } = options;
-      const resp = await fetchResponse(signal);
+      const resp = await fetchWithRetry("GET", () => fetchResponse(signal), { signal });
 
       if (!resp.ok) {
         if (resp.status === 404) {
@@ -191,7 +233,7 @@ export function createHttpStreamDescriptor({
     descriptor.getRange = async (range, options = {}) => {
       const { signal } = options;
       const rangeHeader = `bytes=${range.start}-${range.end}`;
-      const resp = await fetchRangeResponse(signal, rangeHeader, range);
+      const resp = await fetchWithRetry("GET(Range)", () => fetchRangeResponse(signal, rangeHeader, range), { signal });
 
       if (!resp.ok) {
         if (resp.status === 404) {
@@ -235,13 +277,7 @@ export function createHttpStreamDescriptor({
  * @param {Date|null} [params.lastModified]
  * @returns {import("./types.js").StorageStreamDescriptor}
  */
-export function createWebStreamDescriptor({
-  openStream,
-  size = null,
-  contentType = null,
-  etag = null,
-  lastModified = null,
-}) {
+export function createWebStreamDescriptor({ openStream, size = null, contentType = null, etag = null, lastModified = null }) {
   return {
     size: typeof size === "number" ? size : null,
     contentType: contentType || null,

@@ -20,13 +20,7 @@
               <div class="flex items-center">
                 <!-- 公告图标 -->
                 <div class="flex-shrink-0 w-8 h-8 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mr-3">
-                  <svg class="w-5 h-5 text-blue-600 dark:text-blue-400" fill="currentColor" viewBox="0 0 20 20">
-                    <path
-                      fill-rule="evenodd"
-                      d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
-                      clip-rule="evenodd"
-                    />
-                  </svg>
+                  <IconInformationCircle size="md" class="text-blue-600 dark:text-blue-400" aria-hidden="true" />
                 </div>
                 <h3 :id="titleId" class="text-base sm:text-lg font-semibold text-gray-900 dark:text-white">
                   {{ t("announcement.title") }}
@@ -35,9 +29,7 @@
 
               <!-- 关闭按钮 -->
               <button @click="closeModal" class="text-gray-400 hover:text-gray-500 dark:text-gray-500 dark:hover:text-gray-400 transition-colors" :aria-label="t('common.close')">
-                <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                </svg>
+                <IconClose size="lg" aria-hidden="true" />
               </button>
             </div>
           </div>
@@ -58,13 +50,7 @@
                     class="w-4 h-4 border-2 rounded transition-colors flex items-center justify-center"
                     :class="dontShowAgain ? 'bg-blue-600 border-blue-600 dark:bg-blue-500 dark:border-blue-500' : 'border-gray-300 dark:border-gray-600'"
                   >
-                    <svg v-if="dontShowAgain" class="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20">
-                      <path
-                        fill-rule="evenodd"
-                        d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                        clip-rule="evenodd"
-                      />
-                    </svg>
+                    <IconCheck v-if="dontShowAgain" size="xs" class="w-2.5 h-2.5 text-white" aria-hidden="true" />
                   </div>
                 </div>
                 <span class="ml-2 text-xs sm:text-sm text-gray-600 dark:text-gray-400">
@@ -91,6 +77,7 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from "vue";
 import { useI18n } from "vue-i18n";
 import { loadVditor, VDITOR_ASSETS_BASE } from "@/utils/vditorLoader.js";
+import { IconCheck, IconClose, IconInformationCircle } from "@/components/icons";
 
 const props = defineProps({
   content: {

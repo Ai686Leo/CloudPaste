@@ -193,10 +193,6 @@ export function useFilePreviewExtensions(
    * 组件挂载时的初始化
    */
   const initializeExtensions = () => {
-    // 添加全屏变化监听
-    document.addEventListener("fullscreenchange", handleFullscreenChange);
-    document.addEventListener("keydown", handleKeyDown);
-
     console.log("文件预览扩展功能初始化完成");
   };
 
@@ -209,10 +205,6 @@ export function useFilePreviewExtensions(
       URL.revokeObjectURL(authenticatedPreviewUrl.value);
       authenticatedPreviewUrl.value = null;
     }
-
-    // 移除事件监听器
-    document.removeEventListener("keydown", handleKeyDown);
-    document.removeEventListener("fullscreenchange", handleFullscreenChange);
 
     // 清除计时器
     if (previewTimeoutId && previewTimeoutId.value) {

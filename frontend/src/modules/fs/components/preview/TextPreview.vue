@@ -16,8 +16,12 @@
       @save="handleSave"
     />
     <div v-else class="loading-indicator">
-      <div class="loading-spinner" :class="darkMode ? 'border-primary-500' : 'border-primary-600'"></div>
-      <p class="loading-text" :class="darkMode ? 'text-gray-400' : 'text-gray-600'">{{ $t("mount.textPreview.loadingText") }}</p>
+      <LoadingIndicator
+        :text="$t('mount.textPreview.loadingText')"
+        :dark-mode="darkMode"
+        size="xl"
+        :icon-class="darkMode ? 'text-primary-500' : 'text-primary-600'"
+      />
     </div>
   </div>
 </template>
@@ -27,6 +31,7 @@ import { computed, ref, watch } from "vue";
 import TextRenderer from "@/components/common/text-preview/TextRenderer.vue";
 import { useTextPreview } from "@/composables/text-preview/useTextPreview.js";
 import { usePathPassword } from "@/composables/usePathPassword.js";
+import LoadingIndicator from "@/components/common/LoadingIndicator.vue";
 
 // Props 定义
 const props = defineProps({
@@ -285,23 +290,7 @@ defineExpose({
   min-height: 200px;
 }
 
-.loading-spinner {
-  width: 2.5rem;
-  height: 2.5rem;
-  border: 2px solid transparent;
-  border-top: 2px solid currentColor;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-  margin-bottom: 0.5rem;
-}
-
 .loading-text {
   font-size: 0.875rem;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 </style>

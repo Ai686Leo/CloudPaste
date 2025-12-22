@@ -5,6 +5,8 @@
  */
 
 export { CopyTaskHandler } from './CopyTaskHandler.js';
+export { FsIndexRebuildTaskHandler } from './FsIndexRebuildTaskHandler.js';
+export { FsIndexApplyDirtyTaskHandler } from './FsIndexApplyDirtyTaskHandler.js';
 
 // 待扩展:
 // export { ScheduledSyncTaskHandler } from './ScheduledSyncTaskHandler.js';

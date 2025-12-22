@@ -1,0 +1,26 @@
+.git
+.gitignore
+.github
+
+# 本地构建产物 / 依赖缓存
+**/node_modules
+**/dist
+**/.vite
+**/.cache
+
+# 本地数据/运行目录
+sql_data
+data
+logs
+*.log
+
+# 本地工具与临时文件
+.DS_Store
+Thumbs.db
+*.swp
+*.tmp
+*.bak
+
+# 环境变量文件
+.env
+.env.*

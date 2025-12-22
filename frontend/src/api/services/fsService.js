@@ -3,7 +3,6 @@
  */
 
 import { get, post, del } from "../client";
-import { API_BASE_URL } from "../config";
 // Legacy StorageMultipartUploader removed. Multipart flows are handled by Uppy AwsS3 plugin or driver engine.
 
 /******************************************************************************
@@ -63,7 +62,9 @@ export async function getFileInfo(path, options = {}) {
  * @param {string} searchParams.mountId 挂载点ID（当scope为'mount'时）
  * @param {string} searchParams.path 搜索路径（当scope为'directory'时）
  * @param {number} searchParams.limit 结果限制数量，默认50
- * @param {number} searchParams.offset 结果偏移量，默认0
+ * @param {string|null} searchParams.cursor 分页游标（不透明字符串），默认null
+ * @param {string} searchParams.pathToken 路径密码 token（可选）
+ * @param {string[]} searchParams.pathTokens 路径密码 token 列表（可选）
  * @returns {Promise<Object>} 搜索结果响应对象
  */
 export async function searchFiles(query, searchParams = {}) {
@@ -71,7 +72,6 @@ export async function searchFiles(query, searchParams = {}) {
     q: query,
     scope: searchParams.scope || "global",
     limit: (searchParams.limit || 50).toString(),
-    offset: (searchParams.offset || 0).toString(),
   };
 
   // 添加可选参数
@@ -81,8 +81,24 @@ export async function searchFiles(query, searchParams = {}) {
   if (searchParams.path) {
     params.path = searchParams.path;
   }
+  if (searchParams.cursor) {
+    params.cursor = String(searchParams.cursor);
+  }
 
-  return get("/fs/search", { params });
+  const headers = {};
+  if (searchParams.pathToken) {
+    headers["x-fs-path-token"] = searchParams.pathToken;
+  }
+  if (Array.isArray(searchParams.pathTokens) && searchParams.pathTokens.length > 0) {
+    headers["x-fs-path-tokens"] = searchParams.pathTokens.join(",");
+  }
+
+  const requestOptions = { params };
+  if (Object.keys(headers).length > 0) {
+    requestOptions.headers = headers;
+  }
+
+  return get("/fs/search", requestOptions);
 }
 
 /**
@@ -337,11 +353,8 @@ export async function commitPresignedUpload(uploadInfo, etag, contentType, fileS
  * @returns {Promise<Object>} 批量复制结果响应对象 { success, data: { jobId, taskType, status, stats, createdAt } }
  */
 export async function batchCopyItems(items, options = {}) {
-  const skipExisting = options.skipExisting !== false;
-
-  // 统一任务模式：调用 batch-copy API，始终返回 jobId
   // 复制策略由后端 CopyTaskHandler 内部决策
-  return post(`/fs/batch-copy`, { items, skipExisting });
+  return createJob("copy", { items, options });
 }
 
 /**
@@ -527,21 +540,7 @@ export async function uploadToPresignedUrl(options) {
   return uploadWithPresignedUrl(url, data, contentType, onProgress, onCancel, setXhr);
 }
 
-/******************************************************************************
- * 高级功能API函数
- ******************************************************************************/
 
-
-/**
- * 执行预签名URL上传的完整流程
- * @param {File} file 要上传的文件
- * @param {string} path 目标路径
- * @param {Function} onProgress 进度回调函数
- * @param {Function} onCancel 取消检查函数
- * @param {Function} onXhrCreated xhr创建回调函数
- * @returns {Promise<Object>} 上传结果
- */
-/** @deprecated 旧版 FS 预签名上传流程，已被 Uppy + StorageAdapter 方案取代 */
 
 
 /******************************************************************************
@@ -559,12 +558,37 @@ export async function uploadToPresignedUrl(options) {
  * @returns {Promise<Object>} 作业描述符 { jobId, taskType, status, stats, createdAt }
  */
 export async function createJob(taskType, payload, options = {}) {
-  return post('/fs/jobs', {
-    taskType,
-    items: payload.items || payload, // 兼容直接传 items 数组的情况
-    skipExisting: options.skipExisting !== false,
-    maxConcurrency: options.maxConcurrency || 10,
-    retryPolicy: options.retryPolicy,
+  const type = String(taskType || "").trim();
+  if (!type) {
+    throw new Error("taskType 不能为空");
+  }
+
+  if (type === "copy") {
+    const items = Array.isArray(payload) ? payload : (payload?.items ?? payload);
+    const payloadOptions = (!Array.isArray(payload) && payload && typeof payload === "object")
+      ? (payload.options || {})
+      : {};
+    const mergedOptions = { ...payloadOptions, ...options };
+
+    if (!Array.isArray(items) || items.length === 0) {
+      throw new Error("copy 任务的 items 不能为空");
+    }
+    return post("/fs/jobs", {
+      taskType: type,
+      payload: {
+        items,
+        options: {
+          skipExisting: mergedOptions.skipExisting !== false,
+          maxConcurrency: mergedOptions.maxConcurrency || 10,
+          retryPolicy: mergedOptions.retryPolicy,
+        },
+      },
+    });
+  }
+
+  return post("/fs/jobs", {
+    taskType: type,
+    payload: payload || {},
   });
 }
 
@@ -610,6 +634,14 @@ export async function listJobs(filter = {}) {
   }
 
   return get('/fs/jobs', { params });
+}
+
+/**
+ * 获取当前用户可见的任务类型清单（用于任务管理 UI 做筛选/展示名）
+ * @returns {Promise<Object>} { types: Array<{ taskType, i18nKey?, displayName?, category?, capabilities? }> }
+ */
+export async function listJobTypes() {
+  return get("/fs/job-types");
 }
 
 /**

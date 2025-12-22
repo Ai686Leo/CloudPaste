@@ -1,10 +1,11 @@
 <script setup>
 // PasteViewPreview组件 - 用于渲染Markdown内容并提供预览功能
 // 该组件使用Vditor库渲染复杂的Markdown内容，支持代码高亮、数学公式等高级特性
-import { ref, onMounted, watch, nextTick, onBeforeUnmount } from "vue";
+import { h, ref, onMounted, watch, nextTick, onBeforeUnmount, render } from "vue";
 import { debugLog } from "./PasteViewUtils";
 import HtmlPreviewModal from "@/components/paste-view/preview/HtmlPreviewModal.vue"; // 引入HTML预览弹窗组件
 import { loadVditor, VDITOR_ASSETS_BASE } from "@/utils/vditorLoader.js";
+import { IconChevronDown, IconEye, IconRefresh } from "@/components/icons";
 
 // 定义组件接收的属性
 const props = defineProps({
@@ -54,6 +55,11 @@ const savedScrollPosition = ref({ window: 0, content: 0 });
 let mutationObserver = null;
 // 存储定时器ID，用于清理
 const timeoutIds = new Set();
+
+// 将 Vue 图标组件渲染到指定 DOM 容器（用于非 Vue 管理的动态 DOM）
+const renderIconInto = (container, IconComponent, props = {}) => {
+  render(h(IconComponent, props), container);
+};
 
 // 安全的setTimeout，会自动清理
 const safeSetTimeout = (callback, delay) => {
@@ -568,8 +574,7 @@ const setupCodeBlockCollapse = () => {
     // 创建折叠提示
     const collapseHint = document.createElement("span");
     collapseHint.className = "code-block-collapse-hint";
-    collapseHint.innerHTML =
-      '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z"/></svg>';
+    renderIconInto(collapseHint, IconChevronDown, { size: "sm" });
 
     // 将左侧信息（语言和行数）添加到summary
     const leftContainer = document.createElement("div");
@@ -586,8 +591,7 @@ const setupCodeBlockCollapse = () => {
     if (language.toLowerCase() === "html") {
       const previewButton = document.createElement("button");
       previewButton.className = "code-block-preview-button";
-      previewButton.innerHTML =
-        '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M10.5 8a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z"/><path d="M0 8s3-5.5 8-5.5S16 8 16 8s-3 5.5-8 5.5S0 8 0 8zm8 3.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"/></svg>';
+      renderIconInto(previewButton, IconEye, { size: "sm" });
       previewButton.title = "预览 HTML";
 
       // 添加点击事件
@@ -606,8 +610,7 @@ const setupCodeBlockCollapse = () => {
     if (language.toLowerCase() === "svg") {
       const previewButton = document.createElement("button");
       previewButton.className = "code-block-preview-button";
-      previewButton.innerHTML =
-        '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M10.5 8a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z"/><path d="M0 8s3-5.5 8-5.5S16 8 16 8s-3 5.5-8 5.5S0 8 0 8zm8 3.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"/></svg>';
+      renderIconInto(previewButton, IconEye, { size: "sm" });
       previewButton.title = "预览 SVG";
 
       // 添加点击事件
@@ -735,10 +738,7 @@ const openSvgInExternalBrowser = (svgContent) => {
   <div class="paste-view-preview">
     <!-- 内容渲染中的加载动画 -->
     <div v-if="props.content && !contentRendered && !props.isPlainTextMode" class="py-10 flex justify-center items-center">
-      <svg class="animate-spin h-8 w-8" :class="props.darkMode ? 'text-blue-400' : 'text-primary-500'" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3"></circle>
-        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-      </svg>
+      <IconRefresh class="animate-spin h-8 w-8" :class="props.darkMode ? 'text-blue-400' : 'text-primary-500'" />
       <span class="ml-3 text-sm" :class="props.darkMode ? 'text-gray-300' : 'text-gray-500'">正在渲染内容...</span>
     </div>
 

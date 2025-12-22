@@ -2,14 +2,7 @@
  * 跨存储任务编排的共享类型定义（跨运行时）
  */
 
-/** 任务类型枚举 */
-export enum TaskType {
-  COPY = 'copy',
-  UPLOAD = 'upload',
-  DOWNLOAD = 'download',
-  DELETE = 'delete',
-  ARCHIVE = 'archive',
-}
+import type { JobDescriptor } from './TaskOrchestratorAdapter.js';
 
 /** 任务状态枚举 */
 export enum TaskStatus {
@@ -24,19 +17,33 @@ export enum TaskStatus {
 /** 单个文件/项目的处理状态 */
 export type ItemStatus = 'pending' | 'processing' | 'retrying' | 'success' | 'failed' | 'skipped';
 
-/** 单个文件/项目的处理结果 */
+/**
+ * 单个项目的处理结果（通用）
+ *
+ */
 export interface ItemResult {
-  sourcePath: string;
-  targetPath: string;
+  /** 项目类型（可选）：copy/mount/path/... */
+  kind?: string;
+  /** 给 UI 展示的短文本（可选） */
+  label?: string;
+
+  /** copy 语义字段（可选，copy 任务必填；其他任务可不填） */
+  sourcePath?: string;
+  targetPath?: string;
+
   status: ItemStatus;
   error?: string;              // 失败时的错误信息
   fileSize?: number;           // 文件总大小（字节）
   bytesTransferred?: number;   // 已传输字节数
   retryCount?: number;         // 重试次数
   lastRetryAt?: number;        // 最后重试时间戳
+  /** 通用耗时（毫秒），用于非 copy 任务描述“处理耗时” */
+  durationMs?: number;
+  /** 扩展字段 */
+  meta?: Record<string, any>;
 }
 
-/** 任务统计 */
+/** 任务统计（通用，可扩展） */
 export interface TaskStats {
   totalItems: number;
   processedItems: number;
@@ -46,6 +53,8 @@ export interface TaskStats {
   totalBytes?: number;         // 总字节数 (用于进度计算)
   bytesTransferred?: number;   // 已传输字节数
   itemResults?: ItemResult[];  // 每个文件的处理结果
+  /** 允许不同任务类型扩展 stats 字段 */
+  [key: string]: any;
 }
 
 /** 重试策略 */
@@ -71,7 +80,7 @@ export interface CopyTaskPayload {
 /** 任务数据库记录 */
 export interface TaskRecord<TPayload = unknown> {
   task_id: string;
-  task_type: TaskType;
+  task_type: string;
   status: TaskStatus;
   payload: TPayload;
   stats: TaskStats;
@@ -115,8 +124,14 @@ export interface CreateCopyJobParams {
 /** 作业过滤条件 */
 export interface JobFilter {
   status?: TaskStatus;
-  taskType?: TaskType;
+  taskType?: string;
+  taskTypes?: string[];
   userId?: string;
   limit?: number;
   offset?: number;
+}
+
+export interface JobListResult {
+  jobs: JobDescriptor[];
+  total: number;
 }

@@ -1,16 +1,50 @@
 <template>
   <div class="text-preview rounded-lg overflow-hidden mb-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 flex-grow flex flex-col w-full">
-    <div class="flex items-center justify-between p-2 bg-gray-100 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
-      <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ title || t("fileView.preview.text.title") }}</span>
-      <div class="flex items-center gap-3">
-        <!-- 统计信息 -->
-        <div v-if="textContent" class="text-xs text-gray-500 dark:text-gray-400 flex gap-2">
-          <span>{{ lineCount }} L</span>
-          <span>{{ characterCount }} Chars</span>
+    <!-- 工具栏：响应式布局 -->
+    <div class="flex flex-wrap items-center justify-between gap-2 p-2 bg-gray-100 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
+      <div class="flex items-center gap-2 min-w-0">
+        <!-- 标题：移动端隐藏 -->
+        <span class="text-sm font-medium text-gray-700 dark:text-gray-300 truncate hidden sm:inline">{{ effectiveTitle }}</span>
+        <!-- 移动端：下拉选择器 -->
+        <select
+          v-model="currentMode"
+          class="sm:hidden text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300"
+        >
+          <option v-for="mode in previewModes" :key="mode.value" :value="mode.value">
+            {{ mode.label }}
+          </option>
+        </select>
+        <!-- 桌面端：按钮组 -->
+        <div class="hidden sm:flex items-center gap-1">
+          <button
+            v-for="mode in previewModes"
+            :key="mode.value"
+            type="button"
+            class="text-xs px-2 py-0.5 rounded border"
+            :class="
+              currentMode === mode.value
+                ? 'bg-blue-600 text-white border-blue-600'
+                : darkMode
+                  ? 'bg-gray-800 text-gray-300 border-gray-600 hover:bg-gray-700'
+                  : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-200'
+            "
+            @click="switchMode(mode.value)"
+          >
+            {{ mode.label }}
+          </button>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 flex-shrink-0">
+        <!-- 统计信息：移动端缩写 -->
+        <div v-if="textContent" class="text-xs text-gray-500 dark:text-gray-400 flex gap-1 sm:gap-2">
+          <span class="hidden sm:inline">{{ lineCount }} L</span>
+          <span class="sm:hidden">{{ lineCount }}L</span>
+          <span class="hidden sm:inline">{{ characterCount }} Chars</span>
+          <span class="sm:hidden">{{ characterCount }}C</span>
         </div>
         <!-- 编码选择器 -->
         <div v-if="textContent" class="flex items-center gap-1">
-          <span class="text-xs text-gray-500 dark:text-gray-400">Enc:</span>
+          <span class="text-xs text-gray-500 dark:text-gray-400 hidden sm:inline">Enc:</span>
           <select
             v-model="currentEncoding"
             @change="handleEncodingChange"
@@ -28,11 +62,11 @@
       <TextRenderer
         v-if="textContent"
         :content="textContent"
-        :mode="'text'"
-        :language="detectedLanguage"
+        :mode="currentMode"
+        :language="currentMode === 'code' ? detectedLanguage : ''"
         :filename="adaptedFileData?.name || ''"
         :dark-mode="darkMode"
-        :show-line-numbers="true"
+        :show-line-numbers="currentMode === 'code'"
         :read-only="true"
         :show-stats="false"
         :max-height="'100%'"
@@ -45,28 +79,26 @@
       </div>
       <!-- 加载状态 -->
       <div v-else class="absolute inset-0 flex items-center justify-center bg-gray-100 dark:bg-gray-700">
-        <div class="text-center">
-          <svg class="animate-spin h-8 w-8 text-blue-500 mx-auto mb-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-            <path
-              class="opacity-75"
-              fill="currentColor"
-              d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 0 0 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-            ></path>
-          </svg>
-          <p class="text-blue-600 dark:text-blue-400">{{ loadingText || t("fileView.preview.text.loading") }}</p>
-        </div>
+        <LoadingIndicator
+          :text="loadingText || t('fileView.preview.text.loading')"
+          :dark-mode="darkMode"
+          size="xl"
+          icon-class="text-blue-500"
+          :text-class="darkMode ? 'text-blue-400' : 'text-blue-600'"
+        />
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
+import LoadingIndicator from "@/components/common/LoadingIndicator.vue";
 import TextRenderer from "@/components/common/text-preview/TextRenderer.vue";
 import { useFetchText } from "@/composables/text-preview/useFetchText.js";
 import { useTextPreview } from "@/composables/text-preview/useTextPreview.js";
+import { getPreviewModeFromFilename } from "@/utils/textUtils.js";
 
 const { t } = useI18n();
 
@@ -98,6 +130,29 @@ const props = defineProps({
 });
 
 const emit = defineEmits(["load", "error"]);
+
+// 文本预览模式（文本/代码/Markdown/HTML）
+const currentMode = ref("text");
+
+// 预览模式选项（用于下拉选择器和按钮组）
+const previewModes = computed(() => [
+  { value: "text", label: t("fileView.preview.modes.text") },
+  { value: "code", label: t("fileView.preview.modes.code") },
+  { value: "markdown", label: t("fileView.preview.modes.markdown") },
+  { value: "html", label: t("fileView.preview.modes.html") },
+]);
+
+const switchMode = (mode) => {
+  currentMode.value = mode;
+};
+
+const effectiveTitle = computed(() => {
+  if (props.title) return props.title;
+  if (currentMode.value === "code") return t("fileView.preview.code.title");
+  if (currentMode.value === "markdown") return t("fileView.preview.markdown.title");
+  if (currentMode.value === "html") return t("fileView.preview.html.title");
+  return t("fileView.preview.text.title");
+});
 
 // 使用统一的文本预览逻辑
 const {
@@ -180,6 +235,15 @@ watch(
       return;
     }
     loadTextContent();
+  },
+  { immediate: true }
+);
+
+// 文件名变化时，自动选择一个更合适的初始模式
+watch(
+  () => props.filename,
+  (name) => {
+    currentMode.value = getPreviewModeFromFilename(name || "");
   },
   { immediate: true }
 );

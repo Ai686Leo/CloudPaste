@@ -22,13 +22,7 @@
           class="flex-shrink-0 p-1 rounded-lg transition-colors"
           :class="darkMode ? 'text-gray-400 hover:text-gray-300 hover:bg-gray-700' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'"
         >
-          <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
-            <path
-              fill-rule="evenodd"
-              d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
-              clip-rule="evenodd"
-            />
-          </svg>
+          <IconClose size="md" />
         </button>
       </div>
 
@@ -45,14 +39,7 @@
           :class="darkMode ? 'bg-orange-900/30 text-orange-300 border border-orange-700' : 'bg-orange-50 text-orange-800 border border-orange-200'"
         >
           <div class="flex items-start gap-2">
-            <svg class="h-5 w-5 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-              />
-            </svg>
+            <IconExclamation size="md" class="flex-shrink-0 mt-0.5" />
             <div>
               <p class="font-medium text-sm">{{ t('admin.scheduledJobs.warnings.handlerNotFound') }}</p>
               <p class="text-xs mt-1 opacity-80">{{ t('admin.scheduledJobs.warnings.handlerNotFoundHint') }}</p>
@@ -131,26 +118,10 @@
             :class="darkMode ? 'text-gray-200 hover:bg-gray-700/30 border-gray-700' : 'text-gray-800 hover:bg-gray-50 border-gray-200'"
           >
             <div class="flex items-center gap-2">
-              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-                />
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
+              <IconSettings size="sm" />
               {{ t('admin.scheduledJobs.detail.configParams') }}
             </div>
-            <svg
-              class="w-4 h-4 transition-transform duration-200"
-              :class="{ 'rotate-180': !configCollapsed }"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-            </svg>
+            <IconChevronDown size="sm" class="transition-transform duration-200" :class="{ 'rotate-180': !configCollapsed }" />
           </button>
           <div v-show="!configCollapsed" class="mt-2 overflow-hidden transition-all duration-200">
             <pre
@@ -169,9 +140,7 @@
             :class="darkMode ? 'text-gray-200 hover:bg-gray-700/30 border-gray-700' : 'text-gray-800 hover:bg-gray-50 border-gray-200'"
           >
             <div class="flex items-center gap-2">
-              <svg class="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
+              <IconClock size="sm" class="flex-shrink-0" />
               {{ t('admin.scheduledJobs.detail.recentRuns') }}
               <span
                 v-if="runs.length > 0"
@@ -181,23 +150,12 @@
                 {{ runs.length }}
               </span>
             </div>
-            <svg
-              class="w-4 h-4 transition-transform duration-200"
-              :class="{ 'rotate-180': !historyCollapsed }"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-            </svg>
+            <IconChevronDown size="sm" class="transition-transform duration-200" :class="{ 'rotate-180': !historyCollapsed }" />
           </button>
 
           <div v-show="!historyCollapsed" class="mt-3 overflow-hidden transition-all duration-200">
             <div v-if="runsLoading" class="flex items-center justify-center py-8">
-              <svg class="animate-spin w-6 h-6" :class="darkMode ? 'text-gray-400' : 'text-gray-500'" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-              </svg>
+              <IconRefresh size="lg" class="animate-spin" :class="darkMode ? 'text-gray-400' : 'text-gray-500'" />
             </div>
             <div v-else-if="runs.length > 0" class="space-y-3">
                 <div v-for="(run, index) in runs" :key="run.id" class="relative flex gap-4 group">
@@ -322,13 +280,7 @@
                       :class="darkMode ? 'bg-red-900/20 text-red-300 border-red-800/50' : 'bg-red-50 text-red-700 border-red-200'"
                     >
                       <div class="flex items-start gap-1.5">
-                        <svg class="w-3.5 h-3.5 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-                          <path
-                            fill-rule="evenodd"
-                            d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                            clip-rule="evenodd"
-                          />
-                        </svg>
+                        <IconXCircle size="xs" class="flex-shrink-0 mt-0.5" />
                         <span class="font-medium">{{ run.errorMessage }}</span>
                       </div>
                     </div>
@@ -337,14 +289,7 @@
               </div>
             <div v-else class="flex flex-col items-center justify-center py-10">
               <div class="relative mb-3">
-                <svg class="w-14 h-14" :class="darkMode ? 'text-gray-600' : 'text-gray-400'" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="1.5"
-                    d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
-                  />
-                </svg>
+                <IconTaskList size="4xl" :class="darkMode ? 'text-gray-600' : 'text-gray-400'" />
               </div>
               <p class="text-sm font-medium" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
                 {{ t('admin.scheduledJobs.detail.noRuns') }}
@@ -361,6 +306,7 @@
 import { ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { formatDateTimeWithSeconds } from '@/utils/timeUtils.js';
+import { IconChevronDown, IconClock, IconClose, IconExclamation, IconRefresh, IconSettings, IconTaskList, IconXCircle } from '@/components/icons';
 
 const { t } = useI18n();
 

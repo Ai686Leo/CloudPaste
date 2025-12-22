@@ -88,7 +88,7 @@ export const registerMultipartRoutes = (router, helpers) => {
       throw new ValidationError("缺少必要参数");
     }
 
-    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
+    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory, { env: c.env });
     const fileSystem = new FileSystem(mountManager);
     const result = await fileSystem.initializeFrontendMultipartUpload(
       path,
@@ -112,7 +112,7 @@ export const registerMultipartRoutes = (router, helpers) => {
       throw new ValidationError("缺少必要参数");
     }
 
-    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
+    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory, { env: c.env });
     const fileSystem = new FileSystem(mountManager);
   const result = await fileSystem.completeFrontendMultipartUpload(path, uploadId, parts, fileName, fileSize, userIdOrInfo, userType);
 
@@ -128,7 +128,7 @@ export const registerMultipartRoutes = (router, helpers) => {
       throw new ValidationError("缺少必要参数");
     }
 
-    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
+    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory, { env: c.env });
     const fileSystem = new FileSystem(mountManager);
     await fileSystem.abortFrontendMultipartUpload(path, uploadId, fileName, userIdOrInfo, userType);
 
@@ -140,7 +140,7 @@ export const registerMultipartRoutes = (router, helpers) => {
     const body = c.get("jsonBody");
     const { path = "" } = body;
 
-    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
+    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory, { env: c.env });
     const fileSystem = new FileSystem(mountManager);
     const result = await fileSystem.listMultipartUploads(path, userIdOrInfo, userType);
 
@@ -156,7 +156,7 @@ export const registerMultipartRoutes = (router, helpers) => {
       throw new ValidationError("缺少必要参数");
     }
 
-    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
+    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory, { env: c.env });
     const fileSystem = new FileSystem(mountManager);
     const result = await fileSystem.listMultipartParts(path, uploadId, fileName, userIdOrInfo, userType);
 
@@ -172,7 +172,7 @@ export const registerMultipartRoutes = (router, helpers) => {
       throw new ValidationError("缺少必要参数");
     }
 
-    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
+    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory, { env: c.env });
     const fileSystem = new FileSystem(mountManager);
     const result = await fileSystem.refreshMultipartUrls(path, uploadId, partNumbers, userIdOrInfo, userType);
 
@@ -212,7 +212,7 @@ export const registerMultipartRoutes = (router, helpers) => {
       throw new ValidationError("当前上传会话的存储类型不支持通过该端点上传分片");
     }
 
-    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
+    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory, { env: c.env });
     const fileSystem = new FileSystem(mountManager);
 
     const { driver, mount } = await fileSystem.mountManager.getDriverByPath(
@@ -259,7 +259,7 @@ export const registerMultipartRoutes = (router, helpers) => {
 
     const targetPath = presignTargetResolver(c);
 
-    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
+    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory, { env: c.env });
     const { mount } = await mountManager.getDriverByPath(path, userIdOrInfo, userType);
 
     if (!mount || !mount.storage_config_id) {
@@ -309,7 +309,7 @@ export const registerMultipartRoutes = (router, helpers) => {
 
     const fileName = targetPath.split("/").filter(Boolean).pop();
 
-    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
+    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory, { env: c.env });
     const fileSystem = new FileSystem(mountManager);
 
     // 使用 FileSystem 对齐目录标记与缓存逻辑

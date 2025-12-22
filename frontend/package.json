@@ -42,12 +42,14 @@
     "docx-preview": "0.3.7",
     "exifreader": "^4.33.1",
     "file-saver": "^2.0.5",
+    "foliate-js": "https://codeload.github.com/johnfactotum/foliate-js/tar.gz/6b11e1744346f60504b727984f7d42f0fef3ab54",
     "hls.js": "^1.6.7",
+    "leaflet": "^1.9.4",
     "libarchive.js": "^2.0.2",
     "libheif-js": "^1.19.8",
-    "leaflet": "^1.9.4",
     "mime-db": "^1.54.0",
     "mpegts.js": "^1.8.0",
+    "notivue": "^2.4.5",
     "nprogress": "^0.2.0",
     "photoswipe": "^5.4.4",
     "pinia": "^3.0.3",
@@ -60,9 +62,12 @@
     "vue-chartjs": "^5.3.2",
     "vue-demi": "0.14.6",
     "vue-i18n": "^9.14.3",
-    "vue-router": "^4.5.1"
+    "vue-router": "^4.5.1",
+    "webworkify-webpack": "2.1.5"
   },
   "devDependencies": {
+    "@iconify-json/heroicons-outline": "^1.2.1",
+    "@iconify-json/heroicons-solid": "^1.2.1",
     "@iconify-json/mdi": "^1.2.3",
     "@originjs/vite-plugin-commonjs": "^1.0.3",
     "@vitejs/plugin-vue": "^5.2.4",
@@ -73,5 +78,10 @@
     "unplugin-icons": "^22.5.0",
     "unplugin-vue-components": "^30.0.0",
     "vite": "^5.4.19"
+  },
+  "overrides": {
+    "mpegts.js": {
+      "webworkify-webpack": "2.1.5"
+    }
   }
 }

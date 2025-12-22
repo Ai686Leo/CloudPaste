@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from "vue";
 // 预览弹窗
+import { IconClose, IconCopy, IconEye, IconEyeOff, IconGlobeAlt, IconLockClosed } from "@/components/icons";
 
 // 组件接收的属性定义
 const props = defineProps({
@@ -139,9 +140,7 @@ const viewPaste = (slug) => {
             class="rounded-md p-1 inline-flex items-center justify-center text-gray-400 hover:text-gray-500 dark:hover:text-gray-300 focus:outline-none"
           >
             <span class="sr-only">关闭</span>
-            <svg class="h-4 w-4 sm:h-5 sm:w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <IconClose class="h-4 w-4 sm:h-5 sm:w-5" />
           </button>
         </div>
 
@@ -170,14 +169,7 @@ const viewPaste = (slug) => {
                 <div class="flex items-center space-x-2">
                   <p class="font-medium text-primary-600 dark:text-primary-400 truncate">{{ paste?.slug }}</p>
                   <button @click="emit('copy-link', paste?.slug)" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 flex-shrink-0 relative">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-                      />
-                    </svg>
+                    <IconCopy class="h-4 w-4" />
                     <!-- 复制成功提示 -->
                     <span
                       v-if="props.copiedTexts[paste?.id]"
@@ -215,14 +207,7 @@ const viewPaste = (slug) => {
                       isExpired(paste) ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300' : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-800 dark:text-yellow-100',
                     ]"
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
-                      />
-                    </svg>
+                    <IconLockClosed class="h-3 w-3 mr-1" />
                     已加密
                   </span>
                   <span
@@ -230,14 +215,7 @@ const viewPaste = (slug) => {
                     class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
                     :class="[isExpired(paste) ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300' : 'bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100']"
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"
-                      />
-                    </svg>
+                    <IconLockClosed class="h-3 w-3 mr-1" />
                     未加密
                   </span>
 
@@ -247,9 +225,7 @@ const viewPaste = (slug) => {
                     class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
                     :class="[isExpired(paste) ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300' : 'bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100']"
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
+                    <IconGlobeAlt class="h-3 w-3 mr-1" />
                     公开
                   </span>
                   <span
@@ -257,10 +233,7 @@ const viewPaste = (slug) => {
                     class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
                     :class="[isExpired(paste) ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300' : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300']"
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11c1.657 0 3-1.343 3-3S13.657 5 12 5s-3 1.343-3 3 1.343 3 3 3z" />
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.5 20a8.38 8.38 0 017.5-4.5 8.38 8.38 0 017.5 4.5" />
-                    </svg>
+                    <IconEyeOff class="h-3 w-3 mr-1" />
                     私密
                   </span>
 
@@ -277,10 +250,7 @@ const viewPaste = (slug) => {
                         : 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300',
                     ]"
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                    </svg>
+                    <IconEye class="h-3 w-3 mr-1" />
                     {{ paste ? getRemainingViewsLabel(paste) : "-" }}
                   </span>
                 </div>

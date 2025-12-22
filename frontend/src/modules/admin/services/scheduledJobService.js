@@ -351,6 +351,42 @@ export function useScheduledJobService() {
     }
   };
 
+  /**
+   * 获取“平台触发器 tick”的状态
+   * - Cloudflare Workers：cron 来自实际触发 scheduled() 的 controller.cron
+   * - Docker/Node：cron 来自环境变量 SCHEDULED_TICK_CRON（默认每分钟一次）
+   *
+   * @returns {Promise<{
+   *   now: string,
+   *   runtime: 'cloudflare' | 'docker',
+   *   cron: { active: string|null, source: string, configured: string|null, lastSeen: string|null, cloudflareApi: string[]|null, cloudflareApiError: string|null },
+   *   lastTick: { taskId: string, at: string|null, source: string|null, scheduledTimeMs: number|null },
+   *   nextTick: { at: string|null, cronParseError: string|null },
+   *   note?: string|null
+   * }>}
+   */
+  const getSchedulerTicker = async () => {
+    try {
+      const resp = await get("/admin/scheduled/ticker");
+
+      if (!resp) {
+        throw new Error("获取触发器状态失败");
+      }
+
+      if (typeof resp === "object" && "success" in resp) {
+        if (!resp.success) {
+          throw new Error(resp.message || "获取触发器状态失败");
+        }
+        return resp.data || resp;
+      }
+
+      return resp;
+    } catch (error) {
+      console.error("[ScheduledJobService] 获取触发器状态失败:", error);
+      throw error;
+    }
+  };
+
   return {
     getScheduledJobs,
     getScheduledJob,
@@ -359,6 +395,7 @@ export function useScheduledJobService() {
     deleteScheduledJob,
     getScheduledJobRuns,
     getHourlyAnalytics,
+    getSchedulerTicker,
     toggleScheduledJob,
     runScheduledJobNow,
     getHandlerTypes,

@@ -210,6 +210,14 @@ export default {
       saveFileShortcut: "Save file (Ctrl+S)",
       rightClickHint: "Right-click editor for more features (insert timestamp, text stats, formatting, etc.)",
       cannotGetEditorContent: "Cannot get editor content",
+      textPreview: "Text",
+      codePreview: "Code",
+      imagePreview: "Image",
+      videoPreview: "Video",
+      audioPreview: "Audio",
+      iframePreview: "Iframe",
+      archivePreview: "Archive",
+      previewTypeOther: "Preview",
     },
 
     copyModal: {
@@ -262,6 +270,14 @@ export default {
     audioPreview: {
       loadingAudio: "Loading...",
       audioPlayer: "Audio Player",
+      sendToGlobalPlayer: "Send to Global Player",
+      playingInGlobalPlayer: "Playing in Global Player",
+      backToPreview: "Back",
+      closePlayer: "Close Player",
+      expandPlayer: "Expand Player",
+      collapsePlayer: "Collapse Player",
+      unknownAudio: "Unknown Audio",
+      unknownArtist: "Unknown Artist",
     },
     videoPreview: {
       loadingVideo: "Loading...",

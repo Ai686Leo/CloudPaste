@@ -27,10 +27,13 @@
     />
     <!-- 图片加载状态 -->
     <div v-if="loading" class="absolute inset-0 flex items-center justify-center bg-gray-100 dark:bg-gray-700 rounded-lg">
-      <div class="text-center">
-        <div class="animate-spin rounded-full h-10 w-10 border-b-2 mx-auto mb-2 border-primary-600 dark:border-primary-500"></div>
-        <p class="text-primary-600 dark:text-primary-400">{{ t("fileView.preview.image.loading") }}</p>
-      </div>
+      <LoadingIndicator
+        :text="t('fileView.preview.image.loading')"
+        :dark-mode="darkMode"
+        size="2xl"
+        :icon-class="darkMode ? 'text-primary-500' : 'text-primary-600'"
+        :text-class="darkMode ? 'text-primary-400' : 'text-primary-600'"
+      />
     </div>
   </div>
 </template>
@@ -39,6 +42,7 @@
 import { ref, computed, onMounted, onBeforeUnmount, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { decodeImagePreviewUrlToPngObjectUrl, revokeObjectUrl, shouldAttemptDecodeImagePreview } from "@/utils/imageDecode";
+import LoadingIndicator from "@/components/common/LoadingIndicator.vue";
 import { LivePhotoViewer } from "@/components/common/LivePhoto";
 import { isLivePhotoImage } from "@/utils/livePhotoUtils.js";
 

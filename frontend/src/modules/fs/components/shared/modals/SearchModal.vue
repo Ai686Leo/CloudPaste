@@ -8,9 +8,7 @@
       <div class="px-4 py-3 border-b flex justify-between items-center" :class="darkMode ? 'border-gray-700' : 'border-gray-200'">
         <h3 class="text-lg font-medium" :class="darkMode ? 'text-gray-100' : 'text-gray-900'">{{ t("search.title") }}</h3>
         <button @click="closeModal" class="text-gray-400 hover:text-gray-500 dark:text-gray-500 dark:hover:text-gray-400">
-          <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-          </svg>
+          <IconClose size="lg" aria-hidden="true" />
         </button>
       </div>
 
@@ -56,9 +54,7 @@
               class="absolute right-3 top-1/2 transform -translate-y-1/2 p-1"
               :class="darkMode ? 'text-gray-400 hover:text-gray-300' : 'text-gray-400 hover:text-gray-500'"
             >
-              <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-              </svg>
+              <IconClose size="sm" aria-hidden="true" />
             </button>
           </div>
 
@@ -78,10 +74,8 @@
                   : 'bg-gray-100 border-gray-300 text-gray-400 cursor-not-allowed',
               ]"
             >
-              <svg v-if="!isSearching" class="h-4 w-4 sm:h-5 sm:w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-              <div v-else class="animate-spin rounded-full h-4 w-4 sm:h-5 sm:w-5 border-b-2 border-white"></div>
+              <IconSearch v-if="!isSearching" class="h-4 w-4 sm:h-5 sm:w-5" aria-hidden="true" />
+              <IconRefresh v-else class="animate-spin h-4 w-4 sm:h-5 sm:w-5 text-white" aria-hidden="true" />
             </button>
           </div>
         </div>
@@ -126,6 +120,15 @@
           </div>
         </div>
 
+        <!-- 搜索提示信息 -->
+        <div v-if="searchNotices.length > 0" class="px-4 py-2 border-b" :class="darkMode ? 'border-gray-700' : 'border-gray-200'">
+          <div class="space-y-1 text-xs" :class="darkMode ? 'text-blue-300' : 'text-blue-600'">
+            <div v-for="(notice, index) in searchNotices" :key="index">
+              {{ notice }}
+            </div>
+          </div>
+        </div>
+
         <!-- 搜索结果列表 -->
         <SearchResultList
           :results="searchResults"
@@ -149,6 +152,7 @@
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from "vue";
 import { useI18n } from "vue-i18n";
+import { IconClose, IconRefresh, IconSearch } from "@/components/icons";
 import { useFileSearch } from "@/composables/file-system/useFileSearch.js";
 import { useUIState } from "@/composables/ui-interaction/useUIState.js";
 import SearchResultList from "./SearchResultList.vue";
@@ -184,6 +188,7 @@ const {
   searchResults,
   isSearching,
   searchError,
+  searchNotices,
   searchParams,
   searchHistory,
   searchStats,

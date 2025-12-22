@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { login, logout, changePassword, testAdminToken } from "../services/adminService.js";
-import { ApiStatus, UserType } from "../constants/index.js";
+import { UserType } from "../constants/index.js";
 import { jsonOk } from "../utils/common.js";
 import { directoryCacheManager, urlCacheManager, searchCacheManager } from "../cache/index.js";
 import { invalidateFsCache, invalidateAllCaches } from "../cache/invalidation.js";

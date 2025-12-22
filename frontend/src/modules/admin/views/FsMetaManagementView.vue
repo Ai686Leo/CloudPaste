@@ -2,6 +2,7 @@
 import { onMounted } from "vue";
 import { useFsMetaManagement } from "@/modules/admin/composables/useFsMetaManagement.js";
 import { useThemeMode } from "@/composables/core/useThemeMode.js";
+import { IconArchive, IconClock, IconFolderPlus, IconRefresh } from "@/components/icons";
 
 // 导入子组件
 import FsMetaTable from "@/modules/admin/components/FsMetaTable.vue";
@@ -84,9 +85,7 @@ onMounted(() => {
             @click="openCreateForm"
             class="inline-flex items-center px-2 py-1 sm:px-3 sm:py-1.5 md:px-4 md:py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 sm:h-4 sm:w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-            </svg>
+            <IconFolderPlus class="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
             <span class="hidden xs:inline">{{ $t("admin.fsMeta.toolbar.create") }}</span>
             <span class="xs:hidden">{{ $t("admin.fsMeta.toolbar.createShort") }}</span>
           </button>
@@ -97,22 +96,7 @@ onMounted(() => {
             @click="loadMetaList"
             :disabled="loading"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" :class="['h-3 w-3 sm:h-4 sm:w-4 mr-1', loading ? 'animate-spin' : '']" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                v-if="!loading"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-              />
-              <circle v-if="loading" class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-              <path
-                v-if="loading"
-                class="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-              ></path>
-            </svg>
+            <IconRefresh class="h-3 w-3 sm:h-4 sm:w-4 mr-1" :class="loading ? 'animate-spin' : ''" />
             <span class="hidden xs:inline">{{ loading ? $t("admin.fsMeta.toolbar.refreshing") : $t("admin.fsMeta.toolbar.refresh") }}</span>
             <span class="xs:hidden">{{ loading ? "..." : $t("admin.fsMeta.toolbar.refreshShort") }}</span>
           </button>
@@ -151,9 +135,7 @@ onMounted(() => {
     <div class="flex justify-between items-center mb-2 sm:mb-3" v-if="lastRefreshTime">
       <div class="text-xs sm:text-sm" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
         <span class="inline-flex items-center">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 sm:h-4 sm:w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
+          <IconClock class="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
           {{ $t("admin.fsMeta.lastRefresh") }}: {{ lastRefreshTime }}
         </span>
       </div>
@@ -161,10 +143,7 @@ onMounted(() => {
 
     <!-- 加载中指示器 -->
     <div v-if="loading && !paginatedMetaList.length" class="flex justify-center my-8">
-      <svg class="animate-spin h-8 w-8" :class="darkMode ? 'text-blue-400' : 'text-blue-500'" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-      </svg>
+      <IconRefresh class="animate-spin h-8 w-8" :class="darkMode ? 'text-blue-400' : 'text-blue-500'" />
     </div>
 
     <!-- 数据展示区域 -->
@@ -180,14 +159,7 @@ onMounted(() => {
       class="flex flex-col items-center justify-center py-12 bg-white dark:bg-gray-800 shadow-md rounded-lg"
       :class="darkMode ? 'text-gray-400' : 'text-gray-500'"
     >
-      <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mb-4 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          stroke-width="2"
-          d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-        />
-      </svg>
+      <IconArchive class="h-16 w-16 mb-4 opacity-50" />
       <p class="mb-4">
         {{
           isSearchMode

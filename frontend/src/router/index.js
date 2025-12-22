@@ -206,6 +206,15 @@ const routes = [
         },
       },
       {
+        path: "fs-index",
+        name: "AdminFsIndexManagement",
+        component: createOfflineAwareImport(() => import("../modules/admin/views/FsIndexManagement.vue"), "文件系统索引管理"),
+        meta: {
+          title: "索引管理 - CloudPaste",
+          adminOnly: true, // 只有管理员可访问
+        },
+      },
+      {
         path: "settings",
         children: [
           {

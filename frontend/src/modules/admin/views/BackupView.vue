@@ -166,7 +166,7 @@ export default {
   setup() {
     const { t } = useI18n();
     const { showSuccess, showError } = useAdminBase();
-    const { getModules, createBackup: createBackupRequest, restoreBackup: restoreBackupRequest } = useAdminBackupService();
+    const { getModules, createBackup: createBackupRequest, restoreBackup: restoreBackupRequest, previewRestoreBackup: previewRestoreBackupRequest } = useAdminBackupService();
     const { isDarkMode: darkMode } = useThemeMode();
 
     // 统一的通知方法
@@ -223,6 +223,8 @@ export default {
       switch (type) {
         case "SUCCESS":
           return "text-green-600";
+        case "WARNING":
+          return "text-yellow-600";
         case "ERROR":
           return "text-red-600";
         case "INFO":
@@ -416,7 +418,7 @@ export default {
           try {
             const backup = JSON.parse(e.target.result);
             backupPreview.value = backup;
-            addLog(t("admin.backup.success.backupCreated"), "SUCCESS");
+            addLog(t("admin.backup.logs.backupFileParsed"), "SUCCESS");
           } catch (error) {
             addLog(t("admin.backup.errors.invalidBackupFile"), "ERROR");
             backupPreview.value = null;
@@ -435,9 +437,45 @@ export default {
 
       isRestoring.value = true;
       try {
+        // 先做一次“后端预检查”
+        addLog(t("admin.backup.logs.previewStart", { mode: t(`admin.backup.restoreOperations.${restoreMode.value}Mode`) }), "INFO");
+        const previewResponse = await previewRestoreBackupRequest(selectedFile.value, restoreMode.value);
+        const previewOk = Boolean(previewResponse?.data?.ok);
+        const preview = previewResponse?.data?.preview;
+
+        if (!previewOk) {
+          addLog(t("admin.backup.logs.previewFailed"), "ERROR");
+          if (preview?.issues && Array.isArray(preview.issues)) {
+            for (const issue of preview.issues) {
+              const msg = issue?.message || t("admin.backup.logs.previewIssueUnknown");
+              addLog(t("admin.backup.logs.previewIssue", { message: msg }), issue?.level === "error" ? "ERROR" : "WARNING");
+            }
+          }
+          showNotification(t("admin.backup.errors.restoreFailed", { error: t("admin.backup.logs.previewBlockedRestore") }), "error");
+          return;
+        }
+
+        addLog(t("admin.backup.logs.previewPassed"), "SUCCESS");
+        if (preview?.integrityIssues && Array.isArray(preview.integrityIssues) && preview.integrityIssues.length > 0) {
+          addLog(t("admin.backup.logs.previewIntegrityIssues", { count: preview.integrityIssues.length }), "WARNING");
+          for (const issue of preview.integrityIssues) {
+            const msg = issue?.message || t("admin.backup.logs.previewIssueUnknown");
+            addLog(t("admin.backup.logs.serverWarning", { message: msg }), "WARNING");
+          }
+        }
+
         addLog(t("admin.backup.logs.startRestore", { mode: t(`admin.backup.restoreOperations.${restoreMode.value}Mode`) }), "INFO");
 
         const response = await restoreBackupRequest(selectedFile.value, restoreMode.value);
+
+        // 后端 restore 过程中的“提醒类”告警（例如跨表依赖缺失）
+        if (response?.data?.integrity_issues && Array.isArray(response.data.integrity_issues) && response.data.integrity_issues.length > 0) {
+          addLog(t("admin.backup.logs.restoreIntegrityIssues", { count: response.data.integrity_issues.length }), "WARNING");
+          for (const issue of response.data.integrity_issues) {
+            const msg = issue?.message || t("admin.backup.logs.previewIssueUnknown");
+            addLog(t("admin.backup.logs.serverWarning", { message: msg }), "WARNING");
+          }
+        }
 
         // 显示详细的表级别统计信息
         if (response.data && response.data.results) {

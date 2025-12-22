@@ -100,6 +100,11 @@ export class JobWorkflow extends WorkflowEntrypoint<Env, JobWorkflowParams> {
           console.log(`[JobWorkflow] 执行任务 ${jobId} (类型: ${taskType})`);
 
           // 创建执行上下文
+          // 进度更新节流：避免高频写 D1 导致放大
+          // - Handler 积极地上报（例如每 N 个目录/每批 upsert）
+          let lastProgressWriteAtMs = 0;
+          let pendingProgressPatch: Partial<TaskStats> | null = null;
+
           const context: ExecutionContext = {
             isCancelled: async (jobId: string) => {
               const row = await this.env.DB.prepare(`
@@ -109,6 +114,25 @@ export class JobWorkflow extends WorkflowEntrypoint<Env, JobWorkflowParams> {
             },
 
             updateProgress: async (jobId: string, stats: Partial<TaskStats>) => {
+              const nowMs = Date.now();
+
+              // 合并到 pending（低成本，避免频繁读写 DB）
+              pendingProgressPatch = { ...(pendingProgressPatch || {}), ...(stats || {}) };
+
+              // 强制写入条件：关键统计变化（mount 级/结果级）
+              const forceWrite =
+                stats?.processedItems !== undefined ||
+                stats?.totalItems !== undefined ||
+                stats?.successCount !== undefined ||
+                stats?.failedCount !== undefined ||
+                stats?.skippedCount !== undefined;
+
+              // 时间节流：默认 2s 写一次（forceWrite 例外）
+              if (!forceWrite && nowMs - lastProgressWriteAtMs < 2000) {
+                return;
+              }
+              lastProgressWriteAtMs = nowMs;
+
               const currentRow = await this.env.DB.prepare(`
                 SELECT stats FROM ${DbTables.TASKS} WHERE task_id = ?
               `).bind(jobId).first();
@@ -119,7 +143,12 @@ export class JobWorkflow extends WorkflowEntrypoint<Env, JobWorkflowParams> {
               }
 
               const currentStats = JSON.parse(currentRow.stats as string);
-              const updatedStats = { ...currentStats, ...stats };
+              const updatedStats = {
+                ...currentStats,
+                ...(pendingProgressPatch || {}),
+                heartbeatAtMs: nowMs,
+              };
+              pendingProgressPatch = null;
 
               await this.env.DB.prepare(`
                 UPDATE ${DbTables.TASKS}
@@ -137,7 +166,8 @@ export class JobWorkflow extends WorkflowEntrypoint<Env, JobWorkflowParams> {
               const mountManager = new MountManager(
                 this.env.DB,
                 this.env.ENCRYPTION_SECRET,
-                repositoryFactory
+                repositoryFactory,
+                { env: this.env as any },
               );
               return new FileSystem(mountManager, this.env);
             },

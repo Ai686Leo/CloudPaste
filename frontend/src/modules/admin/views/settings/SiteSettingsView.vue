@@ -7,6 +7,7 @@ import { useAdminSystemService } from "@/modules/admin/services/systemService.js
 import { useThemeMode } from "@/composables/core/useThemeMode.js";
 import { useGlobalMessage } from "@/composables/core/useGlobalMessage.js";
 import { useConfirmDialog } from "@/composables/core/useConfirmDialog.js";
+import { IconGallery, IconRefresh } from "@/components/icons";
 
 // 使用i18n
 const { t } = useI18n();
@@ -198,9 +199,7 @@ const handleClearAnnouncementContent = () => {
                     class="w-6 h-6 object-contain"
                     @error="$event.target.style.display = 'none'"
                   />
-                  <svg v-else class="w-4 h-4" :class="darkMode ? 'text-gray-400' : 'text-gray-500'" fill="currentColor" viewBox="0 0 20 20">
-                    <path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clip-rule="evenodd" />
-                  </svg>
+                  <IconGallery v-else size="sm" :class="darkMode ? 'text-gray-400' : 'text-gray-500'" aria-hidden="true" />
                 </div>
               </div>
               <!-- URL输入框 -->
@@ -332,14 +331,7 @@ const handleClearAnnouncementContent = () => {
               :disabled="settingsStatus.loading"
               class="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center"
             >
-              <svg v-if="settingsStatus.loading" class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path
-                  class="opacity-75"
-                  fill="currentColor"
-                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                ></path>
-              </svg>
+              <IconRefresh v-if="settingsStatus.loading" size="sm" class="animate-spin -ml-1 mr-2 text-white" aria-hidden="true" />
               {{ settingsStatus.loading ? t("admin.site.buttons.updating") : t("admin.site.buttons.updateSettings") }}
             </button>
           </div>

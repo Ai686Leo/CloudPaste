@@ -172,7 +172,7 @@ export class S3SearchOperations {
       name: fileName,
       isDirectory: false,
       size: item.Size,
-      modified: item.LastModified ? new Date(item.LastModified) : new Date(),
+      modified: item.LastModified ? new Date(item.LastModified) : null,
       mimetype: getEffectiveMimeType(null, fileName),
       mount,
       storageType: mount.storage_type,

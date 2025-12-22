@@ -6,9 +6,459 @@ import { getVirtualDirectoryListing, isVirtualPath } from "../../storage/fs/util
 import { createErrorResponse, getQueryBool, jsonOk } from "../../utils/common.js";
 import { getEncryptionSecret } from "../../utils/environmentUtils.js";
 import { LinkService } from "../../storage/link/LinkService.js";
-import { resolveDocumentPreview } from "../../services/documentPreviewService.js";
+import { resolvePreviewSelection } from "../../services/documentPreviewService.js";
 import { StorageStreaming, STREAMING_CHANNELS } from "../../storage/streaming/index.js";
 import { normalizePath as normalizeFsPath } from "../../storage/fs/utils/PathResolver.js";
+import { FsSearchIndexStore } from "../../storage/fs/search/FsSearchIndexStore.js";
+import { fsFolderSummaryCacheManager } from "../../cache/index.js";
+
+const toIsoFromMs = (ms) => {
+  const n = Number(ms);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return new Date(n).toISOString();
+};
+
+const isValidSize = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0;
+
+const isFolderSummaryMissing = (item) => {
+  if (!item || !item.isDirectory || item.isVirtual) return false;
+  const sizeMissing = typeof item.size !== "number" || !Number.isFinite(item.size) || item.size < 0;
+  const modifiedMissing = !item.modified;
+  return sizeMissing || modifiedMissing;
+};
+
+const ensureFolderSummarySources = (item) => {
+  if (!item || !item.isDirectory || item.isVirtual) return;
+
+  if (!item.size_source) {
+    item.size_source = isValidSize(item.size) ? "storage" : "none";
+  }
+  if (!item.modified_source) {
+    item.modified_source = item.modified ? "storage" : "none";
+  }
+};
+
+const normalizeDir = (p) => {
+  const raw = typeof p === "string" && p ? p : "/";
+  const normalized = normalizeFsPath(raw, true);
+  return normalized;
+};
+
+const normalizeSummarySource = (raw) => {
+  const v = raw ? String(raw) : "";
+  if (v === "storage" || v === "index" || v === "compute" || v === "none") return v;
+  return null;
+};
+
+// 目录摘要计算（compute）singleflight：同一 mount + 同一路径 + 同一用户上下文并发时只算一次。
+// 目的：避免 TTL 较短或多人同时刷新导致“递归遍历”被放大成 N 倍。
+const inflightFolderSummaryCompute = new Map();
+
+const buildFolderSummaryComputeUserKey = (userIdOrInfo, userType) => {
+  const typeKey = userType != null ? String(userType) : "";
+  let idKey = "";
+  if (typeof userIdOrInfo === "string" || typeof userIdOrInfo === "number") {
+    idKey = String(userIdOrInfo);
+  } else if (userIdOrInfo && typeof userIdOrInfo === "object" && userIdOrInfo.id != null) {
+    idKey = String(userIdOrInfo.id);
+  }
+  return `${typeKey}:${idKey}`;
+};
+
+const computeFolderSummaryByTraversalSingleflight = async (mountId, dirPath, fileSystem, userIdOrInfo, userType, options = {}) => {
+  const mountKey = mountId != null ? String(mountId) : "";
+  const dirKey = normalizeDir(dirPath);
+  const userKey = buildFolderSummaryComputeUserKey(userIdOrInfo, userType);
+  const baseKey = `${mountKey}::${userKey}::${dirKey}`;
+
+  // refresh=true 必须“更强”：不能复用 refresh=false 的 inflight（可能是旧的）
+  // refresh=false 可以复用 refresh=true 的 inflight（因为更“新”）
+  const refreshKey = `${baseKey}::refresh`;
+  const normalKey = `${baseKey}::normal`;
+  const key = options?.refresh ? refreshKey : inflightFolderSummaryCompute.has(refreshKey) ? refreshKey : normalKey;
+
+  let inflight = inflightFolderSummaryCompute.get(key);
+  if (!inflight) {
+    inflight = (async () => {
+      try {
+        return await computeFolderSummaryByTraversal(fileSystem, dirKey, userIdOrInfo, userType, options);
+      } finally {
+        inflightFolderSummaryCompute.delete(key);
+      }
+    })();
+    inflightFolderSummaryCompute.set(key, inflight);
+  }
+
+  return inflight;
+};
+
+// S3 专用：直接子目录摘要批量计算 singleflight
+// 注意：S3 的 computeDirectChildDirSummaries 输出结果依赖 childDirNameToFsPath（它决定“要算哪些子目录”）。
+// 因此 key 里必须包含“子目录名集合”的 hash，避免不同请求之间复用错误结果。
+const inflightS3DirectChildDirSummaries = new Map();
+
+const hashChildDirNameSet = (childDirNameToFsPath) => {
+  let hash = 0x811c9dc5;
+  const names = Array.from(childDirNameToFsPath?.keys?.() ?? []);
+  names.sort();
+  for (const name of names) {
+    const str = typeof name === "string" ? name : String(name ?? "");
+    for (let i = 0; i < str.length; i += 1) {
+      hash ^= str.charCodeAt(i);
+      hash = (hash + ((hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24))) >>> 0;
+    }
+    // separator
+    hash ^= 124; // '|'
+    hash = (hash + ((hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24))) >>> 0;
+  }
+  return (hash >>> 0).toString(16);
+};
+
+const computeS3DirectChildDirSummariesSingleflight = async (
+  mountId,
+  relativeSubPath,
+  childDirNameToFsPath,
+  s3DirectoryOps,
+  userIdOrInfo,
+  userType,
+  options = {}
+) => {
+  const mountKey = mountId != null ? String(mountId) : "";
+  const subKey = typeof relativeSubPath === "string" ? relativeSubPath : String(relativeSubPath ?? "");
+  const userKey = buildFolderSummaryComputeUserKey(userIdOrInfo, userType);
+  const nameSetHash = hashChildDirNameSet(childDirNameToFsPath);
+  const baseKey = `${mountKey}::${userKey}::${subKey}::${nameSetHash}`;
+
+  // refresh=true 不能复用 refresh=false 的 inflight（可能是旧的）；refresh=false 可复用 refresh=true 的 inflight（更“新”）
+  const refreshKey = `${baseKey}::refresh`;
+  const normalKey = `${baseKey}::normal`;
+  const key = options?.refresh ? refreshKey : inflightS3DirectChildDirSummaries.has(refreshKey) ? refreshKey : normalKey;
+
+  let inflight = inflightS3DirectChildDirSummaries.get(key);
+  if (!inflight) {
+    inflight = (async () => {
+      try {
+        if (!s3DirectoryOps || typeof s3DirectoryOps.computeDirectChildDirSummaries !== "function") {
+          return { results: new Map(), completed: false, visited: 0 };
+        }
+        return await s3DirectoryOps.computeDirectChildDirSummaries(subKey, childDirNameToFsPath, options);
+      } finally {
+        inflightS3DirectChildDirSummaries.delete(key);
+      }
+    })();
+    inflightS3DirectChildDirSummaries.set(key, inflight);
+  }
+
+  return inflight;
+};
+
+/**
+ * 递归遍历目录计算摘要（可选能力）
+ * - 只用于“目录”的 size/modified 缺失兜底
+ * - modified 语义：子孙项 modified 的最大值
+ * 存储原生 > 计算 > 索引库本体 > 未知
+ */
+const computeFolderSummaryByTraversal = async (fileSystem, dirPath, userIdOrInfo, userType, options = {}) => {
+  const maxItems = 20000;
+  const maxMs = 5000;
+  const startedAt = Date.now();
+
+  let totalSize = 0;
+  let latestModifiedMs = 0;
+  let visited = 0;
+  let completed = true;
+
+  const queue = [normalizeDir(dirPath)];
+
+  while (queue.length > 0) {
+    if (Date.now() - startedAt > maxMs || visited >= maxItems) {
+      completed = false;
+      break;
+    }
+
+    const current = queue.shift();
+    const res = await fileSystem.listDirectory(current, userIdOrInfo, userType, { refresh: !!options.refresh });
+    const items = Array.isArray(res?.items) ? res.items : [];
+
+    for (const item of items) {
+      visited += 1;
+      if (visited >= maxItems) {
+        completed = false;
+        break;
+      }
+
+      if (item?.isVirtual) {
+        continue;
+      }
+
+      if (item?.isDirectory) {
+        queue.push(normalizeDir(item.path));
+        // 目录自身 modified 若存在，也可参与“内容更新时间”的估算
+        if (item.modified) {
+          const ms = Date.parse(String(item.modified));
+          if (Number.isFinite(ms) && ms > latestModifiedMs) latestModifiedMs = ms;
+        }
+        continue;
+      }
+
+      if (typeof item.size === "number" && Number.isFinite(item.size) && item.size >= 0) {
+        totalSize += item.size;
+      }
+      if (item.modified) {
+        const ms = Date.parse(String(item.modified));
+        if (Number.isFinite(ms) && ms > latestModifiedMs) latestModifiedMs = ms;
+      }
+    }
+  }
+
+  return {
+    size: totalSize,
+    modified: latestModifiedMs > 0 ? new Date(latestModifiedMs).toISOString() : null,
+    completed,
+    calculatedAt: new Date().toISOString(),
+  };
+};
+
+const enrichDirectoryListWithFolderSummaries = async ({ db, fileSystem, result, userIdOrInfo, userType, refresh }) => {
+  if (!result || !Array.isArray(result.items) || result.items.length === 0) return;
+
+  // 当前目录列表通常只属于一个 mount，这里优先从 result.mount_id 取
+  const mountIdRaw = result.mount_id ?? result.items.find((it) => it?.mount_id != null)?.mount_id ?? null;
+  const mountId = mountIdRaw != null ? String(mountIdRaw) : "";
+  if (!mountId) return;
+
+  // 计算开关：交给“挂载配置”决定
+  const mountRow = await db
+    .prepare(
+      "SELECT id, mount_path, storage_type, storage_config_id, cache_ttl, enable_folder_summary_compute FROM storage_mounts WHERE id = ?"
+    )
+    .bind(mountId)
+    .first();
+  const computeEnabled = !!mountRow?.enable_folder_summary_compute;
+  const mountStorageType = mountRow?.storage_type ? String(mountRow.storage_type) : "";
+  const mountPath = mountRow?.mount_path ? String(mountRow.mount_path) : "/";
+  const folderSummaryCacheTtl =
+    typeof mountRow?.cache_ttl === "number" && Number.isFinite(mountRow.cache_ttl) ? mountRow.cache_ttl : Number(mountRow?.cache_ttl || 0);
+
+  // 索引状态（用于决定“索引 vs 计算”的优先级）
+  const store = new FsSearchIndexStore(db);
+  const states = await store.getIndexStates([mountId]);
+  const state = states.get(mountId);
+  const isIndexReady = state && String(state.status) === "ready";
+
+  // 目标兜底来源（用于“允许从内存缓存填充”的来源过滤）：
+  // 新规则：存储原生 > 计算 > 索引 > 未知
+  // - 开启计算：优先用 compute（即使索引 ready）
+  // - 未开启计算：若索引 ready 则用 index
+  const desiredFallbackSource = computeEnabled ? "compute" : isIndexReady ? "index" : null;
+
+  // refresh 只代表“本次不读缓存”，不做“提前清缓存”
+  if (!refresh) {
+    // 1) 先用内存缓存填充（但只允许填充“当前 desiredFallbackSource”的字段）
+    for (const item of result.items) {
+      if (!isFolderSummaryMissing(item)) continue;
+      ensureFolderSummarySources(item);
+      const cached = fsFolderSummaryCacheManager.get(mountId, item.path);
+      if (!cached) continue;
+
+      const cachedSizeSource = normalizeSummarySource(cached.size_source);
+      const cachedModifiedSource = normalizeSummarySource(cached.modified_source);
+
+      if (
+        desiredFallbackSource &&
+        !isValidSize(item.size) &&
+        isValidSize(cached.size) &&
+        cachedSizeSource === desiredFallbackSource
+      ) {
+        item.size = cached.size;
+        item.size_source = desiredFallbackSource;
+      }
+      if (desiredFallbackSource && !item.modified && cached.modified && cachedModifiedSource === desiredFallbackSource) {
+        item.modified = cached.modified;
+        item.modified_source = desiredFallbackSource;
+      }
+    }
+  }
+
+  // 2) 可选计算（优先于索引）：允许递归遍历（或 S3 批量）计算
+  if (computeEnabled) {
+    // S3 优化：一次扫描当前目录 prefix，批量产出“直接子目录”的摘要，避免 N 倍递归
+    const isS3Mount = mountStorageType.toUpperCase() === "S3";
+    if (isS3Mount) {
+      // 非 refresh 时先用“compute 缓存”填充，避免重复算；refresh 则跳过缓存，强制走本次计算
+      const childDirNameToPath = new Map();
+      for (const item of result.items) {
+        if (!item || !item.isDirectory || item.isVirtual) continue;
+        if (!isFolderSummaryMissing(item)) continue;
+        ensureFolderSummarySources(item);
+
+        if (!refresh) {
+          const cached = fsFolderSummaryCacheManager.get(mountId, item.path);
+          if (cached) {
+            const cachedSizeSource = normalizeSummarySource(cached.size_source);
+            const cachedModifiedSource = normalizeSummarySource(cached.modified_source);
+            if (!isValidSize(item.size) && isValidSize(cached.size) && cachedSizeSource === "compute") {
+              item.size = cached.size;
+              item.size_source = "compute";
+            }
+            if (!item.modified && cached.modified && cachedModifiedSource === "compute") {
+              item.modified = cached.modified;
+              item.modified_source = "compute";
+            }
+          }
+        }
+
+        // 仍然缺失的，进入本次批量计算
+        if (isFolderSummaryMissing(item)) {
+          if (typeof item.name === "string" && item.name) {
+            childDirNameToPath.set(item.name, item.path);
+          }
+        }
+      }
+
+      if (childDirNameToPath.size > 0) {
+        // 获取 driver（复用 MountManager 缓存的驱动实例，避免重复初始化）
+        const driver = await fileSystem.mountManager.getDriver(mountRow);
+        const s3DirectoryOps = driver?.directoryOps || null;
+        if (s3DirectoryOps && typeof s3DirectoryOps.computeDirectChildDirSummaries === "function") {
+          // 计算当前目录在挂载内的相对路径（/ 或 /a/b/）
+          const normalizedMountPath = normalizeFsPath(mountPath, true).replace(/\/+$/g, "") || "/";
+          const normalizedDirPath = normalizeFsPath(result.path || "/", true);
+          const relativeSubPath =
+            normalizedMountPath === "/"
+              ? normalizedDirPath
+              : normalizedDirPath.startsWith(normalizedMountPath)
+              ? normalizedDirPath.slice(normalizedMountPath.length) || "/"
+              : normalizedDirPath;
+
+          const { results: computedMap } = await computeS3DirectChildDirSummariesSingleflight(
+            mountId,
+            relativeSubPath,
+            childDirNameToPath,
+            s3DirectoryOps,
+            userIdOrInfo,
+            userType,
+            { refresh }
+          );
+
+          for (const item of result.items) {
+            if (!item || !item.isDirectory || item.isVirtual) continue;
+            if (!isFolderSummaryMissing(item)) continue;
+            const computed = computedMap.get(item.path);
+            if (!computed) continue;
+
+            const computedEntry = {
+              ...computed,
+              size_source: isValidSize(computed.size) ? "compute" : undefined,
+              modified_source: computed.modified ? "compute" : undefined,
+            };
+            if (folderSummaryCacheTtl > 0) {
+              fsFolderSummaryCacheManager.set(mountId, item.path, computedEntry, folderSummaryCacheTtl);
+            }
+
+            if (!isValidSize(item.size) && isValidSize(computed.size)) {
+              item.size = computed.size;
+              item.size_source = "compute";
+            }
+            if (!item.modified && computed.modified) {
+              item.modified = computed.modified;
+              item.modified_source = "compute";
+            }
+          }
+        }
+      }
+
+      // S3 分支完成：继续进入“索引兜底”（若仍缺失）
+    }
+
+    for (const item of result.items) {
+      if (!isFolderSummaryMissing(item)) continue;
+      ensureFolderSummarySources(item);
+      if (!refresh) {
+        const cached = fsFolderSummaryCacheManager.get(mountId, item.path);
+        if (cached) {
+          const cachedSizeSource = normalizeSummarySource(cached.size_source);
+          const cachedModifiedSource = normalizeSummarySource(cached.modified_source);
+          if (!isValidSize(item.size) && isValidSize(cached.size) && cachedSizeSource === "compute") {
+            item.size = cached.size;
+            item.size_source = "compute";
+          }
+          if (!item.modified && cached.modified && cachedModifiedSource === "compute") {
+            item.modified = cached.modified;
+            item.modified_source = "compute";
+          }
+          continue;
+        }
+      }
+
+      const computed = await computeFolderSummaryByTraversalSingleflight(mountId, item.path, fileSystem, userIdOrInfo, userType, { refresh });
+      const computedEntry = {
+        ...computed,
+        size_source: isValidSize(computed.size) ? "compute" : undefined,
+        modified_source: computed.modified ? "compute" : undefined,
+      };
+      if (folderSummaryCacheTtl > 0) {
+        fsFolderSummaryCacheManager.set(mountId, item.path, computedEntry, folderSummaryCacheTtl);
+      }
+
+      if (!isValidSize(item.size) && isValidSize(computed.size)) {
+        item.size = computed.size;
+        item.size_source = "compute";
+      }
+      if (!item.modified && computed.modified) {
+        item.modified = computed.modified;
+        item.modified_source = "compute";
+      }
+    }
+  }
+
+  // 3) 索引兜底（仅当索引 ready）：用于 compute 未覆盖/未完成时补齐
+  const remainingDirs = result.items.filter((it) => isFolderSummaryMissing(it));
+  if (remainingDirs.length === 0) return;
+
+  if (isIndexReady) {
+    const rows = await store.getChildDirectoryAggregates(mountId, result.path);
+    const map = new Map();
+    for (const row of rows) {
+      const dirPath = row?.dir_path ? String(row.dir_path) : "";
+      if (!dirPath) continue;
+      map.set(dirPath, {
+        size: typeof row.total_size === "number" ? row.total_size : Number(row.total_size || 0),
+        modified: toIsoFromMs(row.latest_modified_ms),
+      });
+    }
+
+    for (const item of remainingDirs) {
+      if (!isFolderSummaryMissing(item)) continue;
+      const summary = map.get(String(item.path));
+      if (!summary) continue;
+      ensureFolderSummarySources(item);
+
+      const cacheEntry = {
+        ...summary,
+        size_source: isValidSize(summary.size) ? "index" : undefined,
+        modified_source: summary.modified ? "index" : undefined,
+      };
+      if (folderSummaryCacheTtl > 0) {
+        fsFolderSummaryCacheManager.set(mountId, item.path, cacheEntry, folderSummaryCacheTtl);
+      }
+
+      if (!isValidSize(item.size) && isValidSize(summary.size)) {
+        item.size = summary.size;
+        item.size_source = "index";
+      }
+      if (!item.modified && summary.modified) {
+        item.modified = summary.modified;
+        item.modified_source = "index";
+      }
+    }
+  }
+
+  // 兜底：如果依然缺失，把来源字段补齐为 none（避免前端判断不一致）
+  for (const item of result.items) {
+    ensureFolderSummarySources(item);
+  }
+};
 
 const fnv1a32Init = () => 0x811c9dc5;
 
@@ -75,6 +525,14 @@ export const registerBrowseRoutes = (router, helpers) => {
     const rawPath = c.req.query("path") || "/";
     const path = normalizeFsPath(rawPath, true);
     const refresh = getQueryBool(c, "refresh", false);
+    // 调试用：输出缓存命中日志（默认关闭）
+    // - 环境变量：DEBUG_DRIVER_CACHE=true/false
+    // - 单次请求：debug_cache=true（query param）
+    // - 默认 false：不打印，环境变量为 true：全局打印
+    // - debug_cache=true：仅本次请求打印（即使环境变量为 false）
+    const debugDriverCacheEnv = MountManager.resolveDebugDriverCache({ env: c.env });
+    const debugCacheQuery = getQueryBool(c, "debug_cache", false);
+    const cacheTrace = debugDriverCacheEnv || debugCacheQuery;
     const userInfo = c.get("userInfo");
     const { userIdOrInfo, userType } = getServiceParams(userInfo);
     const encryptionSecret = getEncryptionSecret(c);
@@ -132,9 +590,47 @@ export const registerBrowseRoutes = (router, helpers) => {
       return jsonOk(c, result, "获取目录列表成功");
     }
 
-    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
+    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory, { env: c.env });
     const fileSystem = new FileSystem(mountManager);
-    const result = await fileSystem.listDirectory(path, userIdOrInfo, userType, { refresh });
+    const result = await fileSystem.listDirectory(path, userIdOrInfo, userType, { refresh, cacheTrace });
+
+    await enrichDirectoryListWithFolderSummaries({
+      db,
+      fileSystem,
+      result,
+      userIdOrInfo,
+      userType,
+      refresh,
+    });
+
+    if (cacheTrace) {
+      try {
+        const items = Array.isArray(result?.items) ? result.items : [];
+        const dirItems = items.filter((it) => it?.isDirectory && !it?.isVirtual);
+
+        const countBy = (key) => {
+          const map = new Map();
+          for (const it of dirItems) {
+            const v = it?.[key] ? String(it[key]) : "none";
+            map.set(v, (map.get(v) || 0) + 1);
+          }
+          return Object.fromEntries(map.entries());
+        };
+
+        console.log("[FolderSummary] SOURCES", {
+          mountId: result?.mount_id ?? null,
+          path: result?.path ?? path,
+          refresh,
+          totalItems: items.length,
+          dirs: dirItems.length,
+          size_source: countBy("size_source"),
+          modified_source: countBy("modified_source"),
+        });
+      } catch (error) {
+        console.warn("[FolderSummary] SOURCES log failed", error);
+      }
+    }
+
     const etag = computeDirectoryListEtag(result);
     if (etag) {
       const ifNoneMatch = c.req.header("if-none-match") || null;
@@ -189,25 +685,30 @@ export const registerBrowseRoutes = (router, helpers) => {
       }
     }
 
-    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
+    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory, { env: c.env });
     const fileSystem = new FileSystem(mountManager);
     const result = await fileSystem.getFileInfo(path, userIdOrInfo, userType, c.req.raw);
 
-    // 通过 LinkService 生成语义清晰的预览/下载入口
-    const linkService = new LinkService(db, encryptionSecret, repositoryFactory);
-    const previewLink = await linkService.getFsExternalLink(path, userIdOrInfo, userType, {
-      forceDownload: false,
-      request: c.req.raw,
-    });
+    // 目录不生成直链
+    let previewLink = { url: null, kind: null };
+    let downloadLink = { url: null, kind: null };
+    if (!result?.isDirectory) {
+      // 通过 LinkService 生成语义清晰的预览/下载入口
+      const linkService = new LinkService(db, encryptionSecret, repositoryFactory);
+      previewLink = await linkService.getFsExternalLink(path, userIdOrInfo, userType, {
+        forceDownload: false,
+        request: c.req.raw,
+      });
 
-    const downloadLink = await linkService.getFsExternalLink(path, userIdOrInfo, userType, {
-      forceDownload: true,
-      request: c.req.raw,
-    });
+      downloadLink = await linkService.getFsExternalLink(path, userIdOrInfo, userType, {
+        forceDownload: true,
+        request: c.req.raw,
+      });
+    }
 
-    const previewUrl = previewLink.url || null;
-    const downloadUrl = downloadLink.url || null;
-    const linkType = previewLink.kind;
+    const previewUrl = previewLink?.url || null;
+    const downloadUrl = downloadLink?.url || null;
+    const linkType = previewLink?.kind || null;
 
     const responsePayload = {
       ...result,
@@ -216,27 +717,30 @@ export const registerBrowseRoutes = (router, helpers) => {
       linkType,
     };
 
-    const documentPreview = await resolveDocumentPreview(
-      {
-        type: responsePayload.type,
-        typeName: responsePayload.typeName,
-        mimetype: responsePayload.mimetype,
-        filename: responsePayload.name,
-        name: responsePayload.name,
-        size: responsePayload.size,
-      },
-      {
-        previewUrl,
-        linkType,
-        use_proxy: responsePayload.use_proxy ?? 0,
-      },
-    );
+    const previewSelection = result?.isDirectory
+      ? null
+      : await resolvePreviewSelection(
+          {
+            type: responsePayload.type,
+            typeName: responsePayload.typeName,
+            mimetype: responsePayload.mimetype,
+            filename: responsePayload.name,
+            name: responsePayload.name,
+            size: responsePayload.size,
+          },
+          {
+            previewUrl,
+            downloadUrl,
+            linkType,
+            use_proxy: responsePayload.use_proxy ?? 0,
+          },
+        );
 
     return jsonOk(
       c,
       {
         ...responsePayload,
-        documentPreview,
+        previewSelection,
       },
       "获取文件信息成功",
     );
@@ -280,6 +784,13 @@ export const registerBrowseRoutes = (router, helpers) => {
       }
     }
 
+    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory, { env: c.env });
+    const fileSystem = new FileSystem(mountManager);
+    const fileInfo = await fileSystem.getFileInfo(path, userIdOrInfo, userType, c.req.raw);
+    if (fileInfo?.isDirectory) {
+      throw new ValidationError("目录不支持下载");
+    }
+
     const linkService = new LinkService(db, encryptionSecret, repositoryFactory);
     const link = await linkService.getFsExternalLink(path, userIdOrInfo, userType, {
       forceDownload: true,
@@ -292,7 +803,6 @@ export const registerBrowseRoutes = (router, helpers) => {
     }
 
     // 未能生成任何 URL 时兜底：使用 StorageStreaming 层做服务端流式下载
-    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
     const streaming = new StorageStreaming({
       mountManager,
       storageFactory: null,
@@ -355,7 +865,7 @@ export const registerBrowseRoutes = (router, helpers) => {
       }
     }
 
-    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
+    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory, { env: c.env });
     const streaming = new StorageStreaming({
       mountManager,
       storageFactory: null,
@@ -416,6 +926,13 @@ export const registerBrowseRoutes = (router, helpers) => {
           ApiStatus.FORBIDDEN,
         );
       }
+    }
+
+    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory, { env: c.env });
+    const fileSystem = new FileSystem(mountManager);
+    const fileInfo = await fileSystem.getFileInfo(path, userIdOrInfo, userType, c.req.raw);
+    if (fileInfo?.isDirectory) {
+      throw new ValidationError("目录不支持生成文件直链");
     }
 
     const linkService = new LinkService(db, encryptionSecret, repositoryFactory);

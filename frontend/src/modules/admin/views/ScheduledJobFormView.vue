@@ -8,6 +8,7 @@ import { useI18n } from 'vue-i18n';
 import { useScheduledJobs } from '@/modules/admin/composables/useScheduledJobs';
 import { useThemeMode } from '@/composables/core/useThemeMode.js';
 import ScheduledJobFormContent from '@/modules/admin/components/ScheduledJobFormContent.vue';
+import { IconBack, IconChevronRight, IconClock, IconInformationCircle, IconRefresh } from '@/components/icons';
 
 const router = useRouter();
 const route = useRoute();
@@ -93,14 +94,10 @@ const handleCancel = () => {
             :to="{ name: 'AdminScheduledJobs' }"
             class="hover:text-primary-500 transition flex items-center gap-1"
           >
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
+            <IconClock size="sm" />
             {{ t('admin.scheduledJobs.title') }}
           </router-link>
-          <svg class="w-4 h-4 mx-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-          </svg>
+          <IconChevronRight size="sm" class="mx-2" />
           <span :class="darkMode ? 'text-gray-200' : 'text-gray-700'">
             {{ pageTitle }}
           </span>
@@ -119,9 +116,7 @@ const handleCancel = () => {
         class="px-3 py-1.5 rounded-md text-sm font-medium transition-colors duration-200 shadow-sm hover:shadow flex items-center gap-1.5"
         :class="darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'"
       >
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-        </svg>
+        <IconBack size="sm" />
         {{ t('admin.scheduledJobs.form.backToList') }}
       </button>
     </div>
@@ -132,10 +127,7 @@ const handleCancel = () => {
       class="flex flex-col justify-center items-center h-60 rounded-lg"
       :class="darkMode ? 'bg-gray-800' : 'bg-gray-50'"
     >
-      <svg class="animate-spin h-10 w-10 text-primary-500 mb-4" fill="none" viewBox="0 0 24 24">
-        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-      </svg>
+      <IconRefresh size="2xl" class="animate-spin text-primary-500 mb-4" />
       <p class="text-sm" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
         {{ t('common.loading', '加载中...') }}
       </p>
@@ -148,9 +140,7 @@ const handleCancel = () => {
       :class="darkMode ? 'bg-gray-800' : 'bg-white'"
     >
       <div class="text-red-500 mb-4">
-        <svg class="h-16 w-16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
+        <IconInformationCircle size="4xl" />
       </div>
       <p class="text-lg font-medium mb-2" :class="darkMode ? 'text-gray-200' : 'text-gray-900'">
         {{ error }}
@@ -162,9 +152,7 @@ const handleCancel = () => {
         @click="router.push({ name: 'AdminScheduledJobs' })"
         class="px-6 py-2.5 rounded-md text-sm font-medium transition bg-primary-500 hover:bg-primary-600 text-white inline-flex items-center gap-2"
       >
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-        </svg>
+        <IconBack size="sm" />
         {{ t('common.backToList', '返回列表') }}
       </button>
     </div>
@@ -177,9 +165,7 @@ const handleCancel = () => {
         class="mb-4 p-3 rounded-lg text-sm font-medium flex items-center gap-2"
         :class="darkMode ? 'bg-red-900/30 text-red-300 border border-red-800' : 'bg-red-50 text-red-700 border border-red-200'"
       >
-        <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
+        <IconInformationCircle size="md" class="flex-shrink-0" />
         {{ error }}
       </div>
 

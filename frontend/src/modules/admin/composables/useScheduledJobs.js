@@ -24,6 +24,10 @@ export function useScheduledJobs() {
   const handlerTypes = ref([]);
   const handlerTypesLoading = ref(false);
 
+  // 平台触发器（Cloudflare/Docker）的状态：用于展示“下一次触发倒计时”
+  const schedulerTicker = ref(null);
+  const schedulerTickerLoading = ref(false);
+
   // 详情对话框状态
   const showDetailDialog = ref(false);
 
@@ -44,17 +48,25 @@ export function useScheduledJobs() {
   /**
    * 加载任务列表
    */
-  const loadJobs = async (params = {}) => {
-    loading.value = true;
+  const loadJobs = async (params = {}, options = {}) => {
+    const { silent = false, showErrorOnCatch = true } = options || {};
+
+    if (!silent) {
+      loading.value = true;
+    }
     try {
       const { items } = await service.getScheduledJobs(params);
       jobs.value = items;
       return items;
     } catch (error) {
-      showError(error.message || t("admin.scheduledJobs.loadFailed"));
+      if (showErrorOnCatch) {
+        showError(error.message || t("admin.scheduledJobs.loadFailed"));
+      }
       throw error;
     } finally {
-      loading.value = false;
+      if (!silent) {
+        loading.value = false;
+      }
     }
   };
 
@@ -201,6 +213,31 @@ export function useScheduledJobs() {
     }
   };
 
+  /**
+   * 加载“平台触发器”的状态（cron + 下次触发时间）
+   */
+  const loadSchedulerTicker = async (options = {}) => {
+    const { silent = false, showErrorOnCatch = true } = options || {};
+
+    if (!silent) {
+      schedulerTickerLoading.value = true;
+    }
+    try {
+      const data = await service.getSchedulerTicker();
+      schedulerTicker.value = data;
+      return data;
+    } catch (error) {
+      if (showErrorOnCatch) {
+        showError(error.message || t("admin.scheduledJobs.ticker.loadFailed"));
+      }
+      throw error;
+    } finally {
+      if (!silent) {
+        schedulerTickerLoading.value = false;
+      }
+    }
+  };
+
 
 
   // ==================== Handler 类型方法 ====================
@@ -294,6 +331,10 @@ export function useScheduledJobs() {
     handlerTypes,
     handlerTypesLoading,
 
+    // 平台触发器状态
+    schedulerTicker,
+    schedulerTickerLoading,
+
     // 对话框状态
     showDetailDialog,
 
@@ -307,6 +348,7 @@ export function useScheduledJobs() {
     runJobNow,
     loadJobRuns,
     loadHourlyAnalytics,
+    loadSchedulerTicker,
 
     // Handler 类型方法
     loadHandlerTypes,

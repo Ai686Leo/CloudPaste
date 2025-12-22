@@ -32,10 +32,17 @@ export function useAdminBackupService() {
     return BackupService.restoreBackup(file, mode);
   };
 
+  /**
+   * 还原预检查
+   */
+  const previewRestoreBackup = (file, mode = "overwrite", options = {}) => {
+    return BackupService.previewRestoreBackup(file, mode, options);
+  };
+
   return {
     getModules,
     createBackup,
     restoreBackup,
+    previewRestoreBackup,
   };
 }
-

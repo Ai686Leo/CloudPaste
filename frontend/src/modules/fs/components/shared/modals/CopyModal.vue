@@ -8,9 +8,7 @@
       <div class="px-4 py-3 border-b flex justify-between items-center" :class="darkMode ? 'border-gray-700' : 'border-gray-200'">
         <h3 class="text-lg font-medium" :class="darkMode ? 'text-gray-100' : 'text-gray-900'">{{ t("mount.copyModal.title") }}</h3>
         <button @click="closeModal" class="text-gray-400 hover:text-gray-500 dark:text-gray-500 dark:hover:text-gray-400">
-          <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-          </svg>
+          <IconClose aria-hidden="true" />
         </button>
       </div>
 
@@ -35,20 +33,7 @@
         <!-- 警告信息 -->
         <div v-if="pathWarning" class="mb-3 p-2 bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-200 dark:border-yellow-700 rounded-md">
           <div class="flex items-start">
-            <svg
-              class="h-5 w-5 text-yellow-500 dark:text-yellow-400 mt-0.5 mr-2 flex-shrink-0"
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-              />
-            </svg>
+            <IconExclamation class="text-yellow-500 dark:text-yellow-400 mt-0.5 mr-2 flex-shrink-0" aria-hidden="true" />
             <span class="text-sm text-yellow-700 dark:text-yellow-300">{{ pathWarning }}</span>
           </div>
         </div>
@@ -57,14 +42,7 @@
         <div class="border rounded-md overflow-hidden mb-4 h-64" :class="darkMode ? 'border-gray-700' : 'border-gray-300'">
           <!-- 加载状态 -->
           <div v-if="loading" class="h-full flex justify-center items-center" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
-            <svg class="animate-spin h-5 w-5 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-              <path
-                class="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-              ></path>
-            </svg>
+            <IconRefresh class="animate-spin mr-2" aria-hidden="true" />
             <span>{{ t("mount.copyModal.loading") }}</span>
           </div>
 
@@ -74,21 +52,7 @@
               <!-- 根目录 -->
               <div class="tree-item" :class="{ selected: currentPath === userBasicPath }" @click="selectDestination(userBasicPath)">
                 <div class="flex items-center py-2 px-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer">
-                  <svg
-                    class="h-4 w-4 flex-shrink-0 mr-2"
-                    :class="darkMode ? 'text-blue-400' : 'text-blue-600'"
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke-width="2"
-                    stroke="currentColor"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
-                    />
-                  </svg>
+                  <IconHome size="sm" class="flex-shrink-0 mr-2" :class="darkMode ? 'text-blue-400' : 'text-blue-600'" aria-hidden="true" />
                   <span class="truncate" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">{{ rootDisplayName }}</span>
                 </div>
               </div>
@@ -114,20 +78,7 @@
             </span>
           </label>
           <div class="ml-2 group relative">
-            <svg
-              class="w-4 h-4 text-gray-400 dark:text-gray-500 cursor-help"
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
+            <IconInformationCircle size="sm" class="text-gray-400 dark:text-gray-500 cursor-help" aria-hidden="true" />
             <div
               class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 text-xs rounded-md shadow-lg whitespace-nowrap opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-10"
               :class="darkMode ? 'bg-gray-700 text-gray-200' : 'bg-gray-800 text-white'"
@@ -179,6 +130,7 @@
   import { useGlobalMessage } from "@/composables/core/useGlobalMessage.js";
   import { useConfirmDialog } from "@/composables/core/useConfirmDialog.js";
   import ConfirmDialog from "@/components/common/dialogs/ConfirmDialog.vue";
+  import { IconClose, IconExclamation, IconHome, IconInformationCircle, IconRefresh } from "@/components/icons";
 
   const { t } = useI18n();
   const fsApi = useFsService();

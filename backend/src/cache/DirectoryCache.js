@@ -38,6 +38,13 @@ class DirectoryCacheManager extends BaseCache {
     return `${mountId}:${encodedPath}`;
   }
 
+  getAdditionalCacheData(mountId, path) {
+    return {
+      normalizedPath: normalizePath(path, true),
+      mountId: mountId != null ? String(mountId) : "",
+    };
+  }
+
   /**
    * 获取缓存的目录列表 - 使用基类方法
    * @param {string} mountId - 挂载点ID
@@ -112,6 +119,55 @@ class DirectoryCacheManager extends BaseCache {
     }
 
     return count;
+  }
+
+  /**
+   * 使指定目录及其子树（所有子目录）的缓存失效
+   * 例如: /a/b/ 会使 /a/b/、/a/b/c/、/a/b/c/d/ ... 的缓存失效
+   * @param {string} mountId - 挂载点ID
+   * @param {string} path - 目录路径
+   * @returns {number} - 被删除的缓存项数量
+   */
+  invalidatePathTree(mountId, path) {
+    if (!mountId) return 0;
+
+    const normalizedPrefix = normalizePath(path, true);
+    if (normalizedPrefix === "/") {
+      return this.invalidateMount(mountId);
+    }
+
+    const decodePathFromKey = (key) => {
+      if (typeof key !== "string") return null;
+      const idx = key.indexOf(":");
+      if (idx <= 0) return null;
+      const encoded = key.slice(idx + 1);
+      if (!encoded) return null;
+      try {
+        return Buffer.from(encoded, "base64").toString("utf8");
+      } catch (_) {
+        return null;
+      }
+    };
+
+    let clearedCount = 0;
+    for (const [key, item] of this.cache.entries()) {
+      if (!key.startsWith(`${mountId}:`)) continue;
+      const cachedPath = typeof item?.normalizedPath === "string" && item.normalizedPath
+        ? item.normalizedPath
+        : decodePathFromKey(key);
+      if (typeof cachedPath !== "string" || cachedPath.length === 0) continue;
+      if (cachedPath === normalizedPrefix || cachedPath.startsWith(normalizedPrefix)) {
+        this.cache.delete(key);
+        clearedCount++;
+      }
+    }
+
+    if (clearedCount > 0) {
+      this.stats.invalidations += clearedCount;
+      console.log(`目录子树缓存已失效 - 挂载点:${mountId}, 路径:${path}, 删除项:${clearedCount}`);
+    }
+
+    return clearedCount;
   }
 
   /**

@@ -6,6 +6,7 @@ import { formatDateTime, formatRelativeTime, isExpired as isExpiredUtil } from "
 import { getRemainingViews as getRemainingViewsUtil } from "@/utils/fileUtils.js";
 // 导入创建者徽章统一逻辑
 import { useCreatorBadge } from "@/composables/admin-management/useCreatorBadge.js";
+import { IconArrowUp, IconCalendar, IconCopy, IconDelete, IconError, IconEye, IconEyeOff, IconGlobeAlt, IconLink, IconLockClosed, IconMenu, IconQrCode, IconRename, IconUser } from "@/components/icons";
 
 const { getCreatorText } = useCreatorBadge();
 
@@ -292,10 +293,7 @@ onUnmounted(() => {
               :class="darkMode ? 'bg-amber-500/15' : 'bg-amber-50'"
               title="密码保护"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" class="h-4 w-4" :class="darkMode ? 'text-amber-200' : 'text-amber-600'">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 11V7a5 5 0 0110 0v4" />
-                <rect stroke-linecap="round" stroke-linejoin="round" stroke-width="2" x="6" y="11" width="12" height="9" rx="2" />
-              </svg>
+              <IconLockClosed class="h-4 w-4" :class="darkMode ? 'text-amber-200' : 'text-amber-600'" />
             </span>
 
             <!-- 可见性图标 -->
@@ -307,37 +305,14 @@ onUnmounted(() => {
               :title="paste.is_public ? '公开访问' : '仅管理员和创建者可见'"
             >
               <!-- 公开图标 -->
-              <svg
-                v-if="paste.is_public"
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                class="h-4 w-4"
-                :class="darkMode ? 'text-green-200' : 'text-green-600'"
-              >
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
+              <IconGlobeAlt v-if="paste.is_public" class="h-4 w-4" :class="darkMode ? 'text-green-200' : 'text-green-600'" />
               <!-- 私密图标 -->
-              <svg
-                v-else
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                class="h-4 w-4"
-                :class="darkMode ? 'text-gray-200' : 'text-gray-600'"
-              >
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11c1.657 0 3-1.343 3-3S13.657 5 12 5s-3 1.343-3 3 1.343 3 3 3z" />
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.5 20a8.38 8.38 0 017.5-4.5 8.38 8.38 0 017.5 4.5" />
-              </svg>
+              <IconEyeOff v-else class="h-4 w-4" :class="darkMode ? 'text-gray-200' : 'text-gray-600'" />
             </span>
 
             <!-- 过期图标 -->
             <span v-if="isExpired" class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-red-100 dark:bg-red-900/30" title="已过期">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
+              <IconError class="h-4 w-4 text-red-600 dark:text-red-400" />
             </span>
 
             <!-- 剩余次数警告（<10时显示）- 图标+数字组合 -->
@@ -351,17 +326,7 @@ onUnmounted(() => {
                 class="inline-flex items-center justify-center w-6 h-6 rounded-full"
                 :class="darkMode ? 'bg-orange-500/15' : 'bg-orange-50'"
               >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  class="h-4 w-4"
-                  :class="darkMode ? 'text-orange-300' : 'text-orange-600'"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                </svg>
+                <IconEye class="h-4 w-4" :class="darkMode ? 'text-orange-300' : 'text-orange-600'" />
               </span>
               <!-- 数字标签 -->
               <span
@@ -380,9 +345,7 @@ onUnmounted(() => {
               class="p-2 sm:p-1 -m-1 sm:m-0 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 active:bg-gray-200 dark:active:bg-gray-600 text-gray-500 dark:text-gray-400 transition-colors"
               title="更多操作"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
-              </svg>
+              <IconMenu class="h-4 w-4" />
             </button>
 
             <!-- 下拉菜单 -->
@@ -400,10 +363,7 @@ onUnmounted(() => {
                   "
                   class="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600 flex items-center transition-colors"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                  </svg>
+                  <IconEye class="h-4 w-4 mr-2 text-blue-600 dark:text-blue-400" />
                   预览
                 </button>
 
@@ -415,9 +375,7 @@ onUnmounted(() => {
                   "
                   class="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600 flex items-center transition-colors"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
-                  </svg>
+                  <IconArrowUp class="h-4 w-4 mr-2 text-green-600 dark:text-green-400" />
                   快速编辑
                 </button>
 
@@ -429,9 +387,7 @@ onUnmounted(() => {
                   "
                   class="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600 flex items-center transition-colors"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2 text-indigo-600 dark:text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                  </svg>
+                  <IconRename class="h-4 w-4 mr-2 text-indigo-600 dark:text-indigo-400" />
                   完整编辑
                 </button>
 
@@ -443,9 +399,7 @@ onUnmounted(() => {
                   "
                   class="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600 flex items-center transition-colors"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2 text-purple-600 dark:text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                  </svg>
+                  <IconCopy class="h-4 w-4 mr-2 text-purple-600 dark:text-purple-400" />
                   复制链接
                 </button>
 
@@ -457,9 +411,7 @@ onUnmounted(() => {
                   "
                   class="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600 flex items-center transition-colors"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2 text-cyan-600 dark:text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                  </svg>
+                  <IconLink class="h-4 w-4 mr-2 text-cyan-600 dark:text-cyan-400" />
                   复制直链
                 </button>
 
@@ -471,9 +423,7 @@ onUnmounted(() => {
                   "
                   class="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600 flex items-center transition-colors"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2 text-gray-600 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
-                  </svg>
+                  <IconQrCode class="h-4 w-4 mr-2 text-gray-600 dark:text-gray-400" />
                   显示二维码
                 </button>
 
@@ -488,9 +438,7 @@ onUnmounted(() => {
                   "
                   class="w-full text-left px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 flex items-center transition-colors"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
+                  <IconDelete class="h-4 w-4 mr-2" />
                   删除
                 </button>
               </div>
@@ -519,17 +467,13 @@ onUnmounted(() => {
       <div class="flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
         <!-- 创建者 -->
         <span class="inline-flex items-center">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-          </svg>
+          <IconUser class="h-3 w-3 mr-1" />
           {{ creatorLabel }}
         </span>
 
         <!-- 过期时间（如果有） -->
         <span v-if="paste.expires_at" class="inline-flex items-center" :class="isExpired ? 'text-red-600 dark:text-red-400' : ''">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-          </svg>
+          <IconCalendar class="h-3 w-3 mr-1" />
           {{ formatRelativeTime(paste.expires_at) }}
         </span>
       </div>

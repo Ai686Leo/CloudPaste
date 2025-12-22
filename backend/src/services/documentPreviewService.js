@@ -1,236 +1,265 @@
 /**
- * 文档预览决策服务
- * 负责基于文件元信息与 Link JSON 生成 DocumentPreviewResult
+ * 预览规则决策服务
+ * 统一根据 preview_providers 生成预览选择结果
  */
 
-import { FILE_TYPES } from "../constants/index.js";
 import previewSettingsCache from "../cache/PreviewSettingsCache.js";
 import { getFileExtension } from "../utils/fileTypeDetector.js";
+import { FILE_TYPES } from "../constants/index.js";
 
-/**
- * 解析文件类型是否属于 Office/文档范畴
- * @param {any} fileMeta - 文件元信息（至少包含 type/typeName/mimetype/filename）
- * @returns {boolean}
- */
-function isOfficeLike(fileMeta) {
-  if (!fileMeta) return false;
+const PREVIEW_KINDS = Object.freeze({
+  COMPONENT: "component",
+  IFRAME: "iframe",
+  DOWNLOAD: "download",
+});
 
-  const typeCode = fileMeta.type;
-  if (typeCode === FILE_TYPES.OFFICE || typeCode === FILE_TYPES.DOCUMENT) {
-    return true;
-  }
+const TEXT_KEYS = new Set(["text", "code", "markdown", "html"]);
+const OFFICE_NATIVE_EXTS = new Set(["docx", "xlsx", "pptx"]);
+// providers 里的 "native" 是一个“占位符”，表示走本地/原生预览实现。
+const NATIVE_PROVIDER_SUPPORTED_KEYS = new Set(["office", "pdf", "epub"]);
 
-  const typeName = (fileMeta.typeName || "").toString().toLowerCase();
-  if (typeName === "office" || typeName === "document") {
-    return true;
-  }
-
-  const mimetype = (fileMeta.mimetype || "").toLowerCase();
-  if (
-    mimetype.includes("officedocument") ||
-    mimetype.includes("ms-excel") ||
-    mimetype.includes("ms-powerpoint") ||
-    mimetype.includes("msword") ||
-    mimetype === "application/rtf" ||
-    mimetype === "application/pdf"
-  ) {
-    return true;
-  }
-
-  return false;
+function normalizePreviewKey(key) {
+  const v = (key || "").toString().toLowerCase();
+  if (TEXT_KEYS.has(v)) return "text";
+  return v;
 }
 
 /**
- * 统一的 DocumentPreview 决策入口
+ * 统一的预览选择入口
  * @param {Object} fileMeta - 文件元信息（type/typeName/mimetype/filename/size 等）
- * @param {Object} linkJson - Link JSON 视角下的链接信息（previewUrl/linkType/use_proxy 等）
- * @returns {Promise<{providers?: Record<string,string>}>}
+ * @param {Object} linkJson - Link JSON 视角下的链接信息（previewUrl/downloadUrl/linkType/use_proxy 等）
+ * @returns {Promise<{key:string, kind:string, providers?:Record<string,string>, matchedRule?:string}>}
  */
-export async function resolveDocumentPreview(fileMeta, linkJson) {
-  const baseResult = {};
-
-  // 非 Office/文档类型直接拒绝
-  if (!isOfficeLike(fileMeta)) {
-    return baseResult;
-  }
-
-  const link = linkJson || {};
-  const previewUrl = link.previewUrl || null;
-
-  // 基于扩展名与 preview_document_apps 配置选择 DocumentApp 模板
-  const filename = fileMeta.filename || "";
+export async function resolvePreviewSelection(fileMeta, linkJson) {
+  const filename = fileMeta?.filename || "";
   const extension = getFileExtension(filename);
-  const normalizedExt = (extension || "").toLowerCase();
+  const previewUrl = linkJson?.previewUrl || "";
+  const downloadUrl = linkJson?.downloadUrl || "";
 
-  // 仅对 Office OpenXML（docx/xlsx/pptx）启用
-  // - 不能对旧格式 doc/xls/ppt 注入 native：纯前端渲染不支持这些格式
-  const shouldInjectNativeOfficeProvider = ["docx", "xlsx", "pptx"].includes(normalizedExt);
+  const rules = normalizeRules(previewSettingsCache.getPreviewProvidersConfig());
+  const context = buildMatchContext(fileMeta, filename, extension);
 
-  const appsConfig = previewSettingsCache.getDocumentAppsConfig();
-  if (!appsConfig || !extension) {
-    console.warn(
-      "[DocumentPreview] 无有效 DocumentApp 配置或扩展名为空",
-      JSON.stringify({
-        filename,
-        extension,
-        hasConfig: !!appsConfig,
-        configKeys: appsConfig ? Object.keys(appsConfig) : [],
-      }),
-    );
-    if (shouldInjectNativeOfficeProvider) {
-      return {
-        providers: {
-          native: "native",
-        },
-      };
+  for (const rule of rules) {
+    if (!matchRule(rule, context)) continue;
+    if (!rule.previewKey) continue;
+
+    const previewKey = normalizePreviewKey(rule.previewKey);
+
+    let providers = buildProvidersFromRule(rule.providers, {
+      previewUrl,
+      downloadUrl,
+      name: filename,
+    });
+
+    // 清理 providers：
+    // - iframe 预览必须是 URL，不能出现 "native" 这种占位符
+    // - 其他预览类型只有在“实现端支持解释 native”时才允许保留
+    for (const [k, v] of Object.entries(providers)) {
+      if (v !== "native") continue;
+      if (previewKey === "iframe" || !NATIVE_PROVIDER_SUPPORTED_KEYS.has(previewKey)) {
+        delete providers[k];
+      }
     }
-    return baseResult;
-  }
 
-  const matchedEntry = findMatchedDocumentAppEntry(appsConfig, extension, filename);
-  if (!matchedEntry) {
-    console.warn(
-      "[DocumentPreview] 未找到匹配的 DocumentApp 条目",
-      JSON.stringify({
-        filename,
-        extension,
-        configKeys: Object.keys(appsConfig || {}),
-      }),
-    );
-    if (shouldInjectNativeOfficeProvider) {
-      return {
-        providers: {
-          native: "native",
-        },
-      };
+    // iframe 预览必须提供至少一个可用的 URL（不能依赖 native 这种占位）
+    if (previewKey === "iframe" && !Object.keys(providers).length) {
+      continue;
     }
-    return baseResult;
-  }
 
-  const providers = buildProvidersFromTemplate(matchedEntry.providers, {
-    url: previewUrl,
-    name: filename,
-  });
+    const normalizedProviders =
+      previewKey === "office"
+        ? injectNativeProviderIfNeeded(providers, extension)
+        : providers;
 
-  console.log(
-    "[DocumentPreview] 已生成 providers",
-    JSON.stringify({
-      filename,
-      extension,
-      providerKeys: Object.keys(providers),
-    }),
-  );
-
-  const providerKeys = Object.keys(providers);
-  if (!providerKeys.length) {
-    if (shouldInjectNativeOfficeProvider) {
-      return {
-        providers: {
-          native: "native",
-        },
-      };
-    }
-    return baseResult;
-  }
-
-  if (shouldInjectNativeOfficeProvider) {
     return {
-      providers: {
-        native: "native",
-        ...providers,
-      },
+      key: previewKey,
+      kind: previewKey === "iframe" ? PREVIEW_KINDS.IFRAME : PREVIEW_KINDS.COMPONENT,
+      providers: normalizedProviders,
+      matchedRule: rule.id || "",
     };
   }
 
-  return { providers };
+  return buildFallbackSelection(fileMeta, filename, extension);
 }
 
-/**
- * 在 DocumentApp 配置中根据扩展名/文件名查找匹配条目
- * @param {Object} appsConfig
- * @param {string} extension
- * @param {string} filename
- * @returns {{providers: Object}|null}
- */
-function findMatchedDocumentAppEntry(appsConfig, extension, filename) {
-  const ext = extension.toLowerCase();
+function normalizeRules(rules) {
+  if (!Array.isArray(rules)) return [];
+  return rules
+    .map((rule, index) => ({
+      ...rule,
+      _index: index,
+      priority: Number.isFinite(rule?.priority) ? Number(rule.priority) : 0,
+    }))
+    .sort((a, b) => b.priority - a.priority || a._index - b._index);
+}
 
-  for (const [pattern, providersConfig] of Object.entries(appsConfig)) {
-    if (!providersConfig || typeof providersConfig !== "object") continue;
+function buildMatchContext(fileMeta, filename, extension) {
+  const typeName = (fileMeta?.typeName || "").toString().toLowerCase();
+  const type = fileMeta?.type;
 
-    let matched = false;
+  return {
+    filename,
+    extension,
+    typeName,
+    typeCode: type,
+    fileType: resolveFileTypeName(type, typeName),
+  };
+}
 
-    if (pattern.startsWith("/") && pattern.endsWith("/")) {
-      // 正则匹配：用于高级场景（例如按文件名匹配）
-      const body = pattern.slice(1, -1);
-      try {
-        const regex = new RegExp(body);
-        matched = regex.test(filename);
-      } catch (e) {
-        console.warn("preview_document_apps 中正则模式无效，已跳过:", pattern, e);
-      }
-    } else {
-      // 扩展名列表匹配
-      const exts = pattern
-        .split(",")
-        .map((p) => p.trim().toLowerCase())
-        .filter((p) => p.length > 0);
-      matched = exts.includes(ext);
-    }
+function resolveFileTypeName(typeCode, typeName) {
+  if (typeName) return typeName;
+  switch (typeCode) {
+    case FILE_TYPES.TEXT:
+      return "text";
+    case FILE_TYPES.AUDIO:
+      return "audio";
+    case FILE_TYPES.VIDEO:
+      return "video";
+    case FILE_TYPES.IMAGE:
+      return "image";
+    case FILE_TYPES.OFFICE:
+      return "office";
+    case FILE_TYPES.DOCUMENT:
+      return "document";
+    default:
+      return "unknown";
+  }
+}
 
-    if (!matched) continue;
+function matchRule(rule, context) {
+  const match = rule?.match || {};
+  const extList = normalizeExtList(match.ext || match.exts || match.extensions || rule.ext);
+  const regexSource = match.regex || match.pattern;
 
-    // 归一化 providersConfig，支持 string 或 object 形式
-    const normalizedProviders = {};
+  if (extList.length && !extList.includes(context.extension)) return false;
 
-    for (const [providerKey, cfg] of Object.entries(providersConfig)) {
-      if (!cfg) continue;
-
-      if (typeof cfg === "string") {
-        normalizedProviders[providerKey] = {
-          urlTemplate: cfg,
-        };
-      } else if (typeof cfg === "object") {
-        normalizedProviders[providerKey] = {
-          urlTemplate: cfg.urlTemplate || "",
-        };
-      }
-    }
-
-    return { providers: normalizedProviders };
+  if (regexSource) {
+    const regex = toRegex(regexSource);
+    if (!regex || !regex.test(context.filename)) return false;
   }
 
-  return null;
+  return true;
 }
 
-/**
- * 根据模板与变量构造 providers 映射
- * @param {Object} providersConfig
- * @param {{url: string|null, name: string}} vars
- * @returns {Record<string,string>}
- */
+function normalizeExtList(value) {
+  if (!value) return [];
+  const list = Array.isArray(value) ? value : String(value).split(",");
+  return list
+    .map((ext) => String(ext).trim().toLowerCase())
+    .filter((ext) => ext.length > 0);
+}
+
+function toRegex(value) {
+  if (!value) return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+  // 支持类似 /pattern/flags 的写法（例如 /^(readme|license)$/i）
+  // 兼容：/pattern/（无 flags）等价旧逻辑
+  if (raw.startsWith("/")) {
+    const lastSlash = raw.lastIndexOf("/");
+    if (lastSlash > 0) {
+      const pattern = raw.slice(1, lastSlash);
+      const flags = raw.slice(lastSlash + 1);
+      try {
+        return new RegExp(pattern, flags);
+      } catch (error) {
+        console.warn("preview_providers 正则无效，已忽略:", raw, error);
+        return null;
+      }
+    }
+  }
+  try {
+    return new RegExp(raw);
+  } catch (error) {
+    console.warn("preview_providers 正则无效，已忽略:", raw, error);
+    return null;
+  }
+}
+
+function buildProvidersFromRule(providersConfig, vars) {
+  if (!providersConfig || typeof providersConfig !== "object") return {};
+  const normalized = normalizeProviders(providersConfig);
+  return buildProvidersFromTemplate(normalized, vars);
+}
+
+function normalizeProviders(providersConfig) {
+  const normalized = {};
+  for (const [providerKey, cfg] of Object.entries(providersConfig)) {
+    if (!cfg) continue;
+    if (typeof cfg === "string") {
+      normalized[providerKey] = { urlTemplate: cfg };
+    } else if (typeof cfg === "object") {
+      normalized[providerKey] = { urlTemplate: cfg.urlTemplate || "" };
+    }
+  }
+  return normalized;
+}
+
 function buildProvidersFromTemplate(providersConfig, vars) {
   const result = {};
-
-  const url = vars.url || "";
+  const previewUrl = vars.previewUrl || "";
+  const downloadUrl = vars.downloadUrl || "";
   const name = vars.name || "";
 
-  const valueMap = {
-    $url: url,
-    $name: name,
-    $e_url: url ? encodeURIComponent(url) : "",
+  const base64EncodeUtf8 = (text) => {
+    if (!text) return "";
+    return Buffer.from(String(text), "utf8").toString("base64");
   };
 
-  for (const [providerKey, cfg] of Object.entries(providersConfig)) {
+  const b64PreviewUrl = previewUrl ? base64EncodeUtf8(previewUrl) : "";
+  const b64DownloadUrl = downloadUrl ? base64EncodeUtf8(downloadUrl) : "";
+
+  const valueMap = {
+    $name: name,
+    $e_name: name ? encodeURIComponent(name) : "",
+    $url: previewUrl,
+    $e_url: previewUrl ? encodeURIComponent(previewUrl) : "",
+    $e_download_url: downloadUrl ? encodeURIComponent(downloadUrl) : "",
+    // Base64 + URL-encode
+    $b64e_url: b64PreviewUrl ? encodeURIComponent(b64PreviewUrl) : "",
+    $b64e_download_url: b64DownloadUrl ? encodeURIComponent(b64DownloadUrl) : "",
+  };
+
+  for (const [providerKey, cfg] of Object.entries(providersConfig || {})) {
     if (!cfg || !cfg.urlTemplate) continue;
+    if (cfg.urlTemplate === "native") {
+      result[providerKey] = "native";
+      continue;
+    }
     let rendered = cfg.urlTemplate;
-
-    rendered = rendered.replace(/\$e_url|\$url|\$name/g, (token) => valueMap[token] ?? "");
-
+    rendered = rendered.replace(
+      /\$b64e_download_url|\$b64e_url|\$e_download_url|\$e_url|\$e_name|\$url|\$name/g,
+      (token) => valueMap[token] ?? "",
+    );
     if (rendered) {
       result[providerKey] = rendered;
     }
   }
 
   return result;
+}
+
+function injectNativeProviderIfNeeded(providers, extension) {
+  if (!OFFICE_NATIVE_EXTS.has(extension)) return providers || {};
+  if (providers && Object.prototype.hasOwnProperty.call(providers, "native")) return providers;
+  return { native: "native", ...(providers || {}) };
+}
+
+function buildFallbackSelection(fileMeta, filename, extension) {
+  const typeName = resolveFileTypeName(fileMeta?.type, (fileMeta?.typeName || "").toString().toLowerCase());
+
+  if (typeName === "image") return { key: "image", kind: PREVIEW_KINDS.COMPONENT };
+  if (typeName === "video") return { key: "video", kind: PREVIEW_KINDS.COMPONENT };
+  if (typeName === "audio") return { key: "audio", kind: PREVIEW_KINDS.COMPONENT };
+  if (typeName === "document") return { key: "pdf", kind: PREVIEW_KINDS.COMPONENT };
+  if (typeName === "office") {
+    const providers = injectNativeProviderIfNeeded({}, extension);
+    return { key: "office", kind: PREVIEW_KINDS.COMPONENT, providers };
+  }
+
+  if (typeName === "text") {
+    return { key: "text", kind: PREVIEW_KINDS.COMPONENT };
+  }
+
+  return { key: "download", kind: PREVIEW_KINDS.DOWNLOAD };
 }

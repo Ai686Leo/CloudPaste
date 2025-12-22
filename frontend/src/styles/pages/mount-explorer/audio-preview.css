@@ -17,10 +17,56 @@
   justify-content: center;
 }
 
+/* ===== 播放器容器 ===== */
+.audio-player-wrapper {
+  position: relative;
+}
+
+/* ===== 发送到全局播放器按钮 ===== */
+.send-to-global-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 26px;
+  height: 26px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: #666;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s, background 0.15s;
+  z-index: 10;
+  opacity: 0.6;
+}
+
+.send-to-global-btn:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: #333;
+  opacity: 1;
+}
+
+/* 深色模式 */
+.send-to-global-btn.dark {
+  color: #999;
+}
+
+.send-to-global-btn.dark:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ddd;
+}
+
 /* 移动端优化 */
 @media (max-width: 768px) {
   .audio-preview {
     padding: 0.75rem !important;
     min-height: 100px;
+  }
+
+  /* 移动端隐藏发送到全局播放器按钮 */
+  .send-to-global-btn {
+    display: none !important;
   }
 }

@@ -14,6 +14,8 @@ export class PreviewSettingsCache {
   constructor() {
     this.cache = new Map();
     this.typeCache = new Map();
+    this.providerTypeCache = new Map();
+    this.previewProviderRuleCache = [];
     this.lastUpdate = null;
     this.ttl = Infinity;
     this._isLoaded = false;
@@ -27,7 +29,8 @@ export class PreviewSettingsCache {
    */
   async getFileType(extension, db = null) {
     await this.ensureLoaded(db);
-    return this.typeCache.get(extension.toLowerCase()) || "unknown";
+    const key = extension.toLowerCase();
+    return this.typeCache.get(key) || this.providerTypeCache.get(key) || "unknown";
   }
 
   /**
@@ -69,6 +72,7 @@ export class PreviewSettingsCache {
       // 清空现有缓存
       this.cache.clear();
       this.typeCache.clear();
+      this.providerTypeCache.clear();
 
       // 重建缓存
       for (const setting of previewSettings) {
@@ -80,6 +84,9 @@ export class PreviewSettingsCache {
           this.parseAndCacheExtensions(typeCategory, setting.value);
         }
       }
+
+      this.rebuildProviderTypeCache();
+      this.rebuildPreviewProviderRuleCache();
 
       this.lastUpdate = Date.now();
       this._isLoaded = true;
@@ -124,6 +131,142 @@ export class PreviewSettingsCache {
   }
 
   /**
+   * 解析 preview_providers 规则并建立类型映射（用于 office/document 等分类）
+   */
+  rebuildProviderTypeCache() {
+    const rules = this.getPreviewProvidersConfig();
+    if (!Array.isArray(rules)) return;
+
+    for (const rule of rules) {
+      const category = this.resolveProviderCategory(rule);
+      if (!category) continue;
+
+      const match = rule?.match || {};
+      const extList = this.normalizeExtensionList(match.ext || match.exts || match.extensions);
+      if (!extList.length) continue;
+
+      for (const ext of extList) {
+        this.providerTypeCache.set(ext, category);
+      }
+    }
+  }
+
+  /**
+   * 预编译 preview_providers 规则（支持 ext + regex）
+   * - 仅用于“类型归类/图标归类”用途，不会生成 providers URL
+   * - 排序规则与预览选择保持一致：priority 越大越优先；priority 相同按数组顺序
+   */
+  rebuildPreviewProviderRuleCache() {
+    const rules = this.getPreviewProvidersConfig();
+    if (!Array.isArray(rules)) {
+      this.previewProviderRuleCache = [];
+      return;
+    }
+
+    const compiled = rules
+      .map((rule, index) => {
+        const previewKey = (rule?.previewKey || rule?.key || "").toString().toLowerCase();
+        // 对图标/类型来说：iframe / download 不代表“文件本身类型”，不参与归类
+        if (previewKey === "iframe" || previewKey === "download") {
+          return null;
+        }
+
+        const category = this.resolveProviderCategory(rule);
+        if (!category) return null;
+
+        const match = rule?.match || {};
+        const extList = this.normalizeExtensionList(match.ext || match.exts || match.extensions || rule.ext);
+        const regexSource = (match.regex || match.pattern || "").toString().trim();
+        const regex = regexSource ? this.toRegex(regexSource) : null;
+
+        return {
+          _index: index,
+          priority: Number.isFinite(rule?.priority) ? Number(rule.priority) : 0,
+          extSet: extList.length ? new Set(extList) : null,
+          regex,
+          category,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.priority - a.priority || a._index - b._index);
+
+    this.previewProviderRuleCache = compiled;
+  }
+
+  /**
+   * 将 preview_providers 中的 regex 字符串解析为 RegExp
+   * - 支持 /pattern/flags（例如 /^(readme|license)$/i）
+   * - 也支持直接写 pattern（不带斜杠/flags）
+   * @param {string} value
+   * @returns {RegExp|null}
+   */
+  toRegex(value) {
+    if (!value) return null;
+    const raw = String(value).trim();
+    if (!raw) return null;
+
+    if (raw.startsWith("/")) {
+      const lastSlash = raw.lastIndexOf("/");
+      if (lastSlash > 0) {
+        const pattern = raw.slice(1, lastSlash);
+        const flags = raw.slice(lastSlash + 1);
+        try {
+          return new RegExp(pattern, flags);
+        } catch (error) {
+          console.warn("preview_providers 正则无效，已忽略:", raw, error);
+          return null;
+        }
+      }
+    }
+
+    try {
+      return new RegExp(raw);
+    } catch (error) {
+      console.warn("preview_providers 正则无效，已忽略:", raw, error);
+      return null;
+    }
+  }
+
+  /**
+   * 根据 preview_providers（ext + regex）推断“类型分类”
+   * @param {{ filename: string, extension?: string }} input
+   * @returns {string} text|audio|video|image|office|document|unknown
+   */
+  resolveTypeCategoryByProviders(input) {
+    const filename = (input?.filename || "").toString();
+    const extension = (input?.extension || "").toString().toLowerCase();
+
+    for (const rule of this.previewProviderRuleCache || []) {
+      if (rule.extSet && !rule.extSet.has(extension)) continue;
+      if (rule.regex && !rule.regex.test(filename)) continue;
+      return rule.category || "unknown";
+    }
+
+    return "unknown";
+  }
+
+  normalizeExtensionList(value) {
+    if (!value) return [];
+    const list = Array.isArray(value) ? value : String(value).split(",");
+    return list
+      .map((ext) => String(ext).trim().toLowerCase())
+      .filter((ext) => ext.length > 0 && /^[a-z0-9]+$/.test(ext));
+  }
+
+
+  resolveProviderCategory(rule) {
+    const explicit = (rule?.category || rule?.fileType || "").toString().toLowerCase();
+    if (explicit) return explicit;
+
+    const previewKey = (rule?.previewKey || rule?.key || "").toString().toLowerCase();
+    if (["text", "code", "markdown", "html"].includes(previewKey)) return "text";
+    if (["image", "video", "audio"].includes(previewKey)) return previewKey;
+    if (previewKey === "office") return "office";
+    if (["pdf", "document", "epub"].includes(previewKey)) return "document";
+    return "";
+  }
+
+  /**
    * 获取原始设置值
    * @param {string} key - 设置键名
    * @returns {string|null} 设置值
@@ -133,26 +276,26 @@ export class PreviewSettingsCache {
   }
 
   /**
-   * 获取 DocumentApp 模板配置（JSON 对象）
-   * @returns {Object|null} 解析后的配置对象
+   * 获取 Preview Providers 配置（JSON 数组）
+   * @returns {Array|null}
    */
-  getDocumentAppsConfig() {
-    const raw = this.getSetting("preview_document_apps");
+  getPreviewProvidersConfig() {
+    const raw = this.getSetting("preview_providers");
     if (!raw || typeof raw !== "string" || raw.trim().length === 0) {
-      return null;
+      return [];
     }
 
     try {
       const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === "object") {
+      if (Array.isArray(parsed)) {
         return parsed;
       }
     } catch (e) {
-      console.error("解析 preview_document_apps 配置失败，将视为未配置:", e);
-      return null;
+      console.error("解析 preview_providers 配置失败，将视为未配置:", e);
+      return [];
     }
 
-    return null;
+    return [];
   }
 
   /**

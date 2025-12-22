@@ -5,6 +5,7 @@ import { usePasteManagement } from "@/modules/paste";
 import { useThemeMode } from "@/composables/core/useThemeMode.js";
 import { useCreatorBadge } from "@/composables/admin-management/useCreatorBadge.js";
 import { useConfirmDialog } from "@/composables/core/useConfirmDialog.js";
+import { IconClock, IconDelete, IconRefresh } from "@/components/icons";
 
 // 导入子组件
 import PasteTable from "@/modules/paste/admin/components/PasteTable.vue";
@@ -263,22 +264,7 @@ onMounted(() => {
             @click="loadPastes"
             :disabled="loading"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" :class="['h-3 w-3 sm:h-4 sm:w-4 mr-1', loading ? 'animate-spin' : '']" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                v-if="!loading"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-              />
-              <circle v-if="loading" class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-              <path
-                v-if="loading"
-                class="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-              ></path>
-            </svg>
+            <IconRefresh class="h-3 w-3 sm:h-4 sm:w-4 mr-1" :class="loading ? 'animate-spin' : ''" />
             <span class="hidden xs:inline">{{ loading ? "刷新中..." : "刷新" }}</span>
             <span class="xs:hidden">{{ loading ? "..." : "刷" }}</span>
           </button>
@@ -307,14 +293,7 @@ onMounted(() => {
           @click="clearExpiredPastes"
           title="系统会自动删除过期内容，但您也可以通过此功能手动立即清理"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 sm:h-4 sm:w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-            />
-          </svg>
+          <IconDelete class="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
           <span class="hidden xs:inline">清理过期</span>
           <span class="xs:hidden">清理</span>
         </button>
@@ -328,14 +307,7 @@ onMounted(() => {
           ]"
           @click="deleteSelectedPastes"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 sm:h-4 sm:w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-            />
-          </svg>
+          <IconDelete class="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
           <span class="hidden xs:inline">批量删除{{ selectedPastes.length ? `(${selectedPastes.length})` : "" }}</span>
           <span class="xs:hidden">删除{{ selectedPastes.length ? `(${selectedPastes.length})` : "" }}</span>
         </button>
@@ -346,9 +318,7 @@ onMounted(() => {
     <div class="flex justify-between items-center mb-2 sm:mb-3" v-if="lastRefreshTime">
       <div class="text-xs sm:text-sm text-gray-500 dark:text-gray-400">
         <span class="inline-flex items-center">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 sm:h-4 sm:w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
+          <IconClock class="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
           上次刷新: {{ lastRefreshTime }}
         </span>
       </div>

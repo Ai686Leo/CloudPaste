@@ -6,10 +6,10 @@
 
     <div v-if="showZoomControls" class="p-map-embed__zoom">
       <button type="button" class="p-map-embed__zoom-btn" aria-label="放大" @click.stop="zoomIn">
-        <i-mdi-plus class="p-map-embed__zoom-icon" aria-hidden="true" />
+        <IconPlus class="p-map-embed__zoom-icon" aria-hidden="true" />
       </button>
       <button type="button" class="p-map-embed__zoom-btn" aria-label="缩小" @click.stop="zoomOut">
-        <i-mdi-minus class="p-map-embed__zoom-icon" aria-hidden="true" />
+        <IconMinus class="p-map-embed__zoom-icon" aria-hidden="true" />
       </button>
     </div>
 
@@ -23,6 +23,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { IconMinus, IconPlus } from "@/components/icons";
 
 const props = defineProps({
   lat: { type: Number, required: true },

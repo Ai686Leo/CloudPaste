@@ -2,6 +2,8 @@
 // HTML预览弹窗组件 - 用于在弹窗中安全预览HTML代码
 // 该组件使用iframe实现HTML的安全渲染，并提供复制代码、在新窗口打开等功能
 import { ref, watch, onMounted, nextTick, onUnmounted, computed } from "vue";
+import { IconClose, IconCollapse, IconExpand } from "@/components/icons";
+import LoadingIndicator from "@/components/common/LoadingIndicator.vue";
 
 // 定义组件接受的属性
 const props = defineProps({
@@ -207,35 +209,11 @@ onMounted(() => {
           <button class="action-button copy-button" @click="copyHtml">复制代码</button>
           <button class="action-button" @click="openInNewWindow">在新窗口打开</button>
           <button class="action-button" @click="toggleFullscreen">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
-            </svg>
+            <IconExpand v-if="!isFullscreen" size="sm" />
+            <IconCollapse v-else size="sm" />
           </button>
           <button class="close-button" @click="closeModal">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
+            <IconClose />
           </button>
         </div>
       </div>
@@ -243,10 +221,13 @@ onMounted(() => {
       <div class="modal-content">
         <!-- 加载状态 -->
         <div v-if="renderState === 'loading'" class="loading-state">
-          <svg class="spinner" viewBox="0 0 50 50">
-            <circle class="path" cx="25" cy="25" r="20" fill="none" stroke-width="5"></circle>
-          </svg>
-          <p>正在渲染 HTML...</p>
+          <LoadingIndicator
+            text="正在渲染 HTML..."
+            :dark-mode="darkMode"
+            size="2xl"
+            :icon-class="darkMode ? 'text-blue-400' : 'text-blue-600'"
+            text-class="text-inherit"
+          />
         </div>
 
         <!-- 错误状态 -->
@@ -466,45 +447,6 @@ onMounted(() => {
 
 .dark-mode .error-state {
   color: #f87171;
-}
-
-/* 加载动画 */
-.spinner {
-  animation: rotate 2s linear infinite;
-  width: 40px;
-  height: 40px;
-  margin-bottom: 16px;
-}
-
-.path {
-  stroke: #3b82f6;
-  stroke-linecap: round;
-  animation: dash 1.5s ease-in-out infinite;
-}
-
-.dark-mode .path {
-  stroke: #60a5fa;
-}
-
-@keyframes rotate {
-  100% {
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes dash {
-  0% {
-    stroke-dasharray: 1, 150;
-    stroke-dashoffset: 0;
-  }
-  50% {
-    stroke-dasharray: 90, 150;
-    stroke-dashoffset: -35;
-  }
-  100% {
-    stroke-dasharray: 90, 150;
-    stroke-dashoffset: -124;
-  }
 }
 
 @media (max-width: 640px) {

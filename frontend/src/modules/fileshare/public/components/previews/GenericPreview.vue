@@ -1,13 +1,6 @@
 <template>
   <div class="generic-preview text-center py-6 w-full self-center flex flex-col items-center justify-center" style="min-height: 200px">
-    <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mx-auto mb-3" :class="iconClass" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        stroke-width="1.5"
-        d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"
-      />
-    </svg>
+    <IconDocumentText class="h-16 w-16 mx-auto mb-3" :class="iconClass" />
     <p class="text-gray-600 dark:text-gray-300 font-medium">{{ fileTypeDescription }}</p>
     <p class="text-gray-500 dark:text-gray-400 text-sm mt-2">{{ actionSuggestion }}</p>
 
@@ -40,6 +33,7 @@
 <script setup>
 import { ref, computed } from "vue";
 import { useI18n } from "vue-i18n";
+import { IconDocumentText } from "@/components/icons";
 
 const { t } = useI18n();
 

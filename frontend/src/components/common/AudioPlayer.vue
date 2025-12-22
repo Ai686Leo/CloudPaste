@@ -128,10 +128,7 @@ const initAPlayer = () => {
   if (props.mode === "mini") {
     options.mini = true;
   } else if (props.mode === "fixed") {
-    options.fixed = {
-      type: "fixed",
-      position: "bottom",
-    };
+    options.fixed = true;
   }
 
   try {

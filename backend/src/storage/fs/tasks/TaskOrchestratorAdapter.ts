@@ -4,7 +4,7 @@
  * - Node.js: SQLiteTaskOrchestrator (Worker Pool + SQLite)
  */
 
-import type { JobFilter, TaskStatus, TaskStats } from './types.js';
+import type { JobFilter, JobListResult, TaskStatus, TaskStats } from './types.js';
 
 /** 创建作业参数 */
 export interface CreateJobParams {
@@ -16,6 +16,18 @@ export interface CreateJobParams {
   userId: string;
   /** 用户类型 */
   userType: string;
+  /**
+   * 触发方式
+   * - manual: 用户/管理员在页面或 API 主动触发
+   * - scheduled: 由 scheduled_jobs 定时任务触发
+   */
+  triggerType?: 'manual' | 'scheduled' | string;
+  /**
+   * 来源引用（可选）
+   * - 例如 scheduled handlerId（scheduled_xxx）
+   * - 或某个页面/接口标识（如 admin/fs-index/rebuild）
+   */
+  triggerRef?: string | null;
 }
 
 /** 作业描述符 - 用于 API 响应 */
@@ -38,6 +50,10 @@ export interface JobDescriptor {
   updatedAt?: Date;
   /** 原始载荷 */
   payload?: any;
+  /** 触发方式 */
+  triggerType?: string;
+  /** 来源引用 */
+  triggerRef?: string | null;
 }
 
 /** 作业状态响应 - 扩展描述符 */
@@ -69,7 +85,7 @@ export interface TaskOrchestratorAdapter {
   cancelJob(jobId: string): Promise<void>;
 
   /** 列出作业 - 支持过滤和分页，按创建时间倒序 */
-  listJobs(filter?: JobFilter): Promise<JobDescriptor[]>;
+  listJobs(filter?: JobFilter): Promise<JobListResult>;
 
   /** 删除作业 - 仅终态作业，运行中需先取消 */
   deleteJob(jobId: string): Promise<void>;

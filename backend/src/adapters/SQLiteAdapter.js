@@ -18,6 +18,10 @@ export class SQLiteAdapter {
       filename: this.dbPath,
       driver: sqlite3.Database,
     });
+
+    await this.db.exec("PRAGMA busy_timeout = 5000;"); // 最多等 5 秒
+    await this.db.exec("PRAGMA journal_mode = WAL;"); // 并发读更友好
+    await this.db.exec("PRAGMA synchronous = 1;"); // NORMAL
     await this.db.exec("PRAGMA foreign_keys = ON;");
     return this;
   }

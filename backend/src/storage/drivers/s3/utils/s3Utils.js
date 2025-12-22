@@ -239,12 +239,30 @@ export function generateCustomHostDirectUrl(s3Config, storagePath) {
  * @returns {Promise<string>} 原始 S3 预签名下载 URL
  */
 async function generateOriginalDownloadUrl(s3Config, storagePath, encryptionSecret, expiresIn, forceDownload = false, mimetype = null) {
+  const finalExpiresIn = expiresIn || s3Config.signature_expires_in || 3600;
+  const rawPath = typeof storagePath === "string" ? storagePath : "";
+  const normalizedPath = rawPath.startsWith("/") ? rawPath.slice(1) : rawPath;
+
+  if (!normalizedPath) {
+    throw new S3DriverError("无法生成文件下载链接：对象路径为空", {
+      details: {
+        op: "presignGet",
+        provider: s3Config?.provider_type,
+        bucket: s3Config?.bucket_name,
+        key: normalizedPath || null,
+        region: s3Config?.region,
+        endpoint: s3Config?.endpoint_url,
+        expiresIn: finalExpiresIn,
+        forceDownload: !!forceDownload,
+        contentType: mimetype || null,
+        cause: "EMPTY_OBJECT_KEY",
+      },
+    });
+  }
+
   try {
     // 创建S3客户端
     const s3Client = await createS3Client(s3Config, encryptionSecret);
-
-    // 确保storagePath不以斜杠开始
-    const normalizedPath = storagePath.startsWith("/") ? storagePath.slice(1) : storagePath;
 
     // 提取文件名，用于Content-Disposition头
     const fileName = normalizedPath.split("/").pop();
@@ -286,7 +304,7 @@ async function generateOriginalDownloadUrl(s3Config, storagePath, encryptionSecr
     const command = new GetObjectCommand(commandParams);
 
     // 生成预签名URL
-    const url = await getSignedUrl(s3Client, command, { expiresIn });
+    const url = await getSignedUrl(s3Client, command, { expiresIn: finalExpiresIn });
 
     return url;
   } catch (error) {

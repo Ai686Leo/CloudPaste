@@ -12,19 +12,20 @@ export const useRepositories = (c) => {
     throw new RepositoryError("Database connection is not available in context");
   }
 
-  factory = new RepositoryFactory(db);
+  // 统一由 RepositoryFactory 自行推导 provider/dialect（通过 env 传递）
+  factory = new RepositoryFactory(db, { env: c.env });
   c.set("repos", factory);
   return factory;
 };
 
-export const ensureRepositoryFactory = (db, repositoryFactory = null) => {
+export const ensureRepositoryFactory = (db, repositoryFactory = null, env = {}) => {
   if (repositoryFactory) {
     return repositoryFactory;
   }
   if (!db) {
     throw new RepositoryError("Database connection is required to create RepositoryFactory");
   }
-  return new RepositoryFactory(db);
+  return new RepositoryFactory(db, { env });
 };
 
 // Optional middleware to ensure RepositoryFactory is initialized per request.

@@ -526,6 +526,9 @@
   width: 20px;
   height: 20px;
   display: block;
+  line-height: 20px;
+  text-align: center;
+  font-size: 18px;
 }
 
 .pswp__media.pswp__media--live .pswp__live-toggle-icon--pause {

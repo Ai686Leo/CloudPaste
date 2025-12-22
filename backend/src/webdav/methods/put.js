@@ -72,7 +72,7 @@ export async function handlePut(c, path, userId, userType, db) {
 
     // 创建挂载管理器和文件系统
     const repositoryFactory = c.get("repos");
-    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
+    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory, { env: c.env });
     const fileSystem = new FileSystem(mountManager);
 
     // 在PUT时自动创建父目录

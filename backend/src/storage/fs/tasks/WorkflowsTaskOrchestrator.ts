@@ -17,6 +17,7 @@ import type {
 import { TaskStatus } from './types.js';
 import type {
   JobFilter,
+  JobListResult,
   TaskStats,
 } from './types.js';
 
@@ -63,7 +64,16 @@ export class WorkflowsTaskOrchestrator implements TaskOrchestratorAdapter {
 
   /** 创建作业 - 验证任务类型 → 生成 ID → 创建 Workflow 实例 → 插入数据库 */
   async createJob(params: CreateJobParams): Promise<JobDescriptor> {
-    const { taskType, payload, userId, userType } = params;
+    const {
+      taskType,
+      payload,
+      userId,
+      userType,
+      triggerType: triggerTypeRaw,
+      triggerRef: triggerRefRaw,
+    } = params;
+    const triggerType = triggerTypeRaw ?? 'manual';
+    const triggerRef = triggerRefRaw ?? null;
 
     const handler = taskRegistry.getHandler(taskType);
     await handler.validate(payload);
@@ -80,6 +90,8 @@ export class WorkflowsTaskOrchestrator implements TaskOrchestratorAdapter {
         payload,
         userId,
         userType,
+        triggerType,
+        triggerRef,
       },
     });
 
@@ -87,9 +99,10 @@ export class WorkflowsTaskOrchestrator implements TaskOrchestratorAdapter {
       INSERT INTO ${DbTables.TASKS} (
         task_id, task_type, status, payload, stats,
         user_id, user_type, workflow_instance_id,
+        trigger_type, trigger_ref,
         created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       jobId,
       taskType,
@@ -99,6 +112,8 @@ export class WorkflowsTaskOrchestrator implements TaskOrchestratorAdapter {
       userId,
       userType,
       jobId,
+      triggerType,
+      triggerRef,
       now,
       now
     ).run();
@@ -114,6 +129,8 @@ export class WorkflowsTaskOrchestrator implements TaskOrchestratorAdapter {
       stats,
       createdAt: new Date(now),
       updatedAt: new Date(now),
+      triggerType,
+      triggerRef,
     };
   }
 
@@ -210,6 +227,8 @@ export class WorkflowsTaskOrchestrator implements TaskOrchestratorAdapter {
         payload,
         userId: taskRecord.user_id as string,
         keyName: taskRecord.key_name as string | null,
+        triggerType: (taskRecord as any).trigger_type as string,
+        triggerRef: ((taskRecord as any).trigger_ref as string) ?? null,
       };
     }
 
@@ -226,6 +245,8 @@ export class WorkflowsTaskOrchestrator implements TaskOrchestratorAdapter {
       payload,
       userId: taskRecord.user_id as string,
       keyName: taskRecord.key_name as string | null,
+      triggerType: (taskRecord as any).trigger_type as string,
+      triggerRef: ((taskRecord as any).trigger_ref as string) ?? null,
     };
   }
 
@@ -252,33 +273,47 @@ export class WorkflowsTaskOrchestrator implements TaskOrchestratorAdapter {
   }
 
   /** 列出作业 - 支持任务类型、状态、用户过滤 + 分页 */
-  async listJobs(filter?: JobFilter): Promise<JobDescriptor[]> {
+  async listJobs(filter?: JobFilter): Promise<JobListResult> {
+    let whereClause = 'WHERE 1=1';
+    const baseParams: (string | number)[] = [];
+
+    if (filter?.taskType) {
+      whereClause += ' AND t.task_type = ?';
+      baseParams.push(filter.taskType);
+    } else if (filter?.taskTypes && filter.taskTypes.length > 0) {
+      const placeholders = filter.taskTypes.map(() => '?').join(', ');
+      whereClause += ` AND t.task_type IN (${placeholders})`;
+      baseParams.push(...filter.taskTypes);
+    }
+
+    if (filter?.status) {
+      whereClause += ' AND t.status = ?';
+      baseParams.push(filter.status);
+    }
+
+    if (filter?.userId) {
+      whereClause += ' AND t.user_id = ?';
+      baseParams.push(filter.userId);
+    }
+
+    const countQuery = `
+      SELECT COUNT(1) as total
+      FROM ${DbTables.TASKS} t
+      ${whereClause}
+    `;
+    const countResult = await this.env.DB.prepare(countQuery).bind(...baseParams).first();
+    const total = Number((countResult as any)?.total || 0);
+
     let query = `
       SELECT
         t.*,
         ak.name as key_name
       FROM ${DbTables.TASKS} t
       LEFT JOIN ${DbTables.API_KEYS} ak ON t.user_id = ak.id
-      WHERE 1=1
+      ${whereClause}
+      ORDER BY t.created_at DESC
     `;
-    const params: (string | number)[] = [];
-
-    if (filter?.taskType) {
-      query += ' AND t.task_type = ?';
-      params.push(filter.taskType);
-    }
-
-    if (filter?.status) {
-      query += ' AND t.status = ?';
-      params.push(filter.status);
-    }
-
-    if (filter?.userId) {
-      query += ' AND t.user_id = ?';
-      params.push(filter.userId);
-    }
-
-    query += ' ORDER BY t.created_at DESC';
+    const params = [...baseParams];
 
     if (filter?.limit) {
       query += ' LIMIT ?';
@@ -291,8 +326,7 @@ export class WorkflowsTaskOrchestrator implements TaskOrchestratorAdapter {
     }
 
     const results = await this.env.DB.prepare(query).bind(...params).all();
-
-    return results.results.map((row: any) => ({
+    const jobs = results.results.map((row: any) => ({
       jobId: row.task_id,
       taskType: row.task_type,
       status: row.status,
@@ -304,7 +338,11 @@ export class WorkflowsTaskOrchestrator implements TaskOrchestratorAdapter {
       payload: JSON.parse(row.payload),
       userId: row.user_id,
       keyName: row.key_name || null,
+      triggerType: row.trigger_type || 'manual',
+      triggerRef: row.trigger_ref ?? null,
     }));
+
+    return { jobs, total };
   }
 
   /** 删除作业 - 仅终态作业，运行中需先取消 */
@@ -353,6 +391,25 @@ export class WorkflowsTaskOrchestrator implements TaskOrchestratorAdapter {
       case 'queued':
         return TaskStatus.PENDING;
       case 'running':
+        return TaskStatus.RUNNING;
+      // Workflows 的 status() 可能返回更多“非终态”状态：
+      // - waiting: 休眠/等待事件（不消耗 CPU，但实例仍在生命周期中）
+      // - paused: 显式暂停
+      // - waitingForPause: 正在收尾以进入 paused
+      // - unknown: 平台无法判定（文档列出该值）
+      //
+      // 本项目内部 TaskStatus 仅建模 pending/running/...，没有 paused/waiting。
+      // 因此这里做“语义折叠”：
+      // - waiting/paused/unknown → pending（非终态、非执行态）
+      // - waitingForPause → running（仍可能在执行当前工作单元）
+      //
+      // 注意：是否允许“取消/终止”不应依赖 UI 文案，而应以终态判定为准；
+      // 这里的映射主要用于：列表展示 + allowedActions 的粗粒度判断。
+      case 'waiting':
+      case 'paused':
+      case 'unknown':
+        return TaskStatus.PENDING;
+      case 'waitingForPause':
         return TaskStatus.RUNNING;
       case 'complete':
         return TaskStatus.COMPLETED;

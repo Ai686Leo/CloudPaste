@@ -20,7 +20,7 @@ export type {
   CopyTaskPayload,
   RetryPolicy,
 } from './types.js';
-export { TaskType, TaskStatus } from './types.js';
+export { TaskStatus } from './types.js';
 
 /** 运行时环境接口 */
 export interface RuntimeEnv {

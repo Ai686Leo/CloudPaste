@@ -3,6 +3,7 @@
 // 该组件负责显示文档的标题结构，并允许用户通过拖动分隔线调整大纲与内容的比例
 import { ref, computed, onMounted, onBeforeUnmount } from "vue";
 import { debugLog } from "./PasteViewUtils";
+import { IconChevronDown } from "@/components/icons";
 
 // 定义组件接收的属性
 const props = defineProps({
@@ -218,9 +219,7 @@ onBeforeUnmount(() => {
         <h3 class="text-lg font-medium" :class="[darkMode ? 'text-white' : 'text-gray-900']">文档大纲</h3>
         <!-- 手机端展开/收起按钮 -->
         <button class="md:hidden p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700" :class="darkMode ? 'text-gray-300' : 'text-gray-600'">
-          <svg class="w-5 h-5 transform transition-transform duration-300" :class="{ 'rotate-180': isOutlineExpanded }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-          </svg>
+          <IconChevronDown size="md" class="w-5 h-5 transform transition-transform duration-300" :class="{ 'rotate-180': isOutlineExpanded }" />
         </button>
       </div>
 

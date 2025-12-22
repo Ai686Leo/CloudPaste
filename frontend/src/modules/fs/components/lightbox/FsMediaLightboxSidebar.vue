@@ -2,7 +2,7 @@
   <div class="p-lightbox__sidebar is-dark">
     <div class="p-sidebar__toolbar">
       <button class="p-sidebar__close" type="button" aria-label="关闭侧栏" @click="$emit('close')">
-        <i-mdi-chevron-left class="p-sidebar__close-icon" aria-hidden="true" />
+        <IconMdiChevronLeft size="sm" class="p-sidebar__close-icon" aria-hidden="true" />
       </button>
       <div class="p-sidebar__title">信息</div>
     </div>
@@ -20,28 +20,28 @@
           <div class="metadata__divider" />
 
           <div class="metadata__row">
-            <i-mdi-clock-outline class="metadata__row-icon" aria-hidden="true" />
+            <IconMdiClockOutline size="sm" class="metadata__row-icon" aria-hidden="true" />
             <div class="metadata__row-body">
               <div class="meta-value" title="修改时间">{{ formattedModified }}</div>
             </div>
           </div>
 
           <div class="metadata__row">
-            <i-mdi-file-outline class="metadata__row-icon" aria-hidden="true" />
+            <IconMdiFileOutline size="sm" class="metadata__row-icon" aria-hidden="true" />
             <div class="metadata__row-body">
               <div class="meta-value" title="类型">{{ formattedType }}</div>
             </div>
           </div>
 
           <div class="metadata__row">
-            <i-mdi-database-outline class="metadata__row-icon" aria-hidden="true" />
+            <IconMdiDatabaseOutline size="sm" class="metadata__row-icon" aria-hidden="true" />
             <div class="metadata__row-body">
               <div class="meta-value" title="大小">{{ formattedSize }}</div>
             </div>
           </div>
 
           <div class="metadata__row">
-            <i-mdi-aspect-ratio class="metadata__row-icon" aria-hidden="true" />
+            <IconMdiAspectRatio size="sm" class="metadata__row-icon" aria-hidden="true" />
             <div class="metadata__row-body">
               <div class="meta-value" title="尺寸">{{ formattedDimensions }}</div>
             </div>
@@ -63,15 +63,15 @@
 
             <div v-else>
               <div v-for="row in exifRows" :key="row.key" class="metadata__row">
-                <i-mdi-calendar v-if="row.key === 'dateTimeOriginal'" class="metadata__row-icon" aria-hidden="true" />
-                <i-mdi-map-marker-outline v-else-if="row.key === 'location'" class="metadata__row-icon" aria-hidden="true" />
-                <i-mdi-camera v-else-if="row.key === 'camera'" class="metadata__row-icon" aria-hidden="true" />
-                <i-mdi-focus-auto v-else-if="row.key === 'lensModel'" class="metadata__row-icon" aria-hidden="true" />
-                <i-mdi-ruler v-else-if="row.key === 'focalLength'" class="metadata__row-icon" aria-hidden="true" />
-                <i-mdi-camera-iris v-else-if="row.key === 'aperture'" class="metadata__row-icon" aria-hidden="true" />
-                <i-mdi-timer-outline v-else-if="row.key === 'shutter'" class="metadata__row-icon" aria-hidden="true" />
-                <i-mdi-alpha-i-circle-outline v-else-if="row.key === 'iso'" class="metadata__row-icon" aria-hidden="true" />
-                <i-mdi-information-outline v-else class="metadata__row-icon" aria-hidden="true" />
+                <IconMdiCalendar v-if="row.key === 'dateTimeOriginal'" size="sm" class="metadata__row-icon" aria-hidden="true" />
+                <IconMdiMapMarkerOutline v-else-if="row.key === 'location'" size="sm" class="metadata__row-icon" aria-hidden="true" />
+                <IconMdiCamera v-else-if="row.key === 'camera'" size="sm" class="metadata__row-icon" aria-hidden="true" />
+                <IconMdiFocusAuto v-else-if="row.key === 'lensModel'" size="sm" class="metadata__row-icon" aria-hidden="true" />
+                <IconMdiRuler v-else-if="row.key === 'focalLength'" size="sm" class="metadata__row-icon" aria-hidden="true" />
+                <IconMdiCameraIris v-else-if="row.key === 'aperture'" size="sm" class="metadata__row-icon" aria-hidden="true" />
+                <IconMdiTimerOutline v-else-if="row.key === 'shutter'" size="sm" class="metadata__row-icon" aria-hidden="true" />
+                <IconMdiAlphaICircleOutline v-else-if="row.key === 'iso'" size="sm" class="metadata__row-icon" aria-hidden="true" />
+                <IconMdiInformationOutline v-else size="sm" class="metadata__row-icon" aria-hidden="true" />
                 <div class="metadata__row-body">
                   <div class="meta-value" :title="row.label">{{ row.value }}</div>
                 </div>
@@ -91,10 +91,10 @@
               />
               <div class="metadata__map-actions">
                 <a :href="googleMapsUrl" target="_blank" rel="noopener noreferrer" class="metadata__map-link" title="在 Google Maps 中打开">
-                  <i-mdi-google-maps class="metadata__map-link-icon" aria-hidden="true" />
+                  <IconMdiGoogleMaps size="sm" class="metadata__map-link-icon" aria-hidden="true" />
                 </a>
                 <a :href="amapUrl" target="_blank" rel="noopener noreferrer" class="metadata__map-link" title="在高德地图中打开">
-                  <i-mdi-map-marker class="metadata__map-link-icon" aria-hidden="true" />
+                  <IconMdiMapMarker size="sm" class="metadata__map-link-icon" aria-hidden="true" />
                 </a>
               </div>
             </div>
@@ -103,10 +103,10 @@
               <div class="metadata__map-fallback-text">地图加载失败</div>
               <div class="metadata__map-actions">
                 <a :href="googleMapsUrl" target="_blank" rel="noopener noreferrer" class="metadata__map-link" title="在 Google Maps 中打开">
-                  <i-mdi-google-maps class="metadata__map-link-icon" aria-hidden="true" />
+                  <IconMdiGoogleMaps size="sm" class="metadata__map-link-icon" aria-hidden="true" />
                 </a>
                 <a :href="amapUrl" target="_blank" rel="noopener noreferrer" class="metadata__map-link" title="在高德地图中打开">
-                  <i-mdi-map-marker class="metadata__map-link-icon" aria-hidden="true" />
+                  <IconMdiMapMarker size="sm" class="metadata__map-link-icon" aria-hidden="true" />
                 </a>
               </div>
             </div>
@@ -125,6 +125,24 @@ import { buildExifRows, isImageLikeForExif, loadExifTagsFromArrayBufferAsync, re
 import { useFsService } from "@/modules/fs";
 import { getFileName, getMimeTypeDescription } from "@/utils/fileTypes";
 import MapEmbed from "@/components/common/MapEmbed.vue";
+import {
+  IconMdiAlphaICircleOutline,
+  IconMdiAspectRatio,
+  IconMdiCalendar,
+  IconMdiCamera,
+  IconMdiCameraIris,
+  IconMdiChevronLeft,
+  IconMdiClockOutline,
+  IconMdiDatabaseOutline,
+  IconMdiFileOutline,
+  IconMdiFocusAuto,
+  IconMdiGoogleMaps,
+  IconMdiInformationOutline,
+  IconMdiMapMarker,
+  IconMdiMapMarkerOutline,
+  IconMdiRuler,
+  IconMdiTimerOutline,
+} from "@/components/icons";
 
 const fsService = useFsService();
 
@@ -141,8 +159,8 @@ const displayName = computed(() => {
 });
 
 const formattedSize = computed(() => {
-  const bytes = props.item?.size || 0;
-  return formatFileSize(bytes);
+  const bytes = props.item?.size;
+  return typeof bytes === "number" ? formatFileSize(bytes) : "-";
 });
 
 const formattedModified = computed(() => {

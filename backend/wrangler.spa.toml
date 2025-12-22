@@ -18,6 +18,10 @@ local_protocol = "http"
 ENCRYPTION_SECRET = "default-encryption-key"
 # 管理员Token过期天数，默认7天
 ADMIN_TOKEN_EXPIRY_DAYS = "7"
+#
+# 调试开关（默认 false，不区分大小写）
+# - DEBUG_DRIVER_CACHE=true：开启驱动缓存命中日志
+# DEBUG_DRIVER_CACHE = "false"
 
 # 绑定D1数据库
 # 需要替换为实际的数据库ID
@@ -35,7 +39,6 @@ class_name = "JobWorkflow"
 
 [triggers]
 crons = ["*/5 * * * *"]
-
 
 # ==================== Static Assets 配置 ====================
 # 用于托管前端静态资源

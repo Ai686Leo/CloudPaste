@@ -117,7 +117,7 @@ export const registerFilesProtectedRoutes = (router) => {
           const { MountManager } = await import("../../storage/managers/MountManager.js");
           const { FileSystem } = await import("../../storage/fs/FileSystem.js");
 
-          const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
+          const mountManager = new MountManager(db, encryptionSecret, repositoryFactory, { env: c.env });
           const fileSystem = new FileSystem(mountManager);
 
           await fileSystem

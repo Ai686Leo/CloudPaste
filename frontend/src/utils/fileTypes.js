@@ -80,6 +80,9 @@ export const FileType = {
   DOCUMENT: 7, // 文档文件
 };
 
+// 电子书扩展名（foliate-js 支持的主流格式）
+const EBOOK_EXTENSIONS = new Set(["epub", "mobi", "azw3", "azw", "fb2", "cbz"]);
+
 /**
  * 获取文件扩展名
  * @param {string} filename - 文件名
@@ -97,6 +100,12 @@ export function getExtension(filename) {
  * @returns {string} 图标类型
  */
 export function getIconType(fileObject) {
+  const filename = fileObject?.filename || fileObject?.name || "";
+  const ext = getExtension(filename);
+  if (EBOOK_EXTENSIONS.has(ext)) {
+    return "book";
+  }
+
   const iconMap = {
     [FileType.UNKNOWN]: "file",
     [FileType.FOLDER]: "folder",
@@ -200,30 +209,30 @@ export function getArchiveType(filename) {
 
   const ext = getExtension(filename);
   const archiveTypes = {
-    zip: { name: "ZIP", icon: "📦", supported: true, description: "ZIP压缩文件" },
-    rar: { name: "RAR", icon: "📦", supported: true, description: "RAR压缩文件" },
-    "7z": { name: "7-Zip", icon: "📦", supported: true, description: "7-Zip压缩文件" },
-    tar: { name: "TAR", icon: "📦", supported: true, description: "TAR归档文件" },
-    gz: { name: "Gzip", icon: "📦", supported: true, description: "Gzip压缩文件" },
-    bz2: { name: "Bzip2", icon: "📦", supported: true, description: "Bzip2压缩文件" },
-    xz: { name: "XZ", icon: "📦", supported: true, description: "XZ压缩文件" },
-    tgz: { name: "TAR.GZ", icon: "📦", supported: true, description: "TAR + Gzip压缩文件" },
-    tbz: { name: "TAR.BZ2", icon: "📦", supported: true, description: "TAR + Bzip2压缩文件" },
-    tbz2: { name: "TAR.BZ2", icon: "📦", supported: true, description: "TAR + Bzip2压缩文件" },
-    txz: { name: "TAR.XZ", icon: "📦", supported: true, description: "TAR + XZ压缩文件" },
-    cpio: { name: "CPIO", icon: "📦", supported: true, description: "CPIO归档文件" },
-    iso: { name: "ISO", icon: "💿", supported: true, description: "ISO光盘镜像文件" },
-    cab: { name: "CAB", icon: "📦", supported: true, description: "Microsoft CAB压缩文件" },
-    xar: { name: "XAR", icon: "📦", supported: true, description: "XAR归档文件" },
-    ar: { name: "AR", icon: "📦", supported: true, description: "AR归档文件" },
-    a: { name: "AR", icon: "📦", supported: true, description: "AR归档文件" },
-    mtree: { name: "MTREE", icon: "🌳", supported: true, description: "mtree文件系统描述" },
+    zip: { name: "ZIP", icon: "IconFolderZip", supported: true, description: "ZIP压缩文件" },
+    rar: { name: "RAR", icon: "IconZipBox", supported: true, description: "RAR压缩文件" },
+    "7z": { name: "7-Zip", icon: "IconZipBoxOutline", supported: true, description: "7-Zip压缩文件" },
+    tar: { name: "TAR", icon: "IconPackageVariant", supported: true, description: "TAR归档文件" },
+    gz: { name: "Gzip", icon: "IconArchiveOutline", supported: true, description: "Gzip压缩文件" },
+    bz2: { name: "Bzip2", icon: "IconArchiveOutline", supported: true, description: "Bzip2压缩文件" },
+    xz: { name: "XZ", icon: "IconArchiveOutline", supported: true, description: "XZ压缩文件" },
+    tgz: { name: "TAR.GZ", icon: "IconPackageVariantClosed", supported: true, description: "TAR + Gzip压缩文件" },
+    tbz: { name: "TAR.BZ2", icon: "IconPackageVariantClosed", supported: true, description: "TAR + Bzip2压缩文件" },
+    tbz2: { name: "TAR.BZ2", icon: "IconPackageVariantClosed", supported: true, description: "TAR + Bzip2压缩文件" },
+    txz: { name: "TAR.XZ", icon: "IconPackageVariantClosed", supported: true, description: "TAR + XZ压缩文件" },
+    cpio: { name: "CPIO", icon: "IconArchive", supported: true, description: "CPIO归档文件" },
+    iso: { name: "ISO", icon: "IconDisc", supported: true, description: "ISO光盘镜像文件" },
+    cab: { name: "CAB", icon: "IconZipBox", supported: true, description: "Microsoft CAB压缩文件" },
+    xar: { name: "XAR", icon: "IconArchive", supported: true, description: "XAR归档文件" },
+    ar: { name: "AR", icon: "IconArchive", supported: true, description: "AR归档文件" },
+    a: { name: "AR", icon: "IconArchive", supported: true, description: "AR归档文件" },
+    mtree: { name: "MTREE", icon: "IconFileTree", supported: true, description: "mtree文件系统描述" },
   };
 
   return (
     archiveTypes[ext] || {
       name: ext.toUpperCase(),
-      icon: "📦",
+      icon: "IconArchive",
       supported: false,
       description: `${ext.toUpperCase()}压缩文件（暂不支持）`,
     }

@@ -17,16 +17,12 @@
           ]"
           :title="$t('admin.scheduledJobs.syncTask.goToRoot', '返回根目录')"
         >
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-          </svg>
+          <IconHome size="sm" aria-hidden="true" />
         </button>
 
         <!-- 路径段 -->
         <template v-for="(segment, index) in pathSegments" :key="index">
-          <svg class="w-3 h-3 flex-shrink-0" :class="darkMode ? 'text-gray-600' : 'text-gray-300'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-          </svg>
+          <IconChevronRight size="xs" class="flex-shrink-0" :class="darkMode ? 'text-gray-600' : 'text-gray-300'" aria-hidden="true" />
           <button
             @click="navigateToSegment(index)"
             class="px-1.5 py-0.5 rounded transition-colors whitespace-nowrap max-w-[100px] truncate text-xs"
@@ -51,9 +47,7 @@
           :class="darkMode ? 'hover:bg-gray-700 text-gray-400 hover:text-gray-200' : 'hover:bg-gray-100 text-gray-500 hover:text-gray-700'"
           :title="$t('admin.scheduledJobs.syncTask.goUp', '返回上级')"
         >
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-          </svg>
+          <IconBack size="sm" aria-hidden="true" />
         </button>
 
         <!-- 刷新 -->
@@ -64,9 +58,7 @@
           :class="darkMode ? 'hover:bg-gray-700 text-gray-400 hover:text-gray-200' : 'hover:bg-gray-100 text-gray-500 hover:text-gray-700'"
           :title="$t('admin.scheduledJobs.syncTask.refresh', '刷新')"
         >
-          <svg class="w-4 h-4" :class="{ 'animate-spin': loading }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-          </svg>
+          <IconRefresh size="sm" :class="{ 'animate-spin': loading }" aria-hidden="true" />
         </button>
       </div>
     </div>
@@ -79,18 +71,13 @@
     >
       <!-- 加载状态 -->
       <div v-if="loading" class="p-4 text-center" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
-        <svg class="animate-spin h-5 w-5 mx-auto mb-2" fill="none" viewBox="0 0 24 24">
-          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-        </svg>
+        <IconRefresh class="animate-spin mx-auto mb-2" aria-hidden="true" />
         {{ $t('admin.scheduledJobs.syncTask.loading', '加载中...') }}
       </div>
 
       <!-- 错误状态 -->
       <div v-else-if="error" class="p-4 text-center" :class="darkMode ? 'text-red-400' : 'text-red-600'">
-        <svg class="w-8 h-8 mx-auto mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
+        <IconInformationCircle size="xl" class="mx-auto mb-2 opacity-50" aria-hidden="true" />
         <p class="text-sm">{{ error }}</p>
         <button
           @click="loadDirectory(currentPath)"
@@ -103,9 +90,7 @@
       <!-- 空状态 -->
       <div v-else-if="items.length === 0" class="p-6 text-center" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
         <!-- 目录为空 -->
-        <svg class="w-10 h-10 mx-auto mb-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z" />
-        </svg>
+        <IconFolderOpen size="2xl" class="mx-auto mb-3 opacity-40" aria-hidden="true" />
         <p class="text-sm font-medium mb-1">{{ $t('admin.scheduledJobs.syncTask.emptyDirectory', '目录为空') }}</p>
         <p class="text-xs opacity-70">{{ $t('admin.scheduledJobs.syncTask.emptyDirectoryHint', '当前目录下没有可选内容') }}</p>
       </div>
@@ -131,6 +116,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { getDirectoryList } from '@/api/services/fsService'
 import PathTreeItem from './PathTreeItem.vue'
+import { IconBack, IconChevronRight, IconFolderOpen, IconHome, IconInformationCircle, IconRefresh } from '@/components/icons'
 
 const props = defineProps({
   modelValue: {

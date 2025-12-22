@@ -53,9 +53,7 @@
         @mouseleave="!isMobileDevice && handleMouseLeave()"
       >
         <!-- 错误图标 -->
-        <svg v-if="state.hasError" class="live-photo-viewer__badge-icon live-photo-viewer__badge-icon--error" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
-        </svg>
+        <IconExclamationSolid v-if="state.hasError" class="live-photo-viewer__badge-icon live-photo-viewer__badge-icon--error" />
         <!-- Live Photo 图标 -->
         <span v-else v-html="livePhotoBadgeIconSvg" />
         <span v-if="showBadgeText" class="live-photo-viewer__badge-text">{{ badgeText || t("livePhoto.badge") }}</span>
@@ -79,7 +77,7 @@
 
       <!-- 加载指示器 -->
       <div v-if="state.isLoading && showLoadingIndicator" class="live-photo-viewer__loading">
-        <div class="live-photo-viewer__loading-spinner" />
+        <LoadingIndicator size="xl" icon-class="text-white" />
       </div>
     </div>
   </div>
@@ -90,6 +88,8 @@ import { computed, watch, onMounted, onBeforeUnmount, ref, toRef } from "vue";
 import { useI18n } from "vue-i18n";
 import { useLivePhoto, PlaybackStyle, LivePhotoErrorType } from "./useLivePhoto.js";
 import { LIVE_PHOTO_BADGE_ICON_SVG } from "./livePhotoBadgeIconSvg.js";
+import { IconExclamationSolid } from "@/components/icons";
+import LoadingIndicator from "@/components/common/LoadingIndicator.vue";
 
 const { t } = useI18n();
 const livePhotoBadgeIconSvg = LIVE_PHOTO_BADGE_ICON_SVG;

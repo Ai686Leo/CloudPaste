@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
+import { IconChevronLeft, IconChevronRight } from "@/components/icons";
 
 const { t } = useI18n();
 
@@ -117,9 +118,7 @@ const handlePageSizeChange = (event) => {
           'flex-grow flex justify-center items-center px-2 py-1.5 xs:px-3 xs:py-2 border border-gray-300 dark:border-gray-600 text-xs xs:text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 mr-1 xs:mr-2',
         ]"
       >
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 xs:h-5 xs:w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-        </svg>
+        <IconChevronLeft class="h-4 w-4 xs:h-5 xs:w-5" />
         <span class="ml-1">{{ t("common.pagination.previousPage") }}</span>
       </button>
 
@@ -138,9 +137,7 @@ const handlePageSizeChange = (event) => {
         ]"
       >
         <span class="mr-1">{{ t("common.pagination.nextPage") }}</span>
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 xs:h-5 xs:w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-        </svg>
+        <IconChevronRight class="h-4 w-4 xs:h-5 xs:w-5" />
       </button>
     </div>
 
@@ -194,9 +191,10 @@ const handlePageSizeChange = (event) => {
             ]"
           >
             <span class="sr-only">{{ t("common.pagination.srFirstPage") }}</span>
-            <svg class="h-4 w-4 md:h-5 md:w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
-            </svg>
+            <span class="inline-flex items-center">
+              <IconChevronLeft class="h-4 w-4 md:h-5 md:w-5" />
+              <IconChevronLeft class="h-4 w-4 md:h-5 md:w-5 -ml-2" />
+            </span>
           </button>
 
           <!-- 上一页按钮 -->
@@ -209,9 +207,7 @@ const handlePageSizeChange = (event) => {
             ]"
           >
             <span class="sr-only">{{ t("common.pagination.srPreviousPage") }}</span>
-            <svg class="h-4 w-4 md:h-5 md:w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-            </svg>
+            <IconChevronLeft class="h-4 w-4 md:h-5 md:w-5" />
           </button>
 
           <!-- 页码按钮 - 动态生成 -->
@@ -251,9 +247,7 @@ const handlePageSizeChange = (event) => {
             ]"
           >
             <span class="sr-only">{{ t("common.pagination.srNextPage") }}</span>
-            <svg class="h-4 w-4 md:h-5 md:w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-            </svg>
+            <IconChevronRight class="h-4 w-4 md:h-5 md:w-5" />
           </button>
 
           <!-- 最后一页按钮 -->
@@ -266,9 +260,10 @@ const handlePageSizeChange = (event) => {
             ]"
           >
             <span class="sr-only">{{ t("common.pagination.srLastPage") }}</span>
-            <svg class="h-4 w-4 md:h-5 md:w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7" />
-            </svg>
+            <span class="inline-flex items-center">
+              <IconChevronRight class="h-4 w-4 md:h-5 md:w-5" />
+              <IconChevronRight class="h-4 w-4 md:h-5 md:w-5 -ml-2" />
+            </span>
           </button>
         </nav>
       </div>

@@ -5,14 +5,7 @@
       <div class="flex items-center gap-3">
         <!-- 文件图标 -->
         <div class="file-icon flex items-center justify-center w-12 h-12 rounded-xl bg-gray-100 dark:bg-gray-700">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" :class="iconClass" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"
-            />
-          </svg>
+          <component :is="headerIconComponent" :class="[iconClass, 'h-6 w-6']" />
         </div>
 
         <!-- 文件名和类型 -->
@@ -60,33 +53,22 @@
       >
         <div class="flex items-center gap-2 min-w-0 flex-1">
           <!-- 相机图标 -->
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-500 dark:text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
+          <IconCamera size="sm" class="text-gray-500 dark:text-gray-400 flex-shrink-0" />
           <!-- 摘要信息 -->
           <span class="text-sm text-gray-800 dark:text-gray-200 truncate">
             {{ exifData.summary.camera || '拍摄信息' }}
           </span>
           <!-- GPS 指示器 -->
           <span v-if="!exifExpanded && exifData.gpsCoords" class="flex-shrink-0">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-blue-500 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
+            <IconLocationMarker class="h-3.5 w-3.5 text-blue-500 dark:text-blue-400" />
           </span>
         </div>
         <!-- 展开/收起箭头 -->
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          class="h-4 w-4 text-gray-400 dark:text-gray-500 flex-shrink-0 transition-transform duration-200"
+        <IconChevronDown
+          size="sm"
+          class="text-gray-400 dark:text-gray-500 flex-shrink-0 transition-transform duration-200"
           :class="{ 'rotate-180': exifExpanded }"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-        >
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-        </svg>
+        />
       </button>
 
       <!-- 可折叠内容区域 -->
@@ -111,26 +93,21 @@
             <div v-if="exifData.summary.date || exifData.gpsCoords" class="flex items-center gap-2 flex-wrap text-xs text-gray-500 dark:text-gray-400">
               <!-- 时间 -->
               <div v-if="exifData.summary.date" class="flex items-center gap-1">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
+                <IconClock class="h-3.5 w-3.5" />
                 <span>{{ exifData.summary.date }}</span>
               </div>
               <!-- 分隔 -->
               <span v-if="exifData.summary.date && exifData.gpsCoords" class="text-gray-300 dark:text-gray-600">|</span>
               <!-- 位置 -->
               <div v-if="exifData.gpsCoords" class="flex items-center gap-1">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
+                <IconLocationMarker class="h-3.5 w-3.5" />
                 <span class="font-mono">{{ formattedGps }}</span>
                 <!-- 地图链接 -->
                 <a :href="googleMapsUrl" target="_blank" rel="noopener noreferrer" class="ml-1 text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300" title="Google Maps" @click.stop>
-                  <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                  <IconExternalLink size="sm" class="w-3.5 h-3.5" />
                 </a>
                 <a :href="amapUrl" target="_blank" rel="noopener noreferrer" class="text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300" title="高德地图" @click.stop>
-                  <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                  <IconExternalLink size="sm" class="w-3.5 h-3.5" />
                 </a>
               </div>
             </div>
@@ -161,9 +138,7 @@
       <!-- 创建时间 -->
       <div class="metadata-item p-3 rounded-lg bg-gray-100 dark:bg-gray-700">
         <div class="flex items-center">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-gray-500 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-          </svg>
+          <IconCalendar size="md" class="mr-2 text-gray-500 dark:text-gray-400" />
           <span class="text-sm font-medium text-gray-600 dark:text-gray-200">{{ t("fileView.fileInfo.uploadTime") }}</span>
         </div>
         <p class="mt-1 text-sm pl-7 text-gray-800 dark:text-white">{{ formattedCreatedAt }}</p>
@@ -172,15 +147,7 @@
       <!-- 访问次数 -->
       <div class="metadata-item p-3 rounded-lg bg-gray-100 dark:bg-gray-700">
         <div class="flex items-center">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-gray-500 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-            />
-          </svg>
+          <IconEye size="md" class="mr-2 text-gray-500 dark:text-gray-400" />
           <span class="text-sm font-medium text-gray-600 dark:text-gray-200">{{ t("fileView.fileInfo.accessCount") }}</span>
         </div>
         <p class="mt-1 text-sm pl-7 text-gray-800 dark:text-white">
@@ -192,9 +159,7 @@
       <!-- 过期时间 -->
       <div v-if="fileInfo.expires_at" class="metadata-item p-3 rounded-lg bg-gray-100 dark:bg-gray-700">
         <div class="flex items-center">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-gray-500 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
+          <IconClock size="md" class="mr-2 text-gray-500 dark:text-gray-400" />
           <span class="text-sm font-medium text-gray-600 dark:text-gray-200">{{ t("fileView.fileInfo.expiresAt") }}</span>
         </div>
         <p class="mt-1 text-sm pl-7 text-gray-800 dark:text-white">{{ formattedExpiresAt }}</p>
@@ -203,14 +168,7 @@
       <!-- 访问模式 -->
       <div class="metadata-item p-3 rounded-lg bg-gray-100 dark:bg-gray-700">
         <div class="flex items-center">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-gray-500 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"
-            />
-          </svg>
+          <IconShieldCheck size="md" class="mr-2 text-gray-500 dark:text-gray-400" />
           <span class="text-sm font-medium text-gray-600 dark:text-gray-200">{{ t("fileView.fileInfo.accessMode") }}</span>
         </div>
         <p class="mt-1 text-sm pl-7 text-gray-800 dark:text-white">
@@ -223,14 +181,7 @@
       <!-- 文件短链接 -->
       <div class="metadata-item p-3 rounded-lg bg-gray-100 dark:bg-gray-700">
         <div class="flex items-center">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-gray-500 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
-            />
-          </svg>
+          <IconLink size="md" class="mr-2 text-gray-500 dark:text-gray-400" />
           <span class="text-sm font-medium text-gray-600 dark:text-gray-200">{{ t("fileView.fileInfo.fileLink") }}</span>
         </div>
         <div class="mt-1 pl-7 flex items-center relative">
@@ -243,14 +194,7 @@
             class="ml-2 p-1 rounded hover:bg-opacity-80 transition-colors bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-500"
             :title="t('fileView.fileInfo.copyLink')"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"
-              />
-            </svg>
+            <IconCopy size="sm" class="h-4 w-4" />
           </button>
 
           <!-- 复制成功提示 -->
@@ -259,9 +203,7 @@
             class="absolute right-0 -top-10 px-3 py-2 rounded-md shadow-md text-sm transition-opacity duration-300 bg-white dark:bg-gray-700 text-green-600 dark:text-green-400 border border-gray-200 dark:border-gray-600"
           >
             <div class="flex items-center">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-              </svg>
+              <IconCheck size="sm" class="h-4 w-4 mr-1" />
               {{ t("fileView.fileInfo.linkCopied") }}
             </div>
           </div>
@@ -272,18 +214,19 @@
 </template>
 
 <script setup>
-import { computed, ref, defineProps, onMounted, watch, onUnmounted } from "vue";
+import { computed, ref, onMounted, watch, onUnmounted } from "vue";
 import { useRoute } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { getFilePassword as resolveFilePassword } from "@/utils/filePasswordUtils.js";
 import { useFileshareService } from "@/modules/fileshare/fileshareService.js";
 import { isImageLikeForExif, loadExifTagsFromArrayBufferAsync, buildExifRows, resolveGpsCoordinates } from "@/utils/exifReaderUtils.js";
+import { IconBookOpen, IconCalendar, IconCamera, IconCheck, IconChevronDown, IconClock, IconCopy, IconDocumentText, IconExternalLink, IconEye, IconLink, IconLocationMarker, IconShieldCheck } from "@/components/icons";
 
 const { t } = useI18n();
 const fileshareService = useFileshareService();
 const route = useRoute();
-import { getPreviewComponent, formatFileSize, FileType, getIconType } from "@/utils/fileTypes.js";
-import { getPreviewModeFromFilename, PREVIEW_MODES } from "@/utils/textUtils.js";
+import { formatFileSize, getIconType } from "@/utils/fileTypes.js";
+import { resolvePreviewSelection, PREVIEW_KEYS } from "@/composables/index.js";
 import { formatDateTime } from "@/utils/timeUtils.js";
 import { copyToClipboard as clipboardCopy } from "@/utils/clipboard";
 
@@ -292,12 +235,11 @@ import ImagePreview from "./previews/ImagePreview.vue";
 import VideoPreview from "./previews/VideoPreview.vue";
 import AudioPreview from "./previews/AudioPreview.vue";
 import PdfPreview from "./previews/PdfPreview.vue";
+import EpubPreview from "./previews/EpubPreview.vue";
 import TextPreview from "./previews/TextPreview.vue";
-import CodePreview from "./previews/CodePreview.vue";
-import MarkdownPreview from "./previews/MarkdownPreview.vue";
-import HtmlPreview from "./previews/HtmlPreview.vue";
 import OfficeSharePreview from "./previews/OfficeSharePreview.vue";
 import GenericPreview from "./previews/GenericPreview.vue";
+import IframePreview from "@/components/common/IframePreview.vue";
 import MapEmbed from "@/components/common/MapEmbed.vue";
 
 const props = defineProps({
@@ -341,9 +283,13 @@ const processedPreviewUrl = computed(() => {
   return fileshareService.getPermanentPreviewUrl(props.fileInfo) || "";
 });
 
+const resolvedPreview = computed(() => resolvePreviewSelection({ file: props.fileInfo }));
+
+const previewKey = computed(() => resolvedPreview.value.key);
+
 // 格式化的文件大小
 const formattedSize = computed(() => {
-  return formatFileSize(props.fileInfo.size || 0);
+  return typeof props.fileInfo.size === "number" ? formatFileSize(props.fileInfo.size) : "-";
 });
 
 // 格式化的MIME类型
@@ -363,27 +309,13 @@ const formattedExpiresAt = computed(() => {
 
 // 文件信息（直接使用后端type字段）
 
-// 文件类型判断计算属性 - 遵循 usePreviewRenderers.js 的标准模式
-const isOfficeFile = computed(() => props.fileInfo.type === FileType.OFFICE);
-const isText = computed(() => props.fileInfo.type === FileType.TEXT);
-const isImage = computed(() => props.fileInfo.type === FileType.IMAGE);
-const isVideo = computed(() => props.fileInfo.type === FileType.VIDEO);
-const isAudio = computed(() => props.fileInfo.type === FileType.AUDIO);
-
-// 文本文件的细分类型判断 - 使用标准化的工具类函数
-const textPreviewMode = computed(() => {
-  if (!isText.value) return null;
-  return getPreviewModeFromFilename(props.fileInfo.filename || "");
-});
-
-const isCode = computed(() => textPreviewMode.value === PREVIEW_MODES.CODE);
-const isMarkdown = computed(() => textPreviewMode.value === PREVIEW_MODES.MARKDOWN);
-const isHtml = computed(() => textPreviewMode.value === PREVIEW_MODES.HTML);
-
-// PDF文件判断
-const isPdf = computed(() => {
-  return props.fileInfo.type === FileType.DOCUMENT;
-});
+const isOfficeFile = computed(() => previewKey.value === PREVIEW_KEYS.OFFICE);
+const isImage = computed(() => previewKey.value === PREVIEW_KEYS.IMAGE);
+const isVideo = computed(() => previewKey.value === PREVIEW_KEYS.VIDEO);
+const isAudio = computed(() => previewKey.value === PREVIEW_KEYS.AUDIO);
+const isPdf = computed(() => previewKey.value === PREVIEW_KEYS.PDF);
+const isEpub = computed(() => previewKey.value === PREVIEW_KEYS.EPUB);
+const isText = computed(() => previewKey.value === PREVIEW_KEYS.TEXT);
 
 // 文件图标类名 - 使用标准的 getIconType 函数
 const iconClass = computed(() => {
@@ -395,80 +327,47 @@ const iconClass = computed(() => {
     audio: "text-blue-500",
     text: "text-yellow-500",
     document: "text-red-500",
+    book: "text-amber-500",
     folder: "text-blue-500",
     file: "text-gray-500",
   };
   return colorMap[iconType] || "text-gray-500";
 });
 
-const currentPreviewComponent = computed(() => {
-  const componentName = getPreviewComponent(props.fileInfo);
+// 分享页头部图标：电子书用“书本”，其余先保持原来的“文档”图标（避免一次性改太多 UI）
+const headerIconComponent = computed(() => {
+  const iconType = getIconType(props.fileInfo);
+  if (iconType === "book") return IconBookOpen;
+  return IconDocumentText;
+});
 
-  // 组件映射
+const currentPreviewComponent = computed(() => {
   const componentMap = {
-    ImagePreview,
-    VideoPreview,
-    AudioPreview,
-    PdfPreview,
-    CodePreview,
-    MarkdownPreview,
-    HtmlPreview,
-    TextPreview,
-    OfficeSharePreview,
-    GenericPreview,
+    [PREVIEW_KEYS.IMAGE]: ImagePreview,
+    [PREVIEW_KEYS.VIDEO]: VideoPreview,
+    [PREVIEW_KEYS.AUDIO]: AudioPreview,
+    [PREVIEW_KEYS.PDF]: PdfPreview,
+    [PREVIEW_KEYS.EPUB]: EpubPreview,
+    [PREVIEW_KEYS.TEXT]: TextPreview,
+    [PREVIEW_KEYS.OFFICE]: OfficeSharePreview,
+    [PREVIEW_KEYS.IFRAME]: IframePreview,
+    [PREVIEW_KEYS.ARCHIVE]: GenericPreview,
+    [PREVIEW_KEYS.DOWNLOAD]: GenericPreview,
   };
 
-  return componentMap[componentName] || GenericPreview;
+  return componentMap[previewKey.value] || GenericPreview;
 });
 
 // 是否应该显示预览
 const shouldShowPreview = computed(() => {
-  // 文本类预览不依赖 processedPreviewUrl（直链能力），只要识别为文本类就应显示并走 contentUrl
-  if (isText.value || isCode.value || isMarkdown.value || isHtml.value) {
+  // 文本预览不依赖 processedPreviewUrl（直链能力），只要识别为文本就应显示并走 contentUrl
+  if (isText.value) {
     return true;
   }
   return Boolean(processedPreviewUrl.value) || isOfficeFile.value;
 });
 
 // 注意：预览能力检查现在通过 shouldShowPreview 计算属性处理
-
-// 获取代码文件的语言类型
-const getCodeLanguage = computed(() => {
-  if (!props.fileInfo.filename) return t("fileView.preview.code.title");
-
-  const extension = props.fileInfo.filename.split(".").pop().toLowerCase();
-  const languageMap = {
-    // 编程语言
-    js: "JavaScript",
-    ts: "TypeScript",
-    py: "Python",
-    java: "Java",
-    c: "C",
-    cpp: "C++",
-    cs: "C#",
-    go: "Go",
-    php: "PHP",
-    rb: "Ruby",
-    swift: "Swift",
-    kt: "Kotlin",
-    rs: "Rust",
-    sh: "Shell",
-    sql: "SQL",
-    xml: "XML",
-    json: "JSON",
-    yaml: "YAML",
-    toml: "TOML",
-    // UI/前端
-    css: "CSS",
-    scss: "SCSS",
-    less: "LESS",
-    vue: "Vue",
-    jsx: "JSX",
-    tsx: "TSX",
-  };
-
-  return languageMap[extension] || t("fileView.preview.code.title");
-});
 
 
 // 动态组件属性配置
@@ -488,49 +387,49 @@ const previewComponentProps = computed(() => {
     ? fileshareService.getPermanentContentUrl({ ...props.fileInfo, slug: effectiveSlug })
     : "";
 
-  // 所有“文本类预览”组件仅接收 contentUrl，由 gateway / LinkService 统一决定直链或代理
-  if (isText.value || isCode.value) {
+  // 文本预览统一使用同一个组件：组件内部提供“文本/代码/Markdown/HTML”切换
+  if (isText.value) {
     return {
       ...baseProps,
       contentUrl: effectiveContentUrl,
-      title: isCode.value ? t("fileView.preview.code.title") : t("fileView.preview.text.title"),
-      language: isCode.value ? getCodeLanguage.value : "",
-      loadingText: isCode.value ? t("fileView.preview.code.loading") : t("fileView.preview.text.loading"),
       darkMode: props.darkMode,
+      loadingText: t("fileView.preview.text.loading"),
     };
   }
 
-  if (isMarkdown.value) {
+  if (previewKey.value === PREVIEW_KEYS.IFRAME) {
     return {
-      ...baseProps,
-      contentUrl: effectiveContentUrl,
+      providers: resolvedPreview.value.providers || {},
       darkMode: props.darkMode,
-    };
-  }
-
-  if (isHtml.value) {
-    return {
-      ...baseProps,
-      contentUrl: effectiveContentUrl,
-      darkMode: props.darkMode,
+      loadingText: t("fileView.preview.loading"),
+      errorText: t("fileView.preview.error"),
     };
   }
 
   // PDF文件特殊处理：支持 DocumentApp 多渠道（如 pdfjs / 原生浏览器）
   if (isPdf.value) {
-    const preview = props.fileInfo.documentPreview || null;
-    const providers = (preview && preview.providers) || {};
+  const providers = resolvedPreview.value.providers || {};
+  return {
+    ...baseProps,
+    previewUrl,
+    providers,
+    nativeUrl: previewUrl,
+  };
+  }
+
+  // EPUB：支持 native（foliate-js 本地渲染）+ 外部 iframe 预览器
+  if (isEpub.value) {
     return {
-      ...baseProps,
+      providers: resolvedPreview.value.providers || {},
       previewUrl,
-      providers,
       nativeUrl: previewUrl,
+      darkMode: props.darkMode,
     };
   }
 
   if (isOfficeFile.value) {
     return {
-      providers: props.fileInfo.documentPreview?.providers || {},
+      providers: resolvedPreview.value.providers || {},
       filename: props.fileInfo.filename,
       downloadUrl: fileshareService.getPermanentDownloadUrl(props.fileInfo),
       contentUrl: effectiveContentUrl,

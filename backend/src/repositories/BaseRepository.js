@@ -5,14 +5,31 @@
  */
 
 import { ValidationError } from "../http/errors.js";
+import { getDialect } from "../db/dialects/index.js";
 
 export class BaseRepository {
   /**
    * 构造函数
-   * @param {D1Database} db - D1数据库实例
+   * @param {D1Database} db - 数据库实例（D1/SQLiteAdapter/未来可扩展）
+   * @param {object} [dialect] - 数据库方言对象（用于多数据库扩展）
    */
-  constructor(db) {
+  constructor(db, dialect = null) {
     this.db = db;
+    // KISS：dialect 必须可用，否则默认 sqlite（当前项目主运行形态）
+    this.dialect = dialect || getDialect("sqlite");
+  }
+
+  /**
+   * 构建“插入忽略冲突”的 SQL
+   * - 用于替代散落的 INSERT OR IGNORE / INSERT IGNORE / ON CONFLICT DO NOTHING
+   * @param {string} table
+   * @param {string[]} columns
+   */
+  _buildInsertIgnoreSql(table, columns) {
+    if (!this.dialect?.buildInsertIgnoreSql) {
+      throw new ValidationError("当前数据库方言未实现 buildInsertIgnoreSql");
+    }
+    return this.dialect.buildInsertIgnoreSql({ table, columns });
   }
 
   /**

@@ -16,6 +16,8 @@ import {
   getScheduledJobsHourlyAnalytics,
 } from "../services/scheduledJobRunService.js";
 import { scheduledTaskRegistry } from "../scheduled/ScheduledTaskRegistry.js";
+import { isCloudflareWorkerEnvironment } from "../utils/environmentUtils.js";
+import { computeSchedulerTickerNextTick, getSchedulerTickState } from "../services/schedulerTickerStateService.js";
 
 // 调度任务相关路由（仅 Docker/Node 环境使用 + 管理员配置）
 const scheduledRoutes = new Hono();
@@ -188,6 +190,79 @@ scheduledRoutes.get("/api/admin/scheduled/analytics", requireAdmin, async (c) =>
   });
 
   return jsonOk(c, analytics, "获取定时任务执行统计成功");
+});
+
+// 获取“平台触发器 tick”的状态（管理员）
+// - 这个 tick 是 Cloudflare Cron Trigger 或 Docker node-schedule 触发 scheduled 扫描的“外部触发器”
+// - 管理面板用它来显示：cron 规则 + 下次触发倒计时 + 上次触发时间
+scheduledRoutes.get("/api/admin/scheduled/ticker", requireAdmin, async (c) => {
+  const nowIso = new Date().toISOString();
+  const nowMs = Date.now();
+
+  // 当前运行环境与“本地配置 cron”
+  // Docker/Node：cron 通过环境变量 SCHEDULED_TICK_CRON 配置（默认每分钟一次）
+  // Workers：使用“真实触发时记录的 lastCron”
+  const runtime = isCloudflareWorkerEnvironment() ? "cloudflare" : "docker";
+  const processEnv =
+    typeof process !== "undefined" && process?.env ? process.env : {};
+  const configuredCronRaw =
+    runtime === "docker" ? processEnv.SCHEDULED_TICK_CRON || null : null;
+  const configuredCron =
+    typeof configuredCronRaw === "string" && configuredCronRaw.trim()
+      ? configuredCronRaw.trim()
+      : runtime === "docker"
+        ? "*/1 * * * *"
+        : null;
+
+  const cronSource =
+    typeof configuredCronRaw === "string" && configuredCronRaw.trim()
+      ? "env"
+      : runtime === "docker"
+        ? "default"
+        : "missing";
+
+  const tickState = await getSchedulerTickState(c.env.DB);
+  const observedCron = tickState.lastCron || null;
+  // 1) lastCron（来自“真实触发”的 cron）
+  // 2) Docker 环境回退到 configuredCron（因为 Docker 的触发器就是靠它配置的）
+  // 3) Workers 环境没有 lastCron 前，无法计算 next（只能等待首次真实触发）
+  const activeCron = observedCron || (runtime === "docker" ? configuredCron : null);
+
+  const lastTickMs = tickState.lastMs;
+  const lastTickAt = lastTickMs ? new Date(lastTickMs).toISOString() : null;
+  const nextTick = computeSchedulerTickerNextTick({ activeCron, nowIso, lastTickMs });
+
+  return jsonOk(
+    c,
+    {
+      now: nowIso,
+      nowMs,
+      runtime,
+      cron: {
+        configured: configuredCron,
+        source: cronSource,
+        active: activeCron,
+        lastSeen: observedCron,
+      },
+      lastTick: {
+        ms: lastTickMs,
+        at: lastTickAt,
+        source: lastTickMs ? "system_settings" : null,
+      },
+      nextTick: {
+        at: nextTick.at,
+        scheduledAt: nextTick.scheduledAt,
+        estimatedAt: nextTick.estimatedAt,
+        intervalSec: nextTick.intervalSec,
+        cronParseError: nextTick.cronParseError,
+      },
+      note:
+        runtime === "cloudflare" && !observedCron
+          ? "尚未观察到平台触发器的首次真实触发：暂时无法计算预计下次触发时间；首次触发后会自动显示。"
+          : "提示：at 优先按“上次真实触发 + 间隔”估算（可能包含延迟）；scheduledAt 是 cron 的计划时间（通常是整分/整 5 分钟）。到点后可点右下角刷新校准。",
+    },
+    "获取平台触发器状态成功",
+  );
 });
 
 // 立即执行调度作业（管理员）

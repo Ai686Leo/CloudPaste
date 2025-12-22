@@ -19,21 +19,25 @@ const extractSearchParams = (queryParams) => {
   const scope = queryParams.scope || "global";
   const mountId = queryParams.mount_id || "";
   const path = queryParams.path || "";
+  const pathToken = queryParams.path_token || "";
+  const pathTokens = queryParams.path_tokens || "";
   const limit = parseInt(queryParams.limit) || 50;
-  const offset = parseInt(queryParams.offset) || 0;
+  const cursor = queryParams.cursor || "";
 
   return {
     query,
     scope,
     mountId,
     path,
+    pathToken,
+    pathTokens,
     limit: Math.min(limit, 200),
-    offset: Math.max(offset, 0),
+    cursor,
   };
 };
 
 export const registerSearchShareRoutes = (router, helpers) => {
-  const { getServiceParams, getAccessibleMounts = async () => null } = helpers;
+  const { getServiceParams, getAccessibleMounts = async () => null, verifyPathPasswordToken } = helpers;
 
   router.post(
     "/api/fs/create-share",
@@ -68,14 +72,25 @@ export const registerSearchShareRoutes = (router, helpers) => {
     const userInfo = c.get("userInfo");
     const { userIdOrInfo, userType } = getServiceParams(userInfo);
 
-    if (!searchParams.query || searchParams.query.trim().length < 2) {
-      throw new ValidationError("搜索查询至少需要2个字符");
+    if (!searchParams.query || searchParams.query.trim().length < 3) {
+      throw new ValidationError("搜索查询至少需要3个字符");
     }
 
-    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
-    const fileSystem = new FileSystem(mountManager);
+    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory, { env: c.env });
+    const fileSystem = new FileSystem(mountManager, c.env);
     const accessibleMounts = await getAccessibleMounts(db, userIdOrInfo, userType);
-    const result = await fileSystem.searchFiles(searchParams.query, searchParams, userIdOrInfo, userType, accessibleMounts);
+    const pathToken = c.req.header("x-fs-path-token") || searchParams.pathToken || null;
+    const rawTokens = c.req.header("x-fs-path-tokens") || searchParams.pathTokens || "";
+    const pathTokens = String(rawTokens || "")
+      .split(",")
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
+    const result = await fileSystem.searchFiles(searchParams.query, searchParams, userIdOrInfo, userType, accessibleMounts, {
+      pathToken,
+      pathTokens,
+      verifyPathPasswordToken,
+      encryptionSecret,
+    });
 
     return jsonOk(c, result, "搜索完成");
   });

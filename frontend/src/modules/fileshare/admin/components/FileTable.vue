@@ -45,18 +45,14 @@
                     class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full relative transition-colors"
                     title="复制分享链接"
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                    </svg>
+                    <IconCopy class="h-4 w-4" />
                   </button>
                   <button
                     @click.stop="emit('generate-qr', file)"
                     class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
                     title="二维码"
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
-                    </svg>
+                    <IconQrCode class="h-4 w-4" />
                   </button>
                 </div>
                 <span
@@ -64,20 +60,14 @@
                   :class="['ml-2', passwordBadgeBaseClass]"
                   title="密码保护"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" class="h-3.5 w-3.5" :class="passwordIconClass">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 11V7a5 5 0 0110 0v4" />
-                    <rect stroke-linecap="round" stroke-linejoin="round" stroke-width="2" x="6" y="11" width="12" height="9" rx="2" />
-                  </svg>
+                  <IconLockClosed class="h-3.5 w-3.5" :class="passwordIconClass" />
                 </span>
                 <span
                   v-if="file.use_proxy === 1 || file.use_proxy === true"
                   :class="['ml-2', proxyBadgeBaseClass]"
                   title="Worker 代理访问"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" class="h-3.5 w-3.5" :class="proxyIconClass">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101" />
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.172 13.828a4 4 0 015.656 0l4 4a4 4 0 01-5.656 5.656l-1.102-1.101" />
-                  </svg>
+                  <IconLink class="h-3.5 w-3.5" :class="proxyIconClass" />
                 </span>
               </div>
               <div class="text-xs mt-1 truncate" :class="darkMode ? 'text-gray-400' : 'text-gray-500'" :title="file.slug ? `/${file.slug}` : '无短链接'">
@@ -162,42 +152,17 @@
         <!-- 操作按钮 -->
         <div class="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end space-x-2">
           <button @click="$emit('preview', file)" class="p-2 rounded-md" :class="darkMode ? 'bg-gray-700 text-blue-400' : 'bg-gray-100 text-blue-600'">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-              />
-            </svg>
+            <IconEye class="h-5 w-5" />
           </button>
           <button @click="$emit('edit', file)" class="p-2 rounded-md" :class="darkMode ? 'bg-gray-700 text-green-400' : 'bg-gray-100 text-green-600'">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-              />
-            </svg>
+            <IconRename class="h-5 w-5" />
           </button>
           <!-- 移动端复制永久直链按钮 -->
           <button @click="emit('copy-permanent-link', file)" class="p-2 rounded-md relative" :class="darkMode ? 'bg-gray-700 text-purple-400' : 'bg-gray-100 text-purple-600'">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101" />
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.172 13.828a4 4 0 0 1 5.656 0l4 4a4 4 0 01-5.656 5.656l-1.102-1.101" />
-            </svg>
+            <IconLink class="h-5 w-5" />
           </button>
           <button @click="$emit('delete', file)" class="p-2 rounded-md" :class="darkMode ? 'bg-gray-700 text-red-400' : 'bg-gray-100 text-red-600'">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-              />
-            </svg>
+            <IconDelete class="h-5 w-5" />
           </button>
         </div>
       </div>
@@ -206,9 +171,10 @@
 </template>
 
 <script setup>
-import { defineProps, defineEmits, computed, h } from "vue";
+import { computed, h } from "vue";
 import AdminTable from "@/components/common/AdminTable.vue";
 import { getDisplayName } from "@/utils/fileTypes.js";
+import { IconCopy, IconDelete, IconEye, IconLink, IconLockClosed, IconQrCode, IconRename } from "@/components/icons";
 
 // 导入统一的工具函数（数值模型）
 import { getRemainingViews as getRemainingViewsUtil, formatFileSize } from "@/utils/fileUtils.js";
@@ -635,13 +601,14 @@ const fileColumns = computed(() => [
 
 // 列样式配置
 const fileColumnClasses = {
-  select: "w-10",
-  mimetype: "hidden md:table-cell",
-  size: "hidden sm:table-cell",
-  remaining_views: "hidden xl:table-cell",
-  storage_config: "hidden lg:table-cell",
-  created_by: "hidden lg:table-cell",
-  created_at: "hidden sm:table-cell",
+  select: "w-10 text-center",
+  mimetype: "hidden md:table-cell text-center",
+  size: "hidden sm:table-cell text-center",
+  remaining_views: "hidden xl:table-cell text-center",
+  storage_config: "hidden lg:table-cell text-center",
+  created_by: "hidden lg:table-cell text-center",
+  created_at: "hidden sm:table-cell text-center",
+  actions: "text-center",
 };
 
 // 处理选择变化

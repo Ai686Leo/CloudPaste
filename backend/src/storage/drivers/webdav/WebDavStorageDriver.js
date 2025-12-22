@@ -93,17 +93,18 @@ export class WebDavStorageDriver extends BaseDriver {
             mimetype = getMimeTypeFromFilename(name);
           }
 
-          let size = 0;
-          let modifiedDate = new Date();
+          let size = null;
+          let modifiedDate = null;
 
           if (isDirectory) {
-            size = 0;
+            // 目录：大小通常无法直接给出；modified 只有上游提供时才使用，否则为 null（显示 “-”）
+            size = null;
             if (item.lastmod) {
               modifiedDate = new Date(item.lastmod);
             }
           } else {
             // 默认使用目录列表中的 size
-            size = typeof item.size === "number" ? item.size : 0;
+            size = typeof item.size === "number" && Number.isFinite(item.size) && item.size >= 0 ? item.size : null;
             if (item.lastmod) {
               modifiedDate = new Date(item.lastmod);
             }
@@ -185,8 +186,9 @@ export class WebDavStorageDriver extends BaseDriver {
         effectiveMime = getMimeTypeFromFilename(name);
       }
 
-      const size = isDirectory ? 0 : stat.size || 0;
-      const modifiedDate = stat.lastmod ? new Date(stat.lastmod) : new Date();
+      const size =
+        isDirectory ? null : typeof stat.size === "number" && Number.isFinite(stat.size) && stat.size >= 0 ? stat.size : null;
+      const modifiedDate = stat.lastmod ? new Date(stat.lastmod) : null;
 
       const info = await buildFileInfo({
         fsPath: path,
@@ -592,8 +594,8 @@ export class WebDavStorageDriver extends BaseDriver {
               fsPath: fullPath,
               name: basename,
               isDirectory,
-              size: isDirectory ? 0 : item.size || 0,
-              modified: item.lastmod ? new Date(item.lastmod) : new Date(),
+              size: isDirectory ? null : typeof item.size === "number" && Number.isFinite(item.size) && item.size >= 0 ? item.size : null,
+              modified: item.lastmod ? new Date(item.lastmod) : null,
               mimetype: mime || (isDirectory ? "application/x-directory" : undefined),
               mount,
               storageType: mount.storage_type,

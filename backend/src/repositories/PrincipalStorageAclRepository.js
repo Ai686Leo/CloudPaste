@@ -35,8 +35,13 @@ export class PrincipalStorageAclRepository extends BaseRepository {
       return;
     }
 
+    const sql = this._buildInsertIgnoreSql(DbTables.PRINCIPAL_STORAGE_ACL, [
+      "subject_type",
+      "subject_id",
+      "storage_config_id",
+    ]);
     await this.execute(
-      `INSERT OR IGNORE INTO ${DbTables.PRINCIPAL_STORAGE_ACL} (subject_type, subject_id, storage_config_id) VALUES (?, ?, ?)`,
+      sql,
       [subjectType, subjectId, storageConfigId]
     );
   }
@@ -77,8 +82,13 @@ export class PrincipalStorageAclRepository extends BaseRepository {
     // 逐条插入新的绑定
     for (const configId of storageConfigIds) {
       if (!configId) continue;
+      const sql = this._buildInsertIgnoreSql(DbTables.PRINCIPAL_STORAGE_ACL, [
+        "subject_type",
+        "subject_id",
+        "storage_config_id",
+      ]);
       await this.execute(
-        `INSERT OR IGNORE INTO ${DbTables.PRINCIPAL_STORAGE_ACL} (subject_type, subject_id, storage_config_id) VALUES (?, ?, ?)`,
+        sql,
         [subjectType, subjectId, configId]
       );
     }

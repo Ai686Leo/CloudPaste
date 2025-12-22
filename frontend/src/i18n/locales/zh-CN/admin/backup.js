@@ -71,12 +71,26 @@ export default {
         name: "任务管理",
         description: "异步任务执行记录和状态",
       },
+      upload_sessions: {
+        name: "分片上传会话管理",
+        description: "分片上传会话记录和状态"
+      }
     },
 
     // 日志和状态消息
     logs: {
       startFullBackup: "开始创建完整备份...",
       startModuleBackup: "开始创建模块备份 ({count}个模块)...",
+      backupFileParsed: "备份文件解析成功（本地）",
+      previewStart: "开始预检查（{mode}模式）...",
+      previewPassed: "预检查通过，可以开始恢复",
+      previewFailed: "预检查发现问题，已取消恢复",
+      previewIssue: "预检查问题：{message}",
+      previewIssueUnknown: "未知问题",
+      previewBlockedRestore: "预检查未通过，已阻止执行恢复",
+      previewIntegrityIssues: "预检查提示：发现 {count} 个潜在数据完整性问题",
+      restoreIntegrityIssues: "恢复提示：发现 {count} 个数据完整性问题",
+      serverWarning: "提示：{message}",
       startRestore: "开始执行恢复 ({mode}模式)...",
       backupComplete: "备份创建完成，共导出{count}条记录",
       moduleBackupComplete: "模块备份创建完成，共导出{count}条记录",

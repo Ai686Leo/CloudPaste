@@ -48,17 +48,12 @@
       ></iframe>
       <!-- HTML加载状态 -->
       <div v-if="htmlLoading && !urlError" class="absolute inset-0 flex items-center justify-center bg-gray-100 dark:bg-gray-700">
-        <div class="text-center">
-          <svg class="animate-spin h-8 w-8 text-blue-500 mx-auto mb-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-            <path
-              class="opacity-75"
-              fill="currentColor"
-              d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 0 0 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-            ></path>
-          </svg>
-          <p class="text-blue-600 dark:text-blue-400">{{ t("fileView.preview.html.loading") }}</p>
-        </div>
+        <LoadingIndicator
+          :text="t('fileView.preview.html.loading')"
+          size="xl"
+          icon-class="text-blue-500 dark:text-blue-400"
+          text-class="text-blue-600 dark:text-blue-400"
+        />
       </div>
     </div>
     <div v-else class="p-4 overflow-auto flex-grow relative" style="max-height: calc(100vh - 350px); min-height: 200px">
@@ -70,17 +65,12 @@
         <pre v-show="!textLoading" class="whitespace-pre-wrap text-sm text-gray-800 dark:text-gray-200 font-mono break-words">{{ htmlContent }}</pre>
         <!-- HTML源码加载状态 -->
         <div v-if="textLoading" class="absolute inset-0 flex items-center justify-center">
-          <div class="text-center">
-            <svg class="animate-spin h-8 w-8 text-blue-500 mx-auto mb-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-              <path
-                class="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 0 0 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-              ></path>
-            </svg>
-            <p class="text-blue-600 dark:text-blue-400">{{ t("fileView.preview.html.loadingSource") }}</p>
-          </div>
+          <LoadingIndicator
+            :text="t('fileView.preview.html.loadingSource')"
+            size="xl"
+            icon-class="text-blue-500 dark:text-blue-400"
+            text-class="text-blue-600 dark:text-blue-400"
+          />
         </div>
       </template>
     </div>
@@ -90,6 +80,7 @@
 <script setup>
 import { ref, computed, watch } from "vue";
 import { useI18n } from "vue-i18n";
+import LoadingIndicator from "@/components/common/LoadingIndicator.vue";
 import { useFetchText } from "@/composables/text-preview/useFetchText.js";
 
 const { t } = useI18n();

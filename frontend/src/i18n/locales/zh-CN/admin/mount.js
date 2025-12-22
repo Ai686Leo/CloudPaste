@@ -15,6 +15,7 @@ export default {
       proxy: "代理",
       signature: "签名",
       proxySign: "代理/签名",
+      folderSummary: "计算",
     },
     viewMode: {
       grid: "网格视图",
@@ -66,6 +67,8 @@ export default {
       sortOrderHint: "数字越小排序越靠前",
       cacheTtl: "缓存时间(秒)",
       cacheTtlHint: "文件列表缓存时间，0表示不缓存",
+      enableFolderSummaryCompute: "允许计算文件夹大小/时间",
+      enableFolderSummaryComputeHint: "开启后：当存储本身不提供原始数据、索引也没有时，会递归遍历计算(损耗性能)",
       isActive: "启用状态",
       isActiveHint: "是否启用此挂载点",
       webProxy: "启用Web代理",

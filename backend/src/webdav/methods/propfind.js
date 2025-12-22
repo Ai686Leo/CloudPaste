@@ -628,7 +628,7 @@ async function processPropfindRequest(path, requestInfo, userIdOrInfo, actualUse
     }
 
     // 处理实际存储路径
-    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
+    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory, { env: c.env });
     const fileSystem = new FileSystem(mountManager);
 
     return await handleStoragePropfind(fileSystem, path, requestInfo, userIdOrInfo, actualUserType);

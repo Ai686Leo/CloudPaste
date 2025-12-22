@@ -25,11 +25,14 @@ export function generateRandomString(length = 8) {
  * @returns {object} 标准错误响应对象
  */
 export function createErrorResponse(_statusCode, message, code) {
-  return {
+  const base = {
     success: false,
     code,
     message,
   };
+  const extra = arguments.length >= 4 ? arguments[3] : null;
+  if (!extra || typeof extra !== "object") return base;
+  return { ...base, ...extra };
 }
 
 export function createSuccessResponse(data, message = "OK", code = "OK") {

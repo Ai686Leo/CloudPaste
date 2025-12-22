@@ -296,8 +296,8 @@ export class LocalStorageDriver extends BaseDriver {
         });
 
         const isDirectory = stat.isDirectory();
-        const size = isDirectory ? 0 : stat.size || 0;
-        const modified = stat.mtime ? new Date(stat.mtime) : new Date();
+        const size = isDirectory ? null : stat.size || 0;
+        const modified = stat.mtime ? new Date(stat.mtime) : null;
 
         const itemMountPath = this._joinMountPath(basePath, name, isDirectory);
 
@@ -345,8 +345,8 @@ export class LocalStorageDriver extends BaseDriver {
 
     const isDirectory = stat.isDirectory();
     const name = this._basename(fsPath);
-    const size = isDirectory ? 0 : stat.size || 0;
-    const modified = stat.mtime ? new Date(stat.mtime) : new Date();
+    const size = isDirectory ? null : stat.size || 0;
+    const modified = stat.mtime ? new Date(stat.mtime) : null;
     const mimetype = isDirectory ? "application/x-directory" : undefined;
 
     // fullPath 当前未直接暴露，仅用于调试时可从 details 中取
@@ -777,7 +777,7 @@ export class LocalStorageDriver extends BaseDriver {
         }
 
         const size = statInfo.size || 0;
-        const modified = statInfo.mtime ? new Date(statInfo.mtime) : new Date();
+        const modified = statInfo.mtime ? new Date(statInfo.mtime) : null;
         const fsPath = this._buildMountPath(mount, nextSubPath || "/");
 
         const info = await buildFileInfo({

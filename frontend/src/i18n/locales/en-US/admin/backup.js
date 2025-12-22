@@ -71,12 +71,26 @@ export default {
         name: "Task Management",
         description: "Async task execution records and status",
       },
+      upload_sessions: {
+        name: "Multipart Upload Session Management",
+        description: "Multipart upload session records and status",
+      },
     },
 
     // Logs and status messages
     logs: {
       startFullBackup: "Starting full backup creation...",
       startModuleBackup: "Starting module backup creation ({count} modules)...",
+      backupFileParsed: "Backup file parsed successfully (local preview)",
+      previewStart: "Starting restore preview ({mode} mode)...",
+      previewPassed: "Preview passed, ready to restore",
+      previewFailed: "Preview found issues, restore canceled",
+      previewIssue: "Preview issue: {message}",
+      previewIssueUnknown: "Unknown issue",
+      previewBlockedRestore: "Preview not passed, restore blocked",
+      previewIntegrityIssues: "Preview warning: found {count} potential integrity issues",
+      restoreIntegrityIssues: "Restore warning: found {count} integrity issues",
+      serverWarning: "Warning: {message}",
       startRestore: "Starting restore execution ({mode} mode)...",
       backupComplete: "Backup creation completed, exported {count} records",
       moduleBackupComplete: "Module backup creation completed, exported {count} records",

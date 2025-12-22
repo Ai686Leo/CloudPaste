@@ -11,9 +11,7 @@
           : 'bg-white hover:bg-gray-50 text-gray-600 hover:text-gray-900 border border-gray-200'"
         :title="t('common.backToTop')"
       >
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18" />
-        </svg>
+        <IconArrowUp size="sm" class="w-4 h-4" aria-hidden="true" />
       </button>
     </Transition>
   </Teleport>
@@ -22,6 +20,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { IconArrowUp } from '@/components/icons'
 
 const props = defineProps({
   darkMode: {

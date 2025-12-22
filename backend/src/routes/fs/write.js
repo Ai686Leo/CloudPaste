@@ -37,7 +37,7 @@ export const registerWriteRoutes = (router, helpers) => {
       throw new ValidationError("请提供目录路径");
     }
 
-    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
+    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory, { env: c.env });
     const fileSystem = new FileSystem(mountManager);
     await fileSystem.createDirectory(path, userIdOrInfo, userType);
 
@@ -60,7 +60,7 @@ export const registerWriteRoutes = (router, helpers) => {
       throw new ValidationError("请提供文件和路径");
     }
 
-    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
+    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory, { env: c.env });
     const fileSystem = new FileSystem(mountManager);
 
     // 明确走“表单上传”路径：传入 File/Blob 本身，由驱动按表单/缓冲方式处理
@@ -126,7 +126,7 @@ export const registerWriteRoutes = (router, helpers) => {
       }
     }
 
-    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
+    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory, { env: c.env });
     const fileSystem = new FileSystem(mountManager);
 
     const result = await fileSystem.uploadFile(path, /** @type {any} */ (body), userIdOrInfo, userType, {
@@ -154,7 +154,7 @@ export const registerWriteRoutes = (router, helpers) => {
       throw new ValidationError("请提供文件路径和内容");
     }
 
-    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory);
+    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory, { env: c.env });
     const fileSystem = new FileSystem(mountManager);
     const result = await fileSystem.updateFile(path, content, userIdOrInfo, userType);
 

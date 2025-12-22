@@ -5,10 +5,12 @@ import { ref, computed, watch } from "vue";
 import { useAuthStore } from "@/stores/authStore.js";
 import { api } from "@/api";
 import { useI18n } from "vue-i18n";
+import { usePathPassword } from "@/composables/usePathPassword.js";
 
 export function useFileSearch() {
   const authStore = useAuthStore();
   const { t } = useI18n();
+  const { getPathToken, getAllPathTokens } = usePathPassword();
 
   // API调用函数 - 使用统一API，自动根据认证信息处理用户类型
   const searchApi = computed(() => {
@@ -20,13 +22,16 @@ export function useFileSearch() {
   const searchResults = ref([]);
   const isSearching = ref(false);
   const searchError = ref(null);
-  const hasPerformedSearch = ref(false); // 新增：是否已执行过搜索
+  const hasPerformedSearch = ref(false);
+  const searchNotices = ref([]);
+  const passwordFilteredTotal = ref(0);
+  const pathRestrictedPrefix = ref(null);
   const searchParams = ref({
     scope: "global", // 'global', 'mount', 'directory'
     mountId: "",
     path: "",
     limit: 50,
-    offset: 0,
+    cursor: null,
   });
 
   // 搜索历史
@@ -34,7 +39,8 @@ export function useFileSearch() {
   const maxHistoryItems = 10;
 
   // 计算属性
-  const hasSearchQuery = computed(() => searchQuery.value.trim().length >= 2);
+  // 后端统一最小长度：FTS5 trigram contains（>=3 字符）
+  const hasSearchQuery = computed(() => searchQuery.value.trim().length >= 3);
   const hasSearchResults = computed(() => searchResults.value.length > 0);
   const searchResultsCount = computed(() => searchResults.value.length);
   const canSearch = computed(() => hasSearchQuery.value && !isSearching.value);
@@ -44,6 +50,7 @@ export function useFileSearch() {
     total: 0,
     hasMore: false,
     mountsSearched: 0,
+    nextCursor: null,
   });
 
   /**
@@ -55,19 +62,34 @@ export function useFileSearch() {
     try {
       const searchTerm = query || searchQuery.value;
 
-      if (!searchTerm || searchTerm.trim().length < 2) {
+      if (!searchTerm || searchTerm.trim().length < 3) {
         searchError.value = t("search.errors.queryTooShort");
         return;
       }
 
       isSearching.value = true;
       searchError.value = null;
+      searchNotices.value = [];
+      passwordFilteredTotal.value = 0;
+      pathRestrictedPrefix.value = null;
 
       // 合并搜索参数
       const finalSearchParams = {
         ...searchParams.value,
         ...options,
+        // 执行新搜索时强制从第一页开始
+        cursor: null,
       };
+
+      const tokenPath = finalSearchParams.path || "/";
+      const token = getPathToken(tokenPath);
+      if (token) {
+        finalSearchParams.pathToken = token;
+      }
+      const tokens = getAllPathTokens();
+      if (tokens.length > 0) {
+        finalSearchParams.pathTokens = tokens;
+      }
 
       console.log("开始搜索文件:", searchTerm, finalSearchParams);
 
@@ -84,7 +106,28 @@ export function useFileSearch() {
           total: searchData.total || 0,
           hasMore: searchData.hasMore || false,
           mountsSearched: searchData.mountsSearched || 0,
+          nextCursor: searchData.nextCursor || null,
         };
+
+        if (searchData.pathRestricted && searchData.pathRestrictedPrefix) {
+          pathRestrictedPrefix.value = searchData.pathRestrictedPrefix;
+        }
+        if (searchData.passwordFilteredCount) {
+          passwordFilteredTotal.value += Number(searchData.passwordFilteredCount) || 0;
+        }
+        const notices = [];
+        if (pathRestrictedPrefix.value) {
+          notices.push(t("search.notices.pathRestricted", { path: pathRestrictedPrefix.value }));
+        }
+        if (passwordFilteredTotal.value > 0) {
+          notices.push(t("search.notices.passwordFiltered", { count: passwordFilteredTotal.value }));
+        }
+        searchNotices.value = notices;
+
+        // 索引未就绪：用结构化提示引导管理员
+        if (searchData && searchData.indexReady === false && searchData.hint) {
+          searchError.value = searchData.hint;
+        }
 
         // 添加到搜索历史
         addToSearchHistory(searchTerm);
@@ -101,7 +144,7 @@ export function useFileSearch() {
       console.error("搜索失败:", err);
       searchError.value = err.message || t("search.errors.searchFailed");
       searchResults.value = [];
-      searchStats.value = { total: 0, hasMore: false, mountsSearched: 0 };
+      searchStats.value = { total: 0, hasMore: false, mountsSearched: 0, nextCursor: null };
     } finally {
       isSearching.value = false;
     }
@@ -111,7 +154,7 @@ export function useFileSearch() {
    * 加载更多搜索结果（分页）
    */
   const loadMoreResults = async () => {
-    if (!searchStats.value.hasMore || isSearching.value) {
+    if (!searchStats.value.hasMore || !searchStats.value.nextCursor || isSearching.value) {
       return;
     }
 
@@ -119,14 +162,22 @@ export function useFileSearch() {
       isSearching.value = true;
       searchError.value = null;
 
-      // 更新偏移量
-      const newOffset = searchResults.value.length;
       const paginationParams = {
         ...searchParams.value,
-        offset: newOffset,
+        cursor: searchStats.value.nextCursor,
       };
 
-      console.log("加载更多搜索结果:", { offset: newOffset });
+      const tokenPath = paginationParams.path || "/";
+      const token = getPathToken(tokenPath);
+      if (token) {
+        paginationParams.pathToken = token;
+      }
+      const tokens = getAllPathTokens();
+      if (tokens.length > 0) {
+        paginationParams.pathTokens = tokens;
+      }
+
+      console.log("加载更多搜索结果:", { cursor: searchStats.value.nextCursor });
 
       const response = await searchApi.value(searchQuery.value, paginationParams);
 
@@ -134,10 +185,13 @@ export function useFileSearch() {
         const searchData = response.data;
         // 追加新结果到现有结果
         searchResults.value.push(...(searchData.results || []));
+        const existingTotal = searchStats.value.total || 0;
+        const incomingTotal = Number(searchData.total || 0);
         searchStats.value = {
-          total: searchData.total || 0,
+          total: incomingTotal > existingTotal ? incomingTotal : existingTotal,
           hasMore: searchData.hasMore || false,
           mountsSearched: searchData.mountsSearched || 0,
+          nextCursor: searchData.nextCursor || null,
         };
 
         console.log("加载更多结果完成:", {
@@ -162,10 +216,13 @@ export function useFileSearch() {
     searchQuery.value = "";
     searchResults.value = [];
     searchError.value = null;
-    hasPerformedSearch.value = false; // 重置搜索执行状态
-    searchStats.value = { total: 0, hasMore: false, mountsSearched: 0 };
-    // 重置搜索参数的偏移量
-    searchParams.value.offset = 0;
+    hasPerformedSearch.value = false;
+    searchNotices.value = [];
+    passwordFilteredTotal.value = 0;
+    pathRestrictedPrefix.value = null;
+    searchStats.value = { total: 0, hasMore: false, mountsSearched: 0, nextCursor: null };
+    // 重置分页游标
+    searchParams.value.cursor = null;
     console.log("搜索结果已清除");
   };
 
@@ -177,7 +234,7 @@ export function useFileSearch() {
     searchParams.value = {
       ...searchParams.value,
       ...params,
-      offset: 0, // 重置偏移量
+      cursor: null, // 重置分页游标
     };
     console.log("搜索参数已更新:", searchParams.value);
   };
@@ -192,7 +249,7 @@ export function useFileSearch() {
       scope,
       mountId: options.mountId || "",
       path: options.path || "",
-      offset: 0,
+      cursor: null,
     };
     updateSearchParams(newParams);
   };
@@ -280,6 +337,7 @@ export function useFileSearch() {
     searchResults,
     isSearching,
     searchError,
+    searchNotices,
     searchParams,
     searchHistory,
     searchStats,

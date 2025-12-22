@@ -13,6 +13,7 @@ import { isExpired } from "@/utils/timeUtils.js";
 import { ApiStatus } from "@/api/ApiStatus";
 import { copyToClipboard } from "@/utils/clipboard";
 import { useAuthStore } from "@/stores/authStore.js";
+import { IconExclamation, IconEye, IconEyeOff, IconRefresh, IconUser } from "@/components/icons";
 
 // 定义环境变量
 const isDev = import.meta.env.DEV;
@@ -588,10 +589,7 @@ onBeforeUnmount(() => {
             v-if="paste.is_public === false"
             class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11c1.657 0 3-1.343 3-3S13.657 5 12 5s-3 1.343-3 3 1.343 3 3 3z" />
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.5 20a8.38 8.38 0 017.5-4.5 8.38 8.38 0 017.5 4.5" />
-            </svg>
+            <IconUser size="xs" class="h-3.5 w-3.5 mr-1" />
             仅内部可见
           </span>
         </div>
@@ -599,22 +597,12 @@ onBeforeUnmount(() => {
 
       <!-- 加载中状态显示 -->
       <div v-if="loading" class="py-16 flex justify-center">
-        <svg class="animate-spin h-12 w-12 text-primary-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-        </svg>
+        <IconRefresh class="animate-spin h-12 w-12 text-primary-500" />
       </div>
 
       <!-- 错误信息显示区域 - 仅在有错误且不是密码错误时显示 -->
       <div v-else-if="error && !needPassword && !error.includes('成功')" class="error-container py-12 px-4 max-w-4xl mx-auto text-center">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mx-auto mb-4 text-red-600 dark:text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="1.5"
-            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-          />
-        </svg>
+        <IconExclamation class="h-16 w-16 mx-auto mb-4 text-red-600 dark:text-red-500" />
         <h2 class="text-2xl font-bold mb-2 text-gray-900 dark:text-white">文本访问错误</h2>
         <p class="text-lg mb-6 text-gray-600 dark:text-gray-300">{{ error }}</p>
         <a
@@ -649,23 +637,8 @@ onBeforeUnmount(() => {
                 @click="togglePasswordVisibility"
                 class="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-300"
               >
-                <svg v-if="showPassword" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18"
-                  />
-                </svg>
-                <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-                  />
-                </svg>
+                <IconEyeOff v-if="showPassword" size="md" class="h-5 w-5" />
+                <IconEye v-else size="md" class="h-5 w-5" />
               </button>
             </div>
             <!-- 显示密码错误消息 -->

@@ -12,7 +12,7 @@ import { ValidationError, NotFoundError, AuthorizationError, ConflictError } fro
 import { ensureRepositoryFactory } from "../utils/repositories.js";
 import { ObjectStore } from "../storage/object/ObjectStore.js";
 import { LinkService } from "../storage/link/LinkService.js";
-import { resolveDocumentPreview } from "./documentPreviewService.js";
+import { resolvePreviewSelection } from "./documentPreviewService.js";
 
 export class FileService {
   /**
@@ -197,8 +197,8 @@ export class FileService {
       downloadUrl = null;
     }
 
-    // 基于文件信息和 Link JSON 生成 DocumentPreviewResult（仅用于文档/Office 预览）
-    const documentPreview = await resolveDocumentPreview(
+    // 基于文件信息和 Link JSON 生成预览选择结果（preview_providers 驱动）
+    const previewSelection = await resolvePreviewSelection(
       {
         type: fileType,
         typeName: fileTypeName,
@@ -208,6 +208,7 @@ export class FileService {
       },
       {
         previewUrl,
+        downloadUrl,
         linkType,
         use_proxy: useProxyFlag,
       },
@@ -232,7 +233,7 @@ export class FileService {
       created_by: file.created_by || null,
       type: fileType, // 整数类型常量 (0-6)
       typeName: fileTypeName, // 类型名称（用于调试）
-      documentPreview,
+      previewSelection,
     };
   }
 
@@ -571,7 +572,7 @@ export class FileService {
       }
     }
 
-    const documentPreview = await resolveDocumentPreview(
+    const previewSelection = await resolvePreviewSelection(
       {
         type: fileType,
         typeName: fileTypeName,
@@ -581,6 +582,7 @@ export class FileService {
       },
       {
         previewUrl,
+        downloadUrl,
         linkType,
         use_proxy: useProxyFlag,
       },
@@ -589,7 +591,7 @@ export class FileService {
     result.previewUrl = previewUrl;
     result.downloadUrl = downloadUrl;
     result.linkType = linkType;
-    result.documentPreview = documentPreview;
+    result.previewSelection = previewSelection;
 
     return result;
   }
@@ -818,7 +820,7 @@ export class FileService {
       }
     }
 
-    const documentPreview = await resolveDocumentPreview(
+    const previewSelection = await resolvePreviewSelection(
       {
         type: fileType,
         typeName: fileTypeName,
@@ -828,6 +830,7 @@ export class FileService {
       },
       {
         previewUrl,
+        downloadUrl,
         linkType,
         use_proxy: useProxyFlag,
       },
@@ -836,7 +839,7 @@ export class FileService {
     result.previewUrl = previewUrl;
     result.downloadUrl = downloadUrl;
     result.linkType = linkType;
-    result.documentPreview = documentPreview;
+    result.previewSelection = previewSelection;
 
     return result;
   }

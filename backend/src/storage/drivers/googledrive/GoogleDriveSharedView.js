@@ -148,7 +148,7 @@ export async function listSharedWithMeDirectory({ path, segments, apiClient, mou
 
       const type = isDir ? FILE_TYPES.FOLDER : await GetFileType(name, db);
       const typeName = isDir ? FILE_TYPE_NAMES.FOLDER : await getFileTypeName(name, db);
-      const size = isDir ? 0 : Number(item.size || 0);
+      const size = isDir ? null : Number(item.size || 0);
       const modified = item.modifiedTime ? new Date(item.modifiedTime) : null;
       const mimetype = isDir ? "application/x-directory" : item.mimeType || null;
 
@@ -197,7 +197,8 @@ export function injectSharedWithMeEntry({ path, mount, items }) {
     path: sharedPath,
     name: "Shared with me",
     isDirectory: true,
-    size: 0,
+    // 虚拟目录：大小未知就保持 null（前端显示 “-”）
+    size: null,
     modified: null,
     mimetype: "application/x-directory",
     type: FILE_TYPES.FOLDER,

@@ -7,9 +7,7 @@
           {{ t("fileBasket.panel.title") }}
         </h3>
         <button @click="close" class="text-gray-400 hover:text-gray-500 dark:text-gray-500 dark:hover:text-gray-400">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-          </svg>
+          <IconClose aria-hidden="true" />
         </button>
       </div>
 
@@ -36,15 +34,7 @@
         <!-- 空状态 -->
         <div v-if="!hasCollection" class="text-center py-8" :class="darkMode ? 'text-gray-400' : 'text-gray-600'">
           <!-- 文件列表图标 (与按钮保持一致) -->
-          <svg class="h-12 w-12 mx-auto mb-3 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              d="M15.5 2H8.6c-.4 0-.8.2-1.1.5-.3.3-.5.7-.5 1.1v12.8c0 .4.2.8.5 1.1.3.3.7.5 1.1.5h9.8c.4 0 .8-.2 1.1-.5.3-.3.5-.7.5-1.1V6.5L15.5 2z"
-            />
-            <path stroke-linecap="round" stroke-linejoin="round" d="M3 7.6v12.8c0 .4.2.8.5 1.1.3.3.7.5 1.1.5h9.8" />
-            <path stroke-linecap="round" stroke-linejoin="round" d="M15 2v5h5" />
-          </svg>
+          <IconCollection class="h-12 w-12 mx-auto mb-3 opacity-30" aria-hidden="true" />
           <p class="font-medium">{{ t("fileBasket.panel.empty") }}</p>
           <p class="text-xs mt-1 opacity-75">{{ t("fileBasket.panel.emptyDescription") }}</p>
         </div>
@@ -61,19 +51,14 @@
             >
               <div class="flex items-center space-x-2">
                 <!-- 展开/收起箭头 -->
-                <svg
-                  class="w-4 h-4 transition-transform duration-200"
+                <IconChevronRight
+                  size="sm"
+                  class="transition-transform duration-200"
                   :class="isDirectoryExpanded(directory) ? 'rotate-90' : ''"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-                </svg>
+                  aria-hidden="true"
+                />
                 <!-- 文件夹图标 -->
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-5l-2-2H5a2 2 0 00-2 2z" />
-                </svg>
+                <IconFolder size="sm" aria-hidden="true" />
                 <span class="truncate">{{ directory }}</span>
               </div>
               <span class="text-xs opacity-75 flex-shrink-0">{{ (files || []).length }} 个文件</span>
@@ -109,9 +94,7 @@
                   :class="darkMode ? 'text-red-400 hover:text-red-300 hover:bg-red-900/30' : 'text-red-500 hover:text-red-600 hover:bg-red-50'"
                   :title="t('fileBasket.actions.remove')"
                 >
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
+                  <IconClose size="sm" aria-hidden="true" />
                 </button>
               </div>
             </div>
@@ -128,14 +111,7 @@
           class="w-full flex items-center justify-center space-x-2 px-4 py-2 rounded-md font-medium transition-colors"
           :class="[isProcessing ? 'bg-gray-400 text-gray-200 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white']"
         >
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-            />
-          </svg>
+          <IconDownload size="sm" aria-hidden="true" />
           <span>{{ isProcessing ? t("fileBasket.status.processing") : t("fileBasket.actions.packDownload") }}</span>
         </button>
 
@@ -163,6 +139,7 @@
 <script setup>
 import { ref, computed, watch, onUnmounted } from "vue";
 import { useI18n } from "vue-i18n";
+import { IconChevronRight, IconClose, IconCollection, IconDownload, IconFolder } from "@/components/icons";
 import { storeToRefs } from "pinia";
 import { useFileBasket } from "@/composables/file-system/useFileBasket.js";
 import { useConfirmDialog } from "@/composables/core/useConfirmDialog.js";

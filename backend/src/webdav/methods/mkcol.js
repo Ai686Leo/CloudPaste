@@ -30,7 +30,7 @@ export async function handleMkcol(c, path, userId, userType, db) {
 
     // 创建FileSystem实例
     const repositoryFactory = c.get("repos");
-    const mountManager = new MountManager(db, getEncryptionSecret(c), repositoryFactory);
+    const mountManager = new MountManager(db, getEncryptionSecret(c), repositoryFactory, { env: c.env });
     const fileSystem = new FileSystem(mountManager);
 
     console.log(`WebDAV MKCOL - 开始创建目录: ${path}, 用户类型: ${userType}`);

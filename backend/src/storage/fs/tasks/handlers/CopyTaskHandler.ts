@@ -3,6 +3,7 @@ import type { TaskHandler, InternalJob, ExecutionContext } from "../TaskHandler.
 import type { TaskStats, CopyTaskPayload, ItemResult, RetryPolicy } from "../types.js";
 import { ValidationError } from "../../../../http/errors.js";
 import { invalidateFsCache } from "../../../../cache/invalidation.js";
+import { FsSearchIndexStore } from "../../search/FsSearchIndexStore.js";
 import { isRetryableError, calculateBackoffDelay, sleep, formatRetryLog, DEFAULT_RETRY_POLICY } from "../utils/retryUtils.js";
 
 // 进度上报节流：限制单个文件的进度写入次数，避免在 Workers Free 计划下触发 50 次子请求上限
@@ -322,6 +323,11 @@ export class CopyTaskHandler implements TaskHandler {
         // - 仅当无法解析 subPath 或路径数量过多时，降级为 mount 级失效（一致性优先）
         const mountDirPaths = new Map<string, Set<string>>();
         const mountFallback = new Set<string>();
+        const dirtyTargetPathsByMount = new Map<string, string[]>();
+        const indexStore = (() => {
+          const db = fileSystem.mountManager?.db ?? null;
+          return db ? new FsSearchIndexStore(db) : null;
+        })();
 
         const toParentDir = (subPath: string): string => {
           const raw = subPath ? String(subPath) : "/";
@@ -342,6 +348,12 @@ export class CopyTaskHandler implements TaskHandler {
           const mountId = resolved?.mount?.id || null;
           const subPath = resolved?.subPath || null;
           if (!mountId) continue;
+
+          // 索引增量：仅收集成功项的 targetPath，统一“收敛 + 入队”
+          if (!dirtyTargetPathsByMount.has(mountId)) {
+            dirtyTargetPathsByMount.set(mountId, []);
+          }
+          dirtyTargetPathsByMount.get(mountId)?.push(String(item.targetPath));
 
           if (!subPath) {
             mountFallback.add(mountId);
@@ -389,6 +401,75 @@ export class CopyTaskHandler implements TaskHandler {
 
         if (mountsToLog.length > 0) {
           console.log(`[CopyTaskHandler] 已触发目录缓存失效: ${mountsToLog.join(", ")}`);
+        }
+
+        // 索引 dirty 入队（合并阈值）：避免复制大批量文件时对 D1/SQLite 造成写入放大
+        if (indexStore && dirtyTargetPathsByMount.size > 0) {
+          const MAX_DIRTY_OPS_PER_MOUNT = 200;
+
+          const ensureDirPath = (p: string): string => {
+            const raw = typeof p === "string" && p ? p : "/";
+            const trimmed = raw.replace(/\/+$/g, "");
+            if (!trimmed || trimmed === "/") return "/";
+            return `${trimmed}/`;
+          };
+
+          const parentDirPath = (p: string): string => {
+            const raw = typeof p === "string" && p ? p : "/";
+            const trimmed = raw.replace(/\/+$/g, "");
+            if (!trimmed || trimmed === "/") return "/";
+            const idx = trimmed.lastIndexOf("/");
+            if (idx <= 0) return "/";
+            return ensureDirPath(trimmed.slice(0, idx) || "/");
+          };
+
+          const toDirtyDirectory = (p: string): string => (p.endsWith("/") ? ensureDirPath(p) : parentDirPath(p));
+
+          const commonDirPrefix = (dirs: string[]): string => {
+            const list = Array.isArray(dirs) ? dirs.filter(Boolean) : [];
+            if (list.length === 0) return "/";
+
+            const toSegs = (dir: string) =>
+              String(dir || "/")
+                .replace(/^\/+|\/+$/g, "")
+                .split("/")
+                .filter(Boolean);
+
+            let prefix = toSegs(list[0]);
+            for (let i = 1; i < list.length; i++) {
+              const segs = toSegs(list[i]);
+              const next: string[] = [];
+              const len = Math.min(prefix.length, segs.length);
+              for (let j = 0; j < len; j++) {
+                if (prefix[j] !== segs[j]) break;
+                next.push(prefix[j]);
+              }
+              prefix = next;
+              if (prefix.length === 0) break;
+            }
+
+            if (prefix.length === 0) return "/";
+            return `/${prefix.join("/")}/`;
+          };
+
+          for (const [mountId, paths] of dirtyTargetPathsByMount.entries()) {
+            const unique = Array.from(new Set((paths || []).filter(Boolean)));
+            if (unique.length === 0) continue;
+
+            try {
+              if (unique.length > MAX_DIRTY_OPS_PER_MOUNT) {
+                const dirPrefix = commonDirPrefix(unique.map(toDirtyDirectory));
+                await indexStore.upsertDirty({ mountId: String(mountId), fsPath: dirPrefix, op: "upsert" });
+              } else {
+                for (const p of unique) {
+                  await indexStore.upsertDirty({ mountId: String(mountId), fsPath: String(p), op: "upsert" });
+                }
+              }
+            } catch (err: unknown) {
+              const errMessage = err instanceof Error ? err.message : String(err);
+              console.warn("[CopyTaskHandler] upsertDirty 失败（已忽略）", errMessage);
+            }
+          }
         }
       } catch (error) {
         // 缓存失效失败不应影响作业结果；但需要日志以便排查一致性问题

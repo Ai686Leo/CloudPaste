@@ -17,9 +17,7 @@
           :title="$t('search.title')"
         >
           <!-- 搜索图标 -->
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
+          <IconSearch size="sm" class="w-4 h-4" aria-hidden="true" />
 
           <!-- 搜索文字（在小屏幕上隐藏） -->
           <span class="hidden sm:inline text-sm text-gray-500" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
@@ -46,10 +44,7 @@
           "
           :title="$t('mount.settings.title')"
         >
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-            <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
+          <IconSettings size="sm" class="w-4 h-4" aria-hidden="true" />
         </button>
       </div>
     </div>
@@ -230,13 +225,7 @@
             <div v-if="error" class="mb-4 p-4 bg-red-100 dark:bg-red-900/20 border border-red-300 dark:border-red-700 rounded-lg">
               <div class="flex items-start justify-between gap-3">
                 <div class="flex items-start">
-                  <svg class="w-5 h-5 text-red-500 mr-2 mt-0.5 shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                    <path
-                      fill-rule="evenodd"
-                      d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                      clip-rule="evenodd"
-                    ></path>
-                  </svg>
+                  <IconXCircle size="md" class="w-5 h-5 text-red-500 mr-2 mt-0.5 shrink-0" aria-hidden="true" />
                   <div>
                     <div class="text-red-700 dark:text-red-200 font-medium">{{ $t("common.error") }}</div>
                     <div class="text-red-700/90 dark:text-red-200/90 text-sm mt-0.5">{{ error }}</div>
@@ -295,23 +284,18 @@
         <div v-show="showFilePreview">
           <!-- 预览加载状态 -->
           <div v-if="isPreviewLoading" class="p-8 text-center">
-            <div class="flex flex-col items-center space-y-4">
-              <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-              <div class="text-gray-600 dark:text-gray-400">{{ $t("common.loading") }}</div>
-            </div>
+            <LoadingIndicator
+              :text="$t('common.loading')"
+              :dark-mode="darkMode"
+              size="xl"
+              icon-class="text-blue-500"
+            />
           </div>
 
           <!-- 预览错误状态 -->
           <div v-else-if="previewError" class="p-8 text-center">
             <div class="flex flex-col items-center space-y-4">
-              <svg class="w-12 h-12 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.694-.833-2.464 0L4.35 16.5c-.77.833.192 2.5 1.732 2.5z"
-                ></path>
-              </svg>
+              <IconExclamation size="3xl" class="w-12 h-12 text-red-500" aria-hidden="true" />
               <div class="text-red-600 dark:text-red-400">
                 {{ previewError }}
               </div>
@@ -330,9 +314,7 @@
                 class="inline-flex items-center px-3 py-1.5 rounded-md transition-colors text-sm font-medium"
                 :class="darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-200 hover:bg-gray-300 text-gray-700'"
               >
-                <svg class="w-4 h-4 mr-1.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-                </svg>
+                <IconBack size="sm" class="w-4 h-4 mr-1.5" aria-hidden="true" />
                 <span>{{ t("mount.backToFileList") }}</span>
               </button>
             </div>
@@ -418,6 +400,8 @@ import { ref, computed, provide, onMounted, onBeforeUnmount, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { storeToRefs } from "pinia";
 import { useThemeMode } from "@/composables/core/useThemeMode.js";
+import { IconBack, IconExclamation, IconSearch, IconSettings, IconXCircle } from "@/components/icons";
+import LoadingIndicator from "@/components/common/LoadingIndicator.vue";
 
 // 组合式函数 - 使用统一聚合导出
 import { useSelection, useFileOperations, useUIState, useFileBasket } from "@/composables/index.js";

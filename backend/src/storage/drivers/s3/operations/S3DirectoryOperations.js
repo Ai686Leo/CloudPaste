@@ -6,8 +6,7 @@
 import { NotFoundError } from "../../../../http/errors.js";
 import { S3Client, ListObjectsV2Command, PutObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { checkDirectoryExists, updateParentDirectoriesModifiedTime } from "../utils/S3DirectoryUtils.js";
-import { isMountRootPath } from "../utils/S3PathUtils.js";
-import { directoryCacheManager } from "../../../../cache/index.js";
+import { isMountRootPath, normalizeS3SubPath } from "../utils/S3PathUtils.js";
 import { handleFsError } from "../../../fs/utils/ErrorHandler.js";
 import { buildFileInfo } from "../../../utils/FileInfoBuilder.js";
 
@@ -26,10 +25,11 @@ export class S3DirectoryOperations {
 
   /**
    * 获取S3目录的修改时间（仅从目录标记对象获取）
+   *
    * @param {S3Client} s3Client - S3客户端实例
    * @param {string} bucketName - 存储桶名称
    * @param {string} prefix - 目录前缀
-   * @returns {Promise<string>} 目录修改时间的ISO字符串
+   * @returns {Promise<string|null>} 目录修改时间的ISO字符串；未知返回 null
    */
   async getS3DirectoryModifiedTime(s3Client, bucketName, prefix) {
     try {
@@ -47,53 +47,137 @@ export class S3DirectoryOperations {
         return headResponse.LastModified.toISOString();
       }
     } catch (error) {
-      // 如果目录标记对象不存在，返回当前时间
+      // 如果目录标记对象不存在：目录时间未知
       if (error.$metadata?.httpStatusCode === 404) {
-        return new Date().toISOString();
+        return null;
       }
       throw error;
     }
 
-    return new Date().toISOString();
+    return null;
   }
 
   /**
-   * 计算S3目录的总大小
-   * @param {S3Client} s3Client - S3客户端实例
-   * @param {string} bucketName - 存储桶名称
-   * @param {string} prefix - 目录前缀
-   * @returns {Promise<number>} 目录总大小（字节）
+   * S3 专用：一次扫描当前目录 prefix 下的所有对象，批量得到“当前目录的直接子目录”的摘要（size / modified）
+   * - 目标：避免对每个子目录分别递归 list，导致 N 倍放大（S3 大目录会非常慢/贵）
+   * - 只统计“子目录内的文件对象”（忽略以 / 结尾的目录标记对象），更贴近“内容大小/内容更新时间”的语义
+   * - modified 取该子目录下所有文件的 LastModified 最大值；如果子目录完全没有文件，则 modified=null
+   *
+   * @param {string} relativeSubPath - 当前目录在挂载内的相对路径（例如 / 或 /a/b/）
+   * @param {Map<string, string>} childDirNameToFsPath - 直接子目录名 => FS 路径（/mount/child/）
+   * @param {{refresh?: boolean}} options - 选项
+   * @returns {Promise<{results: Map<string, {size:number, modified:(string|null), completed:boolean, calculatedAt:string}>, completed:boolean, visited:number}>}
    */
-  async getS3DirectorySize(s3Client, bucketName, prefix) {
-    let totalSize = 0;
+  async computeDirectChildDirSummaries(relativeSubPath, childDirNameToFsPath, options = {}) {
+    const maxItems = 20000;
+    const maxMs = 5000;
+    const startedAt = Date.now();
+
+    const childNames = Array.from(childDirNameToFsPath?.keys?.() ?? []);
+    const totals = new Map();
+    for (const name of childNames) {
+      const dirPath = childDirNameToFsPath.get(name);
+      if (!dirPath) continue;
+      totals.set(dirPath, { size: 0, latestModifiedMs: 0 });
+    }
+
+    let visited = 0;
+    let completed = true;
     let continuationToken = undefined;
 
-    try {
-      do {
-        const listParams = {
-          Bucket: bucketName,
-          Prefix: prefix,
-          MaxKeys: 1000,
-          ContinuationToken: continuationToken,
-        };
+    const s3SubPath = normalizeS3SubPath(relativeSubPath, true);
+    const rootPrefix = this.config.root_prefix
+      ? this.config.root_prefix.endsWith("/") ? this.config.root_prefix : `${this.config.root_prefix}/`
+      : "";
 
-        const listCommand = new ListObjectsV2Command(listParams);
-        const response = await s3Client.send(listCommand);
+    let fullPrefix = rootPrefix;
+    if (s3SubPath && s3SubPath !== "/") {
+      fullPrefix += s3SubPath;
+    }
+    if (fullPrefix && !fullPrefix.endsWith("/")) {
+      fullPrefix += "/";
+    }
 
-        if (response.Contents) {
-          for (const item of response.Contents) {
-            totalSize += item.Size || 0;
-          }
+    const effectivePrefix = fullPrefix ? String(fullPrefix) : "";
+
+    while (true) {
+      if (Date.now() - startedAt > maxMs || visited >= maxItems) {
+        completed = false;
+        break;
+      }
+
+      const cmd = new ListObjectsV2Command({
+        Bucket: this.config.bucket_name,
+        Prefix: effectivePrefix,
+        ContinuationToken: continuationToken,
+        MaxKeys: 1000,
+      });
+      const resp = await this.s3Client.send(cmd);
+      const objects = Array.isArray(resp?.Contents) ? resp.Contents : [];
+
+      for (const obj of objects) {
+        visited += 1;
+        if (visited >= maxItems) {
+          completed = false;
+          break;
         }
 
-        continuationToken = response.NextContinuationToken;
-      } while (continuationToken);
+        const key = typeof obj?.Key === "string" ? obj.Key : "";
+        if (!key) continue;
 
-      return totalSize;
-    } catch (error) {
-      console.warn(`计算目录大小失败: ${error.message}`);
-      return 0;
+        // 忽略目录标记对象（key 以 / 结尾）
+        if (key.endsWith("/")) {
+          continue;
+        }
+
+        // 取出当前目录 prefix 之后的相对路径
+        const relative = effectivePrefix ? key.slice(effectivePrefix.length) : key;
+        if (!relative) continue;
+
+        // 只关心属于“直接子目录”的对象：relative 形如 "child/xxx"
+        const slashIdx = relative.indexOf("/");
+        if (slashIdx <= 0) {
+          // 文件直接在当前目录下，不属于任何子目录
+          continue;
+        }
+
+        const childName = relative.slice(0, slashIdx);
+        const childDirPath = childDirNameToFsPath.get(childName) || null;
+        if (!childDirPath) continue;
+
+        const entry = totals.get(childDirPath);
+        if (!entry) continue;
+
+        const size = typeof obj?.Size === "number" && Number.isFinite(obj.Size) && obj.Size >= 0 ? obj.Size : 0;
+        entry.size += size;
+
+        const lm = obj?.LastModified instanceof Date ? obj.LastModified : obj?.LastModified ? new Date(obj.LastModified) : null;
+        const ms = lm ? lm.getTime() : 0;
+        if (Number.isFinite(ms) && ms > entry.latestModifiedMs) {
+          entry.latestModifiedMs = ms;
+        }
+      }
+
+      if (!resp?.IsTruncated) {
+        break;
+      }
+      if (!resp?.NextContinuationToken) {
+        break;
+      }
+      continuationToken = resp.NextContinuationToken;
     }
+
+    const results = new Map();
+    for (const [dirPath, entry] of totals.entries()) {
+      results.set(dirPath, {
+        size: entry.size,
+        modified: entry.latestModifiedMs > 0 ? new Date(entry.latestModifiedMs).toISOString() : null,
+        completed,
+        calculatedAt: new Date().toISOString(),
+      });
+    }
+
+    return { results, completed, visited };
   }
 
   /**
@@ -108,23 +192,6 @@ export class S3DirectoryOperations {
 
     return handleFsError(
       async () => {
-        // 只有在非强制刷新时才检查缓存
-        if (!refresh && mount.cache_ttl > 0) {
-          const cachedResult = directoryCacheManager.get(mount.id, subPath);
-          if (cachedResult && cachedResult.items) {
-            // 检查缓存是否包含文件夹大小信息（新版本缓存）
-            const hasDirectorySizes = cachedResult.items.some((item) => item.isDirectory && !item.isVirtual && typeof item.size === "number");
-            const hasOnlyFiles = cachedResult.items.every((item) => !item.isDirectory);
-
-            if (hasDirectorySizes || hasOnlyFiles) {
-              console.log(`目录缓存命中: ${mount.id}/${subPath}`);
-              return cachedResult;
-            } else {
-              console.log(`跳过旧版本缓存（缺少文件夹大小信息）: ${mount.id}/${subPath}`);
-            }
-          }
-        }
-
         // 构造返回结果结构
         const result = {
           path: mount.mount_path + subPath,
@@ -172,16 +239,11 @@ export class S3DirectoryOperations {
             const dirName = relativePath.replace(/\/$/, "");
 
             if (dirName) {
-              // 获取目录的真实修改时间和大小
-              let directoryModified = new Date().toISOString();
-              let directorySize = 0;
-
-              try {
-                directoryModified = await this.getS3DirectoryModifiedTime(this.s3Client, this.config.bucket_name, prefixKey);
-                directorySize = await this.getS3DirectorySize(this.s3Client, this.config.bucket_name, prefixKey);
-              } catch (error) {
-                console.warn(`获取目录信息失败:`, error);
-              }
+              // S3 没有“目录”的原生元数据（CommonPrefixes 不包含 LastModified/Size）。
+              // 这里不做递归计算/额外 HEAD，把目录 size/modified 交给上层兜底：
+              // storage(本驱动返回 null) > compute(可选) > index > -
+              const directoryModified = null;
+              const directorySize = null;
 
               // 构建目录路径 - 确保路径正确拼接，避免双斜杠
               const separator = subPath.endsWith("/") ? "" : "/";
@@ -192,7 +254,7 @@ export class S3DirectoryOperations {
                 name: dirName,
                 isDirectory: true,
                 size: directorySize,
-                modified: new Date(directoryModified),
+                modified: directoryModified,
                 mimetype: "application/x-directory",
                 mount,
                 storageType: mount.storage_type,
@@ -241,7 +303,7 @@ export class S3DirectoryOperations {
               name: relativePath,
               isDirectory: false,
               size: content.Size,
-              modified: content.LastModified ? content.LastModified : new Date(),
+              modified: content.LastModified ? content.LastModified : null,
               mimetype: null,
               mount,
               storageType: mount.storage_type,
@@ -261,12 +323,6 @@ export class S3DirectoryOperations {
           if (!a.isDirectory && b.isDirectory) return 1;
           return a.name.localeCompare(b.name);
         });
-
-        // 缓存结果
-        if (mount.cache_ttl > 0) {
-          directoryCacheManager.set(mount.id, subPath, result, mount.cache_ttl);
-          console.log(`目录内容已缓存: ${mount.id}/${subPath}, TTL: ${mount.cache_ttl}秒`);
-        }
 
         // 目录列表操作完成，无需额外的业务逻辑处理
 
@@ -481,8 +537,8 @@ export class S3DirectoryOperations {
         fsPath: path,
         name: path.split("/").filter(Boolean).pop() || "/",
         isDirectory: true,
-        size: 0,
-        modified: new Date(),
+        size: null,
+        modified: null,
         mimetype: "application/x-directory",
         mount,
         storageType: mount.storage_type,
@@ -506,7 +562,7 @@ export class S3DirectoryOperations {
     // 如果有内容，说明是目录
     if (listResponse.Contents && listResponse.Contents.length > 0) {
       // 获取目录的真实修改时间
-      let directoryModified = new Date().toISOString();
+      let directoryModified = null;
       try {
         directoryModified = await this.getS3DirectoryModifiedTime(this.s3Client, this.config.bucket_name, dirPath);
       } catch (error) {
@@ -517,8 +573,8 @@ export class S3DirectoryOperations {
         fsPath: path,
         name: path.split("/").filter(Boolean).pop() || "/",
         isDirectory: true,
-        size: 0,
-        modified: new Date(directoryModified),
+        size: null,
+        modified: directoryModified ? new Date(directoryModified) : null,
         mimetype: "application/x-directory",
         mount,
         storageType: mount.storage_type,
