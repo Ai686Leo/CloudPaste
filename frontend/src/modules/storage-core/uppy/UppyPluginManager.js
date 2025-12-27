@@ -3,11 +3,7 @@
  * 负责管理所有媒体插件的状态、配置和生命周期
  */
 
-import Webcam from "@uppy/webcam";
-import ScreenCapture from "@uppy/screen-capture";
-import Audio from "@uppy/audio";
-import ImageEditor from "@uppy/image-editor";
-import UrlImportPlugin from "./plugins/UrlImportPlugin.js";
+import { useLocalStorage } from "@vueuse/core";
 
 /**
  * 插件管理器类
@@ -22,34 +18,45 @@ export class UppyPluginManager {
 
     // 插件定义
     this.pluginDefinitions = this.createPluginDefinitions();
+
+    // 插件构造函数缓存（避免重复动态加载）
+    this._pluginCtorCache = new Map();
   }
 
   /**
    * 从localStorage加载插件状态
    */
   loadPluginStates() {
-    const saved = localStorage.getItem("uppy-plugin-states");
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        console.warn("Failed to parse saved plugin states:", e);
-      }
-    }
-    // 默认状态：摄像头和URL导入开启，其他关闭
-    return {
+    const defaultState = {
       webcam: true,
       screen: false,
       audio: false,
+      imageEditor: true,
       urlImport: true,
     };
+
+    try {
+      this._storedPluginStates = useLocalStorage("uppy-plugin-states", defaultState);
+      const stored = this._storedPluginStates.value;
+      if (stored && typeof stored === "object") {
+        return { ...defaultState, ...stored };
+      }
+    } catch (e) {
+      console.warn("Failed to load plugin states:", e);
+    }
+    // 默认状态：摄像头和URL导入开启，其他关闭
+    return defaultState;
   }
 
   /**
    * 保存插件状态到localStorage
    */
   savePluginStates() {
-    localStorage.setItem("uppy-plugin-states", JSON.stringify(this.pluginStates));
+    try {
+      if (this._storedPluginStates) this._storedPluginStates.value = { ...(this.pluginStates || {}) };
+    } catch (e) {
+      console.warn("Failed to save plugin states:", e);
+    }
   }
 
   /**
@@ -156,11 +163,32 @@ export class UppyPluginManager {
 
     return [
       {
+        key: "imageEditor",
+        label: texts.imageEditor.label,
+        description: texts.imageEditor.description,
+        enabled: this.pluginStates.imageEditor,
+        cssLoader: () => import("@uppy/image-editor/dist/style.min.css"),
+        pluginLoader: async () => {
+          const mod = await import("@uppy/image-editor");
+          return mod?.default || mod;
+        },
+        config: {
+          quality: 0.8,
+          locale: {
+            strings: texts.imageEditor.strings,
+          },
+        },
+      },
+      {
         key: "webcam",
         label: texts.webcam.label,
         description: texts.webcam.description,
         enabled: this.pluginStates.webcam,
-        plugin: Webcam,
+        cssLoader: () => import("@uppy/webcam/dist/style.min.css"),
+        pluginLoader: async () => {
+          const mod = await import("@uppy/webcam");
+          return mod?.default || mod;
+        },
         config: {
           modes: ["video-audio", "video-only", "picture"],
           mirror: true,
@@ -175,7 +203,11 @@ export class UppyPluginManager {
         label: texts.screen.label,
         description: texts.screen.description,
         enabled: this.pluginStates.screen,
-        plugin: ScreenCapture,
+        cssLoader: () => import("@uppy/screen-capture/dist/style.min.css"),
+        pluginLoader: async () => {
+          const mod = await import("@uppy/screen-capture");
+          return mod?.default || mod;
+        },
         config: {
           displayMediaConstraints: {
             video: {
@@ -194,7 +226,11 @@ export class UppyPluginManager {
         label: texts.audio.label,
         description: texts.audio.description,
         enabled: this.pluginStates.audio,
-        plugin: Audio,
+        cssLoader: () => import("@uppy/audio/dist/style.min.css"),
+        pluginLoader: async () => {
+          const mod = await import("@uppy/audio");
+          return mod?.default || mod;
+        },
         config: {
           showRecordingLength: true,
           locale: {
@@ -207,7 +243,10 @@ export class UppyPluginManager {
         label: texts.urlImport.label,
         description: texts.urlImport.description,
         enabled: this.pluginStates.urlImport,
-        plugin: UrlImportPlugin,
+        pluginLoader: async () => {
+          const mod = await import("./plugins/UrlImportPlugin.js");
+          return mod?.default || mod?.UrlImportPlugin || mod;
+        },
         config: {
           // 传入语言包配置（会与插件的 defaultLocale 合并）
           locale: {
@@ -265,24 +304,47 @@ export class UppyPluginManager {
   /**
    * 添加所有启用的插件到Uppy实例
    */
-  addPluginsToUppy() {
+  async addPluginsToUppy() {
     if (!this.uppy) return;
 
-    // 默认添加图片编辑插件
-    const texts = this.getPluginTexts();
-    this.uppy.use(ImageEditor, {
-      quality: 0.8,
-      locale: {
-        strings: texts.imageEditor.strings,
-      },
-    });
-
     // 添加用户选择的插件
-    this.pluginDefinitions.forEach((plugin) => {
-      if (plugin.enabled) {
-        this.uppy.use(plugin.plugin, plugin.config);
+    for (const plugin of this.pluginDefinitions) {
+      if (!plugin?.enabled) continue;
+
+      try {
+        if (typeof plugin.cssLoader === "function") {
+          await plugin.cssLoader();
+        }
+
+        const PluginCtor = await this._loadPluginCtor(plugin);
+        if (!PluginCtor) continue;
+        this.uppy.use(PluginCtor, plugin.config || {});
+      } catch (e) {
+        console.warn("[UppyPluginManager] 插件加载失败:", plugin?.key, e);
       }
-    });
+    }
+  }
+
+  /**
+   * 动态加载插件构造函数（带缓存）
+   * @param {Object} pluginDef - 插件定义
+   * @returns {Promise<any>}
+   */
+  async _loadPluginCtor(pluginDef) {
+    const key = pluginDef?.key;
+    if (!key) return null;
+
+    if (this._pluginCtorCache?.has(key)) {
+      return this._pluginCtorCache.get(key);
+    }
+
+    if (typeof pluginDef.pluginLoader !== "function") {
+      return null;
+    }
+
+    const ctor = await pluginDef.pluginLoader();
+    this._pluginCtorCache.set(key, ctor);
+    return ctor;
   }
 
   /**

@@ -400,7 +400,7 @@ export async function uploadWithPresignedUrl(url, data, contentType, onProgress,
 
     xhr.onload = function () {
       if (cancelChecker) {
-        clearInterval(cancelChecker);
+        clearTimeout(cancelChecker);
       }
 
       if (xhr.status === 200) {
@@ -416,14 +416,14 @@ export async function uploadWithPresignedUrl(url, data, contentType, onProgress,
 
     xhr.onerror = function () {
       if (cancelChecker) {
-        clearInterval(cancelChecker);
+        clearTimeout(cancelChecker);
       }
       reject(new Error("上传过程中发生网络错误"));
     };
 
     xhr.onabort = function () {
       if (cancelChecker) {
-        clearInterval(cancelChecker);
+        clearTimeout(cancelChecker);
       }
       reject(new Error("上传已取消"));
     };
@@ -431,14 +431,18 @@ export async function uploadWithPresignedUrl(url, data, contentType, onProgress,
     // 定期检查取消状态
     let cancelChecker = null;
     if (onCancel) {
-      cancelChecker = setInterval(() => {
+      const checkCancel = () => {
         if (onCancel()) {
           if (cancelChecker) {
-            clearInterval(cancelChecker);
+            clearTimeout(cancelChecker);
+            cancelChecker = null;
           }
           xhr.abort();
+          return;
         }
-      }, 100);
+        cancelChecker = setTimeout(checkCancel, 100);
+      };
+      cancelChecker = setTimeout(checkCancel, 100);
     }
 
     // 开始上传

@@ -29,13 +29,12 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from "vue";
+import { ref } from "vue";
 import { useI18n } from "vue-i18n";
+import { useEventListener } from "@vueuse/core";
 import { copyToClipboard as clipboardCopy } from "@/utils/clipboard";
-import markdownToWord from "@/utils/markdownToWord";
 import { formatNowForFilename } from "@/utils/timeUtils.js";
 import { saveAs } from "file-saver";
-import { editorContentToPng as snapdomEditorContentToPng } from "@/utils/snapdomCapture";
 import { IconCode, IconDocumentText, IconDownload } from "@/components/icons";
 
 const { t } = useI18n();
@@ -116,6 +115,9 @@ const exportWordDocument = async () => {
       return;
     }
 
+    // 性能优化：只有真的点击“导出 Word”时，才加载 markdownToWord
+    const { default: markdownToWord } = await import("@/utils/markdownToWord");
+
     const blob = await markdownToWord(markdownContent, {
       title: t("markdown.exportDocumentTitle"),
     });
@@ -146,6 +148,9 @@ const exportAsPng = async () => {
   try {
     const timestamp = formatNowForFilename();
     const fileName = `markdown-${timestamp}.png`;
+
+    // 性能优化：只有真的点击“导出 PNG”时，才加载 snapdom
+    const { editorContentToPng: snapdomEditorContentToPng } = await import("@/utils/snapdomCapture");
 
     await new Promise((resolve) => setTimeout(resolve, 1000));
 
@@ -230,15 +235,8 @@ const handleGlobalClick = (event) => {
   }
 };
 
-// 组件挂载
-onMounted(() => {
-  document.addEventListener("click", handleGlobalClick);
-});
-
-// 组件卸载
-onUnmounted(() => {
-  document.removeEventListener("click", handleGlobalClick);
-});
+// 监听全局点击（自动清理）
+useEventListener(document, "click", handleGlobalClick);
 </script>
 
 <style scoped>

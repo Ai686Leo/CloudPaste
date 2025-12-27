@@ -1,9 +1,11 @@
 import { ref, computed, watch, onMounted, nextTick } from "vue";
 import { useRouter, useRoute } from "vue-router";
+import { useEventListener } from "@vueuse/core";
 import { useAuthStore } from "@/stores/authStore.js";
 import { useFsService } from "@/modules/fs";
 import { useViewStateMachine } from "./composables/useViewStateMachine";
 import { ViewState } from "./constants/ViewState";
+import { normalizeFsPath, toDirApiPath } from "@/utils/fsPathUtils.js";
 
 const HISTORY_LIMIT = 20;
 /** @type {Map<string, any>} */
@@ -29,7 +31,7 @@ const bindStorageConfigChangeListener = () => {
   if (storageConfigChangeListenerBound) return;
   if (typeof window === "undefined" || typeof window.addEventListener !== "function") return;
   storageConfigChangeListenerBound = true;
-  window.addEventListener("cloudpaste:storage-config-changed", () => {
+  useEventListener(window, "cloudpaste:storage-config-changed", () => {
     invalidateCachesAfterMutation();
   });
 };
@@ -42,14 +44,6 @@ const safeClone = (value) => {
   } catch {
     return value;
   }
-};
-
-const normalizeFsPath = (path) => {
-  const raw = typeof path === "string" && path ? path : "/";
-  const withLeading = raw.startsWith("/") ? raw : `/${raw}`;
-  const collapsed = withLeading.replace(/\/{2,}/g, "/");
-  if (collapsed === "/") return "/";
-  return collapsed.replace(/\/+$/, "");
 };
 
 const encodeFsSegment = (segment) => encodeURIComponent(segment);
@@ -86,13 +80,6 @@ const setPathAs = (path, dir = true) => {
   }
 };
 
-// 后端 FS 目录类接口仍沿用“目录路径以 / 结尾”的契约（仅用于 API 调用与目录上下文）
-const toDirApiPath = (path) => {
-  const normalized = normalizeFsPath(path);
-  if (normalized === "/") return "/";
-  return `${normalized}/`;
-};
-
 const getParentDirPath = (filePath) => {
   const normalizedFile = normalizeFsPath(filePath);
   if (normalizedFile === "/") return "/";
@@ -120,7 +107,7 @@ const normalizeRouteKey = (routePath) => {
 };
 
 const shouldRecordHistory = (state) =>
-  state === ViewState.DIRECTORY_LOADED || state === ViewState.FILE_LOADED;
+  state !== ViewState.PASSWORD_REQUIRED && state !== ViewState.ERROR;
 
 const setHistory = (key, snapshot) => {
   if (!key) return;
@@ -180,6 +167,9 @@ export function useMountExplorerController() {
   const isVirtualDirectory = computed(() => !!directoryData.value?.isVirtual);
   const directoryMeta = computed(() => directoryData.value?.meta || null);
 
+  // “待恢复滚动值”：只在“预览 → 列表”这类场景使用
+  const pendingScrollRestore = ref(null);
+
   // 权限相关派生状态
   const isAdmin = computed(() => authStore.isAdmin);
   const hasApiKey = computed(() => authStore.isKeyUser && !!authStore.apiKey);
@@ -236,12 +226,24 @@ export function useMountExplorerController() {
     if (!key) return false;
     const viewState = stateMachine.viewState.value;
     if (!shouldRecordHistory(viewState)) return false;
+    if (directoryData.value == null && fileData.value == null) return false;
+
+    // 记录时尽量落在稳定态：否则恢复后可能一直处于 loading 态，影响恢复体验
+    const stableViewState =
+      viewState === ViewState.LOADING_DIRECTORY && directoryData.value != null
+        ? ViewState.DIRECTORY_LOADED
+        : viewState === ViewState.LOADING_FILE && fileData.value != null
+          ? ViewState.FILE_LOADED
+          : viewState;
+
+    // 用 window.scrollY 读取“实时值”，确保预览返回能回到准确位置。
+    const scrollNow = typeof window !== "undefined" ? window.scrollY : 0;
 
     setHistory(key, {
       kind: "history",
       ts: Date.now(),
       epoch: cacheEpoch,
-      viewState,
+      viewState: stableViewState,
       currentViewPath: currentViewPath.value,
       currentPath: currentPath.value,
       // 目录数据通常体积较大：在 FILE_LOADED 状态下，直接复用当前对象引用即可，
@@ -250,7 +252,7 @@ export function useMountExplorerController() {
       fileData: safeClone(fileData.value),
       error: error.value,
       previewError: previewError.value,
-      scroll: typeof window !== "undefined" ? window.scrollY : 0,
+      scroll: scrollNow || 0,
     });
 
     return true;
@@ -269,6 +271,10 @@ export function useMountExplorerController() {
     recordCurrentRouteHistoryBeforeNavigation();
     const normalized = normalizeFsPath(path);
     setPathAs(normalized, true);
+    // 进入新目录：默认回到顶部
+    if (typeof window !== "undefined" && typeof window.scrollTo === "function") {
+      window.scrollTo(0, 0);
+    }
     await updateUrl(normalized);
   };
 
@@ -330,6 +336,11 @@ export function useMountExplorerController() {
     if (!snapshot) return false;
     if (snapshot.epoch !== cacheEpoch) return false;
 
+    // 先准备“待恢复滚动值”
+    const restoredViewState = snapshot.viewState || ViewState.INITIAL;
+    const isPreviewState = restoredViewState === ViewState.FILE_LOADED || restoredViewState === ViewState.LOADING_FILE;
+    pendingScrollRestore.value = isPreviewState ? null : (snapshot.scroll || 0);
+
     currentViewPath.value = snapshot.currentViewPath || "/";
     currentPath.value = snapshot.currentPath || "/";
 
@@ -339,17 +350,10 @@ export function useMountExplorerController() {
     error.value = snapshot.error || null;
     previewError.value = snapshot.previewError || null;
 
-    stateMachine.viewState.value = snapshot.viewState || ViewState.INITIAL;
+    stateMachine.viewState.value = restoredViewState;
     stateMachine.errorInfo.value = null;
 
     await nextTick();
-
-    if (typeof window !== "undefined") {
-      if (typeof requestAnimationFrame === "function") {
-        await new Promise((resolve) => requestAnimationFrame(resolve));
-      }
-      window.scrollTo({ top: snapshot.scroll || 0 });
-    }
 
     return true;
   };
@@ -379,8 +383,8 @@ export function useMountExplorerController() {
     stateMachine.errorInfo.value = null;
 
     await nextTick();
-    if (typeof window !== "undefined") {
-      window.scrollTo({ top: 0 });
+    if (typeof window !== "undefined" && typeof window.scrollTo === "function") {
+      window.scrollTo(0, 0);
     }
 
     return true;
@@ -493,6 +497,7 @@ export function useMountExplorerController() {
     if (!authStore.isAuthenticated) return;
     const taskId = ++activeRouteTask;
     fsService.cancelAllRequests();
+    pendingScrollRestore.value = null;
 
     const fsPath = normalizeFsPath(parseFsPathFromRoute(routePath));
     const allowedPath = await ensureWithinBasicPath(fsPath);
@@ -546,6 +551,13 @@ export function useMountExplorerController() {
     await loadFile(allowedPath, { taskId });
   };
 
+  const consumePendingScrollRestore = () => {
+    const value = pendingScrollRestore.value;
+    if (value == null) return null;
+    pendingScrollRestore.value = null;
+    return value;
+  };
+
   // 路由变化监听：记录旧页面 history，再处理新页面
   watch(
     () => route.path,
@@ -564,11 +576,11 @@ export function useMountExplorerController() {
     }
   });
 
-    const resetCaches = () => {
-      historyMap.clear();
-      prefetchMap.clear();
-      isDirRecord.clear();
-    };
+  const resetCaches = () => {
+    historyMap.clear();
+    prefetchMap.clear();
+    isDirRecord.clear();
+  };
 
   // 认证域变更时清理缓存：避免跨账号/跨 basicPath 的“幽灵恢复”
   watch(
@@ -652,5 +664,6 @@ export function useMountExplorerController() {
     refreshDirectory,
     refreshCurrentRoute,
     prefetchDirectory,
+    consumePendingScrollRestore,
   };
 }

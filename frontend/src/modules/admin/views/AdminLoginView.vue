@@ -1,5 +1,6 @@
 <script setup>
 import { ref, reactive, onMounted } from "vue";
+import { useLocalStorage } from "@vueuse/core";
 import { useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { ApiStatus } from "@/api/ApiStatus";
@@ -38,12 +39,12 @@ const toggleLoginMode = () => {
 };
 
 const LOGIN_PREF_KEY = "cp_admin_login_pref";
+const storedLoginPref = useLocalStorage(LOGIN_PREF_KEY, null);
 
 const loadRemembered = () => {
   try {
-    const raw = localStorage.getItem(LOGIN_PREF_KEY);
-    if (!raw) return;
-    const data = JSON.parse(raw);
+    const data = storedLoginPref.value;
+    if (!data) return;
 
     if (data.lastMode === "admin") {
       isApiKeyMode.value = false;
@@ -72,7 +73,7 @@ const saveRemembered = (mode) => {
     apiKey: mode === "apikey" && rememberMe.value ? apiKeyForm.apiKey : "",
   };
   try {
-    localStorage.setItem(LOGIN_PREF_KEY, JSON.stringify(payload));
+    storedLoginPref.value = payload;
   } catch {
     // ignore
   }

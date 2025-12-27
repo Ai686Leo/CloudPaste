@@ -1,37 +1,37 @@
 <template>
   <div
-    ref="rootRef"
-    class="foliate-epub-view w-full h-full relative flex flex-col"
-    :class="[
+      ref="rootRef"
+      class="foliate-epub-view w-full h-full relative flex flex-col"
+      :class="[
       darkMode ? 'bg-gray-900' : 'bg-white'
     ]"
-    @click="handleContainerClick"
-    @mousemove="handleMouseMove"
+      @click="handleContainerClick"
+      @mousemove="handleMouseMove"
   >
     <!-- 顶部工具栏：点击/悬停显示 -->
     <transition name="toolbar-fade">
       <div
-        v-show="toolbarVisible || loading || error"
-        class="toolbar-container absolute top-0 left-0 right-0 z-20"
+          v-show="toolbarVisible || loading || error"
+          class="toolbar-container absolute top-0 left-0 right-0 z-20"
       >
         <div
-          class="flex items-center justify-between gap-2 px-3 py-2 backdrop-blur-sm"
-          :class="darkMode ? 'bg-gray-800/90' : 'bg-white/90'"
+            class="flex items-center justify-between gap-2 px-3 py-2 backdrop-blur-sm"
+            :class="darkMode ? 'bg-gray-800/90' : 'bg-white/90'"
         >
           <!-- 左侧：目录按钮 + 书籍信息 -->
           <div class="flex items-center gap-3 min-w-0 flex-1">
             <button
-              type="button"
-              class="toolbar-btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-md transition-colors"
-              :class="[
+                type="button"
+                class="toolbar-btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-md transition-colors"
+                :class="[
                 darkMode
                   ? 'hover:bg-gray-700 text-gray-300 hover:text-white'
                   : 'hover:bg-gray-100 text-gray-600 hover:text-gray-900',
                 sidebarOpen ? (darkMode ? 'bg-gray-700' : 'bg-gray-100') : ''
               ]"
-              @click.stop="sidebarOpen = !sidebarOpen"
-              :disabled="loading || error || tocItems.length === 0"
-              :title="sidebarOpen ? t('fileView.preview.epub.closeToc') : t('fileView.preview.epub.toc')"
+                @click.stop="sidebarOpen = !sidebarOpen"
+                :disabled="loading || error || tocItems.length === 0"
+                :title="sidebarOpen ? t('fileView.preview.epub.closeToc') : t('fileView.preview.epub.toc')"
             >
               <IconMenu size="sm" class="w-4 h-4" />
               <span class="text-sm hidden sm:inline">{{ t('fileView.preview.epub.toc') }}</span>
@@ -50,29 +50,29 @@
             <!-- 历史导航按钮组 -->
             <div class="flex items-center rounded-md overflow-hidden" :class="darkMode ? 'bg-gray-700' : 'bg-gray-100'">
               <button
-                type="button"
-                class="px-2 py-1.5 transition-colors"
-                :class="[
+                  type="button"
+                  class="px-2 py-1.5 transition-colors"
+                  :class="[
                   darkMode ? 'text-gray-300' : 'text-gray-600',
                   readingHistory.canGoBack.value ? (darkMode ? 'hover:bg-gray-600' : 'hover:bg-gray-200') : 'opacity-40 cursor-not-allowed'
                 ]"
-                @click.stop="historyBack"
-                :disabled="!readingHistory.canGoBack.value || loading || error"
-                :title="t('fileView.preview.epub.historyBack')"
+                  @click.stop="historyBack"
+                  :disabled="!readingHistory.canGoBack.value || loading || error"
+                  :title="t('fileView.preview.epub.historyBack')"
               >
                 <IconArrowLeft size="sm" class="w-4 h-4" />
               </button>
               <div class="w-px h-4" :class="darkMode ? 'bg-gray-600' : 'bg-gray-300'"></div>
               <button
-                type="button"
-                class="px-2 py-1.5 transition-colors"
-                :class="[
+                  type="button"
+                  class="px-2 py-1.5 transition-colors"
+                  :class="[
                   darkMode ? 'text-gray-300' : 'text-gray-600',
                   readingHistory.canGoForward.value ? (darkMode ? 'hover:bg-gray-600' : 'hover:bg-gray-200') : 'opacity-40 cursor-not-allowed'
                 ]"
-                @click.stop="historyForward"
-                :disabled="!readingHistory.canGoForward.value || loading || error"
-                :title="t('fileView.preview.epub.historyForward')"
+                  @click.stop="historyForward"
+                  :disabled="!readingHistory.canGoForward.value || loading || error"
+                  :title="t('fileView.preview.epub.historyForward')"
               >
                 <IconArrowRight size="sm" class="w-4 h-4" />
               </button>
@@ -80,17 +80,17 @@
 
             <!-- 书签按钮 -->
             <button
-              type="button"
-              class="px-2.5 py-1.5 rounded-md transition-colors"
-              :class="[
+                type="button"
+                class="px-2.5 py-1.5 rounded-md transition-colors"
+                :class="[
                 darkMode
                   ? 'hover:bg-gray-700 text-gray-300 hover:text-white'
                   : 'hover:bg-gray-100 text-gray-600 hover:text-gray-900',
                 isCurrentBookmarked ? (darkMode ? 'text-yellow-400' : 'text-yellow-500') : ''
               ]"
-              @click.stop="toggleBookmark"
-              :disabled="loading || error || !viewReady || !currentCfi"
-              :title="isCurrentBookmarked ? t('fileView.preview.epub.removeBookmark') : t('fileView.preview.epub.addBookmark')"
+                @click.stop="toggleBookmark"
+                :disabled="loading || error || !viewReady || !currentCfi"
+                :title="isCurrentBookmarked ? t('fileView.preview.epub.removeBookmark') : t('fileView.preview.epub.addBookmark')"
             >
               <IconBookmarkSolid v-if="isCurrentBookmarked" size="sm" class="w-4 h-4" />
               <IconBookmark v-else size="sm" class="w-4 h-4" />
@@ -98,11 +98,11 @@
 
             <!-- 阅读模式切换 -->
             <select
-              v-model="flowMode"
-              class="text-sm px-2 py-1.5 rounded-md border-0 cursor-pointer transition-colors"
-              :class="darkMode ? 'bg-gray-700 text-gray-200' : 'bg-gray-100 text-gray-700'"
-              :disabled="loading || error || !viewReady"
-              :title="t('fileView.preview.epub.readingMode')"
+                v-model="flowMode"
+                class="text-sm px-2 py-1.5 rounded-md border-0 cursor-pointer transition-colors"
+                :class="darkMode ? 'bg-gray-700 text-gray-200' : 'bg-gray-100 text-gray-700'"
+                :disabled="loading || error || !viewReady"
+                :title="t('fileView.preview.epub.readingMode')"
             >
               <option value="paginated">{{ t('fileView.preview.epub.modePaginated') }}</option>
               <option value="scrolled">{{ t('fileView.preview.epub.modeScrolled') }}</option>
@@ -111,23 +111,23 @@
             <!-- 翻页按钮组 -->
             <div class="flex items-center rounded-md overflow-hidden" :class="darkMode ? 'bg-gray-700' : 'bg-gray-100'">
               <button
-                type="button"
-                class="px-3 py-1.5 transition-colors"
-                :class="darkMode ? 'hover:bg-gray-600 text-gray-300' : 'hover:bg-gray-200 text-gray-600'"
-                @click.stop="goLeft"
-                :disabled="loading || error || !viewReady"
-                :title="t('fileView.preview.epub.prevPage')"
+                  type="button"
+                  class="px-3 py-1.5 transition-colors"
+                  :class="darkMode ? 'hover:bg-gray-600 text-gray-300' : 'hover:bg-gray-200 text-gray-600'"
+                  @click.stop="goLeft"
+                  :disabled="loading || error || !viewReady"
+                  :title="t('fileView.preview.epub.prevPage')"
               >
                 <IconChevronLeft size="sm" class="w-4 h-4" />
               </button>
               <div class="w-px h-4" :class="darkMode ? 'bg-gray-600' : 'bg-gray-300'"></div>
               <button
-                type="button"
-                class="px-3 py-1.5 transition-colors"
-                :class="darkMode ? 'hover:bg-gray-600 text-gray-300' : 'hover:bg-gray-200 text-gray-600'"
-                @click.stop="goRight"
-                :disabled="loading || error || !viewReady"
-                :title="t('fileView.preview.epub.nextPage')"
+                  type="button"
+                  class="px-3 py-1.5 transition-colors"
+                  :class="darkMode ? 'hover:bg-gray-600 text-gray-300' : 'hover:bg-gray-200 text-gray-600'"
+                  @click.stop="goRight"
+                  :disabled="loading || error || !viewReady"
+                  :title="t('fileView.preview.epub.nextPage')"
               >
                 <IconChevronRight size="sm" class="w-4 h-4" />
               </button>
@@ -142,19 +142,19 @@
       <!-- 目录侧边栏遮罩 -->
       <transition name="sidebar-fade">
         <div
-          v-if="sidebarOpen"
-          class="absolute inset-0 z-10 bg-black/30"
-          @click="sidebarOpen = false"
+            v-if="sidebarOpen"
+            class="absolute inset-0 z-10 bg-black/30"
+            @click="sidebarOpen = false"
         ></div>
       </transition>
 
       <!-- 目录侧边栏 -->
       <transition name="sidebar-slide">
         <div
-          v-if="sidebarOpen"
-          class="absolute left-0 top-0 bottom-0 z-20 w-72 max-w-[80%] flex flex-col shadow-xl"
-          :class="darkMode ? 'bg-gray-800' : 'bg-white'"
-          @click.stop
+            v-if="sidebarOpen"
+            class="absolute left-0 top-0 bottom-0 z-20 w-72 max-w-[80%] flex flex-col shadow-xl"
+            :class="darkMode ? 'bg-gray-800' : 'bg-white'"
+            @click.stop
         >
           <!-- 侧边栏头部 -->
           <div class="flex items-center justify-between p-4 border-b" :class="darkMode ? 'border-gray-700' : 'border-gray-200'">
@@ -167,11 +167,11 @@
               </div>
             </div>
             <button
-              type="button"
-              class="ml-2 p-1.5 rounded-md transition-colors"
-              :class="darkMode ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-500'"
-              @click="sidebarOpen = false"
-              :title="t('fileView.preview.epub.closeToc')"
+                type="button"
+                class="ml-2 p-1.5 rounded-md transition-colors"
+                :class="darkMode ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-500'"
+                @click="sidebarOpen = false"
+                :title="t('fileView.preview.epub.closeToc')"
             >
               <IconClose size="sm" class="w-5 h-5" />
             </button>
@@ -187,25 +187,25 @@
               <ul class="space-y-0.5">
                 <li v-for="bookmark in bookmarksList" :key="bookmark.cfi" class="group">
                   <div
-                    class="flex items-center gap-1 rounded-md transition-colors cursor-pointer"
-                    :class="darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'"
+                      class="flex items-center gap-1 rounded-md transition-colors cursor-pointer"
+                      :class="darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'"
                   >
                     <button
-                      type="button"
-                      class="flex-1 text-left text-sm py-2 px-2 rounded transition-colors truncate flex items-center gap-2"
-                      :class="darkMode ? 'text-gray-300 hover:text-white' : 'text-gray-700 hover:text-gray-900'"
-                      @click="goToBookmark(bookmark)"
-                      :title="bookmark.title"
+                        type="button"
+                        class="flex-1 text-left text-sm py-2 px-2 rounded transition-colors truncate flex items-center gap-2"
+                        :class="darkMode ? 'text-gray-300 hover:text-white' : 'text-gray-700 hover:text-gray-900'"
+                        @click="goToBookmark(bookmark)"
+                        :title="bookmark.title"
                     >
                       <IconBookmarkSolid size="sm" class="w-3 h-3 flex-shrink-0" :class="darkMode ? 'text-yellow-400' : 'text-yellow-500'" />
                       <span class="truncate">{{ bookmark.title || t('fileView.preview.epub.untitledBookmark') }}</span>
                     </button>
                     <button
-                      type="button"
-                      class="p-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity"
-                      :class="darkMode ? 'hover:bg-gray-600 text-gray-400' : 'hover:bg-gray-200 text-gray-500'"
-                      @click.stop="epubProgress?.removeBookmark(bookmark.cfi)"
-                      :title="t('fileView.preview.epub.removeBookmark')"
+                        type="button"
+                        class="p-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                        :class="darkMode ? 'hover:bg-gray-600 text-gray-400' : 'hover:bg-gray-200 text-gray-500'"
+                        @click.stop="epubProgress?.removeBookmark(bookmark.cfi)"
+                        :title="t('fileView.preview.epub.removeBookmark')"
                     >
                       <IconClose size="sm" class="w-3 h-3" />
                     </button>
@@ -235,11 +235,11 @@
       <!-- 加载状态 -->
       <div v-if="loading" class="absolute inset-0 flex items-center justify-center" :class="darkMode ? 'bg-gray-900' : 'bg-white'">
         <LoadingIndicator
-          :text="loadingText"
-          :dark-mode="darkMode"
-          size="xl"
-          icon-class="text-blue-500"
-          :text-class="darkMode ? 'text-blue-400' : 'text-blue-600'"
+            :text="loadingText"
+            :dark-mode="darkMode"
+            size="xl"
+            icon-class="text-blue-500"
+            :text-class="darkMode ? 'text-blue-400' : 'text-blue-600'"
         />
       </div>
 
@@ -255,31 +255,31 @@
     <!-- 底部进度条 -->
     <transition name="toolbar-fade">
       <div
-        v-show="(toolbarVisible || loading || error) && viewReady"
-        class="progress-container absolute bottom-0 left-0 right-0 z-20"
+          v-show="(toolbarVisible || loading || error) && viewReady"
+          class="progress-container absolute bottom-0 left-0 right-0 z-20"
       >
         <div
-          class="px-4 py-3 backdrop-blur-sm"
-          :class="darkMode ? 'bg-gray-800/90' : 'bg-white/90'"
+            class="px-4 py-3 backdrop-blur-sm"
+            :class="darkMode ? 'bg-gray-800/90' : 'bg-white/90'"
         >
           <!-- 进度条 -->
           <div class="relative h-1 rounded-full overflow-hidden mb-2" :class="darkMode ? 'bg-gray-700' : 'bg-gray-200'">
             <div
-              class="absolute left-0 top-0 h-full rounded-full transition-all duration-300"
-              :class="darkMode ? 'bg-blue-500' : 'bg-blue-600'"
-              :style="{ width: `${fraction * 100}%` }"
+                class="absolute left-0 top-0 h-full rounded-full transition-all duration-300"
+                :class="darkMode ? 'bg-blue-500' : 'bg-blue-600'"
+                :style="{ width: `${fraction * 100}%` }"
             ></div>
             <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.0001"
-              :dir="bookDir"
-              v-model.number="fraction"
-              @change="handleGoToFraction"
-              :disabled="loading || error || !viewReady"
-              class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-              :title="progressTitle"
+                type="range"
+                min="0"
+                max="1"
+                step="0.0001"
+                :dir="bookDir"
+                v-model.number="fraction"
+                @change="handleGoToFraction"
+                :disabled="loading || error || !viewReady"
+                class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                :title="progressTitle"
             />
           </div>
 
@@ -298,28 +298,28 @@
 
     <!-- 左右翻页热区（点击翻页） -->
     <div
-      v-if="viewReady && !loading && !error && flowMode === 'paginated'"
-      class="absolute inset-y-0 left-0 w-1/4 cursor-pointer z-10 opacity-0 hover:opacity-100 transition-opacity"
-      @click.stop="goLeft"
+        v-if="viewReady && !loading && !error && flowMode === 'paginated'"
+        class="absolute inset-y-0 left-0 w-1/4 cursor-pointer z-10 opacity-0 hover:opacity-100 transition-opacity"
+        @click.stop="goLeft"
     >
       <div class="absolute inset-y-0 left-0 w-full flex items-center justify-start pl-4">
         <div
-          class="p-3 rounded-full transition-colors"
-          :class="darkMode ? 'bg-gray-800/50 text-gray-300' : 'bg-white/50 text-gray-600'"
+            class="p-3 rounded-full transition-colors"
+            :class="darkMode ? 'bg-gray-800/50 text-gray-300' : 'bg-white/50 text-gray-600'"
         >
           <IconChevronLeft size="lg" class="w-6 h-6" />
         </div>
       </div>
     </div>
     <div
-      v-if="viewReady && !loading && !error && flowMode === 'paginated'"
-      class="absolute inset-y-0 right-0 w-1/4 cursor-pointer z-10 opacity-0 hover:opacity-100 transition-opacity"
-      @click.stop="goRight"
+        v-if="viewReady && !loading && !error && flowMode === 'paginated'"
+        class="absolute inset-y-0 right-0 w-1/4 cursor-pointer z-10 opacity-0 hover:opacity-100 transition-opacity"
+        @click.stop="goRight"
     >
       <div class="absolute inset-y-0 right-0 w-full flex items-center justify-end pr-4">
         <div
-          class="p-3 rounded-full transition-colors"
-          :class="darkMode ? 'bg-gray-800/50 text-gray-300' : 'bg-white/50 text-gray-600'"
+            class="p-3 rounded-full transition-colors"
+            :class="darkMode ? 'bg-gray-800/50 text-gray-300' : 'bg-white/50 text-gray-600'"
         >
           <IconChevronRight size="lg" class="w-6 h-6" />
         </div>
@@ -329,8 +329,9 @@
 </template>
 
 <script setup>
-import { ref, watch, onMounted, onBeforeUnmount, computed, defineComponent } from "vue";
+import { ref, watch, onMounted, onBeforeUnmount, computed, defineComponent, h } from "vue";
 import { useI18n } from "vue-i18n";
+import { useEventListener } from "@vueuse/core";
 import { IconChevronLeft, IconChevronRight, IconMenu, IconClose, IconExclamation, IconBookmark, IconBookmarkSolid, IconArrowLeft, IconArrowRight } from "@/components/icons";
 import LoadingIndicator from "@/components/common/LoadingIndicator.vue";
 import { useEpubProgress, useReadingHistory, generateBookId } from "@/composables/useEpubProgress.js";
@@ -375,8 +376,10 @@ const rootRef = ref(null);
 const loading = ref(true);
 const error = ref(false);
 const currentViewEl = ref(null);
-let currentContentDoc = null;
+const currentContentDocRef = ref(null);
 let loadSeq = 0;
+let stopViewRelocateListener = null;
+let stopViewLoadListener = null;
 
 const viewReady = computed(() => Boolean(currentViewEl.value));
 
@@ -597,6 +600,10 @@ const handleKeydown = (event) => {
   }
 };
 
+// 注册键盘事件（自动清理）
+useEventListener(document, "keydown", handleKeydown);
+useEventListener(currentContentDocRef, "keydown", handleKeydown);
+
 const handleRelocate = (event) => {
   const detail = event?.detail || {};
   if (typeof detail.fraction === "number" && Number.isFinite(detail.fraction)) {
@@ -628,16 +635,7 @@ const handleRelocate = (event) => {
 const handleLoadContentDoc = (event) => {
   const doc = event?.detail?.doc;
   if (doc && typeof doc.addEventListener === "function") {
-    try {
-      if (currentContentDoc && typeof currentContentDoc.removeEventListener === "function") {
-        currentContentDoc.removeEventListener("keydown", handleKeydown);
-      }
-    } catch {
-      // ignore
-    }
-
-    currentContentDoc = doc;
-    doc.addEventListener("keydown", handleKeydown);
+    currentContentDocRef.value = doc;
   }
 };
 
@@ -680,20 +678,19 @@ const handleGoToFraction = async () => {
 };
 
 const cleanup = () => {
-  try {
-    if (currentContentDoc && typeof currentContentDoc.removeEventListener === "function") {
-      currentContentDoc.removeEventListener("keydown", handleKeydown);
-    }
-  } catch {
-    // ignore
+  currentContentDocRef.value = null;
+  if (typeof stopViewRelocateListener === "function") {
+    stopViewRelocateListener();
+    stopViewRelocateListener = null;
   }
-  currentContentDoc = null;
+  if (typeof stopViewLoadListener === "function") {
+    stopViewLoadListener();
+    stopViewLoadListener = null;
+  }
 
   if (currentViewEl.value) {
     try {
       currentViewEl.value.close?.();
-      currentViewEl.value.removeEventListener?.("relocate", handleRelocate);
-      currentViewEl.value.removeEventListener?.("load", handleLoadContentDoc);
       currentViewEl.value.remove?.();
     } catch {
       // ignore
@@ -729,8 +726,8 @@ const openBook = async () => {
     hostRef.value?.appendChild(viewEl);
     currentViewEl.value = viewEl;
 
-    viewEl.addEventListener("relocate", handleRelocate);
-    viewEl.addEventListener("load", handleLoadContentDoc);
+    stopViewRelocateListener = useEventListener(viewEl, "relocate", handleRelocate);
+    stopViewLoadListener = useEventListener(viewEl, "load", handleLoadContentDoc);
 
     await viewEl.open(url);
     if (seq !== loadSeq) return;
@@ -791,30 +788,29 @@ const openBook = async () => {
 
 onMounted(() => {
   openBook();
-  document.addEventListener("keydown", handleKeydown);
 });
 
 watch(
-  flowMode,
-  () => {
-    applyFlowMode();
-  },
-  { immediate: true },
+    flowMode,
+    () => {
+      applyFlowMode();
+    },
+    { immediate: true },
 );
 
 watch(
-  () => props.srcUrl,
-  () => {
-    openBook();
-  },
+    () => props.srcUrl,
+    () => {
+      openBook();
+    },
 );
 
 // 监听暗色模式变化
 watch(
-  () => props.darkMode,
-  () => {
-    applyDarkMode();
-  },
+    () => props.darkMode,
+    () => {
+      applyDarkMode();
+    },
 );
 
 // 监听侧边栏状态，打开时保持工具栏显示
@@ -829,7 +825,6 @@ watch(sidebarOpen, (open) => {
 
 onBeforeUnmount(() => {
   loadSeq++;
-  document.removeEventListener("keydown", handleKeydown);
   clearTimeout(toolbarTimer);
 
   // 立即保存阅读进度
@@ -852,7 +847,7 @@ const TocNode = defineComponent({
   setup(props, { emit }) {
     const children = computed(() => (Array.isArray(props.node?.subitems) ? props.node.subitems : []));
     const label = computed(() => String(props.node?.label || "").trim() || "Untitled");
-    const href = computed(() => String(props.node?.href || "").trim());
+    const href = computed(() => props.node?.href ?? "");
     const expanded = ref(false);
 
     const toggle = () => {
@@ -861,53 +856,66 @@ const TocNode = defineComponent({
     };
 
     const go = () => {
-      if (!href.value) return;
+      // 兜底 TOC 用章节 index
+      if (href.value === null || href.value === undefined) return;
+      if (typeof href.value === "string" && !href.value.trim()) return;
       emit("go", href.value);
     };
 
-    return { children, label, href, expanded, toggle, go, nodeKey };
+    return () => {
+      const hasChildren = children.value.length > 0;
+      const rowClass = `flex items-center gap-1 rounded-md transition-colors ${
+          props.darkMode ? "hover:bg-gray-700" : "hover:bg-gray-100"
+      }`;
+
+      const toggleBtn = hasChildren
+          ? h(
+              "button",
+              {
+                type: "button",
+                class: `w-7 h-7 flex items-center justify-center rounded transition-colors flex-shrink-0 ${
+                    props.darkMode ? "text-gray-500 hover:text-gray-300" : "text-gray-400 hover:text-gray-600"
+                }`,
+                onClick: toggle,
+                title: expanded.value ? "收起" : "展开",
+              },
+              [h("span", { class: "text-xs" }, expanded.value ? "▾" : "▸")],
+          )
+          : h("span", { class: "w-7 h-7 flex-shrink-0" });
+
+      const labelBtn = h(
+          "button",
+          {
+            type: "button",
+            class: `flex-1 text-left text-sm py-2 pr-2 rounded transition-colors truncate ${
+                props.darkMode ? "text-gray-300 hover:text-white" : "text-gray-700 hover:text-gray-900"
+            }`,
+            onClick: go,
+            title: label.value,
+          },
+          label.value,
+      );
+
+      const childList =
+          expanded.value && hasChildren
+              ? h(
+                  "ul",
+                  { class: "pl-4 mt-0.5 space-y-0.5" },
+                  children.value.map((child) =>
+                      h(TocNode, {
+                        key: nodeKey(child),
+                        node: child,
+                        darkMode: props.darkMode,
+                        depth: props.depth + 1,
+                        onGo: (payload) => emit("go", payload),
+                      }),
+                  ),
+              )
+              : null;
+
+      return h("li", null, [h("div", { class: rowClass }, [toggleBtn, labelBtn]), childList]);
+    };
   },
-  template: `
-    <li>
-      <div
-        class="flex items-center gap-1 rounded-md transition-colors"
-        :class="darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'"
-      >
-        <button
-          v-if="children.length"
-          type="button"
-          class="w-7 h-7 flex items-center justify-center rounded transition-colors flex-shrink-0"
-          :class="darkMode ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'"
-          @click="toggle"
-          :title="expanded ? '收起' : '展开'"
-        >
-          <span class="text-xs">{{ expanded ? '▾' : '▸' }}</span>
-        </button>
-        <span v-else class="w-7 h-7 flex-shrink-0"></span>
-
-        <button
-          type="button"
-          class="flex-1 text-left text-sm py-2 pr-2 rounded transition-colors truncate"
-          :class="darkMode ? 'text-gray-300 hover:text-white' : 'text-gray-700 hover:text-gray-900'"
-          @click="go"
-          :title="label"
-        >
-          {{ label }}
-        </button>
-      </div>
-
-      <ul v-if="expanded && children.length" class="pl-4 mt-0.5 space-y-0.5">
-        <TocNode
-          v-for="child in children"
-          :key="nodeKey(child)"
-          :node="child"
-          :dark-mode="darkMode"
-          :depth="depth + 1"
-          @go="$emit('go', $event)"
-        />
-      </ul>
-    </li>
-  `,
 });
 </script>
 

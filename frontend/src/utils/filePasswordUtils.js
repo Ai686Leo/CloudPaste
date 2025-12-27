@@ -4,6 +4,9 @@
  * @param {{ file?: any, slug?: string, url?: string }} options
  * @returns {string|null}
  */
+
+import { useSessionStorage } from "@vueuse/core";
+
 export function getFilePassword(options = {}) {
   const file = options.file || {};
   const slug = options.slug || file.slug;
@@ -30,14 +33,27 @@ export function getFilePassword(options = {}) {
 
   if (typeof window !== "undefined" && slug) {
     try {
-      const sessionPassword = sessionStorage.getItem(`file_password_${slug}`);
-      if (sessionPassword) {
-        return sessionPassword;
-      }
+      const stored = useSessionStorage(`file_password_${slug}`, "");
+      return stored.value || null;
     } catch (error) {
       console.warn("从会话存储获取密码失败:", error);
     }
   }
 
   return null;
+}
+
+/**
+ * 统一的文件密码写入逻辑（写入 sessionStorage）
+ * @param {string} slug
+ * @param {string} password
+ */
+export function setFilePassword(slug, password) {
+  if (typeof window === "undefined" || !slug) return;
+  try {
+    const stored = useSessionStorage(`file_password_${slug}`, "");
+    stored.value = password || "";
+  } catch (error) {
+    console.warn("写入会话存储密码失败:", error);
+  }
 }

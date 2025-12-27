@@ -75,8 +75,27 @@ app.get("/api/s/:slug", async (c) => {
   return handleShareDelivery(c, { forceDownload, forceProxy: true });
 });
 
+// Share 本地代理入口
+// - 例如：/api/s/:slug/:filename
+// - filename 仅用于展示/识别类型，不参与文件定位
+app.get("/api/s/:slug/:filename", async (c) => {
+  const url = new URL(c.req.url);
+  const down = url.searchParams.get("down");
+  const legacyMode = url.searchParams.get("mode");
+  const forceDownload =
+    (down && down !== "0" && down !== "false") ||
+    legacyMode === "attachment" ||
+    legacyMode === "download";
+  return handleShareDelivery(c, { forceDownload, forceProxy: true });
+});
+
 // Share 文本/编码检测专用同源内容口（共用）
 app.get("/api/share/content/:slug", async (c) => {
+  return handleShareDelivery(c, { forceDownload: false, forceProxy: true });
+});
+
+// Share 文本/编码检测专用同源内容口
+app.get("/api/share/content/:slug/:filename", async (c) => {
   return handleShareDelivery(c, { forceDownload: false, forceProxy: true });
 });
 

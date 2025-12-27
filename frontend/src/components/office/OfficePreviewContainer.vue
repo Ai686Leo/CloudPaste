@@ -2,14 +2,15 @@
   <div class="office-preview-container" :style="containerStyle">
     <!-- Header: Provider 选择器（可通过 slot 自定义） -->
     <slot name="header" :providers="normalizedProviders" :selected-provider="selectedProvider" :on-select="handleProviderSelect">
-      <div v-if="showProviderSelector && normalizedProviders.length > 1" class="office-header">
-        <span class="office-type-label">{{ officeTypeDisplayName }}</span>
-        <select v-model="selectedProvider" class="office-provider-select" @change="handleProviderChange">
-          <option v-for="opt in normalizedProviders" :key="opt.key" :value="opt.key">
-            {{ opt.label }}
-          </option>
-        </select>
-      </div>
+      <PreviewProviderHeader
+        :show-fullscreen="showFullscreen"
+        :fullscreen-target="fullscreenTarget"
+        v-if="showProviderSelector && normalizedProviders.length > 1"
+        :title="officeTypeDisplayName"
+        :options="normalizedProviders"
+        :model-value="selectedProvider"
+        @update:modelValue="handleProviderSelect"
+      />
     </slot>
 
     <!-- Content: Native / iframe 预览区 -->
@@ -70,6 +71,8 @@
       <div v-else-if="currentPreviewUrl && currentPreviewUrl !== 'native'" class="office-iframe-wrapper">
         <iframe
           :src="currentPreviewUrl"
+          allow="fullscreen"
+          allowfullscreen
           frameborder="0"
           class="office-iframe"
           sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-top-navigation"
@@ -117,6 +120,7 @@ import XlsxViewer from "./XlsxViewer.vue";
 import PptxViewer from "./PptxViewer.vue";
 import { IconDocumentText } from "@/components/icons";
 import LoadingIndicator from "@/components/common/LoadingIndicator.vue";
+import PreviewProviderHeader from "@/components/common/preview/PreviewProviderHeader.vue";
 
 const { t } = useI18n();
 
@@ -131,7 +135,17 @@ const props = defineProps({
     type: String,
     required: true,
   },
-  // 全屏模式
+  // 是否显示全屏按钮
+  showFullscreen: {
+    type: Boolean,
+    default: false,
+  },
+  // 全屏目标元素 ref
+  fullscreenTarget: {
+    type: Object,
+    default: null,
+  },
+  // 全屏模式（外部传入状态）
   isFullscreen: {
     type: Boolean,
     default: false,
@@ -267,15 +281,11 @@ const containerStyle = computed(() => {
 // Provider 选择处理
 const handleProviderSelect = (key) => {
   selectedProvider.value = key;
-  emit("provider-change", key);
-};
-
-const handleProviderChange = () => {
   // 切换渠道时重置加载状态
   if (!isNativeProvider.value) {
     iframeLoading.value = true;
   }
-  emit("provider-change", selectedProvider.value);
+  emit("provider-change", key);
 };
 
 // 加载/错误事件处理
@@ -345,31 +355,6 @@ onMounted(() => {
   background: #ffffff;
   border-radius: 0.5rem;
   overflow: hidden;
-}
-
-/* Header 样式 */
-.office-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.5rem 0.75rem;
-  background-color: #f3f4f6;
-  border-bottom: 1px solid #e5e7eb;
-}
-
-.office-type-label {
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: #374151;
-}
-
-.office-provider-select {
-  font-size: 0.75rem;
-  padding: 0.25rem 0.5rem;
-  border-radius: 0.25rem;
-  border: 1px solid #d1d5db;
-  background-color: #ffffff;
-  color: #374151;
 }
 
 /* Content 区域样式 */
@@ -447,21 +432,6 @@ onMounted(() => {
 <style>
 .dark .office-preview-container {
   background: #1f2937;
-}
-
-.dark .office-header {
-  background-color: #374151;
-  border-bottom-color: #4b5563;
-}
-
-.dark .office-type-label {
-  color: #e5e7eb;
-}
-
-.dark .office-provider-select {
-  background-color: #1f2937;
-  border-color: #4b5563;
-  color: #e5e7eb;
 }
 
 .dark .office-footer {

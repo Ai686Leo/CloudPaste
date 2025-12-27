@@ -31,7 +31,8 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
+import { useEventListener, useWindowSize } from "@vueuse/core";
 import { IconClose, IconDownload, IconLink } from "@/components/icons";
 
 const props = defineProps({
@@ -43,6 +44,7 @@ const props = defineProps({
 defineEmits(["download", "get-link", "close"]);
 
 const viewportTick = ref(0);
+const { width: windowWidth, height: windowHeight } = useWindowSize();
 
 const clamp = (n, min, max) => {
   return Math.max(min, Math.min(max, n));
@@ -59,8 +61,8 @@ const menuStyle = computed(() => {
   if (!props.open || !el || typeof el.getBoundingClientRect !== "function") return fallback;
 
   const rect = el.getBoundingClientRect();
-  const right = clamp(Math.round(window.innerWidth - rect.right - 6), 12, Math.max(12, window.innerWidth - 12));
-  const top = clamp(Math.round(rect.bottom + 8), 12, Math.max(12, window.innerHeight - 12));
+  const right = clamp(Math.round(windowWidth.value - rect.right - 6), 12, Math.max(12, windowWidth.value - 12));
+  const top = clamp(Math.round(rect.bottom + 8), 12, Math.max(12, windowHeight.value - 12));
 
   return {
     position: "fixed",
@@ -80,13 +82,6 @@ watch(
   }
 );
 
-onMounted(() => {
-  window.addEventListener("resize", bump, { passive: true });
-  window.addEventListener("scroll", bump, { passive: true, capture: true });
-});
-
-onBeforeUnmount(() => {
-  window.removeEventListener("resize", bump);
-  window.removeEventListener("scroll", bump, true);
-});
+useEventListener(window, "resize", bump, { passive: true });
+useEventListener(window, "scroll", bump, { passive: true, capture: true });
 </script>

@@ -24,6 +24,7 @@ export const DRIVER_TYPES = Object.freeze({
   ONEDRIVE: "ONEDRIVE",
   GOOGLE_DRIVE: "GOOGLE_DRIVE",
   GITHUB_API: "GITHUB_API",
+  TELEGRAM: "TELEGRAM",
 });
 
 export const DEFAULT_DRIVER_CAPABILITIES = Object.freeze({

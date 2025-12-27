@@ -7,7 +7,7 @@
 
 <script setup>
 import { ref, watch, onMounted, onBeforeUnmount, nextTick } from "vue";
-import { loadVditor, VDITOR_ASSETS_BASE } from "@/utils/vditorLoader.js";
+import { ensureMermaidPatchedForVditor, loadVditor, mightContainMermaid, VDITOR_ASSETS_BASE } from "@/utils/vditorLoader.js";
 
 // Props
 const props = defineProps({
@@ -26,9 +26,31 @@ const contentRef = ref(null);
 
 // 组件销毁状态
 const isDestroyed = ref(false);
+let renderTimer = null;
+let renderVersion = 0;
+
+const scheduleIdle = (fn) => {
+  if (typeof window === "undefined") return;
+  if (typeof window.requestIdleCallback === "function") {
+    window.requestIdleCallback(() => fn(), { timeout: 1500 });
+    return;
+  }
+  setTimeout(fn, 800);
+};
+
+/**
+ * - 看起来不像 Markdown：直接按纯文本显示
+ * - 看起来像 Markdown：再用 Vditor preview 渲染
+ */
+const looksLikeMarkdown = (text) => {
+  if (!text || typeof text !== "string") return false;
+  // 只要出现这些特征，就可能需要 Markdown 解析
+  return /(?:```|~~~)|\[[^\]]+\]\([^)]+\)|(^|\n)\s{0,3}#{1,6}\s|\*\*|__|[*_-]{3,}/m.test(text);
+};
 
 // 使用 Vditor 渲染 Markdown 内容
 const renderContent = async () => {
+  const currentVersion = ++renderVersion;
   if (!contentRef.value || !props.content || isDestroyed.value) return;
 
   try {
@@ -36,18 +58,37 @@ const renderContent = async () => {
     await nextTick();
 
     // 再次检查组件状态
-    if (isDestroyed.value || !contentRef.value) {
+    if (isDestroyed.value || !contentRef.value || currentVersion !== renderVersion) {
       return;
     }
 
     // 清空之前的内容
     contentRef.value.innerHTML = "";
 
+    // 快路径：不像 Markdown 就直接显示文本，避免引入 Vditor/lute 等大脚本
+    if (!looksLikeMarkdown(props.content)) {
+      contentRef.value.textContent = props.content;
+      return;
+    }
+
+    // 如果内容里包含 Mermaid，先做同样的补丁，避免 foreignObject 报错
+    if (mightContainMermaid(props.content)) {
+      try {
+        await ensureMermaidPatchedForVditor();
+      } catch (e) {
+        console.warn("页脚 Mermaid 补丁加载失败（将继续正常渲染）:", e);
+      }
+    }
+
     // 通过统一 loader 获取 Vditor 构造函数
+    // 性能优化：重的加载放到“浏览器空闲时”再做，避免阻塞首屏
+    await new Promise((resolve) => scheduleIdle(resolve));
+    if (isDestroyed.value || !contentRef.value || currentVersion !== renderVersion) return;
+
     const Vditor = await loadVditor();
 
     // 再次检查组件状态
-    if (isDestroyed.value || !contentRef.value) {
+    if (isDestroyed.value || !contentRef.value || currentVersion !== renderVersion) {
       return;
     }
 
@@ -103,10 +144,28 @@ const renderContent = async () => {
 };
 
 // 监听内容变化
-watch(() => props.content, renderContent);
+watch(
+  () => props.content,
+  () => {
+    clearTimeout(renderTimer);
+    renderTimer = setTimeout(() => {
+      renderTimer = null;
+      renderContent();
+    }, 120);
+  }
+);
 
 // 监听暗色模式变化
-watch(() => props.darkMode, renderContent);
+watch(
+  () => props.darkMode,
+  () => {
+    clearTimeout(renderTimer);
+    renderTimer = setTimeout(() => {
+      renderTimer = null;
+      renderContent();
+    }, 120);
+  }
+);
 
 // 组件挂载时渲染
 onMounted(() => {
@@ -118,6 +177,9 @@ onMounted(() => {
 // 组件销毁时清理
 onBeforeUnmount(() => {
   isDestroyed.value = true;
+  renderVersion++;
+  clearTimeout(renderTimer);
+  renderTimer = null;
   
   // 清理 DOM
   if (contentRef.value) {

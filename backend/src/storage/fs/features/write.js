@@ -2,6 +2,7 @@ import { DriverError } from "../../../http/errors.js";
 import { ApiStatus } from "../../../constants/index.js";
 import { CAPABILITIES } from "../../interfaces/capabilities/index.js";
 import { normalizePath } from "../utils/PathResolver.js";
+import { validateDirectoryPathSegments } from "../utils/FsInputValidator.js";
 
 export async function uploadFile(fs, path, fileOrStream, userIdOrInfo, userType, options = {}) {
   const { driver, mount, subPath } = await fs.mountManager.getDriverByPath(path, userIdOrInfo, userType);
@@ -51,6 +52,17 @@ export async function createDirectory(fs, path, userIdOrInfo, userType) {
     console.warn("[fs.createDirectory] 输入路径未按目录格式(缺少尾部/)，已自动规范化:", { path, dirPath });
   }
 
+  // 目录路径按段校验：每一段都必须是合法 name（禁止 / \\ ? < > * : | "，禁止 . / ..）
+  // 允许多级目录（例如 /a/b/c/），但每一段都要合法。
+  const segmentsValidation = validateDirectoryPathSegments(dirPath);
+  if (!segmentsValidation.valid) {
+    throw new DriverError(segmentsValidation.message, {
+      status: ApiStatus.BAD_REQUEST,
+      code: "FS.MKDIR.INVALID_NAME",
+      expose: true,
+    });
+  }
+
   const { driver, mount, subPath } = await fs.mountManager.getDriverByPath(dirPath, userIdOrInfo, userType);
 
   if (!driver.hasCapability(CAPABILITIES.WRITER)) {
@@ -65,6 +77,8 @@ export async function createDirectory(fs, path, userIdOrInfo, userType) {
     mount,
     subPath,
     db: fs.mountManager.db,
+    userIdOrInfo,
+    userType,
   });
 
   fs.emitCacheInvalidation({ mount, paths: [dirPath], reason: "mkdir" });
@@ -93,4 +107,3 @@ export async function updateFile(fs, path, content, userIdOrInfo, userType) {
   fs.emitCacheInvalidation({ mount, paths: [path], reason: "update-file" });
   return result;
 }
-

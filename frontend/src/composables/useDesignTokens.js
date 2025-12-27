@@ -3,7 +3,7 @@
  * 
  * 提供设计令牌的访问和 CSS 变量注入功能
  */
-import { ref, computed, onBeforeUnmount } from 'vue'
+import { computed } from 'vue'
 import tokens, { 
   spacing, 
   radius, 
@@ -15,41 +15,15 @@ import tokens, {
   explorerAnimation,
   semanticColors 
 } from '@/styles/design-tokens'
-
-// 模块级响应式暗色模式状态
-const isDarkModeRef = ref(document.documentElement.classList.contains('dark'))
-
-// 模块级暗色模式观察器（单例）
-let globalDarkModeObserver = null
-let observerRefCount = 0
-
-/**
- * 初始化全局暗色模式观察器
- */
-function initGlobalDarkModeObserver() {
-  if (globalDarkModeObserver) return
-  
-  globalDarkModeObserver = new MutationObserver((mutations) => {
-    mutations.forEach((mutation) => {
-      if (mutation.attributeName === 'class') {
-        isDarkModeRef.value = document.documentElement.classList.contains('dark')
-      }
-    })
-  })
-  
-  globalDarkModeObserver.observe(document.documentElement, { 
-    attributes: true,
-    attributeFilter: ['class']
-  })
-}
+import { useThemeMode } from '@/composables/core/useThemeMode'
 
 /**
  * 设计令牌 Composable
  * @returns {Object} 设计令牌和工具函数
  */
 export function useDesignTokens() {
-  // 使用响应式的暗色模式状态
-  const isDarkMode = computed(() => isDarkModeRef.value)
+  // 使用全局主题模式（由 VueUse useColorMode 驱动）
+  const { isDarkMode } = useThemeMode()
 
   // 获取当前主题的阴影
   const currentElevation = computed(() => {
@@ -156,36 +130,6 @@ export function useDesignTokens() {
       .join('; ')
   }
 
-  /**
-   * 设置暗色模式观察器（自动管理生命周期）
-   */
-  function setupDarkModeObserver() {
-    initGlobalDarkModeObserver()
-    observerRefCount++
-    
-    // 在组件卸载时自动清理
-    onBeforeUnmount(() => {
-      observerRefCount--
-      if (observerRefCount <= 0 && globalDarkModeObserver) {
-        globalDarkModeObserver.disconnect()
-        globalDarkModeObserver = null
-        observerRefCount = 0
-      }
-    })
-  }
-
-  /**
-   * 清理暗色模式观察器（手动调用）
-   */
-  function cleanupDarkModeObserver() {
-    observerRefCount--
-    if (observerRefCount <= 0 && globalDarkModeObserver) {
-      globalDarkModeObserver.disconnect()
-      globalDarkModeObserver = null
-      observerRefCount = 0
-    }
-  }
-
   return {
     // 令牌数据
     tokens,
@@ -209,8 +153,6 @@ export function useDesignTokens() {
     getElevation,
     getDensityConfig,
     toCSSVars,
-    setupDarkModeObserver,
-    cleanupDarkModeObserver,
   }
 }
 

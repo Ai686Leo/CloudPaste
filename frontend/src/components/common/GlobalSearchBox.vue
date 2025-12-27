@@ -40,6 +40,7 @@
 
 <script setup>
 import { computed } from "vue";
+import { useDebounceFn } from "@vueuse/core";
 import { IconClose, IconSearch } from "@/components/icons";
 
 const props = defineProps({
@@ -91,7 +92,15 @@ const sizeClass = computed(() => {
 });
 
 // 防抖处理
-let debounceTimer = null;
+const emitSearchDebounced = useDebounceFn(
+  (value) => {
+    // 只有达到最小搜索长度或为空时才触发搜索
+    if (value.length >= props.minSearchLength || value.length === 0) {
+      emit("search", value);
+    }
+  },
+  () => props.debounceMs
+);
 
 const handleInput = (event) => {
   const value = event.target.value;
@@ -99,17 +108,8 @@ const handleInput = (event) => {
   // 立即更新v-model
   emit("update:modelValue", value);
 
-  // 防抖处理搜索事件
-  if (debounceTimer) {
-    clearTimeout(debounceTimer);
-  }
-
-  debounceTimer = setTimeout(() => {
-    // 只有达到最小搜索长度或为空时才触发搜索
-    if (value.length >= props.minSearchLength || value.length === 0) {
-      emit("search", value);
-    }
-  }, props.debounceMs);
+  // 防抖触发搜索事件
+  emitSearchDebounced(value);
 };
 
 const clearSearch = () => {
@@ -117,8 +117,6 @@ const clearSearch = () => {
   emit("search", "");
   emit("clear");
 
-  if (debounceTimer) {
-    clearTimeout(debounceTimer);
-  }
+  emitSearchDebounced.cancel?.();
 };
 </script>

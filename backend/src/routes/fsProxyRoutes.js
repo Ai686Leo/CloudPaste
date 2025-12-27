@@ -85,22 +85,26 @@ fsProxyRoutes.get(`${PROXY_CONFIG.ROUTE_PREFIX}/*`, async (c) => {
     const signatureService = new ProxySignatureService(db, encryptionSecret, repositoryFactory);
     const signatureNeed = await signatureService.needsSignature(mountResult.mount);
 
-    if (signatureNeed.required) {
-      const signature = c.req.query(PROXY_CONFIG.SIGN_PARAM);
+    const signature = c.req.query(PROXY_CONFIG.SIGN_PARAM) || null;
+    const signatureProvided = !!signature;
 
-      if (!signature) {
-        console.warn(`代理访问失败 - 缺少签名: ${path} (${signatureNeed.reason})`);
-        emitProxyAudit(c, {
-          path,
-          decision: "deny",
-          reason: "missing_signature",
-          signatureRequired: true,
-          signatureProvided: false,
-          mountId: mountResult.mount.id,
-        });
-        throw new AuthenticationError(`此文件需要签名访问 (${signatureNeed.description})`);
-      }
+    // 1) 若挂载要求签名：必须提供签名
+    // 2) 若“主动提供了签名”：即使挂载不要求，也验证一下（避免误用/脏数据）
 
+    if (signatureNeed.required && !signatureProvided) {
+      console.warn(`代理访问失败 - 缺少签名: ${path} (${signatureNeed.reason})`);
+      emitProxyAudit(c, {
+        path,
+        decision: "deny",
+        reason: "missing_signature",
+        signatureRequired: true,
+        signatureProvided: false,
+        mountId: mountResult.mount.id,
+      });
+      throw new AuthenticationError(`此文件需要签名访问 (${signatureNeed.description})`);
+    }
+
+    if (signatureProvided) {
       const verifyResult = signatureService.verifyStorageSignature(path, signature);
       if (!verifyResult.valid) {
         console.warn(`代理访问失败 - 签名验证失败: ${path} (${verifyResult.reason})`);
@@ -108,13 +112,12 @@ fsProxyRoutes.get(`${PROXY_CONFIG.ROUTE_PREFIX}/*`, async (c) => {
           path,
           decision: "deny",
           reason: "invalid_signature",
-          signatureRequired: true,
+          signatureRequired: signatureNeed.required,
           signatureProvided: true,
           mountId: mountResult.mount.id,
         });
         throw new AuthenticationError(`签名验证失败: ${verifyResult.reason}`);
       }
-
       console.log(`[fsProxy] 签名验证成功: ${path}`);
     }
 

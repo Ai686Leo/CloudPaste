@@ -12,6 +12,7 @@ export default {
       googledrive: "Google Drive storage",
       github_releases: "GitHub Releases",
       github_api: "GitHub API",
+      telegram: "Telegram Bot API",
     },
 
     // group titles
@@ -100,6 +101,17 @@ export default {
         author_email: "Author email (author.email)",
         token: "GitHub access token",
       },
+
+      // Telegram specific
+      telegram: {
+        bot_token: "Bot token",
+        target_chat_id: "Target chat ID",
+        api_base_url: "Bot API base URL",
+        bot_api_mode: "Bot API mode",
+        part_size_mb: "Chunk size (MB)",
+        upload_concurrency: "Upload concurrency",
+        verify_after_upload: "Verify after upload",
+      },
     },
 
     // placeholder texts
@@ -155,6 +167,32 @@ export default {
         author_name: "e.g., Your Name (optional)",
         author_email: "{'e.g., you@example.com (optional)'}",
         token: "Required: token with repo read/write permission",
+      },
+
+      telegram: {
+        bot_token: "Paste the token from ＠BotFather (e.g., 123:ABC...)",
+        target_chat_id: "e.g., -100xxxxxxxxxx (numbers only)",
+        bot_api_mode: "Default: official",
+        api_base_url: "e.g., https://api.telegram.org (set to your own Bot API server when self-hosted)",
+        part_size_mb: "Default 15; recommended ≤ 20 when not self-hosted; no limit when self-hosted",
+        upload_concurrency: "Default 2; higher is faster but easier to hit rate limits",
+      },
+    },
+
+    // enum options
+    enum: {
+      telegram: {
+        bot_api_mode: {
+          official: "Official (api.telegram.org)",
+          self_hosted: "Self-hosted Bot API server",
+        },
+      },
+    },
+
+    // toggle label (for a more natural checkbox UX)
+    toggle: {
+      telegram: {
+        bot_api_mode: "Use self-hosted Bot API server",
       },
     },
 
@@ -221,6 +259,19 @@ export default {
         author_name: "Optional: commit author.name (must be paired with author_email).",
         author_email: "Optional: commit author.email (must be paired with author_name).",
         token: "Required: GitHub access token for higher rate limits and write operations (create commits / update refs).",
+      },
+
+      telegram: {
+        bot_token: "Used for calling Telegram Bot API to upload/download files",
+        target_chat_id: "Files will be sent to this channel/group (need to add the bot and grant message sending permission)",
+        api_base_url: "Default official address; if you later build your own Bot API server, you can switch to your own address",
+        bot_api_mode:
+          "Unchecked self-built: According to official Bot API rules, the maximum single upload size is ≤20MB; Checked self-built: You provide your own Bot API Server, these restrictions can be relaxed",
+        part_size_mb:
+          "Chunk size for resumable upload on the mount page; default is 15MB. It is recommended to be ≤20MB when self-built is unchecked; can be unlimited when self-built is checked",
+        upload_concurrency: "Limit the number of simultaneous requests to Telegram for the same storage configuration to avoid rate limiting due to high concurrency",
+        verify_after_upload:
+          "When enabled, each chunk will be re-verified for size after successful upload, slightly slower but more stable (default is fine unless there are special circumstances)",
       },
     },
 

@@ -17,6 +17,7 @@ export class BackupService {
     this.moduleTableMapping = {
       text_management: ["pastes", "paste_passwords"],
       file_management: ["files", "file_passwords"],
+      vfs_management: ["vfs_nodes"],
       mount_management: ["storage_mounts"],
       storage_config: ["storage_configs", "principal_storage_acl"],
       key_management: ["api_keys"],
@@ -35,6 +36,7 @@ export class BackupService {
       admin_tokens: ["admins"],
       storage_configs: ["admins"], // storage_configs.admin_id -> admins.id
       storage_mounts: ["storage_configs"], // storage_mounts.storage_config_id -> storage_configs.id
+      vfs_nodes: ["storage_configs"],
       tasks: ["api_keys"], // tasks.user_id -> api_keys.id (当 user_type='apikey' 时)
       principal_storage_acl: ["api_keys", "storage_configs"],
       scheduled_job_runs: ["scheduled_jobs"],
@@ -116,6 +118,7 @@ export class BackupService {
       DbTables.FS_SEARCH_INDEX_STATE,
       DbTables.FS_SEARCH_INDEX_DIRTY,
       DbTables.FS_SEARCH_INDEX_FTS,
+      DbTables.UPLOAD_PARTS,
     ].filter(Boolean));
   }
 
@@ -178,7 +181,7 @@ export class BackupService {
 
     let tables;
     let finalModules = selected_modules;
-    let dependencies = []; // 在函数作用域定义
+    let dependencies = []; // 在函数作用域定义（包含静态依赖 + 动态依赖）
 
     if (backup_type === "full") {
       // 完整备份 - 所有表
@@ -187,6 +190,25 @@ export class BackupService {
     } else if (backup_type === "modules") {
       // 检查并自动包含依赖模块
       dependencies = this.getModuleDependencies(selected_modules);
+      const dynamicDependencies = [];
+
+      // 如果只备份 vfs_nodes 不备份 storage_mounts，恢复后 scope_id 会“对不上”，目录树会变成孤儿数据
+      // 当选择了 vfs_management 且数据库里存在 scope_type=mount 的 vfs_nodes 时，自动包含 mount_management
+      if (selected_modules.includes("vfs_management") && !selected_modules.includes("mount_management")) {
+        try {
+          const result = await this.db.prepare(`SELECT COUNT(*) as count FROM vfs_nodes WHERE scope_type = 'mount'`).first();
+          const count = Number(result?.count || 0);
+          if (count > 0) {
+            dynamicDependencies.push("mount_management");
+            console.log(`[BackupService] 检测到 vfs_nodes.scope_type=mount 的历史数据（${count} 条），自动包含模块: mount_management`);
+          }
+        } catch (error) {
+          // 旧 schema 或表不存在时：忽略即可
+          console.warn(`[BackupService] 检测 vfs_nodes.scope_type=mount 失败（可忽略）: ${error.message}`);
+        }
+      }
+
+      dependencies = [...new Set([...dependencies, ...dynamicDependencies])];
       if (dependencies.length > 0) {
         finalModules = [...new Set([...selected_modules, ...dependencies])];
         console.log(`[BackupService] 检测到跨模块依赖，自动包含模块: ${dependencies.join(", ")}`);
@@ -234,11 +256,12 @@ export class BackupService {
   getModuleDependencies(selectedModules) {
     const dependencies = new Set();
 
-    // 定义模块间的依赖关系
-    const moduleDependencies = {
-      mount_management: ["storage_config"], // 挂载管理依赖S3配置管理
-      file_management: ["storage_config"], // 文件管理可能依赖存储配置（通过storage_config_id）
-    };
+      // 定义模块间的依赖关系
+      const moduleDependencies = {
+        mount_management: ["storage_config"], // 挂载管理依赖S3配置管理
+        file_management: ["storage_config"], // 文件管理可能依赖存储配置（通过storage_config_id）
+        vfs_management: ["storage_config"], // 目录树索引依赖存储配置（scope_type=storage_config 时）
+      };
 
     for (const module of selectedModules) {
       if (moduleDependencies[module]) {
@@ -1017,6 +1040,7 @@ export class BackupService {
       system_settings: "系统设置",
       task_management: "任务与定时任务",
       upload_sessions: "上传会话",
+      vfs_management: "目录树索引（VFS）",
     };
     return names[moduleKey] || moduleKey;
   }
@@ -1038,6 +1062,7 @@ export class BackupService {
       fs_meta_management: "目录元信息配置",
       task_management: "通用任务队列 + 后台定时任务（jobs/runs）",
       upload_sessions: "上传/分片/断点续传会话（可选迁移数据）",
+      vfs_management: "虚拟目录树索引。建议与“存储配置”“挂载管理”一起备份",
     };
     return descriptions[moduleKey] || "";
   }

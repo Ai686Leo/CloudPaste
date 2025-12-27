@@ -131,7 +131,8 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from "vue";
+import { ref, computed } from "vue";
+import { useEventListener } from "@vueuse/core";
 import { useI18n } from "vue-i18n";
 import { pwaState, pwaUtils } from "./pwaManager.js";
 import { IconCheckCircle, IconDownload, IconExclamation, IconRefresh } from "@/components/icons";
@@ -298,17 +299,9 @@ const requestNotification = async () => {
   }
 };
 
-// 生命周期
-onMounted(() => {
-  // 监听PWA更新事件
-  window.addEventListener("pwa-update-available", () => {
-    console.log("[PWA] 收到更新通知");
-  });
-});
-
-onUnmounted(() => {
-  // 清理事件监听器
-  window.removeEventListener("pwa-update-available", () => {});
+// 监听 PWA 更新事件（自动清理）
+useEventListener(window, "pwa-update-available", () => {
+  console.log("[PWA] 收到更新通知");
 });
 </script>
 

@@ -77,6 +77,8 @@ export class CleanupUploadSessionsTask {
     const keepDays = Number(config.keepDays) > 0 ? Number(config.keepDays) : 30;
     const activeGraceHours =
       Number(config.activeGraceHours) > 0 ? Number(config.activeGraceHours) : 24;
+    const deleteBatchSize =
+      Number(config.deleteBatchSize) > 0 ? Math.min(Number(config.deleteBatchSize), 500) : 200;
 
     const nowDate = new Date(now);
     const nowMs = nowDate.getTime();
@@ -155,28 +157,87 @@ export class CleanupUploadSessionsTask {
 
     // 2) 删除历史会话（非 active 且更新时间早于保留窗口）
     // 说明：
-    const deleteHistoryResult = await db
-      .prepare(
-        `
-        DELETE FROM ${DbTables.UPLOAD_SESSIONS}
-        WHERE status IN ('completed','aborted','error','expired')
-          AND updated_at < ?
-      `,
-      )
-      .bind(historyThresholdIso)
-      .run();
+    // - 必须连带清理 upload_parts（临时分片记录），避免留下“垃圾分片”
+    // - 删除必须分批（bounded/batched），避免一次性 IN 参数过大或单次 DELETE 过重
+    let deletedHistory = 0;
+    let deletedHistoryBatches = 0;
+    let deletedPartsTotal = 0;
+
+    const pickDeleteCandidates = async () => {
+      const res = await db
+        .prepare(
+          `
+          SELECT id
+          FROM ${DbTables.UPLOAD_SESSIONS}
+          WHERE status IN ('completed','aborted','error','expired')
+            AND updated_at < ?
+          LIMIT ?
+        `,
+        )
+        .bind(historyThresholdIso, deleteBatchSize)
+        .all();
+      return (res?.results || []).map((r) => r?.id).filter(Boolean);
+    };
+
+    while (true) {
+      const ids = await pickDeleteCandidates();
+      if (ids.length === 0) break;
+
+      deletedHistoryBatches += 1;
+      const placeholders = ids.map(() => "?").join(", ");
+
+      // 2.1 先删 upload_parts
+      const delPartsRes = await db
+        .prepare(
+          `
+          DELETE FROM ${DbTables.UPLOAD_PARTS}
+          WHERE upload_id IN (${placeholders})
+        `,
+        )
+        .bind(...ids)
+        .run();
+      deletedPartsTotal += getChanges(delPartsRes);
+
+      // 2.2 再删 upload_sessions
+      const delSessionsRes = await db
+        .prepare(
+          `
+          DELETE FROM ${DbTables.UPLOAD_SESSIONS}
+          WHERE id IN (${placeholders})
+        `,
+        )
+        .bind(...ids)
+        .run();
+      deletedHistory += getChanges(delSessionsRes);
+    }
 
     const expiredByExpiresAt = getChanges(expireByExpiresAtResult);
     const expiredByStaleActive = getChanges(expireByStaleActiveResult);
-    const deletedHistory = getChanges(deleteHistoryResult);
     const expiredTotal = expiredByExpiresAt + expiredByStaleActive;
 
     // 清理后再统计一次，便于对比前后变化
     const afterCounts = await readStatusCounts();
 
+    // 3)（兜底）一致性自检：统计 orphan upload_parts（upload_id 不存在对应 upload_session）
+    // 说明：这里先只做统计 + 日志观测，不做强制删除，避免误删导致排查困难
+    const orphanRow = await db
+      .prepare(
+        `
+        SELECT COUNT(*) AS cnt
+        FROM ${DbTables.UPLOAD_PARTS} p
+        WHERE NOT EXISTS (
+          SELECT 1 FROM ${DbTables.UPLOAD_SESSIONS} s WHERE s.id = p.upload_id
+        )
+      `,
+      )
+      .first();
+    const orphanParts = Number(orphanRow?.cnt) || 0;
+
     const summaryParts = [
       `标记过期会话 ${expiredTotal} 条`,
-      `删除历史会话 ${deletedHistory} 条`,
+      `删除历史会话 ${deletedHistory} 条（分 ${deletedHistoryBatches} 批）`,
+      `连带清理 upload_parts ${deletedPartsTotal} 条`,
+      `orphan upload_parts ${orphanParts} 条`,
     ];
 
     const summary = summaryParts.join("，");

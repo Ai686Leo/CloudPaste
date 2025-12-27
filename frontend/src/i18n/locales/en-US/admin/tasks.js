@@ -171,6 +171,12 @@ export default {
       batch: 'Are you sure you want to delete {count} selected tasks? This action cannot be undone.',
     },
 
+    confirmCancel: {
+      title: 'Confirm Cancel',
+      single: 'Are you sure you want to cancel task "{name}"? It will stop as soon as possible.',
+      batch: 'Are you sure you want to cancel {count} selected tasks? They will stop as soon as possible.',
+    },
+
     empty: {
       title: 'No Tasks',
       description: 'There are no task records currently',

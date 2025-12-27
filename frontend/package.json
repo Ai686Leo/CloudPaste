@@ -29,6 +29,7 @@
     "@uppy/xhr-upload": "^4.4.2",
     "@vue-office/excel": "1.7.14",
     "@vue-office/pptx": "1.0.1",
+    "@vueuse/core": "^14.1.0",
     "@yeger/vue-masonry-wall": "^5.1.4",
     "@zip.js/zip.js": "^2.8.11",
     "@zumer/snapdom": "^2.0.1",

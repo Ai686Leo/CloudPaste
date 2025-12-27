@@ -59,6 +59,69 @@ export const PROXY_SECURITY = {
 };
 
 /**
+ * 从反向代理/Cloudflare 的请求头里推断“用户访问时的协议”
+ *
+ *
+ * @param {Request|null} request
+ * @returns {"http:"|"https:"|null}
+ */
+function resolveForwardedProtocol(request) {
+  if (!request || !request.headers) return null;
+
+  // 1) Nginx / NPM / Caddy 常见：X-Forwarded-Proto: https
+  const xfp = request.headers.get("x-forwarded-proto");
+  if (xfp) {
+    const first = String(xfp).split(",")[0].trim().toLowerCase();
+    if (first === "https") return "https:";
+    if (first === "http") return "http:";
+  }
+
+  // 2) RFC 7239 Forwarded: proto=https;host=...
+  const forwarded = request.headers.get("forwarded");
+  if (forwarded) {
+    const first = String(forwarded).split(",")[0];
+    const protoMatch = first.match(/(?:^|;)\s*proto=([^;]+)/i);
+    if (protoMatch && protoMatch[1]) {
+      const proto = protoMatch[1].trim().replace(/^\"|\"$/g, "").toLowerCase();
+      if (proto === "https") return "https:";
+      if (proto === "http") return "http:";
+    }
+  }
+
+  // 3) Cloudflare：CF-Visitor: {"scheme":"https"}
+  const cfVisitor = request.headers.get("cf-visitor");
+  if (cfVisitor) {
+    try {
+      const parsed = JSON.parse(String(cfVisitor));
+      const scheme = String(parsed?.scheme || "").toLowerCase();
+      if (scheme === "https") return "https:";
+      if (scheme === "http") return "http:";
+    } catch {
+      // ignore
+    }
+  }
+
+  return null;
+}
+
+/**
+ * 基于 request.url 构建 base URL。
+ * - host 仍使用 request.url 中的 host
+ * - protocol 允许被 X-Forwarded-Proto / Forwarded / CF-Visitor 覆盖为 https
+ *
+ * @param {Request} request
+ * @returns {URL}
+ */
+function buildPublicBaseUrl(request) {
+  const url = new URL(request.url);
+  const forwardedProtocol = resolveForwardedProtocol(request);
+  if (forwardedProtocol) {
+    url.protocol = forwardedProtocol;
+  }
+  return url;
+}
+
+/**
  * 构建本地 /api/p 代理URL（仅用于 CloudPaste 内部）
  * @param {string} path - 文件路径（挂载视图路径）
  * @param {boolean} download - 是否为下载模式
@@ -82,7 +145,7 @@ export function buildFullProxyUrl(request, path, download = false) {
   }
 
   try {
-    const url = new URL(request.url);
+    const url = buildPublicBaseUrl(request);
     const proxyPath = buildProxyPath(path, download);
     return `${url.protocol}//${url.host}${proxyPath}`;
   } catch (error) {
@@ -111,7 +174,7 @@ export function buildSignedProxyUrl(request, path, options = {}) {
 
   // 尝试在 request 的上下文中构建绝对URL；失败时回退到相对路径并直接拼接查询串
   try {
-    const base = request ? new URL(request.url) : null;
+    const base = request ? buildPublicBaseUrl(request) : null;
     const url = base ? new URL(proxyPath, base) : new URL(proxyPath, "http://localhost");
 
     // 添加签名参数
@@ -147,11 +210,12 @@ export function buildSignedWorkerUrl(baseOrigin, entryPath, options = {}) {
 
   // 未配置 baseOrigin 时，回退为相对路径 + 可选签名参数
   if (!baseOrigin) {
-    if (!signature) {
-      return entryPath;
-    }
     const hasQuery = entryPath.includes("?");
-    return `${entryPath}${hasQuery ? "&" : "?"}${PROXY_CONFIG.SIGN_PARAM}=${encodeURIComponent(signature)}`;
+    let result = entryPath;
+    if (signature) {
+      result += `${hasQuery ? "&" : "?"}${PROXY_CONFIG.SIGN_PARAM}=${encodeURIComponent(signature)}`;
+    }
+    return result;
   }
 
   try {

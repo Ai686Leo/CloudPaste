@@ -1,21 +1,21 @@
 <template>
-  <div class="pdf-preview rounded-lg overflow-hidden mb-2 flex-grow w-full relative">
-    <div class="flex items-center justify-end px-2 py-1 bg-gray-100 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
-      <!-- 多渠道时允许用户选择预览方式（Browser Native / pdfjs 等） -->
-      <select
-        v-if="providerOptions.length > 1"
-        v-model="selectedProviderKey"
-        class="text-xs px-2 py-1 rounded border bg-white dark:bg-gray-800 dark:border-gray-600 dark:text-gray-100"
-      >
-        <option v-for="opt in providerOptions" :key="opt.key" :value="opt.key">
-          {{ opt.label }}
-        </option>
-      </select>
-    </div>
+  <div ref="previewContainerRef" class="pdf-preview rounded-lg overflow-hidden mb-2 flex-grow w-full relative border border-gray-200 dark:border-gray-700">
+    <PreviewProviderHeader
+      :title="filename || 'PDF'"
+      :options="providerOptions"
+      :show-select="providerOptions.length > 1"
+      :show-fullscreen="true"
+      :fullscreen-target="previewContainerRef"
+      v-model="selectedProviderKey"
+      @fullscreen-change="handleFullscreenChange"
+    />
     <iframe
       :src="currentPreviewUrl"
+      allow="fullscreen"
+      allowfullscreen
       frameborder="0"
-      class="w-full h-[calc(100vh-350px)] min-h-[300px]"
+      class="w-full"
+      :class="isFullscreen ? 'h-screen' : 'h-[calc(100vh-350px)] min-h-[300px]'"
       @load="handleLoad"
       @error="handleError"
       v-show="!!currentPreviewUrl && !loading && !error"
@@ -46,6 +46,7 @@ import { useI18n } from "vue-i18n";
 import { IconExclamation } from "@/components/icons";
 import LoadingIndicator from "@/components/common/LoadingIndicator.vue";
 import { useProviderSelector } from "@/composables/file-preview/useProviderSelector.js";
+import PreviewProviderHeader from "@/components/common/preview/PreviewProviderHeader.vue";
 
 const { t } = useI18n();
 
@@ -65,12 +66,22 @@ const props = defineProps({
     type: String,
     default: "",
   },
+  filename: {
+    type: String,
+    default: "",
+  },
 });
 
 const emit = defineEmits(["load", "error"]);
 
 const loading = ref(true);
 const error = ref(false);
+const previewContainerRef = ref(null);
+const isFullscreen = ref(false);
+
+const handleFullscreenChange = (val) => {
+  isFullscreen.value = val;
+};
 
 const resolvedNativeUrl = computed(() => props.nativeUrl || props.previewUrl || "");
 
@@ -109,3 +120,14 @@ watch(
   { immediate: false },
 );
 </script>
+
+<style scoped>
+/* 全屏时预览容器填满屏幕 */
+.pdf-preview :deep(:fullscreen),
+.pdf-preview :deep(:-webkit-full-screen),
+.pdf-preview :deep(:-moz-full-screen) {
+  width: 100vw !important;
+  height: 100vh !important;
+  background: inherit;
+}
+</style>

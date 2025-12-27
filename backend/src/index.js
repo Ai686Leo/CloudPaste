@@ -104,9 +104,6 @@ const app = new Hono();
 
 // 注册中间件
 app.use("*", structuredLogger);
-app.use("*", errorBoundary());
-app.use("*", withRepositories());
-app.use("*", securityContext());
 // 导入WebDAV配置
 import { WEBDAV_BASE_PATH } from "./webdav/auth/config/WebDAVConfig.js";
 
@@ -160,6 +157,10 @@ app.use("*", async (c, next) => {
     return await corsMiddleware(c, next);
   }
 });
+
+app.use("*", errorBoundary());
+app.use("*", withRepositories());
+app.use("*", securityContext());
 
 // 根路径WebDAV OPTIONS兼容性处理器
 // 为1Panel等客户端提供WebDAV能力发现支持
@@ -217,16 +218,16 @@ app.onError((err, c) => {
   if (reqId) c.header("X-Request-Id", String(reqId));
   const debugMessage = normalized.expose ? null : sanitizeErrorMessageForClient(normalized.originalError?.message || err);
   return c.json(
-      createErrorResponse(
-          normalized.status,
-          normalized.expose ? normalized.publicMessage : "服务器内部错误",
-          normalized.code,
-          {
-            ...(reqId ? { requestId: String(reqId) } : {}),
-            ...(debugMessage ? { debugMessage } : {}),
-          }
-      ),
-      normalized.status
+    createErrorResponse(
+      normalized.status,
+      normalized.expose ? normalized.publicMessage : "服务器内部错误",
+      normalized.code,
+      {
+        ...(reqId ? { requestId: String(reqId) } : {}),
+        ...(debugMessage ? { debugMessage } : {}),
+      }
+    ),
+    normalized.status
   );
 });
 
@@ -235,8 +236,8 @@ app.notFound((c) => {
   const reqId = c.get("reqId");
   if (reqId) c.header("X-Request-Id", String(reqId));
   return c.json(
-      createErrorResponse(ApiStatus.NOT_FOUND, "未找到请求的资源", "NOT_FOUND"),
-      ApiStatus.NOT_FOUND
+    createErrorResponse(ApiStatus.NOT_FOUND, "未找到请求的资源", "NOT_FOUND"),
+    ApiStatus.NOT_FOUND
   );
 });
 

@@ -6,10 +6,14 @@
  * 前端负责根据用户的时区设置进行本地化显示
  */
 
+import { useLocalStorage } from "@vueuse/core";
+
+const storedLanguage = useLocalStorage("language", "zh-CN");
+
 // 获取当前语言设置
 const getCurrentLanguage = () => {
   try {
-    return localStorage.getItem("language") || "zh-CN";
+    return storedLanguage.value || "zh-CN";
   } catch {
     return "zh-CN";
   }

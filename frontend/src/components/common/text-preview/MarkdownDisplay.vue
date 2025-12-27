@@ -25,7 +25,7 @@
 import { ref, watch, onMounted, onBeforeUnmount, onActivated, onDeactivated, nextTick } from "vue";
 import { useI18n } from "vue-i18n";
 import LoadingIndicator from "@/components/common/LoadingIndicator.vue";
-import { loadVditor, VDITOR_ASSETS_BASE } from "@/utils/vditorLoader.js";
+import { ensureMermaidPatchedForVditor, loadVditor, mightContainMermaid, VDITOR_ASSETS_BASE } from "@/utils/vditorLoader.js";
 
 const { t } = useI18n();
 
@@ -108,6 +108,21 @@ const renderMarkdown = async () => {
     // 检查 Vditor 是否有效
     if (!VditorConstructor || typeof VditorConstructor.preview !== "function") {
       throw new Error("Vditor.preview 方法不可用");
+    }
+
+    // 避免 foreignObject 的 width 出现极小负数，导致控制台报错。
+    if (mightContainMermaid(props.content)) {
+      try {
+        await ensureMermaidPatchedForVditor();
+      } catch (patchError) {
+        console.warn("Mermaid 补丁加载失败（将继续正常渲染）:", patchError);
+      }
+
+      // 异步等待后再做一次状态检查，避免组件已切走但仍继续渲染
+      if (!shouldContinue(currentVersion) || !markdownContainer.value) {
+        console.warn("MarkdownDisplay组件已销毁/隐藏，跳过 Mermaid 补丁后的渲染");
+        return;
+      }
     }
 
     try {

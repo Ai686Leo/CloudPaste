@@ -1,4 +1,5 @@
 import { createI18n } from "vue-i18n";
+import { useLocalStorage } from "@vueuse/core";
 import zhCN from "./locales/zh-CN/index.js";
 import enUS from "./locales/en-US/index.js";
 
@@ -12,14 +13,12 @@ const getBrowserLanguage = () => {
 };
 
 // 获取保存的语言设置，如果没有则使用浏览器语言
-const getSavedLanguage = () => {
-  const savedLang = localStorage.getItem("language");
-  return savedLang || getBrowserLanguage();
-};
+const storedLanguage = useLocalStorage("language", getBrowserLanguage());
+const getSavedLanguage = () => storedLanguage.value || getBrowserLanguage();
 
 // 保存语言设置到本地存储
 export const saveLanguagePreference = (lang) => {
-  localStorage.setItem("language", lang);
+  storedLanguage.value = lang;
 };
 
 // 创建i18n实例

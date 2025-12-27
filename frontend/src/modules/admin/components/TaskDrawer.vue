@@ -32,9 +32,6 @@
             : 'right-0 top-0 h-full w-[480px] lg:w-[540px]'
         ]"
         :style="drawerStyle"
-        @touchstart="onTouchStart"
-        @touchmove="onTouchMove"
-        @touchend="onTouchEnd"
       >
         <!-- === 移动端拖拽指示条 === -->
         <div
@@ -169,8 +166,9 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useBreakpoints, breakpointsTailwind, useSwipe } from '@vueuse/core'
 import {
   IconX as XIcon,
   IconClock as ClockIcon,
@@ -203,21 +201,67 @@ const { t, locale } = useI18n()
 const payloadExpanded = ref(false)
 const drawerRef = ref(null)
 const contentRef = ref(null)
-const windowWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1024)
 
 // 移动端检测 (sm breakpoint = 640px)
-const isMobile = computed(() => windowWidth.value < 640)
+const breakpoints = useBreakpoints(breakpointsTailwind)
+const isMobile = breakpoints.smaller('sm')
 
 // === 滑动关闭手势状态 ===
-const touchStartY = ref(0)
-const touchCurrentY = ref(0)
-const isDragging = ref(false)
 const isFromGrabHandle = ref(false)
+const swipeAllowed = ref(false)
+
+const getSwipeDeltaY = (coordsStart, coordsEnd) => {
+  const startY = coordsStart?.y ?? 0
+  const endY = coordsEnd?.y ?? 0
+  return endY - startY
+}
+
+const { isSwiping, coordsStart, coordsEnd } = useSwipe(drawerRef, {
+  passive: false,
+  threshold: 100,
+  onSwipeStart: () => {
+    if (!isMobile.value) return
+
+    // 检查内容是否在顶部（允许从顶部下拉关闭）
+    const content = contentRef.value
+    const isAtTop = !content || content.scrollTop <= 0
+
+    // 只有从拖拽条开始或内容在顶部时才允许拖拽关闭
+    swipeAllowed.value = isFromGrabHandle.value || isAtTop
+  },
+  onSwipe: (e) => {
+    if (!isMobile.value || !swipeAllowed.value) return
+    const deltaY = getSwipeDeltaY(coordsStart, coordsEnd)
+    if (deltaY > 0) {
+      // 下拉时阻止内容滚动
+      e.preventDefault()
+    }
+  },
+  onSwipeEnd: (_e, direction) => {
+    if (!isMobile.value || !swipeAllowed.value) {
+      swipeAllowed.value = false
+      isFromGrabHandle.value = false
+      return
+    }
+
+    const deltaY = getSwipeDeltaY(coordsStart, coordsEnd)
+    const threshold = 100 // 下拉超过 100px 触发关闭
+
+    if (direction === 'down' && deltaY > threshold) {
+      emit('close')
+    }
+
+    // 重置状态
+    swipeAllowed.value = false
+    isFromGrabHandle.value = false
+  }
+})
 
 // 拖拽偏移样式
 const drawerStyle = computed(() => {
-  if (!isMobile.value || !isDragging.value) return {}
-  const deltaY = Math.max(0, touchCurrentY.value - touchStartY.value)
+  if (!isMobile.value || !isSwiping.value || !swipeAllowed.value) return {}
+  const deltaY = Math.max(0, getSwipeDeltaY(coordsStart, coordsEnd))
+  if (deltaY <= 0) return {}
   return {
     transform: `translateY(${deltaY}px)`,
     transition: 'none'
@@ -229,78 +273,10 @@ const onGrabHandleTouchStart = () => {
   isFromGrabHandle.value = true
 }
 
-const onTouchStart = (e) => {
-  if (!isMobile.value) return
-
-  // 检查内容是否在顶部（允许从顶部下拉关闭）
-  const content = contentRef.value
-  const isAtTop = !content || content.scrollTop <= 0
-
-  // 只有从拖拽条开始或内容在顶部时才允许拖拽关闭
-  if (!isFromGrabHandle.value && !isAtTop) return
-
-  touchStartY.value = e.touches[0].clientY
-  touchCurrentY.value = e.touches[0].clientY
-  isDragging.value = true
-}
-
-const onTouchMove = (e) => {
-  if (!isDragging.value || !isMobile.value) return
-
-  const currentY = e.touches[0].clientY
-  const deltaY = currentY - touchStartY.value
-
-  // 只允许向下拖拽
-  if (deltaY > 0) {
-    touchCurrentY.value = currentY
-    // 阻止内容滚动
-    e.preventDefault()
-  } else {
-    // 向上滑动时取消拖拽，允许正常滚动
-    isDragging.value = false
-    isFromGrabHandle.value = false
-  }
-}
-
-const onTouchEnd = () => {
-  if (!isDragging.value || !isMobile.value) {
-    isFromGrabHandle.value = false
-    return
-  }
-
-  const deltaY = touchCurrentY.value - touchStartY.value
-  const threshold = 100 // 下拉超过 100px 触发关闭
-
-  if (deltaY > threshold) {
-    emit('close')
-  }
-
-  // 重置状态
-  isDragging.value = false
-  touchStartY.value = 0
-  touchCurrentY.value = 0
-  isFromGrabHandle.value = false
-}
-
-// === 窗口尺寸监听 ===
-const updateWindowWidth = () => {
-  windowWidth.value = window.innerWidth
-}
-
-onMounted(() => {
-  window.addEventListener('resize', updateWindowWidth)
-})
-
-onUnmounted(() => {
-  window.removeEventListener('resize', updateWindowWidth)
-})
-
 // 打开时重置状态
 watch(() => props.open, (newVal) => {
   if (newVal) {
-    isDragging.value = false
-    touchStartY.value = 0
-    touchCurrentY.value = 0
+    swipeAllowed.value = false
     isFromGrabHandle.value = false
   }
 })

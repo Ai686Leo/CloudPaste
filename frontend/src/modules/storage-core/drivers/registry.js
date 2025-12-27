@@ -6,6 +6,7 @@ import { LocalDriver } from "./local/LocalDriver.js";
 import { OneDriveDriver } from "./onedrive/OneDriveDriver.js";
 import { GoogleDriveDriver } from "./googledrive/GoogleDriveDriver.js";
 import { GithubApiDriver } from "./githubApi/GithubApiDriver.js";
+import { TelegramDriver } from "./telegram/TelegramDriver.js";
 
 // 存储驱动工厂
 const driverFactories = new Map([
@@ -15,6 +16,7 @@ const driverFactories = new Map([
   [DRIVER_TYPES.ONEDRIVE, (config) => new OneDriveDriver(config)],
   [DRIVER_TYPES.GOOGLE_DRIVE, (config) => new GoogleDriveDriver(config)],
   [DRIVER_TYPES.GITHUB_API, (config) => new GithubApiDriver(config)],
+  [DRIVER_TYPES.TELEGRAM, (config) => new TelegramDriver(config)],
 ]);
 
 const driverCache = new Map();

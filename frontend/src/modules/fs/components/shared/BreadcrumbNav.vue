@@ -1,26 +1,28 @@
 <template>
-  <nav class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-3 gap-2 sm:gap-0" :aria-label="$t('breadcrumb.navigation')">
+  <nav class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4 gap-2 sm:gap-0" :aria-label="$t('breadcrumb.navigation')">
     <!-- 左侧面包屑 -->
-    <ol class="flex flex-wrap items-center space-x-1">
+    <ol class="flex flex-wrap items-center gap-1">
       <li class="flex items-center">
         <a
           href="#"
           @click.prevent="navigateToRoot"
           @mouseenter="prefetchRoot"
-          :class="['flex items-center font-medium transition-colors duration-200', darkMode ? 'text-gray-300 hover:text-white' : 'text-gray-600 hover:text-gray-900']"
+          :class="['flex items-center px-2 py-1.5 rounded-md transition-colors duration-200', darkMode ? 'text-gray-400 hover:text-gray-200 hover:bg-gray-800' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100']"
         >
           <!-- 根目录图标 -->
-          <IconHome class="mr-1" aria-hidden="true" />
-          <span>{{ $t("breadcrumb.root") }}</span>
+          <IconHome size="sm" class="mr-1.5" aria-hidden="true" />
+          <span class="text-base font-medium">{{ $t("breadcrumb.root") }}</span>
         </a>
       </li>
 
       <!-- 路径分隔符和目录段 -->
       <li v-for="(segment, index) in pathSegments" :key="index" class="flex items-center">
-        <span :class="['mx-1', darkMode ? 'text-gray-500' : 'text-gray-400']"> / </span>
+        <!-- Chevron Separator -->
+        <IconChevronRight size="xs" :class="['mx-0.5', darkMode ? 'text-gray-600' : 'text-gray-400']" />
+        
         <span
           v-if="index === pathSegments.length - 1"
-          :class="['font-medium', darkMode ? 'text-primary-400' : 'text-primary-600']"
+          :class="['px-2 py-1.5 rounded-md text-base font-semibold', darkMode ? 'text-gray-100 bg-gray-800/50' : 'text-gray-900 bg-gray-100']"
         >
           {{ segment }}
         </span>
@@ -30,8 +32,8 @@
           @click.prevent="navigateToSegment(index)"
           @mouseenter="prefetchSegment(index)"
           :class="[
-            'font-medium transition-colors duration-200',
-            darkMode ? 'text-gray-300 hover:text-white' : 'text-gray-600 hover:text-gray-900',
+            'px-2 py-1.5 rounded-md text-base font-medium transition-colors duration-200',
+            darkMode ? 'text-gray-400 hover:text-gray-200 hover:bg-gray-800' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100',
           ]"
         >
           {{ segment }}
@@ -44,7 +46,8 @@
 
 <script setup>
 import { computed } from "vue";
-import { IconHome } from "@/components/icons";
+import { IconHome, IconChevronRight } from "@/components/icons";
+import { normalizeFsPath } from "@/utils/fsPathUtils.js";
 
 const props = defineProps({
   currentPath: {
@@ -68,16 +71,8 @@ const props = defineProps({
 
 const emit = defineEmits(["navigate", "prefetch"]);
 
-const normalizePath = (path) => {
-  const raw = typeof path === "string" && path ? path : "/";
-  const withLeading = raw.startsWith("/") ? raw : `/${raw}`;
-  const collapsed = withLeading.replace(/\/{2,}/g, "/");
-  if (collapsed === "/") return "/";
-  return collapsed.replace(/\/+$/, "");
-};
-
-const normalizedBasicPath = computed(() => normalizePath(props.basicPath));
-const normalizedCurrentPath = computed(() => normalizePath(props.currentPath));
+const normalizedBasicPath = computed(() => normalizeFsPath(props.basicPath));
+const normalizedCurrentPath = computed(() => normalizeFsPath(props.currentPath));
 
 const isApiKeyUser = computed(() => props.userType === "user" && normalizedBasicPath.value !== "/");
 

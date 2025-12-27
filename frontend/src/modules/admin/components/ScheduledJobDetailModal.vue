@@ -304,6 +304,7 @@
 
 <script setup>
 import { ref, watch } from 'vue';
+import { useLocalStorage } from "@vueuse/core";
 import { useI18n } from 'vue-i18n';
 import { formatDateTimeWithSeconds } from '@/utils/timeUtils.js';
 import { IconChevronDown, IconClock, IconClose, IconExclamation, IconRefresh, IconSettings, IconTaskList, IconXCircle } from '@/components/icons';
@@ -340,42 +341,18 @@ defineEmits(['close']);
 // 复用主页面的统一配置管理
 const SETTINGS_KEY = 'scheduled-jobs-view-settings';
 
-// 从 localStorage 加载配置
-const loadSettings = () => {
-  try {
-    const saved = localStorage.getItem(SETTINGS_KEY);
-    if (saved) {
-      return JSON.parse(saved);
-    }
-  } catch (error) {
-    console.warn('加载定时任务配置失败:', error);
-  }
-  return {};
-};
-
-// 保存配置到 localStorage
-const saveSettings = (key, value) => {
-  try {
-    const settings = loadSettings();
-    settings[key] = value;
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-  } catch (error) {
-    console.warn('保存定时任务配置失败:', error);
-  }
-};
-
 // 折叠状态（使用 modal 前缀区分）
-const settings = loadSettings();
-const configCollapsed = ref(settings.modalConfigCollapsed ?? true); // 默认折叠
-const historyCollapsed = ref(settings.modalHistoryCollapsed ?? false); // 默认展开
+const settings = useLocalStorage(SETTINGS_KEY, {});
+const configCollapsed = ref(settings.value?.modalConfigCollapsed ?? true); // 默认折叠
+const historyCollapsed = ref(settings.value?.modalHistoryCollapsed ?? false); // 默认展开
 
 // 监听折叠状态变化，自动保存
 watch(configCollapsed, (newValue) => {
-  saveSettings('modalConfigCollapsed', newValue);
+  settings.value = { ...(settings.value || {}), modalConfigCollapsed: newValue };
 });
 
 watch(historyCollapsed, (newValue) => {
-  saveSettings('modalHistoryCollapsed', newValue);
+  settings.value = { ...(settings.value || {}), modalHistoryCollapsed: newValue };
 });
 
 // 格式化执行耗时

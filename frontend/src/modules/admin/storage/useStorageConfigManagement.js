@@ -1,5 +1,6 @@
 import { ref, computed, watch } from "vue";
 import { useI18n } from "vue-i18n";
+import { useLocalStorage } from "@vueuse/core";
 import { useAdminBase } from "@/composables/admin-management/useAdminBase.js";
 import { useStorageConfigsStore } from "@/stores/storageConfigsStore.js";
 import { useAdminStorageConfigService } from "@/modules/admin/services/storageConfigService.js";
@@ -87,15 +88,16 @@ export function useStorageConfigManagement(options = {}) {
   const pageSizeOptions = [4, 8, 12];
 
   // 重写默认页面大小，默认 4 条记录
+  const storedPageSizes = useLocalStorage("admin-page-size", {});
   const getDefaultPageSize = () => {
     try {
-      const saved = localStorage.getItem("admin-page-size");
-      if (saved) {
-        const pageSizes = JSON.parse(saved);
-        const savedSize = pageSizes["storage"] || 4;
-        // 确保保存的值在分页选项范围内，否则使用默认值4
-        return pageSizeOptions.includes(savedSize) ? savedSize : 4;
-      }
+      const pageSizes = storedPageSizes.value;
+      const savedSize =
+        pageSizes && typeof pageSizes === "object"
+          ? pageSizes["storage"] || 4
+          : 4;
+      // 确保保存的值在分页选项范围内，否则使用默认值 4
+      return pageSizeOptions.includes(savedSize) ? savedSize : 4;
     } catch (error) {
       console.warn("解析存储配置分页设置失败:", error);
     }
@@ -288,6 +290,7 @@ export function useStorageConfigManagement(options = {}) {
       // - LOCAL：有 pathExists/readPermission/writePermission 字段（本地存储特有）
       // - WebDAV：有 info 字段但没有 cors/frontendSim
       // - S3：有 cors 或 frontendSim 字段
+      // - Telegram：tester 返回 getMe/getChat（Bot API）
       this.isOneDrive = !!(
         this.result.info &&
         (this.result.info.driveName || this.result.info.driveType || this.result.info.region) &&
@@ -296,12 +299,32 @@ export function useStorageConfigManagement(options = {}) {
       );
       this.isLocal = !!(this.result.pathExists || this.result.readPermission || this.result.writePermission);
       this.isWebDAV = !this.isOneDrive && !this.isLocal && !!(this.result.info && !this.result.cors && !this.result.frontendSim);
+      this.isTelegram = !!(
+        !this.isOneDrive &&
+        !this.isLocal &&
+        (this.result.getMe || this.result.getChat) &&
+        (typeof this.result.getMe === "object" || typeof this.result.getChat === "object")
+      );
     }
 
     /**
      * 计算测试状态
      */
     calculateStatus() {
+      // Telegram：只要 getMe + getChat 都成功，就算完整成功
+      if (this.isTelegram) {
+        const getMeOk = this.result.getMe?.success === true;
+        const getChatOk = this.result.getChat?.success === true;
+        const isFullSuccess = getMeOk && getChatOk;
+        const isPartialSuccess = (getMeOk && !getChatOk) || (!getMeOk && getChatOk);
+        const isSuccess = getMeOk || getChatOk;
+        return {
+          isFullSuccess,
+          isPartialSuccess,
+          isSuccess,
+        };
+      }
+
       // OneDrive：只检查读写权限
       if (this.isOneDrive) {
         const basicConnectSuccess = this.result.read?.success === true;
@@ -388,6 +411,44 @@ export function useStorageConfigManagement(options = {}) {
      */
     generateDetailsMessage() {
       const details = [];
+
+      // Telegram 测试详情
+      if (this.isTelegram) {
+        const me = this.result.getMe || {};
+        const chat = this.result.getChat || {};
+
+        if (me.success) {
+          const username = me.bot?.username ? `@${me.bot.username}` : "未知";
+          details.push(`✓ Bot 可用: ${username}`);
+        } else {
+          details.push("✗ Bot 不可用（getMe 失败）");
+          if (me.error) {
+            details.push(`  ${String(me.error).split("\n")[0]}`);
+          }
+        }
+
+        if (chat.success) {
+          const title = chat.chat?.title ? String(chat.chat.title) : "未知频道";
+          const id = chat.chat?.id != null ? String(chat.chat.id) : "未知ID";
+          details.push(`✓ 频道可用: ${title} (${id})`);
+        } else {
+          details.push("✗ 频道不可用（getChat 失败）");
+          if (chat.error) {
+            details.push(`  ${String(chat.error).split("\n")[0]}`);
+          }
+        }
+
+        const apiBaseUrl = this.result.connectionInfo?.apiBaseUrl;
+        if (apiBaseUrl) {
+          details.push(`✓ API 地址: ${apiBaseUrl}`);
+        }
+        const targetChatId = this.result.connectionInfo?.targetChatId;
+        if (targetChatId) {
+          details.push(`✓ target_chat_id: ${targetChatId}`);
+        }
+
+        return details.join("\n");
+      }
 
       // OneDrive 测试详情
       if (this.isOneDrive) {

@@ -16,19 +16,22 @@
  * }
  */
 
-import { ref, computed, watch, onBeforeUnmount } from "vue";
+import { ref, computed, onBeforeUnmount } from "vue";
+import { useDebounceFn, useLocalStorage } from "@vueuse/core";
 
 const STORAGE_KEY = "cloudpaste-epub-progress";
 const MAX_BOOKS = 30; // 最多保存 30 本书的进度
 const SAVE_DEBOUNCE_MS = 1000; // 保存防抖时间
+
+// 全量进度存储
+const storedAllProgress = useLocalStorage(STORAGE_KEY, {});
 
 /**
  * 从 localStorage 加载所有进度数据
  */
 function loadAllProgress() {
   try {
-    const data = localStorage.getItem(STORAGE_KEY);
-    return data ? JSON.parse(data) : {};
+    return storedAllProgress.value || {};
   } catch (e) {
     console.warn("[EpubProgress] 加载进度数据失败:", e);
     return {};
@@ -47,7 +50,7 @@ function saveAllProgress(data) {
       entries.sort((a, b) => (b[1].lastReadTime || 0) - (a[1].lastReadTime || 0));
       data = Object.fromEntries(entries.slice(0, MAX_BOOKS));
     }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    storedAllProgress.value = data;
     return true;
   } catch (e) {
     console.warn("[EpubProgress] 保存进度数据失败:", e);
@@ -100,8 +103,17 @@ export function useEpubProgress(bookId) {
   const bookmarks = ref([]);
   const isLoaded = ref(false);
 
-  // 防抖保存定时器
-  let saveTimer = null;
+  // 防抖保存
+  const saveProgressDebounced = useDebounceFn(() => {
+    const allData = loadAllProgress();
+    allData[bookId] = {
+      cfi: currentCfi.value,
+      fraction: currentFraction.value,
+      lastReadTime: Date.now(),
+      bookmarks: bookmarks.value,
+    };
+    saveAllProgress(allData);
+  }, SAVE_DEBOUNCE_MS);
 
   /**
    * 加载书籍进度
@@ -134,20 +146,7 @@ export function useEpubProgress(bookId) {
     currentFraction.value = fraction ?? currentFraction.value;
 
     // 防抖保存
-    if (saveTimer) {
-      clearTimeout(saveTimer);
-    }
-
-    saveTimer = setTimeout(() => {
-      const allData = loadAllProgress();
-      allData[bookId] = {
-        cfi: currentCfi.value,
-        fraction: currentFraction.value,
-        lastReadTime: Date.now(),
-        bookmarks: bookmarks.value,
-      };
-      saveAllProgress(allData);
-    }, SAVE_DEBOUNCE_MS);
+    saveProgressDebounced();
   }
 
   /**
@@ -156,10 +155,7 @@ export function useEpubProgress(bookId) {
   function saveProgressImmediate() {
     if (!bookId) return;
 
-    if (saveTimer) {
-      clearTimeout(saveTimer);
-      saveTimer = null;
-    }
+    saveProgressDebounced.cancel?.();
 
     const allData = loadAllProgress();
     allData[bookId] = {
@@ -234,9 +230,7 @@ export function useEpubProgress(bookId) {
 
   // 组件卸载时立即保存
   onBeforeUnmount(() => {
-    if (saveTimer) {
-      clearTimeout(saveTimer);
-    }
+    saveProgressDebounced.cancel?.();
     saveProgressImmediate();
   });
 

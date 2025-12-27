@@ -158,6 +158,17 @@
             <span class="break-words">{{ item.error }}</span>
           </div>
         </div>
+
+        <!-- 跳过原因 -->
+        <div
+          v-if="item.status === 'skipped' && item.message"
+          class="relative px-3 pb-2 pt-0"
+        >
+          <div class="flex items-start gap-1.5 px-2 py-1.5 rounded text-xs bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-200 border border-yellow-100 dark:border-yellow-800/50">
+            <IconExclamation class="w-4 h-4 flex-shrink-0 mt-0.5" />
+            <span class="break-words">{{ item.message }}</span>
+          </div>
+        </div>
       </div>
     </div>
 

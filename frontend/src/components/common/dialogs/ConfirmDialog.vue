@@ -38,7 +38,8 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted } from "vue";
+import { computed } from "vue";
+import { onKeyStroke } from "@vueuse/core";
 import { IconRefresh } from "@/components/icons";
 import { useI18n } from "vue-i18n";
 
@@ -138,23 +139,13 @@ const handleBackdropClick = () => {
   }
 };
 
-// 键盘事件处理
-const handleKeydown = (event) => {
+// 键盘事件：ESC 取消，Enter 确认
+onKeyStroke("Escape", () => {
   if (!props.isOpen || props.loading) return;
-
-  if (event.key === "Escape") {
-    handleCancel();
-  } else if (event.key === "Enter") {
-    handleConfirm();
-  }
-};
-
-// 生命周期
-onMounted(() => {
-  document.addEventListener("keydown", handleKeydown);
+  handleCancel();
 });
-
-onUnmounted(() => {
-  document.removeEventListener("keydown", handleKeydown);
+onKeyStroke("Enter", () => {
+  if (!props.isOpen || props.loading) return;
+  handleConfirm();
 });
 </script>

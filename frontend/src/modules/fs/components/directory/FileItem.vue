@@ -73,8 +73,7 @@
         <button
           v-if="!item.isDirectory"
           @click.stop="$emit('download', item)"
-          class="file-item__action-btn"
-          :class="darkMode ? 'file-item__action-btn--download-dark' : 'file-item__action-btn--download-light'"
+          class="file-item__action-btn w-8 h-8 rounded-full flex items-center justify-center transition-all bg-transparent text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 transform hover:scale-110"
           :title="t('mount.fileItem.download')"
         >
           <IconDownload class="w-4 h-4 sm:w-5 sm:h-5" aria-hidden="true" />
@@ -84,8 +83,7 @@
         <button
           v-if="!item.isDirectory"
           @click.stop="$emit('getLink', item)"
-          class="file-item__action-btn"
-          :class="darkMode ? 'file-item__action-btn--link-dark' : 'file-item__action-btn--link-light'"
+          class="file-item__action-btn w-8 h-8 rounded-full flex items-center justify-center transition-all bg-transparent text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300 transform hover:scale-110"
           :title="t('mount.fileItem.getLink')"
         >
           <IconLink class="w-4 h-4 sm:w-5 sm:h-5" aria-hidden="true" />
@@ -95,8 +93,7 @@
         <button
           v-if="!item.isDirectory"
           @click.stop="$emit('rename', item)"
-          class="file-item__action-btn"
-          :class="darkMode ? 'file-item__action-btn--rename-dark' : 'file-item__action-btn--rename-light'"
+          class="file-item__action-btn w-8 h-8 rounded-full flex items-center justify-center transition-all bg-transparent text-amber-600 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300 transform hover:scale-110"
           :title="t('mount.fileItem.rename')"
         >
           <IconRename class="w-4 h-4 sm:w-5 sm:h-5" aria-hidden="true" />
@@ -105,8 +102,7 @@
         <!-- 删除按钮 -->
         <button
           @click.stop="$emit('delete', item)"
-          class="file-item__action-btn"
-          :class="darkMode ? 'file-item__action-btn--delete-dark' : 'file-item__action-btn--delete-light'"
+          class="file-item__action-btn w-8 h-8 rounded-full flex items-center justify-center transition-all bg-transparent text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 transform hover:scale-110"
           :title="t('mount.fileItem.delete')"
         >
           <IconDelete class="w-4 h-4 sm:w-5 sm:h-5" aria-hidden="true" />
@@ -226,7 +222,6 @@ const modifiedTitle = computed(() => {
 
 <style scoped>
 /* 基础样式 - 使用 CSS 变量 */
-/* 基础样式 - 移除左边框，只用背景高亮 */
 .file-item {
   display: grid;
   align-items: center;
@@ -473,78 +468,8 @@ const modifiedTitle = computed(() => {
   }
 }
 
-/* 操作按钮基础样式 */
+/* 操作按钮基础样式 - Ghost Style Inlined in Template */
 .file-item__action-btn {
-  padding: 4px;
-  border-radius: 9999px;
-  transition: all var(--duration-fast, 150ms);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-/* 下载按钮 */
-.file-item__action-btn--download-light {
-  color: rgb(37, 99, 235);
-}
-.file-item__action-btn--download-light:hover {
-  background: rgb(229, 231, 235);
-  color: rgb(29, 78, 216);
-}
-.file-item__action-btn--download-dark {
-  color: rgb(96, 165, 250);
-}
-.file-item__action-btn--download-dark:hover {
-  background: rgb(75, 85, 99);
-  color: rgb(147, 197, 253);
-}
-
-/* 链接按钮 */
-.file-item__action-btn--link-light {
-  color: rgb(22, 163, 74);
-}
-.file-item__action-btn--link-light:hover {
-  background: rgb(229, 231, 235);
-  color: rgb(21, 128, 61);
-}
-.file-item__action-btn--link-dark {
-  color: rgb(74, 222, 128);
-}
-.file-item__action-btn--link-dark:hover {
-  background: rgb(75, 85, 99);
-  color: rgb(134, 239, 172);
-}
-
-/* 重命名按钮 */
-.file-item__action-btn--rename-light {
-  color: rgb(202, 138, 4);
-}
-.file-item__action-btn--rename-light:hover {
-  background: rgb(229, 231, 235);
-  color: rgb(161, 98, 7);
-}
-.file-item__action-btn--rename-dark {
-  color: rgb(250, 204, 21);
-}
-.file-item__action-btn--rename-dark:hover {
-  background: rgb(75, 85, 99);
-  color: rgb(253, 224, 71);
-}
-
-/* 删除按钮 */
-.file-item__action-btn--delete-light {
-  color: rgb(220, 38, 38);
-}
-.file-item__action-btn--delete-light:hover {
-  background: rgb(229, 231, 235);
-  color: rgb(185, 28, 28);
-}
-.file-item__action-btn--delete-dark {
-  color: rgb(248, 113, 113);
-}
-.file-item__action-btn--delete-dark:hover {
-  background: rgb(75, 85, 99);
-  color: rgb(252, 165, 165);
 }
 
 /* 禁用动画时移除所有过渡 */

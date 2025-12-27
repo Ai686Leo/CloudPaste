@@ -33,6 +33,7 @@ export interface ItemResult {
 
   status: ItemStatus;
   error?: string;              // 失败时的错误信息
+  message?: string;            // 非失败的提示信息
   fileSize?: number;           // 文件总大小（字节）
   bytesTransferred?: number;   // 已传输字节数
   retryCount?: number;         // 重试次数

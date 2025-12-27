@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, h, watch } from "vue";
+import { useIntervalFn, useLocalStorage } from "@vueuse/core";
 import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 import { useScheduledJobs } from "@/modules/admin/composables/useScheduledJobs";
@@ -17,8 +18,14 @@ const { isDarkMode: darkMode } = useThemeMode();
 
 // 全局时钟：用于实时更新相对时间显示（倒计时）
 const currentTick = ref(0);
-let tickTimer = null;
 let schedulerTickerAutoRefreshTimer = null;
+const { pause: stopGlobalTick, resume: startGlobalTick } = useIntervalFn(
+  () => {
+    currentTick.value++;
+  },
+  1000,
+  { immediate: false }
+);
 
 // 与服务端时间对齐
 // - /api/admin/scheduled/ticker 会返回 nowMs（服务端当前毫秒）
@@ -28,9 +35,7 @@ const schedulerClockHasSync = ref(false);
 
 onMounted(async () => {
   // 启动全局时钟，每秒更新一次（用于倒计时实时显示）
-  tickTimer = setInterval(() => {
-    currentTick.value++;
-  }, 1000);
+  startGlobalTick();
   
   // 加载页面配置
   loadSettings();
@@ -41,10 +46,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   // 清理全局时钟定时器
-  if (tickTimer) {
-    clearInterval(tickTimer);
-    tickTimer = null;
-  }
+  stopGlobalTick();
 
   if (schedulerTickerAutoRefreshTimer) {
     clearTimeout(schedulerTickerAutoRefreshTimer);
@@ -131,7 +133,9 @@ const defaultSettings = {
 };
 
 // 页面配置状态
-const settings = ref({ ...defaultSettings });
+const settings = useLocalStorage(SETTINGS_KEY, { ...defaultSettings });
+// 确保新增字段有默认值（避免旧配置缺字段）
+settings.value = { ...defaultSettings, ...(settings.value || {}) };
 
 // 折叠状态（从统一配置中读取）
 const isStatsCollapsed = computed({
@@ -142,28 +146,11 @@ const isStatsCollapsed = computed({
   }
 });
 
-// 从 localStorage 加载配置
+// 兼容旧代码：保留方法名
 const loadSettings = () => {
-  try {
-    const saved = localStorage.getItem(SETTINGS_KEY);
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      settings.value = { ...defaultSettings, ...parsed };
-    }
-  } catch (error) {
-    console.warn('加载定时任务页面配置失败:', error);
-    settings.value = { ...defaultSettings };
-  }
+  settings.value = { ...defaultSettings, ...(settings.value || {}) };
 };
-
-// 保存配置到 localStorage
-const saveSettings = () => {
-  try {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings.value));
-  } catch (error) {
-    console.warn('保存定时任务页面配置失败:', error);
-  }
-};
+const saveSettings = () => {};
 
 // 统计数据（实时更新版本）
 const stats = computed(() => {

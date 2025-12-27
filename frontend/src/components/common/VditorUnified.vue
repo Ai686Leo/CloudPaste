@@ -21,10 +21,13 @@
 <script setup>
 import { ref, onMounted, onUnmounted, watch, nextTick } from "vue";
 import { useI18n } from "vue-i18n";
+import { useBreakpoints, breakpointsTailwind } from "@vueuse/core";
 import { loadVditor, VDITOR_ASSETS_BASE } from "@/utils/vditorLoader.js";
 
 // 国际化函数
 const { t } = useI18n();
+const breakpoints = useBreakpoints(breakpointsTailwind);
+const isMobileScreen = breakpoints.smaller("md"); // < 768px
 
 // 优化的表情配置
 const getOptimizedEmojis = () => ({
@@ -109,8 +112,8 @@ const getEditorConfig = () => {
   // 内容主题：用于预览区域
   const contentTheme = props.darkMode ? "dark" : "light";
 
-  // 检测是否为移动设备
-  const isMobile = window.innerWidth <= 768;
+  // 检测是否为移动设备（按 Tailwind 断点：< 768）
+  const isMobile = isMobileScreen.value;
   // Mini 模式：移动端使用即时渲染(ir)，桌面端使用分屏(sv)
   // 完整模式：移动端使用即时渲染(ir)，桌面端使用分屏(sv)
   const defaultMode = isMobile || props.miniMode ? "ir" : "sv";

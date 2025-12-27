@@ -4,6 +4,7 @@
  */
 
 import { ref, computed } from "vue";
+import { useTimeoutFn } from "@vueuse/core";
 import { push } from "notivue";
 
 // 全局消息状态 - 使用单例模式
@@ -31,8 +32,14 @@ function createMessageState() {
   const messageContent = computed(() => message.value?.content || null);
 
   // ===== 核心方法 =====
-
-  let currentTimeoutId = null; // 用于管理自动清除的定时器
+  const autoClearDelayMs = ref(0);
+  const { start: startAutoClear, stop: stopAutoClear } = useTimeoutFn(
+    () => {
+      message.value = null;
+    },
+    autoClearDelayMs,
+    { immediate: false }
+  );
 
   /**
    * 根据消息类型和自定义 duration 计算最终展示时长
@@ -67,10 +74,7 @@ function createMessageState() {
     const finalDuration = resolveDurationByType(type, duration);
 
     // 清除之前的定时器，确保新消息优先展示
-    if (currentTimeoutId) {
-      clearTimeout(currentTimeoutId);
-      currentTimeoutId = null;
-    }
+    stopAutoClear();
 
     // 兼容性：保留旧的“单条消息”状态（有些页面可能还在读 hasMessage/messageContent）
     message.value = {
@@ -103,9 +107,8 @@ function createMessageState() {
 
     // 自动清除"兼容状态"（Notivue 自己会自动关闭提示，这里只清理 message.value）
     if (finalDuration > 0) {
-      currentTimeoutId = setTimeout(() => {
-        message.value = null;
-      }, finalDuration);
+      autoClearDelayMs.value = finalDuration;
+      startAutoClear();
     }
   };
 
@@ -113,10 +116,7 @@ function createMessageState() {
    * 清除当前消息
    */
   const clearMessage = () => {
-    if (currentTimeoutId) {
-      clearTimeout(currentTimeoutId);
-      currentTimeoutId = null;
-    }
+    stopAutoClear();
     message.value = null;
     push.clearAll();
   };

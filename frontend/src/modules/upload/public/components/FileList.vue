@@ -334,7 +334,7 @@ import { formatDateTime } from "@/utils/timeUtils.js";
 import { getRemainingViews as getRemainingViewsUtil, formatFileSize } from "@/utils/fileUtils.js";
 import { getFileIcon } from "@/utils/fileTypeIcons.js";
 import { generateQRCode as createQRCodeImage } from "@/utils/qrcodeUtils.js";
-import { useFileshareService } from "@/modules/fileshare";
+import { useFileshareService } from "@/modules/fileshare/fileshareService.js";
 import { IconCheckbox, IconClose, IconCopy, IconDelete, IconDownload, IconError, IconExternalLink, IconFolderPlus, IconLink, IconQrCode, IconRefresh } from "@/components/icons";
 
 const props = defineProps({

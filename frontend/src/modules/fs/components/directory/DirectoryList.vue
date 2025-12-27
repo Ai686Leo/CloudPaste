@@ -3,9 +3,9 @@
     <!-- 列表视图的表头 -->
     <div
       v-if="viewMode === 'list'"
-      class="grid items-center py-2 px-3 border-b border-t"
+      class="grid items-center py-2 px-3 border-b sticky top-16 z-10 backdrop-blur-md rounded-t-xl transition-colors duration-200"
       :class="[
-        darkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-gray-100 border-gray-200',
+        darkMode ? 'bg-gray-800/80 border-gray-700' : 'bg-white/80 border-gray-200',
         headerGridClass,
       ]"
     >
@@ -252,6 +252,7 @@
       :description="t('mount.rename.enterNewName')"
       :label="t('mount.rename.newName')"
       :initial-value="newName"
+      :validator="validateFsItemNameDialog"
       :confirm-text="t('mount.rename.confirm')"
       :cancel-text="t('mount.rename.cancel')"
       :loading="renameLoading"
@@ -266,18 +267,24 @@
 </template>
 
 <script setup>
-import { ref, computed, nextTick, onMounted, onUnmounted, watch } from "vue";
+import { ref, computed, nextTick, onMounted, onUnmounted, watch, defineAsyncComponent } from "vue";
+import { useEventListener, useWindowScroll } from "@vueuse/core";
 import { useI18n } from "vue-i18n";
 import { useWindowVirtualizer } from "@tanstack/vue-virtual";
 import FileItem from "./FileItem.vue";
-import GalleryView from "./GalleryView.vue";
+// 仅当切到 viewMode=gallery 时才需要加载。
+const GalleryView = defineAsyncComponent(() => import("./GalleryView.vue"));
 import SkeletonLoader from "../shared/SkeletonLoader.vue";
 import { IconChevronDown, IconChevronUp, IconDelete, IconDownload, IconFolderOpen, IconHamburger, IconLink, IconRename } from "@/components/icons";
 import { getFileIcon } from "@/utils/fileTypeIcons.js";
-import { useDirectorySort, useFileOperations } from "@/composables/index.js";
+import { useDirectorySort } from "@/composables/file-system/useDirectorySort.js";
+import { useFileOperations } from "@/composables/file-system/useFileOperations.js";
 import InputDialog from "@/components/common/dialogs/InputDialog.vue";
+import { createFsItemNameDialogValidator, validateFsItemName } from "@/utils/fsPathUtils.js";
 
 const { t } = useI18n();
+
+const validateFsItemNameDialog = createFsItemNameDialogValidator(t);
 
 // ===== 虚拟滚动配置 =====
 // 虚拟滚动阈值：超过此数量启用虚拟滚动
@@ -360,6 +367,7 @@ const sortedItems = createSortedItems(computed(() => props.items));
 const listContainerRef = ref(null);
 // 容器距离文档顶部的偏移量（用于 Window Virtualizer 的 scrollMargin）
 const scrollMargin = ref(0);
+const { y: windowScrollY } = useWindowScroll();
 
 // 是否启用虚拟滚动（文件数量超过阈值时启用）
 const shouldVirtualize = computed(() => {
@@ -372,7 +380,7 @@ const updateScrollMargin = () => {
   if (listContainerRef.value) {
     const rect = listContainerRef.value.getBoundingClientRect();
     // 计算元素相对于文档顶部的绝对位置
-    scrollMargin.value = rect.top + window.scrollY;
+    scrollMargin.value = rect.top + windowScrollY.value;
   }
 };
 
@@ -405,15 +413,11 @@ onMounted(() => {
   nextTick(() => {
     updateScrollMargin();
   });
-  // 监听窗口 resize 事件，更新 scrollMargin
-  window.addEventListener('resize', updateScrollMargin);
-  // 监听滚动事件，在首次滚动时更新 scrollMargin（确保准确性）
-  window.addEventListener('scroll', updateScrollMargin, { once: true });
+  // 监听窗口 resize/scroll（VueUse 自动管理监听器与清理）
+  useEventListener(window, 'resize', updateScrollMargin);
+  useEventListener(window, 'scroll', updateScrollMargin, { once: true });
 });
 
-onUnmounted(() => {
-  window.removeEventListener('resize', updateScrollMargin);
-});
 
 // 计算表头网格布局类 - 根据勾选框显示和操作按钮显示状态动态调整
 const headerGridClass = computed(() => {

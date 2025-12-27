@@ -7,7 +7,6 @@
       class="global-player-wrapper"
       :class="{ 'is-mini': isMiniMode, 'dark-theme': isDarkMode }"
       :style="playerStyle"
-      @mousedown="handleMouseDown"
       @click="handleClick"
       tabindex="0"
       @keydown="handleKeydown"
@@ -50,8 +49,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from "vue";
 import { useI18n } from "vue-i18n";
-import APlayer from "aplayer";
-import "aplayer/dist/APlayer.min.css";
+import { useDraggable, useWindowSize } from "@vueuse/core";
 import { useGlobalPlayerStore } from "@/stores/globalPlayerStore.js";
 import { useThemeMode } from "@/composables/core/useThemeMode.js";
 
@@ -68,24 +66,59 @@ const playerRef = ref(null);
 const aplayerContainer = ref(null);
 const aplayerInstance = ref(null);
 
-// 拖动相关状态
-const position = ref({ x: 20, y: 20 });
-const isDragging = ref(false);
-const dragStart = ref({ x: 0, y: 0 });
-const positionStart = ref({ x: 0, y: 0 });
+// 默认不需要在首屏就加载。
+let APlayerConstructor = null;
+let aplayerCssLoaded = false;
+let initTaskId = 0;
+
+const ensureAPlayerLoaded = async () => {
+  if (APlayerConstructor) return APlayerConstructor;
+  const mod = await import("aplayer");
+  APlayerConstructor = mod?.default || mod;
+  if (!aplayerCssLoaded) {
+    await import("aplayer/dist/APlayer.min.css");
+    aplayerCssLoaded = true;
+  }
+  return APlayerConstructor;
+};
+
+// 拖动相关状态（VueUse useDraggable）
+const initializedDragPosition = ref(false);
+const { width: windowWidth, height: windowHeight } = useWindowSize();
+const { x, y, style: draggableStyle } = useDraggable(playerRef, {
+  initialValue: { x: 20, y: 20 },
+  preventDefault: true,
+  onStart: (_pos, event) => {
+    // 点击播放器时聚焦，以支持键盘操作
+    playerRef.value?.focus();
+
+    const target = event?.target;
+    const isControl =
+      target?.closest?.(".aplayer-icon") ||
+      target?.closest?.(".aplayer-bar-wrap") ||
+      target?.closest?.(".aplayer-list") ||
+      target?.closest?.(".aplayer-volume-wrap") ||
+      target?.closest?.(".custom-mini-switcher") ||
+      target?.closest?.(".custom-close-btn");
+
+    // 点到控制区不允许拖动（避免误触）
+    if (isControl) return false;
+  },
+});
 
 // Mini 模式状态（由 store 控制）
 const isMiniMode = computed(() => store.displayMode === "mini");
 
 // 计算播放器样式
-const playerStyle = computed(() => ({
-  position: 'fixed',
-  left: `${position.value.x}px`,
-  bottom: `${position.value.y}px`,
-  zIndex: 9999,
-  display: 'flex',
-  alignItems: 'stretch',
-}));
+const playerStyle = computed(() => ([
+  {
+    position: "fixed",
+    zIndex: 9999,
+    display: "flex",
+    alignItems: "stretch",
+  },
+  draggableStyle.value,
+]));
 
 // 计算主题色
 const getThemeColor = () => {
@@ -154,34 +187,53 @@ const initAPlayer = () => {
     storageName: "cloudpaste-aplayer",
   };
 
-  try {
-    aplayerInstance.value = new APlayer(options);
+  // 动态加载 APlayer
+  const taskId = ++initTaskId;
+  Promise.resolve()
+    .then(async () => {
+      const APlayer = await ensureAPlayerLoaded();
+      return new APlayer(options);
+    })
+    .then((ap) => {
+      const shouldAbort =
+        taskId !== initTaskId || !store.isVisible || !store.hasPlaylist || !aplayerContainer.value || !playerRef.value;
+      if (shouldAbort) {
+        try {
+          ap?.destroy?.();
+        } catch {
+          // 忽略销毁异常
+        }
+        return;
+      }
 
-    // 如果有指定的起始索引，切换到该曲目
-    if (store.currentIndex > 0 && store.currentIndex < audioData.length) {
-      aplayerInstance.value.list.switch(store.currentIndex);
-    }
+      aplayerInstance.value = ap;
 
-    // 绑定事件
-    bindAPlayerEvents();
+      // 如果有指定的起始索引，切换到该曲目
+      if (store.currentIndex > 0 && store.currentIndex < audioData.length) {
+        aplayerInstance.value.list.switch(store.currentIndex);
+      }
 
-    // 同步模式配置
-    applyDisplayMode(store.displayMode);
-    applyLoopMode(store.loopMode);
-    applyOrderMode(store.orderMode);
+      // 绑定事件
+      bindAPlayerEvents();
 
-    // 保存实例引用到 store
-    store.setAPlayerInstance(aplayerInstance.value);
+      // 同步模式配置
+      applyDisplayMode(store.displayMode);
+      applyLoopMode(store.loopMode);
+      applyOrderMode(store.orderMode);
 
-    // 聚焦播放器以支持键盘操作
-    nextTick(() => {
-      playerRef.value?.focus();
+      // 保存实例引用到 store
+      store.setAPlayerInstance(aplayerInstance.value);
+
+      // 聚焦播放器以支持键盘操作
+      nextTick(() => {
+        playerRef.value?.focus();
+      });
+
+      console.log("🎵 全局播放器 APlayer 初始化成功");
+    })
+    .catch((error) => {
+      console.error("APlayer 初始化失败:", error);
     });
-
-    console.log("🎵 全局播放器 APlayer 初始化成功");
-  } catch (error) {
-    console.error("APlayer 初始化失败:", error);
-  }
 };
 
 // 绑定 APlayer 事件
@@ -327,57 +379,29 @@ const handleClick = () => {
   playerRef.value?.focus();
 };
 
-const handleMouseDown = (event) => {
-  if (event.button !== 0) return;
+const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
-  // 点击播放器时聚焦，以支持键盘操作
-  playerRef.value?.focus();
+const clampInViewport = () => {
+  const el = playerRef.value;
+  if (!el) return;
 
-  const target = event.target;
-  const isControl = target.closest('.aplayer-icon') ||
-                    target.closest('.aplayer-bar-wrap') ||
-                    target.closest('.aplayer-list') ||
-                    target.closest('.aplayer-volume-wrap') ||
-                    target.closest('.custom-mini-switcher') ||
-                    target.closest('.custom-close-btn');
+  const maxX = Math.max(0, windowWidth.value - (el.offsetWidth || 0));
+  const maxY = Math.max(0, windowHeight.value - (el.offsetHeight || 0));
 
-  if (isControl) return;
-
-  isDragging.value = true;
-  dragStart.value = { x: event.clientX, y: event.clientY };
-  positionStart.value = { ...position.value };
-
-  document.addEventListener("mousemove", handleMouseMove);
-  document.addEventListener("mouseup", handleMouseUp);
-
-  event.preventDefault();
+  x.value = clamp(x.value, 0, maxX);
+  y.value = clamp(y.value, 0, maxY);
 };
 
-const handleMouseMove = (event) => {
-  if (!isDragging.value) return;
+const dockToBottomLeftIfNeeded = async () => {
+  if (initializedDragPosition.value) return;
+  await nextTick();
+  const el = playerRef.value;
+  if (!el) return;
 
-  const deltaX = event.clientX - dragStart.value.x;
-  const deltaY = -(event.clientY - dragStart.value.y);
-
-  const newX = positionStart.value.x + deltaX;
-  const newY = positionStart.value.y + deltaY;
-
-  const playerWidth = playerRef.value?.offsetWidth || 400;
-  const playerHeight = playerRef.value?.offsetHeight || 66;
-
-  const maxX = window.innerWidth - playerWidth;
-  const maxY = window.innerHeight - playerHeight;
-
-  position.value = {
-    x: Math.max(0, Math.min(newX, maxX)),
-    y: Math.max(0, Math.min(newY, maxY)),
-  };
-};
-
-const handleMouseUp = () => {
-  isDragging.value = false;
-  document.removeEventListener("mousemove", handleMouseMove);
-  document.removeEventListener("mouseup", handleMouseUp);
+  x.value = 20;
+  y.value = clamp(windowHeight.value - (el.offsetHeight || 0) - 20, 0, windowHeight.value);
+  clampInViewport();
+  initializedDragPosition.value = true;
 };
 
 // ===== 监听器 =====
@@ -441,13 +465,36 @@ onMounted(() => {
       initAPlayer();
     });
   }
+  void dockToBottomLeftIfNeeded();
 });
 
 onBeforeUnmount(() => {
+  initTaskId++;
   destroyAPlayer();
-  document.removeEventListener("mousemove", handleMouseMove);
-  document.removeEventListener("mouseup", handleMouseUp);
 });
+
+watch(
+  () => store.isVisible,
+  async (visible) => {
+    if (!visible) return;
+    await dockToBottomLeftIfNeeded();
+    await nextTick();
+    clampInViewport();
+  }
+);
+
+watch([windowWidth, windowHeight], async () => {
+  await nextTick();
+  clampInViewport();
+});
+
+watch(
+  () => store.displayMode,
+  async () => {
+    await nextTick();
+    clampInViewport();
+  }
+);
 </script>
 
 <style>

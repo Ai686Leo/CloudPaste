@@ -7,6 +7,9 @@ import { getFullApiUrl } from "./config";
 import { ApiStatus } from "./ApiStatus"; // 导入API状态码常量
 import { logoutViaBridge, buildAuthHeaders } from "@/modules/security/index.js";
 import { enqueueOfflineOperation } from "@/modules/pwa-offline/index.js";
+import { useOnline } from "@vueuse/core";
+
+const isOnline = useOnline();
 
 // - 优先使用后端返回的 message
 // - 附带请求ID（X-Request-Id）方便排查
@@ -157,7 +160,7 @@ export async function fetchApi(endpoint, options = {}) {
   console.log(`🚀 API请求: ${debugInfo.method} ${debugInfo.url}`, debugInfo);
 
   // 🎯 PWA网络状态检测 - 符合最佳实践
-  if (!navigator.onLine) {
+  if (!isOnline.value) {
     console.warn(`🔌 离线状态，API请求可能失败: ${url}`);
     if (options.method && options.method !== "GET") {
       await enqueueOfflineOperation(endpoint, options);

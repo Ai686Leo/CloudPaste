@@ -1,9 +1,11 @@
 <script setup>
 // HTML预览弹窗组件 - 用于在弹窗中安全预览HTML代码
 // 该组件使用iframe实现HTML的安全渲染，并提供复制代码、在新窗口打开等功能
-import { ref, watch, onMounted, nextTick, onUnmounted, computed } from "vue";
+import { ref, watch, onMounted, nextTick, computed } from "vue";
+import { onKeyStroke, useTimeoutFn } from "@vueuse/core";
 import { IconClose, IconCollapse, IconExpand } from "@/components/icons";
 import LoadingIndicator from "@/components/common/LoadingIndicator.vue";
+import { copyToClipboard } from "@/utils/clipboard";
 
 // 定义组件接受的属性
 const props = defineProps({
@@ -38,6 +40,8 @@ const iframeRef = ref(null);
 const renderState = ref("idle"); // 'idle', 'loading', 'rendered', 'error'
 // 错误信息
 const errorMessage = ref("");
+// 复制按钮引用
+const copyButtonRef = ref(null);
 
 // 全屏状态
 const isFullscreen = ref(false);
@@ -124,18 +128,11 @@ const toggleFullscreen = () => {
   isFullscreen.value = !isFullscreen.value;
 };
 
-// 监听ESC键
-onMounted(() => {
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && isFullscreen.value) {
-      isFullscreen.value = false;
-    }
-  });
-});
-
-// 组件卸载时移除事件监听
-onUnmounted(() => {
-  document.removeEventListener("keydown", () => {});
+// 监听 ESC：全屏时按 ESC 退出全屏
+onKeyStroke("Escape", () => {
+  if (isFullscreen.value) {
+    isFullscreen.value = false;
+  }
 });
 
 // 监听 show 和 htmlContent 变化
@@ -173,22 +170,26 @@ const openInNewWindow = () => {
 };
 
 // 复制 HTML 代码
-const copyHtml = () => {
-  navigator.clipboard
-    .writeText(props.htmlContent)
-    .then(() => {
-      // 显示复制成功提示
-      const copyButton = document.querySelector(".copy-button");
-      if (copyButton) {
-        copyButton.textContent = "已复制";
-        setTimeout(() => {
-          copyButton.textContent = "复制代码";
-        }, 2000);
-      }
-    })
-    .catch((err) => {
-      console.error("复制失败:", err);
-    });
+const copyHtml = async () => {
+  try {
+    const success = await copyToClipboard(props.htmlContent);
+    if (!success) {
+      throw new Error("copy_failed");
+    }
+
+    const btn = copyButtonRef.value;
+    if (btn) {
+      const original = btn.textContent;
+      btn.textContent = "已复制";
+      useTimeoutFn(() => {
+        if (copyButtonRef.value) {
+          copyButtonRef.value.textContent = original || "复制代码";
+        }
+      }, 2000);
+    }
+  } catch (err) {
+    console.error("复制失败:", err);
+  }
 };
 
 // 组件挂载时，如果弹窗显示就渲染内容
@@ -206,7 +207,7 @@ onMounted(() => {
       <div class="modal-header">
         <h3>{{ contentType === "svg" ? "SVG 预览" : "HTML 预览" }}</h3>
         <div class="modal-actions">
-          <button class="action-button copy-button" @click="copyHtml">复制代码</button>
+          <button ref="copyButtonRef" class="action-button copy-button" @click="copyHtml">复制代码</button>
           <button class="action-button" @click="openInNewWindow">在新窗口打开</button>
           <button class="action-button" @click="toggleFullscreen">
             <IconExpand v-if="!isFullscreen" size="sm" />

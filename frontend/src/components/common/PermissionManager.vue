@@ -29,7 +29,8 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted } from "vue";
+import { computed, onMounted } from "vue";
+import { useEventListener } from "@vueuse/core";
 import { useAuthStore } from "@/stores/authStore.js";
 import { IconExclamation, IconInformationCircle } from "@/components/icons";
 
@@ -115,13 +116,9 @@ onMounted(async () => {
   await checkPermissionStatus();
 
   // 监听认证状态变化事件
-  window.addEventListener("auth-state-changed", handleAuthStateChange);
+  useEventListener(window, "auth-state-changed", handleAuthStateChange);
 });
 
-// 组件卸载
-onUnmounted(() => {
-  window.removeEventListener("auth-state-changed", handleAuthStateChange);
-});
 
 // 暴露方法和状态
 defineExpose({

@@ -74,7 +74,11 @@ export default {
       upload_sessions: {
         name: "分片上传会话管理",
         description: "分片上传会话记录和状态"
-      }
+      },
+      vfs_management: {
+        name: "虚拟目录树管理",
+        description: "虚拟目录树索引。建议与“存储配置”“挂载管理”一起备份",
+      },
     },
 
     // 日志和状态消息

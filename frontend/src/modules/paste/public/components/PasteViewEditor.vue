@@ -214,7 +214,8 @@
 </template>
 
 <script setup>
-import { ref, watch, onBeforeUnmount, onMounted } from "vue";
+import { ref, watch } from "vue";
+import { useEventListener } from "@vueuse/core";
 import { useGlobalMessage } from "@/composables/core/useGlobalMessage.js";
 import { getInputClasses } from "./PasteViewUtils";
 import { IconRefresh } from "@/components/icons";
@@ -398,6 +399,9 @@ const updateCopyFormatMenuPosition = () => {
     };
   }
 };
+
+// 窗口尺寸变化时，保持菜单跟随工具栏按钮（自动清理）
+useEventListener(window, "resize", updateCopyFormatMenuPosition);
 
 // 显示复制格式菜单
 const showCopyFormatsMenu = (position = null) => {
@@ -626,15 +630,6 @@ watch(
   }
 );
 
-// 清理
-onBeforeUnmount(() => {
-  copyFormatMenuVisible.value = false;
-  window.removeEventListener("resize", updateCopyFormatMenuPosition);
-});
-
-onMounted(() => {
-  window.addEventListener("resize", updateCopyFormatMenuPosition);
-});
 </script>
 
 <style scoped>

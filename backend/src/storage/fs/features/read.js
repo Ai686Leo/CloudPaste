@@ -86,6 +86,8 @@ export async function listDirectory(fs, path, userIdOrInfo, userType, options = 
       subPath: cacheSubPath,
       db: fs.mountManager.db,
       ...options,
+      userIdOrInfo,
+      userType,
       // refresh 只负责“本次请求绕过缓存”，不做“提前清缓存”
       refresh,
     });
@@ -145,8 +147,8 @@ export async function getFileInfo(fs, path, userIdOrInfo, userType, request = nu
     mount,
     subPath,
     db: fs.mountManager.db,
+    userIdOrInfo,
     userType,
-    userId: userIdOrInfo,
     request,
   });
 

@@ -12,7 +12,7 @@ export default defineConfig(({ command, mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
 
   // 统一版本管理
-  const APP_VERSION = "1.6.0";
+  const APP_VERSION = "1.7.0";
   const isDev = command === "serve";
   const enablePwa = command === "build";
 
@@ -170,24 +170,12 @@ export default defineConfig(({ command, mode }) => {
               },
             },
 
-            // 用户媒体文件 - NetworkFirst（大文件适度缓存）
+            // 用户媒体文件 - NetworkOnly
             {
               urlPattern: ({ request, url }) =>
                 (request.destination === "video" || request.destination === "audio" || /\.(mp4|webm|ogg|mp3|wav|flac|aac)$/i.test(url.pathname)) &&
                 (url.pathname.includes("/api/") || url.searchParams.has("X-Amz-Algorithm") || url.hostname !== self.location.hostname),
-              handler: "NetworkFirst",
-              options: {
-                cacheName: "user-media",
-                expiration: {
-                  maxEntries: 30,
-                  maxAgeSeconds: 2 * 60 * 60, // 2小时（媒体文件较大，适度缓存）
-                },
-                networkTimeoutSeconds: 15,
-                cacheableResponse: {
-                  statuses: [0, 200, 206], // 支持范围请求
-                },
-                rangeRequests: true,
-              },
+              handler: "NetworkOnly",
             },
 
             // 用户文档文件 - NetworkFirst（文档快速更新）

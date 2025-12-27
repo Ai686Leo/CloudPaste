@@ -31,8 +31,9 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from "vue";
+import { ref, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
+import { useEventListener } from "@vueuse/core";
 import AdminSidebar from "@/modules/admin/components/AdminSidebar.vue";
 import AdminHeader from "@/modules/admin/components/AdminHeader.vue";
 import { useAuthStore } from "@/stores/authStore.js";
@@ -76,14 +77,10 @@ onMounted(async () => {
     await authStore.validateAuth();
   }
 
-  // 监听认证状态变化事件
-  window.addEventListener("auth-state-changed", handleAuthStateChange);
+  // 监听认证状态变化事件（VueUse 自动管理监听器与清理）
+  useEventListener(window, "auth-state-changed", handleAuthStateChange);
 });
 
-// 组件卸载时移除事件监听
-onBeforeUnmount(() => {
-  window.removeEventListener("auth-state-changed", handleAuthStateChange);
-});
 
 // 处理认证状态变化
 const handleAuthStateChange = (event) => {

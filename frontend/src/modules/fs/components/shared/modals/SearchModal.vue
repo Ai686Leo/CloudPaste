@@ -150,7 +150,8 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, nextTick, onMounted, onUnmounted } from "vue";
+import { ref, computed, watch, nextTick } from "vue";
+import { onKeyStroke } from "@vueuse/core";
 import { useI18n } from "vue-i18n";
 import { IconClose, IconRefresh, IconSearch } from "@/components/icons";
 import { useFileSearch } from "@/composables/file-system/useFileSearch.js";
@@ -262,12 +263,12 @@ const closeModal = () => {
   emit("close");
 };
 
-// 键盘事件处理
-const handleKeydown = (event) => {
-  if (event.key === "Escape" && props.isOpen) {
+// 键盘事件处理：按 ESC 关闭
+onKeyStroke("Escape", () => {
+  if (props.isOpen) {
     closeModal();
   }
-};
+});
 
 // 监听模态框打开状态
 watch(
@@ -294,12 +295,4 @@ watch(
   }
 );
 
-// 生命周期钩子
-onMounted(() => {
-  document.addEventListener("keydown", handleKeydown);
-});
-
-onUnmounted(() => {
-  document.removeEventListener("keydown", handleKeydown);
-});
 </script>

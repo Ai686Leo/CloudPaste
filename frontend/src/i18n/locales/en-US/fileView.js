@@ -198,6 +198,9 @@ export default {
         loading: "Loading...",
         error: "Video load failed",
         notSupported: "Your browser does not support video tag",
+        hlsShareNotSupportedTitle: "m3u8 (HLS) is not supported on the share page",
+        hlsShareNotSupportedTip:
+          "This is an m3u8 playlist. A single-file share cannot include its segments (ts/m4s/key). Please open it from the Mount Browser page.",
       },
 
       // Direct preview hint

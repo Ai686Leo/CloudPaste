@@ -29,8 +29,8 @@
 </template>
 
 <script setup>
-import { onMounted, onUnmounted } from "vue";
 import { useI18n } from "vue-i18n";
+import { useEventListener } from "@vueuse/core";
 import { IconCode, IconDocumentText, IconDownload } from "@/components/icons";
 import { copyToClipboard as clipboardCopy } from "@/utils/clipboard";
 import markdownToWord from "@/utils/markdownToWord";
@@ -271,13 +271,8 @@ const handleGlobalClick = (event) => {
   }
 };
 
-onMounted(() => {
-  document.addEventListener("click", handleGlobalClick);
-});
-
-onUnmounted(() => {
-  document.removeEventListener("click", handleGlobalClick);
-});
+// 监听全局点击（自动清理）
+useEventListener(document, "click", handleGlobalClick);
 </script>
 
 <style scoped>

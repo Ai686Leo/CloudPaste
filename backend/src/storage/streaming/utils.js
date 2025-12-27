@@ -20,6 +20,8 @@ export function parseRangeHeader(rangeHeader, fileSize) {
     return null;
   }
 
+  // 说明：当前函数只解析 single-range（例如 bytes=0-1023 / bytes=500- / bytes=-500）。
+  // multi-range（例如 bytes=0-99,200-299）由上层（StorageStreaming）单独处理。
   const match = rangeHeader.match(/^bytes=(\d*)-(\d*)$/);
   if (!match) {
     return { start: 0, end: 0, isValid: false, isSatisfiable: false };
@@ -72,6 +74,122 @@ export function parseRangeHeader(rangeHeader, fileSize) {
   }
 
   return { start, end, isValid: true, isSatisfiable: true, unknownSize: sizeUnknown };
+}
+
+/**
+ * 解析 HTTP Multi-Range（多段 Range）头
+ * - 仅支持 bytes=... 形式
+ * - 需要 fileSize 已知（否则无法计算后缀范围/满足性）
+ *
+ * @param {string|null} rangeHeader
+ * @param {number|null} fileSize
+ * @returns {{ ranges: Array<{ start: number, end: number }>, isValid: boolean, hasNoOverlap: boolean } | null}
+ */
+export function parseMultiRangeHeader(rangeHeader, fileSize) {
+  if (!rangeHeader) return null;
+  if (!String(rangeHeader).startsWith("bytes=")) return { ranges: [], isValid: false, hasNoOverlap: false };
+
+  const sizeUnknown = fileSize === null || fileSize <= 0;
+  if (sizeUnknown) {
+    // size 未知无法可靠解析 multi-range（尤其是 suffix-range）
+    return { ranges: [], isValid: true, hasNoOverlap: false };
+  }
+
+  const spec = String(rangeHeader).slice("bytes=".length);
+  const parts = spec.split(",").map((s) => s.trim()).filter(Boolean);
+  if (parts.length < 2) {
+    return { ranges: [], isValid: false, hasNoOverlap: false };
+  }
+
+  /** @type {Array<{start:number,end:number}>} */
+  const ranges = [];
+  let noOverlap = false;
+
+  for (const part of parts) {
+    const [startRaw, endRaw, extra] = part.split("-");
+    if (extra !== undefined) {
+      return { ranges: [], isValid: false, hasNoOverlap: false };
+    }
+    const startStr = (startRaw ?? "").trim();
+    const endStr = (endRaw ?? "").trim();
+    if (startStr === "" && endStr === "") {
+      return { ranges: [], isValid: false, hasNoOverlap: false };
+    }
+
+    // suffix-range: bytes=-500
+    if (startStr === "") {
+      if (endStr.startsWith("-")) return { ranges: [], isValid: false, hasNoOverlap: false };
+      const suffixLength = parseInt(endStr, 10);
+      if (!Number.isFinite(suffixLength) || suffixLength < 0) {
+        return { ranges: [], isValid: false, hasNoOverlap: false };
+      }
+      const n = Math.min(suffixLength, fileSize);
+      const start = Math.max(0, fileSize - n);
+      const end = fileSize - 1;
+      ranges.push({ start, end });
+      continue;
+    }
+
+    // start-end or start-
+    const start = parseInt(startStr, 10);
+    if (!Number.isFinite(start) || start < 0) {
+      return { ranges: [], isValid: false, hasNoOverlap: false };
+    }
+    if (start >= fileSize) {
+      noOverlap = true;
+      continue;
+    }
+
+    let end;
+    if (endStr === "") {
+      end = fileSize - 1;
+    } else {
+      end = parseInt(endStr, 10);
+      if (!Number.isFinite(end) || end < start) {
+        return { ranges: [], isValid: false, hasNoOverlap: false };
+      }
+      end = Math.min(end, fileSize - 1);
+    }
+
+    ranges.push({ start, end });
+  }
+
+  return { ranges, isValid: true, hasNoOverlap: noOverlap && ranges.length === 0 };
+}
+
+/**
+ * If-Range 语义：
+ * - 若 If-Range 与当前资源的 ETag/Last-Modified 不匹配 → 必须忽略 Range（返回 200 全量），避免客户端拼接错乱/花屏。
+ * - 若匹配 → 才允许继续按 Range 返回 206。
+ *
+ * @param {Request|null} request
+ * @param {string|null} etag
+ * @param {Date|null} lastModified
+ * @returns {boolean} true 表示应忽略 Range
+ */
+export function shouldIgnoreRangeForIfRange(request, etag, lastModified) {
+  if (!request) return false;
+  const ifRange = request.headers?.get?.("if-range");
+  if (!ifRange) return false;
+
+  // 1) ETag 形式（W/"..." 或 "..."）
+  const trimmed = String(ifRange).trim();
+  if (trimmed.startsWith("\"") || trimmed.startsWith("W/\"")) {
+    if (!etag) return true;
+    const a = String(etag).trim().replace(/^W\//, "");
+    const b = trimmed.replace(/^W\//, "");
+    return a !== b;
+  }
+
+  // 2) HTTP-date 形式
+  const date = new Date(trimmed);
+  if (!Number.isFinite(date.getTime())) {
+    // 无法解析，保守处理：忽略 Range
+    return true;
+  }
+  if (!lastModified) return true;
+  // 资源最后修改时间 <= If-Range 时间 → 认为未变化，允许 Range；否则忽略 Range
+  return lastModified > date;
 }
 
 /**

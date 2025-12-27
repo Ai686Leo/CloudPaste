@@ -1,143 +1,138 @@
 <template>
-  <div v-if="isOpen" class="fixed inset-0 z-[60] bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4 pt-20 sm:pt-4">
-    <div class="relative w-full max-w-sm sm:max-w-md bg-white dark:bg-gray-800 rounded-lg shadow-xl max-h-[85vh] sm:max-h-[80vh] flex flex-col overflow-hidden">
-      <!-- 标题栏 -->
-      <div class="flex-shrink-0 px-4 py-3 border-b flex justify-between items-center" :class="darkMode ? 'border-gray-700' : 'border-gray-200'">
-        <h3 class="text-lg font-medium" :class="darkMode ? 'text-gray-100' : 'text-gray-900'">
-          {{ t("fileBasket.panel.title") }}
-        </h3>
-        <button @click="close" class="text-gray-400 hover:text-gray-500 dark:text-gray-500 dark:hover:text-gray-400">
-          <IconClose aria-hidden="true" />
-        </button>
-      </div>
+  <Teleport to="body">
+    <div v-if="isOpen" class="fixed inset-0 z-[60] flex items-center justify-center p-4">
+      <div class="absolute inset-0 bg-black/20 backdrop-blur-[1px]" @click="close"></div>
 
-      <!-- 统计信息 -->
-      <div v-if="hasCollection" class="px-4 py-3 border-b" :class="darkMode ? 'bg-blue-900/20 border-gray-700' : 'bg-blue-50 border-gray-200'">
-        <div class="flex items-center justify-between">
-          <div>
-            <div class="text-sm" :class="darkMode ? 'text-blue-200' : 'text-blue-800'">{{ collectionCount }} 个文件，来自 {{ directoryCount }} 个目录</div>
-            <div class="text-xs mt-1" :class="darkMode ? 'text-blue-300' : 'text-blue-600'">总大小：{{ collectionTotalSizeMB }} MB</div>
-          </div>
-          <!-- 全部展开/收起按钮 -->
-          <button
-            @click="toggleAllDirectories"
-            class="text-xs px-2 py-1 rounded transition-colors"
-            :class="darkMode ? 'text-blue-300 hover:text-blue-200 hover:bg-blue-800/30' : 'text-blue-600 hover:text-blue-700 hover:bg-blue-100'"
-          >
-            {{ allDirectoriesExpanded ? "全部收起" : "全部展开" }}
+      <!-- 面板本体 -->
+      <div
+        class="relative w-full max-w-lg bg-white/95 dark:bg-gray-800/95 backdrop-blur-md rounded-xl shadow-2xl border border-gray-200/50 dark:border-gray-700/50 flex flex-col overflow-hidden transition-all duration-200"
+      >
+        <!-- 标题栏 -->
+        <div class="flex-shrink-0 px-4 py-3 border-b flex justify-between items-center" :class="darkMode ? 'border-gray-700/50' : 'border-gray-200/50'">
+          <h3 class="text-lg font-medium" :class="darkMode ? 'text-gray-100' : 'text-gray-900'">
+            {{ t("fileBasket.panel.title") }}
+          </h3>
+          <button @click="close" class="text-gray-400 hover:text-gray-500 dark:text-gray-500 dark:hover:text-gray-400 p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+            <IconClose size="sm" aria-hidden="true" />
           </button>
         </div>
-      </div>
 
-      <!-- 内容区 -->
-      <div class="flex-1 overflow-y-auto p-3 sm:p-4" style="max-height: calc(85vh - 200px)">
-        <!-- 空状态 -->
-        <div v-if="!hasCollection" class="text-center py-8" :class="darkMode ? 'text-gray-400' : 'text-gray-600'">
-          <!-- 文件列表图标 (与按钮保持一致) -->
-          <IconCollection class="h-12 w-12 mx-auto mb-3 opacity-30" aria-hidden="true" />
-          <p class="font-medium">{{ t("fileBasket.panel.empty") }}</p>
-          <p class="text-xs mt-1 opacity-75">{{ t("fileBasket.panel.emptyDescription") }}</p>
+        <!-- 统计信息 -->
+        <div v-if="hasCollection" class="px-4 py-3 border-b bg-gray-50/50 dark:bg-gray-900/30" :class="darkMode ? 'border-gray-700/50' : 'border-gray-200/50'">
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="text-sm" :class="darkMode ? 'text-blue-200' : 'text-blue-800'">{{ collectionCount }} 个文件，来自 {{ directoryCount }} 个目录</div>
+              <div class="text-xs mt-1" :class="darkMode ? 'text-blue-300' : 'text-blue-600'">总大小：{{ collectionTotalSizeMB }} MB</div>
+            </div>
+            <!-- 全部展开/收起按钮 -->
+            <button
+              @click="toggleAllDirectories"
+              class="text-xs px-2 py-1 rounded transition-colors"
+              :class="darkMode ? 'text-blue-300 hover:text-blue-200 hover:bg-blue-800/30' : 'text-blue-600 hover:text-blue-700 hover:bg-blue-100'"
+            >
+              {{ allDirectoriesExpanded ? "全部收起" : "全部展开" }}
+            </button>
+          </div>
         </div>
 
-        <!-- 文件列表 -->
-        <div v-else class="space-y-3">
-          <!-- 按目录分组显示 -->
-          <div v-for="(files, directory) in filesByDirectory" :key="directory" class="border rounded-lg overflow-hidden" :class="darkMode ? 'border-gray-700' : 'border-gray-200'">
-            <!-- 目录标题 - 可点击展开/收起 -->
-            <div
-              @click="toggleDirectory(directory)"
-              class="px-3 py-2 text-sm font-medium flex items-center justify-between cursor-pointer hover:bg-opacity-80 transition-colors"
-              :class="darkMode ? 'bg-gray-750 text-gray-300 hover:bg-gray-700' : 'bg-gray-50 text-gray-700 hover:bg-gray-100'"
-            >
-              <div class="flex items-center space-x-2">
-                <!-- 展开/收起箭头 -->
-                <IconChevronRight
-                  size="sm"
-                  class="transition-transform duration-200"
-                  :class="isDirectoryExpanded(directory) ? 'rotate-90' : ''"
-                  aria-hidden="true"
-                />
-                <!-- 文件夹图标 -->
-                <IconFolder size="sm" aria-hidden="true" />
-                <span class="truncate">{{ directory }}</span>
-              </div>
-              <span class="text-xs opacity-75 flex-shrink-0">{{ (files || []).length }} 个文件</span>
-            </div>
+        <!-- 内容区 -->
+        <div class="flex-1 overflow-y-auto p-3 sm:p-4" style="max-height: 500px; min-height: 200px;">
+          <!-- 空状态 -->
+          <div v-if="!hasCollection" class="text-center py-8" :class="darkMode ? 'text-gray-400' : 'text-gray-600'">
+            <IconCollection class="h-12 w-12 mx-auto mb-3 opacity-30" aria-hidden="true" />
+            <p class="font-medium">{{ t("fileBasket.panel.empty") }}</p>
+            <p class="text-xs mt-1 opacity-75">{{ t("fileBasket.panel.emptyDescription") }}</p>
+          </div>
 
-            <!-- 文件列表 - 根据展开状态显示 -->
-            <div v-if="isDirectoryExpanded(directory)" class="divide-y" :class="darkMode ? 'divide-gray-700' : 'divide-gray-200'">
+          <!-- 文件列表 -->
+          <div v-else class="space-y-3">
+            <div v-for="(files, directory) in filesByDirectory" :key="directory" class="border rounded-lg overflow-hidden bg-white/50 dark:bg-gray-900/20" :class="darkMode ? 'border-gray-700/50' : 'border-gray-200/50'">
+              <!-- 目录标题 -->
               <div
-                v-for="file in getValidFiles(files)"
-                :key="file.uniqueId"
-                class="px-3 py-2 flex items-center justify-between hover:bg-opacity-50 group"
-                :class="darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'"
+                @click="toggleDirectory(directory)"
+                class="px-3 py-2 text-sm font-medium flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                :class="darkMode ? 'bg-gray-750 text-gray-300 hover:bg-gray-700' : 'bg-gray-50 text-gray-700 hover:bg-gray-100'"
               >
-                <div class="flex items-center space-x-2 flex-1 min-w-0">
-                  <!-- 文件图标 -->
-                  <div class="w-5 h-5 flex-shrink-0" v-html="getFileIcon(file, darkMode)"></div>
-
-                  <!-- 文件信息 -->
-                  <div class="flex-1 min-w-0">
-                    <p class="text-sm font-medium truncate" :class="darkMode ? 'text-gray-200' : 'text-gray-900'">
-                      {{ file.name }}
-                    </p>
-                    <p class="text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
-                      {{ formatFileSize(file.size) }}
-                    </p>
-                  </div>
+                <div class="flex items-center space-x-2">
+                  <IconChevronRight
+                    size="sm"
+                    class="transition-transform duration-200"
+                    :class="isDirectoryExpanded(directory) ? 'rotate-90' : ''"
+                    aria-hidden="true"
+                  />
+                  <IconFolder size="sm" aria-hidden="true" />
+                  <span class="truncate">{{ directory }}</span>
                 </div>
+                <span class="text-xs opacity-75 flex-shrink-0">{{ (files || []).length }} 个文件</span>
+              </div>
 
-                <!-- 移除按钮 -->
-                <button
-                  @click="removeFile(file.path)"
-                  class="opacity-0 group-hover:opacity-100 p-1 rounded transition-all duration-200 flex-shrink-0"
-                  :class="darkMode ? 'text-red-400 hover:text-red-300 hover:bg-red-900/30' : 'text-red-500 hover:text-red-600 hover:bg-red-50'"
-                  :title="t('fileBasket.actions.remove')"
+              <!-- 文件列表 -->
+              <div v-if="isDirectoryExpanded(directory)" class="divide-y" :class="darkMode ? 'divide-gray-700/30' : 'divide-gray-100'">
+                <div
+                  v-for="file in getValidFiles(files)"
+                  :key="file.uniqueId"
+                  class="px-3 py-2 flex items-center justify-between hover:bg-blue-50/50 dark:hover:bg-blue-900/10 group transition-colors"
+                  :class="darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'"
                 >
-                  <IconClose size="sm" aria-hidden="true" />
-                </button>
+                  <div class="flex items-center space-x-2 flex-1 min-w-0">
+                    <div class="w-5 h-5 flex-shrink-0" v-html="getFileIcon(file, darkMode)"></div>
+                    <div class="flex-1 min-w-0">
+                      <p class="text-sm font-medium truncate" :class="darkMode ? 'text-gray-200' : 'text-gray-900'">
+                        {{ file.name }}
+                      </p>
+                      <p class="text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
+                        {{ formatFileSize(file.size) }}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    @click="removeFile(file.path)"
+                    class="opacity-0 group-hover:opacity-100 p-1 rounded transition-all duration-200 flex-shrink-0"
+                    :class="darkMode ? 'text-red-400 hover:text-red-300 hover:bg-red-900/30' : 'text-red-500 hover:text-red-600 hover:bg-red-50'"
+                    :title="t('fileBasket.actions.remove')"
+                  >
+                    <IconClose size="sm" aria-hidden="true" />
+                  </button>
+                </div>
               </div>
             </div>
           </div>
         </div>
+
+        <!-- 底部操作栏 (Updated: Side-by-side) -->
+        <div v-if="hasCollection" class="px-4 py-3 border-t flex space-x-3 bg-gray-50/50 dark:bg-gray-900/30" :class="darkMode ? 'border-gray-700/50' : 'border-gray-200/50'">
+          <button
+            @click="handleClearBasket"
+            :disabled="isProcessing"
+            class="flex-1 px-4 py-2 rounded-md font-medium transition-colors"
+            :class="[darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-300' : 'bg-gray-200 hover:bg-gray-300 text-gray-700', isProcessing ? 'opacity-50 cursor-not-allowed' : '']"
+          >
+            {{ t("fileBasket.actions.clear") }}
+          </button>
+
+          <button
+            @click="handlePackDownload"
+            :disabled="isProcessing"
+            class="flex-[2] flex items-center justify-center space-x-2 px-4 py-2 rounded-md font-medium transition-colors shadow-sm"
+            :class="[isProcessing ? 'bg-gray-400 text-white cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-500/20']"
+          >
+            <IconDownload size="sm" aria-hidden="true" />
+            <span>{{ isProcessing ? t("fileBasket.status.processing") : t("fileBasket.actions.packDownload") }}</span>
+          </button>
+        </div>
+
+        <ConfirmDialog
+          v-bind="dialogState"
+          @confirm="handleConfirm"
+          @cancel="handleCancel"
+        />
       </div>
-
-      <!-- 底部操作栏 -->
-      <div v-if="hasCollection" class="px-4 py-3 border-t space-y-2" :class="darkMode ? 'border-gray-700' : 'border-gray-200'">
-        <!-- 主要操作按钮 -->
-        <button
-          @click="handlePackDownload"
-          :disabled="isProcessing"
-          class="w-full flex items-center justify-center space-x-2 px-4 py-2 rounded-md font-medium transition-colors"
-          :class="[isProcessing ? 'bg-gray-400 text-gray-200 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white']"
-        >
-          <IconDownload size="sm" aria-hidden="true" />
-          <span>{{ isProcessing ? t("fileBasket.status.processing") : t("fileBasket.actions.packDownload") }}</span>
-        </button>
-
-        <!-- 次要操作按钮 -->
-        <button
-          @click="handleClearBasket"
-          :disabled="isProcessing"
-          class="w-full px-4 py-2 rounded-md font-medium transition-colors"
-          :class="[darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-300' : 'bg-gray-200 hover:bg-gray-300 text-gray-700', isProcessing ? 'opacity-50 cursor-not-allowed' : '']"
-        >
-          {{ t("fileBasket.actions.clear") }}
-        </button>
-      </div>
-
-      <!-- 确认对话框 -->
-      <ConfirmDialog
-        v-bind="dialogState"
-        @confirm="handleConfirm"
-        @cancel="handleCancel"
-      />
     </div>
-  </div>
+  </Teleport>
 </template>
 
 <script setup>
-import { ref, computed, watch, onUnmounted } from "vue";
+import { computed, onUnmounted, ref, watch, nextTick } from "vue";
 import { useI18n } from "vue-i18n";
 import { IconChevronRight, IconClose, IconCollection, IconDownload, IconFolder } from "@/components/icons";
 import { storeToRefs } from "pinia";
@@ -159,6 +154,8 @@ const props = defineProps({
     default: false,
   },
 });
+
+
 
 const emit = defineEmits(["close", "task-created", "show-message"]);
 

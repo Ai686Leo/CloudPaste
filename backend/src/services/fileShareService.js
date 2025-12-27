@@ -12,6 +12,27 @@ export class FileShareService {
     this.records = new ShareRecordService(db, encryptionSecret, repositoryFactory);
   }
 
+  _getTelegramShareMaxDirectUploadBytes(storageConfig) {
+    const mode = String(storageConfig?.bot_api_mode || "official").trim().toLowerCase();
+    if (mode === "self_hosted") {
+      // 自建 Bot API Server：按你的后端能力决定限制，这里不强行限制
+      return Infinity;
+    }
+    // 官方 Bot API：本项目约定 share 直传只支持小文件，避免“能传不能下/不能预览”的坑
+    return 20 * 1024 * 1024;
+  }
+
+  _assertTelegramShareDirectUploadAllowed(storageConfig, fileSizeBytes) {
+    const size = Number(fileSizeBytes) || 0;
+    if (size <= 0) return;
+    const maxBytes = this._getTelegramShareMaxDirectUploadBytes(storageConfig);
+    if (Number.isFinite(maxBytes) && size > maxBytes) {
+      throw new ValidationError(
+        "Telegram 分享上传：未勾选“自建 Bot API Server”时仅支持 ≤ 20MB；更大的文件请用“挂载浏览器”的分片上传，或勾选自建。",
+      );
+    }
+  }
+
   _resolveAclSubject(userType, userIdOrInfo) {
     if (userType !== UserType.API_KEY) {
       return { subjectType: null, subjectId: null };
@@ -217,6 +238,11 @@ export class FileShareService {
     });
     if (!cfg) throw new ValidationError("未找到可用的存储配置，无法上传");
 
+    // Telegram（Bot API）share 直传：只支持小文件（不走断点续传）
+    if (String(cfg.storage_type) === "TELEGRAM") {
+      this._assertTelegramShareDirectUploadAllowed(cfg, normalizedSize);
+    }
+
     const store = new ObjectStore(this.db, this.encryptionSecret, this.repositoryFactory);
     // 预先计算最终Key用于配额校验（考虑命名策略与冲突重命名）
     const plannedKey = await store.getPlannedKey(cfg.id, options.path || null, storedFilename);
@@ -232,6 +258,8 @@ export class FileShareService {
       size: normalizedSize,
       contentType: mimeType,
       uploadId: options.uploadId || null,
+      userIdOrInfo,
+      userType,
     });
 
     const { shouldUseRandomSuffix } = await import("../utils/common.js");
@@ -284,6 +312,11 @@ export class FileShareService {
     });
     if (!cfg) throw new ValidationError("未找到可用的存储配置，无法上传");
 
+    // Telegram（Bot API）share 表单上传：只支持小文件（不走断点续传）
+    if (String(cfg.storage_type) === "TELEGRAM") {
+      this._assertTelegramShareDirectUploadAllowed(cfg, normalizedSize);
+    }
+
     const store = new ObjectStore(this.db, this.encryptionSecret, this.repositoryFactory);
 
     // 预先计算最终Key用于配额校验（考虑命名策略与冲突重命名）
@@ -301,6 +334,8 @@ export class FileShareService {
       size: normalizedSize,
       contentType: mimeType,
       uploadId: options.uploadId || null,
+      userIdOrInfo,
+      userType,
     });
 
     const { shouldUseRandomSuffix } = await import("../utils/common.js");

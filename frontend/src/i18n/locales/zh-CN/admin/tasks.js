@@ -171,6 +171,12 @@ export default {
       batch: '确定要删除选中的 {count} 个任务吗？此操作不可恢复。',
     },
 
+    confirmCancel: {
+      title: '确认取消',
+      single: '确定要取消任务 "{name}" 吗？取消后会尽快停止后续处理。',
+      batch: '确定要取消选中的 {count} 个任务吗？取消后会尽快停止后续处理。',
+    },
+
     empty: {
       title: '暂无任务',
       description: '当前没有任何任务记录',

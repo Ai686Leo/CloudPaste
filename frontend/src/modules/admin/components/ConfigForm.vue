@@ -110,23 +110,28 @@ const formTitle = computed(() => {
 
 // 输入处理函数
 const trimInput = (field) => {
-  if (formData.value[field]) {
-    formData.value[field] = formData.value[field].trim();
+  const value = formData.value[field];
+  if (typeof value === "string") {
+    formData.value[field] = value.trim();
   }
 };
 
 const formatUrl = (field) => {
-  if (!formData.value[field]) {
+  const value = formData.value[field];
+  if (!value) {
     return;
   }
-  let url = formData.value[field].trim();
+  if (typeof value !== "string") {
+    return;
+  }
+  let url = value.trim();
   // 通用规则：先去掉尾部多余斜杠
   url = url.replace(/\/+$/, "");
   formData.value[field] = url;
 };
 
 const formatBucketName = () => {
-  if (formData.value.bucket_name) {
+  if (typeof formData.value.bucket_name === "string") {
     // 只去除空格
     formData.value.bucket_name = formData.value.bucket_name.trim();
   }
@@ -141,7 +146,27 @@ const getFieldMeta = (fieldName) => {
 
 const shouldRenderField = (fieldName) => {
   if (FIELDS_HANDLED_EXTERNALLY.has(fieldName)) return false;
-  return !!getFieldMeta(fieldName);
+  const meta = getFieldMeta(fieldName);
+  if (!meta) return false;
+
+  const dependsOn = meta?.ui?.dependsOn;
+  if (dependsOn && typeof dependsOn === "object") {
+    const depField = dependsOn.field;
+    if (typeof depField === "string" && depField) {
+      const currentValue = formData.value[depField];
+      if (Object.prototype.hasOwnProperty.call(dependsOn, "value")) {
+        return currentValue === dependsOn.value;
+      }
+      if (Array.isArray(dependsOn.values)) {
+        return dependsOn.values.includes(currentValue);
+      }
+      if (dependsOn.truthy === true) {
+        return !!currentValue;
+      }
+    }
+  }
+
+  return true;
 };
 
 /**
@@ -239,6 +264,41 @@ const getEnumOptions = (fieldName) => {
   return [];
 };
 
+const isEnumToggle = (fieldName) => {
+  const meta = getFieldMeta(fieldName);
+  if (meta?.type !== "enum") return false;
+  if (meta?.ui?.renderAs !== "toggle") return false;
+  const opts = getEnumOptions(fieldName);
+  return Array.isArray(opts) && opts.length === 2;
+};
+
+const getEnumToggleValues = (fieldName) => {
+  const opts = getEnumOptions(fieldName);
+  const values = (opts || []).map((o) => o?.value).filter(Boolean);
+  // 优先识别 Telegram 的常用值，避免依赖 options 顺序
+  const onValue = values.includes("self_hosted") ? "self_hosted" : values[1];
+  const offValue = values.includes("official") ? "official" : values[0];
+  return { onValue, offValue };
+};
+
+const getEnumToggleLabel = (fieldName) => {
+  const meta = getFieldMeta(fieldName);
+  if (meta?.ui?.toggleLabelKey) {
+    return t(meta.ui.toggleLabelKey);
+  }
+
+  const { onValue } = getEnumToggleValues(fieldName);
+  const opts = getEnumOptions(fieldName) || [];
+  const onOpt = opts.find((o) => o?.value === onValue) || null;
+  if (onOpt?.labelKey) return t(onOpt.labelKey);
+  return onOpt?.label || String(onValue || "");
+};
+
+const handleEnumToggleChange = (fieldName, checked) => {
+  const { onValue, offValue } = getEnumToggleValues(fieldName);
+  formData.value[fieldName] = checked ? onValue : offValue;
+};
+
 const isUrlField = (fieldName) => {
   const meta = getFieldMeta(fieldName);
   return meta?.validation?.rule === "url";
@@ -281,6 +341,20 @@ const normalizeFormBooleans = (schema = currentConfigSchema.value) => {
   for (const field of schema.fields) {
     if (!field || field.type !== "boolean" || !field.name) continue;
     formData.value[field.name] = normalizeBooleanLike(formData.value[field.name]);
+  }
+};
+
+// 基于 schema.defaultValue 填充默认值
+// 只在当前字段为空（undefined/null/空字符串）时写入，避免覆盖用户输入或编辑态数据
+const applySchemaDefaultValues = (schema = currentConfigSchema.value) => {
+  if (!schema?.fields) return;
+  for (const field of schema.fields) {
+    const key = field?.name;
+    if (!key) continue;
+    const current = formData.value[key];
+    if ((current === undefined || current === null || current === "") && field.defaultValue !== undefined) {
+      formData.value[key] = field.defaultValue;
+    }
   }
 };
 
@@ -464,7 +538,9 @@ watch(
   () => currentConfigSchema.value,
   (schema) => {
     if (!schema) return;
+    applySchemaDefaultValues(schema);
     normalizeFormBooleans(schema);
+    ensureTypeDefaults();
   },
 );
 
@@ -553,16 +629,7 @@ onMounted(async () => {
       formData.value.storage_type = storageTypes.value[0].value;
     }
     // schema 默认值填充
-    const schema = currentConfigSchema.value;
-    if (schema?.fields) {
-      for (const field of schema.fields) {
-        const key = field.name;
-        const current = formData.value[key];
-        if ((current === undefined || current === null || current === "") && field.defaultValue !== undefined) {
-          formData.value[key] = field.defaultValue;
-        }
-      }
-    }
+    applySchemaDefaultValues(currentConfigSchema.value);
     normalizeFormBooleans();
   } catch (e) {
     console.error("加载存储类型元数据失败:", e);
@@ -700,7 +767,25 @@ onMounted(async () => {
                           {{ getFieldLabel(fieldName) }}
                           <span v-if="isFieldRequiredOnCreate(fieldName)" class="text-red-500">*</span>
                         </label>
+                        <div
+                          v-if="isEnumToggle(fieldName)"
+                          class="flex items-center h-10 px-3 py-2 rounded-md border"
+                          :class="darkMode ? 'border-gray-600' : 'border-gray-300'"
+                        >
+                          <input
+                            type="checkbox"
+                            :id="fieldName"
+                            :checked="formData[fieldName] === getEnumToggleValues(fieldName).onValue"
+                            @change="handleEnumToggleChange(fieldName, $event.target.checked)"
+                            class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                            :class="darkMode ? 'bg-gray-700 border-gray-600' : ''"
+                          />
+                          <label :for="fieldName" class="ml-2 text-sm" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">
+                            {{ getEnumToggleLabel(fieldName) }}
+                          </label>
+                        </div>
                         <select
+                          v-else
                           :id="fieldName"
                           v-model="formData[fieldName]"
                           class="block w-full px-3 py-2 rounded-md text-sm transition-colors duration-200 border"
@@ -816,7 +901,25 @@ onMounted(async () => {
                         {{ getFieldLabel(row.field) }}
                         <span v-if="isFieldRequiredOnCreate(row.field)" class="text-red-500">*</span>
                       </label>
+                      <div
+                        v-if="isEnumToggle(row.field)"
+                        class="flex items-center h-10 px-3 py-2 rounded-md border"
+                        :class="darkMode ? 'border-gray-600' : 'border-gray-300'"
+                      >
+                        <input
+                          type="checkbox"
+                          :id="row.field"
+                          :checked="formData[row.field] === getEnumToggleValues(row.field).onValue"
+                          @change="handleEnumToggleChange(row.field, $event.target.checked)"
+                          class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                          :class="darkMode ? 'bg-gray-700 border-gray-600' : ''"
+                        />
+                        <label :for="row.field" class="ml-2 text-sm" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">
+                          {{ getEnumToggleLabel(row.field) }}
+                        </label>
+                      </div>
                       <select
+                        v-else
                         :id="row.field"
                         v-model="formData[row.field]"
                         class="block w-full px-3 py-2 rounded-md text-sm transition-colors duration-200 border"

@@ -11,6 +11,35 @@ import { createDirectLink, createProxyLink } from "./LinkTypes.js";
 import { findMountPointByPathForProxy } from "../fs/utils/MountResolver.js";
 import { ProxySignatureService } from "../../services/ProxySignatureService.js";
 import { WORKER_ENTRY, buildSignedProxyUrl, buildSignedWorkerUrl } from "../../constants/proxy.js";
+import { UserType } from "../../constants/index.js";
+
+/**
+ * 将文件名转为 URL path segment 安全的形式（用于 /api/s/:slug/:filename）。
+ * - 不能包含 / 或 \\（否则会被当作路径分隔）
+ * - 空值时回退为 "file"
+ * @param {string} filename
+ * @returns {string}
+ */
+function toUrlSafeFilename(filename) {
+  const raw = String(filename || "").trim();
+  if (!raw) return "file";
+  return raw.replace(/[\\/]+/g, "_");
+}
+
+/**
+ * 构造分享内容的本地代理入口（带 filename 以兼容第三方预览器按 URL 后缀识别类型）
+ * - 例如：/api/s/AdhhLX/Samba%20Dancing.fbx
+ * - 下载语义：追加 ?down=true
+ * @param {string} slug
+ * @param {string} filename
+ * @param {{ download?: boolean }} [options]
+ * @returns {string}
+ */
+function buildShareProxyPath(slug, filename, options = {}) {
+  const safeName = toUrlSafeFilename(filename);
+  const base = `/api/s/${encodeURIComponent(String(slug || ""))}/${encodeURIComponent(safeName)}`;
+  return options.download ? `${base}?down=true` : base;
+}
 
 /**
  * 规范化驱动上游返回的 headers，统一为 Record<string,string[]> 结构
@@ -145,7 +174,7 @@ export class LinkService {
     if (mode === "client") {
       // 1) use_proxy = 1：本地 share 内容路由，忽略 url_proxy 与直链能力
       if (useProxyFlag) {
-        const sharePath = forceDownload ? `/api/s/${slug}?down=true` : `/api/s/${slug}`;
+        const sharePath = buildShareProxyPath(slug, file?.filename || "file", { download: !!forceDownload });
         console.log(`[LinkService][share][local-proxy] 文件(${file.id || slug}) 使用本地 /api/s 内容路由: ${sharePath}`);
         return createProxyLink(sharePath);
       }
@@ -161,7 +190,7 @@ export class LinkService {
           return createProxyLink(workerUrl);
         } catch (e) {
           console.warn("构建分享 Worker 入口链接失败，将退回为本地 share 内容路由：", e?.message || e);
-          const fallbackPath = forceDownload ? `/api/s/${slug}?down=true` : `/api/s/${slug}`;
+          const fallbackPath = buildShareProxyPath(slug, file?.filename || "file", { download: !!forceDownload });
           return createProxyLink(fallbackPath);
         }
       }
@@ -186,7 +215,7 @@ export class LinkService {
 
     // 1) use_proxy = 1：统一走本地 share 内容路由（下载语义）
     if (useProxyFlag) {
-      const shareDownloadPath = `/api/s/${slug}?down=true`;
+      const shareDownloadPath = buildShareProxyPath(slug, file?.filename || "file", { download: true });
       let finalUrl = shareDownloadPath;
       if (request) {
         try {
@@ -235,7 +264,7 @@ export class LinkService {
       return createDirectLink(downloadDirectUrl);
     }
 
-    const shareDownloadPath = `/api/s/${slug}?down=true`;
+    const shareDownloadPath = buildShareProxyPath(slug, file?.filename || "file", { download: true });
     let finalUrl = shareDownloadPath;
     if (request) {
       try {
@@ -365,7 +394,7 @@ export class LinkService {
     const linkResult = await fileSystem.generateFileLink(path, userIdOrInfo, userType, {
       ...options,
       userType,
-      userId: userType === "ADMIN" ? userIdOrInfo : userIdOrInfo?.id,
+      userId: userType === UserType.ADMIN ? userIdOrInfo : userIdOrInfo?.id,
       // client 模式下：配置了 url_proxy 时强制走代理路径（FsLinkStrategy 内部只会走 generateProxyUrl）
       // proxy 模式下：不受 url_proxy 影响，仅根据挂载策略与驱动能力决定是否代理
       forceProxy: options.forceProxy || (mode === "client" && hasUrlProxy),
@@ -425,8 +454,36 @@ export class LinkService {
     if (hasUrlProxy) {
       try {
         const entryPath = `${WORKER_ENTRY.FS_PREFIX}${path}${options.forceDownload ? "?download=true" : ""}`;
+
+        // - /proxy/fs 对外入口：sign 只覆盖 fsPath + expire（不包含 owner）
+        // - Telegram 需要的 owner 上下文：由外部代理用 TOKEN 调 /api/proxy/link 后在“上游 URL”里解决，
+        //   浏览器永远不需要知道 ot/oid。
+
+        let workerSignature = null;
+        try {
+          const proxyMountResult =
+            mountResult && !mountResult.error ? mountResult : await findMountPointByPathForProxy(this.db, path, this.repositoryFactory);
+          if (!proxyMountResult.error) {
+            const signatureService = new ProxySignatureService(this.db, this.encryptionSecret, this.repositoryFactory);
+            const signatureNeed = await signatureService.needsSignature(proxyMountResult.mount);
+            const forceWorkerSignature =
+              proxyMountResult?.mount?.storage_type === StorageFactory.SUPPORTED_TYPES.TELEGRAM;
+            if (signatureNeed.required || forceWorkerSignature) {
+              const signInfo = await signatureService.generateStorageSignature(path, proxyMountResult.mount, {
+                expiresIn: options.expiresIn,
+                // 不传 ownerType/ownerId：保持外部代理兼容的签名格式（path:expire）
+              });
+              workerSignature = signInfo.signature;
+            }
+          }
+        } catch (e) {
+          console.warn("生成 FS Worker 入口签名失败，将返回未签名的入口链接：", e?.message || e);
+          workerSignature = null;
+        }
+
+        // 外部入口：不携带 ot/oid，避免外部代理与缓存体系被迫升级
         proxiedUrl = buildSignedWorkerUrl(urlProxy, entryPath, {
-          signature: signatureForPath || undefined,
+          signature: workerSignature || undefined,
         });
         console.log(
           `[LinkService][fs][url_proxy] 路径(${path}) 使用 url_proxy=${urlProxy} 生成 Worker 入口: ${proxiedUrl}`,

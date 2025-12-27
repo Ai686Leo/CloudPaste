@@ -144,8 +144,9 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, nextTick, onMounted, onUnmounted } from "vue";
+import { ref, computed, watch, nextTick } from "vue";
 import { useI18n } from "vue-i18n";
+import { onKeyStroke } from "@vueuse/core";
 import { IconBack, IconExclamationSolid, IconEye, IconEyeOff, IconLockClosed, IconRefresh } from "@/components/icons";
 
 // 国际化
@@ -317,14 +318,11 @@ const handleBackdropClick = () => {
   }
 };
 
-// 键盘事件处理
-const handleKeydown = (event) => {
+// 键盘事件：按 ESC 取消
+onKeyStroke("Escape", () => {
   if (!props.isOpen || props.loading) return;
-
-  if (event.key === "Escape") {
-    handleCancel();
-  }
-};
+  handleCancel();
+});
 
 // 监听对话框打开状态
 watch(
@@ -356,12 +354,4 @@ watch(inputValue, () => {
   }
 });
 
-// 生命周期
-onMounted(() => {
-  document.addEventListener("keydown", handleKeydown);
-});
-
-onUnmounted(() => {
-  document.removeEventListener("keydown", handleKeydown);
-});
 </script>

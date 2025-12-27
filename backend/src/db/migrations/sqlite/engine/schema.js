@@ -591,6 +591,98 @@ export async function createUploadSessionsTables(db) {
   console.log("上传会话表创建完成");
 }
 
+export async function createVfsTables(db) {
+  console.log("创建 VFS 索引表...");
+
+  await db
+    .prepare(
+      `
+      CREATE TABLE IF NOT EXISTS ${DbTables.VFS_NODES} (
+        id TEXT PRIMARY KEY,
+
+        -- 多用户隔离预留
+        owner_type TEXT NOT NULL,
+        owner_id TEXT NOT NULL,
+
+        -- 归属作用域（用于“无目录树后端”的虚拟目录树真相）
+        -- - scope_type='mount'：传统挂载维度（scope_id=storage_mounts.id）
+        -- - scope_type='storage_config'：无挂载也可用（scope_id=storage_configs.id）
+        scope_type TEXT NOT NULL,
+        scope_id TEXT NOT NULL,
+
+        -- 目录树结构
+        -- root 约定：root 本身不占记录；root 下子节点使用 parent_id = ''（空字符串）
+        parent_id TEXT NOT NULL DEFAULT '',
+        name TEXT NOT NULL,
+        node_type TEXT NOT NULL,
+
+        -- 展示/元信息
+        mime_type TEXT,
+        size INTEGER,
+        hash_algo TEXT,
+        hash_value TEXT,
+        status TEXT NOT NULL DEFAULT 'active',
+
+        -- 内容后端定位
+        storage_type TEXT NOT NULL,
+        content_ref TEXT,
+
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+        UNIQUE (owner_type, owner_id, scope_type, scope_id, parent_id, name)
+      )
+    `,
+    )
+    .run();
+
+  await db.prepare(`CREATE INDEX IF NOT EXISTS idx_vfs_nodes_scope ON ${DbTables.VFS_NODES}(owner_type, owner_id, scope_type, scope_id, parent_id)`).run();
+  await db.prepare(`CREATE INDEX IF NOT EXISTS idx_vfs_nodes_scope_id ON ${DbTables.VFS_NODES}(scope_type, scope_id)`).run();
+
+  console.log("vfs_nodes 表检查/创建完成");
+}
+
+export async function createUploadPartsTables(db) {
+  console.log("创建上传分片明细表(upload_parts)...");
+
+  await db
+    .prepare(
+      `
+      CREATE TABLE IF NOT EXISTS ${DbTables.UPLOAD_PARTS} (
+        id TEXT PRIMARY KEY,
+        upload_id TEXT NOT NULL,
+        part_no INTEGER NOT NULL,
+
+        byte_start INTEGER,
+        byte_end INTEGER,
+        size INTEGER NOT NULL,
+
+        checksum_algo TEXT,
+        checksum TEXT,
+
+        storage_type TEXT NOT NULL,
+        provider_part_id TEXT,
+        provider_meta TEXT,
+
+        status TEXT NOT NULL DEFAULT 'uploaded',
+        error_code TEXT,
+        error_message TEXT,
+
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+        UNIQUE (upload_id, part_no)
+      )
+    `,
+    )
+    .run();
+
+  await db.prepare(`CREATE INDEX IF NOT EXISTS idx_upload_parts_upload_part_no ON ${DbTables.UPLOAD_PARTS}(upload_id, part_no)`).run();
+  await db.prepare(`CREATE INDEX IF NOT EXISTS idx_upload_parts_updated_at ON ${DbTables.UPLOAD_PARTS}(updated_at)`).run();
+
+  console.log("upload_parts 表检查/创建完成");
+}
+
 export async function createIndexes(db) {
   console.log("创建数据库索引...");
 
@@ -632,5 +724,7 @@ export default {
   createScheduledJobsTables,
   createScheduledJobRunsTables,
   createUploadSessionsTables,
+  createVfsTables,
+  createUploadPartsTables,
   createIndexes,
 };

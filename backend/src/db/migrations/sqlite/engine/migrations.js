@@ -6,7 +6,9 @@ import {
   createScheduledJobRunsTables,
   createScheduledJobsTables,
   createTasksTables,
+  createUploadPartsTables,
   createUploadSessionsTables,
+  createVfsTables,
 } from "./schema.js";
 import {
   addCustomContentSettings,
@@ -653,6 +655,13 @@ export async function runLegacyMigrationByVersion(db, version) {
       console.log("版本31：重置 preview_providers 默认规则...");
       await resetPreviewProvidersDefaults(db);
       console.log("版本31：preview_providers 默认规则重置完成。");
+      break;
+
+    case 32:
+      console.log("版本32：检查并创建 vfs_nodes 与 upload_parts 表...");
+      await createVfsTables(db);
+      await createUploadPartsTables(db);
+      console.log("版本32：vfs_nodes 与 upload_parts 表检查/创建完成。");
       break;
 
     default:

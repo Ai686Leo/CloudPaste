@@ -1,65 +1,71 @@
 <template>
   <div class="file-preview-container">
     <!-- 文件预览区域 -->
-    <div class="file-preview mb-6 p-4 rounded-lg" :class="darkMode ? 'bg-gray-800/50' : 'bg-white'">
-      <!-- 文件标题和操作按钮 -->
-      <div class="mb-4">
-        <h3 class="text-lg font-medium mb-3" :class="darkMode ? 'text-gray-200' : 'text-gray-700'" :title="file.name">
-          {{ file.name }}
-        </h3>
-        <div class="flex flex-wrap gap-2">
-          <!-- 下载按钮 -->
+    <!-- File Header & Actions Area -->
+    <div class="mb-4 px-1 transition-all duration-300">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <!-- Left: Title & Metadata -->
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-2 mb-1.5">
+             <h3 class="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600 dark:from-white dark:to-gray-400 truncate leading-tight" :title="file.name">
+              {{ file.name }}
+            </h3>
+            <span class="hidden sm:inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-gray-700">
+              {{ file.mimetype || 'FILE' }}
+            </span>
+          </div>
+          
+          <div class="flex items-center flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400 font-medium tracking-wide">
+             <span class="flex items-center gap-1.5">
+                <IconDatabase size="sm" class="w-3.5 h-3.5 opacity-70" />
+                <span>{{ formatFileSize(file.size) }}</span>
+             </span>
+             <span class="w-px h-3 bg-gray-300 dark:bg-gray-700"></span>
+             <span class="flex items-center gap-1.5">
+                <IconClock size="sm" class="w-3.5 h-3.5 opacity-70" />
+                <span>{{ formatDate(file.modified) }}</span>
+             </span>
+          </div>
+        </div>
+
+        <!-- Right: Actions Toolbar -->
+        <div class="flex items-center gap-2 self-start sm:self-center">
+          <!-- Download -->
           <button
             @click="handleDownload"
-            class="inline-flex items-center px-3 py-1.5 rounded-md transition-colors text-sm font-medium"
-            :class="darkMode ? 'bg-primary-600 hover:bg-primary-700 text-white' : 'bg-primary-500 hover:bg-primary-600 text-white'"
+            class="group flex items-center justify-center w-8 h-8 rounded-full transition-all bg-transparent text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:text-blue-300 dark:hover:bg-blue-900/20 transform hover:scale-105"
+            :title="t('mount.filePreview.downloadFile')"
           >
-            <IconDownload size="sm" class="mr-1.5" aria-hidden="true" />
-            <span>{{ t("mount.filePreview.downloadFile") }}</span>
+            <IconDownload size="sm" class="w-5 h-5" />
           </button>
 
-          <!-- S3直链预览按钮 -->
+          <!-- Direct Preview -->
           <button
             @click="handleS3DirectPreview"
-            class="inline-flex items-center px-3 py-1.5 rounded-md transition-colors text-sm font-medium"
-            :class="darkMode ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-green-500 hover:bg-green-600 text-white'"
+            class="group flex items-center justify-center w-8 h-8 rounded-full transition-all bg-transparent text-purple-600 hover:text-purple-700 hover:bg-purple-50 dark:text-purple-400 dark:hover:text-purple-300 dark:hover:bg-purple-900/20 transform hover:scale-105"
+            :title="t('mount.filePreview.directPreview')"
             :disabled="isGeneratingPreview"
           >
-            <IconEye v-if="!isGeneratingPreview" size="sm" class="mr-1.5" aria-hidden="true" />
-            <IconRefresh v-else class="animate-spin w-4 h-4 mr-1.5" aria-hidden="true" />
-            <span>{{ isGeneratingPreview ? t("mount.filePreview.generating") : t("mount.filePreview.directPreview") }}</span>
+            <IconRefresh v-if="isGeneratingPreview" class="w-5 h-5 animate-spin" />
+            <IconEye v-else size="sm" class="w-5 h-5" />
           </button>
 
-          <!-- 生成分享链接按钮 -->
+          <!-- Share -->
           <button
             @click="handleCreateShare"
-            class="inline-flex items-center px-3 py-1.5 rounded-md transition-colors text-sm font-medium"
-            :class="darkMode ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-blue-500 hover:bg-blue-600 text-white'"
+            class="group flex items-center justify-center w-8 h-8 rounded-full transition-all bg-transparent text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:text-indigo-300 dark:hover:bg-indigo-900/20 transform hover:scale-105"
+            :title="t('mount.filePreview.createShare')"
             :disabled="isCreatingShare"
           >
-            <IconLink v-if="!isCreatingShare" size="sm" class="mr-1.5" aria-hidden="true" />
-            <IconRefresh v-else class="animate-spin w-4 h-4 mr-1.5" aria-hidden="true" />
-            <span>{{ isCreatingShare ? t("mount.filePreview.creatingShare") : t("mount.filePreview.createShare") }}</span>
+            <IconRefresh v-if="isCreatingShare" class="w-5 h-5 animate-spin" />
+            <IconLink v-else size="sm" class="w-5 h-5" />
           </button>
         </div>
       </div>
+    </div>
 
-      <!-- 文件信息 -->
-      <div class="file-info grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 p-3 rounded-lg bg-opacity-50" :class="darkMode ? 'bg-gray-700/50' : 'bg-gray-100'">
-        <div class="file-info-item flex items-center">
-          <span class="font-medium mr-2" :class="darkMode ? 'text-gray-300' : 'text-gray-700'">{{ t("mount.filePreview.fileSize") }}</span>
-          <span :class="darkMode ? 'text-gray-400' : 'text-gray-600'">{{ formatFileSize(file.size) }}</span>
-        </div>
-        <div class="file-info-item flex items-center">
-          <span class="font-medium mr-2" :class="darkMode ? 'text-gray-300' : 'text-gray-700'">{{ t("mount.filePreview.modifiedTime") }}</span>
-          <span :class="darkMode ? 'text-gray-400' : 'text-gray-600'">{{ formatDate(file.modified) }}</span>
-        </div>
-        <div class="file-info-item flex items-center">
-          <span class="font-medium mr-2" :class="darkMode ? 'text-gray-300' : 'text-gray-700'">{{ t("mount.filePreview.fileType") }}</span>
-          <span :class="darkMode ? 'text-gray-400' : 'text-gray-600'">{{ file.mimetype || t("mount.filePreview.unknown") }}</span>
-        </div>
-      </div>
-
+    <!-- File Content Area (Borderless) -->
+    <div class="file-content overflow-hidden transition-all duration-300">
       <!-- 非全屏：工具栏和内容分离（保持你原来的布局习惯） -->
       <PreviewChannelToolbar
         v-if="!isContentFullscreen"
@@ -129,13 +135,13 @@
       <!-- 预览内容 -->
       <div
         ref="previewContentRef"
-        class="preview-content border rounded-lg overflow-hidden transition-all duration-300 flex flex-col"
+        class="preview-content border rounded-xl overflow-hidden transition-all duration-300 flex flex-col"
         :class="[darkMode ? 'border-gray-700' : 'border-gray-200']"
         :style="previewContainerStyle"
       >
-        <!-- 全屏：在全屏容器里显示一条“内置工具栏”（按你说的：像以前文本全屏那条一样） -->
+        <!-- 全屏：在全屏容器里显示一条"内置工具栏" -->
         <div
-          v-if="isContentFullscreen"
+          v-if="isContentFullscreen && !isVideo"
           class="fullscreen-toolbar sticky top-0 z-20 p-3 border-b"
           :class="darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'"
         >
@@ -260,15 +266,17 @@
         </div>
 
         <!-- 视频预览 -->
-        <div v-else-if="isVideo">
+        <div v-else-if="isVideo" class="flex-1 min-h-0">
           <VideoPreview
             :file="file"
             :video-url="authenticatedPreviewUrl"
             :dark-mode="darkMode"
             :is-admin="isAdmin"
+            :is-fullscreen="isContentFullscreen"
             :current-path="getCurrentDirectoryPath()"
             :directory-items="directoryItems"
             @loaded="handleContentLoaded"
+            @toggle-fullscreen="toggleFullscreen"
           />
         </div>
 
@@ -410,13 +418,21 @@
         </div>
       </div>
     </div>
+
+    <!-- 外部播放器 Dock (仅视频类型显示，全屏时隐藏) -->
+    <div v-if="isVideo && authenticatedPreviewUrl && !isContentFullscreen" class="external-player-section mt-3 overflow-visible">
+      <ExternalPlayerDock
+        :video-url="authenticatedPreviewUrl"
+        :file-name="file?.name"
+      />
+    </div>
   </div>
 </template>
 
 <script setup>
 import { computed, ref, watch, onMounted, onBeforeUnmount } from "vue";
 import { useI18n } from "vue-i18n";
-import { IconCollapse, IconDocument, IconDownload, IconError, IconExclamationSolid, IconEye, IconLink, IconRefresh, IconSave } from "@/components/icons";
+import { IconCollapse, IconDocument, IconDownload, IconError, IconExclamationSolid, IconEye, IconLink, IconRefresh, IconSave, IconDatabase, IconClock } from "@/components/icons";
 import LoadingIndicator from "@/components/common/LoadingIndicator.vue";
 import { usePreviewRenderers, useFilePreviewExtensions, useFileSave, resolvePreviewSelection, PREVIEW_KEYS } from "@/composables/index.js";
 import { useProviderSelector } from "@/composables/file-preview/useProviderSelector.js";
@@ -436,6 +452,7 @@ import IframePreview from "@/components/common/IframePreview.vue";
 import PreviewChannelToolbar from "@/components/common/preview/PreviewChannelToolbar.vue";
 import { LivePhotoViewer } from "@/components/common/LivePhoto";
 import { detectLivePhoto, isLivePhotoImage } from "@/utils/livePhotoUtils.js";
+import ExternalPlayerDock from "./ExternalPlayerDock.vue";
 
 const { t } = useI18n();
 const pathPassword = usePathPassword();
@@ -799,15 +816,21 @@ const availableEncodings = computed(() => {
 
 // 内容区域全屏状态管理
 const previewContentRef = ref(null);
-const { isFullscreen: isContentFullscreen, toggleFullscreen, exitFullscreen } = useElementFullscreen(previewContentRef);
+const { isFullscreen: isContentFullscreen, toggleFullscreen, exitFullscreen } = useElementFullscreen(previewContentRef, { includeChildren: false });
 
 const previewContainerStyle = computed(() => {
   if (isContentFullscreen.value) {
     return { height: "100vh" };
   }
+  // 视频预览：视频自适应
+  if (isVideo.value) {
+    return {
+      maxHeight: "80vh",
+    };
+  }
   return {
-    minHeight: "400px",    
-    maxHeight: "80vh",     
+    minHeight: "400px",
+    maxHeight: "80vh",
   };
 });
 
@@ -1039,6 +1062,18 @@ onBeforeUnmount(() => {
 :deep(:fullscreen .iframe-preview iframe) {
   height: 100% !important;
   width: 100% !important;
+}
+
+/* 全屏模式下 PDF 预览填满容器） */
+:deep(:fullscreen .pdf-preview) {
+  height: 100% !important;
+  max-height: none !important;
+}
+
+/* 全屏模式下视频容器占满 */
+:deep(:fullscreen .video-preview-container) {
+  height: 100% !important;
+  border-radius: 0 !important;
 }
 
 /* 确保全屏模式下的控制栏固定在顶部 */

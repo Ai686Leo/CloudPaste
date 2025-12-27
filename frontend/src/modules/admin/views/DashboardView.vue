@@ -1,6 +1,7 @@
 <script setup>
-import { ref, onMounted, computed, watch, onBeforeUnmount } from "vue";
+import { ref, onMounted, computed, watch } from "vue";
 import { useI18n } from "vue-i18n";
+import { useEventListener } from "@vueuse/core";
 // 引入Chart.js相关组件
 import { Bar, Line } from "vue-chartjs";
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, BarElement, Title, Tooltip, Legend } from "chart.js";
@@ -432,13 +433,10 @@ const handleLanguageChange = () => {
 // 组件挂载时加载数据和添加事件监听
 onMounted(() => {
   fetchDashboardStats();
-  window.addEventListener("languageChanged", handleLanguageChange);
 });
 
-// 组件卸载时移除事件监听
-onBeforeUnmount(() => {
-  window.removeEventListener("languageChanged", handleLanguageChange);
-});
+// 监听语言变化事件（自动清理）
+useEventListener(window, "languageChanged", handleLanguageChange);
 </script>
 
 <template>

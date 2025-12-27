@@ -1,12 +1,14 @@
 <script setup>
 // PasteViewMain组件 - 主组件，整合各个功能模块
 // 负责协调预览、大纲和编辑功能，管理全局状态和数据流
-import { ref, computed, onMounted, onBeforeUnmount, watch } from "vue";
+import { ref, computed, onMounted, onBeforeUnmount, watch, defineAsyncComponent } from "vue";
 import { useRouter, useRoute } from "vue-router";
+import { useEventListener } from "@vueuse/core";
 
 import PasteViewPreview from "./PasteViewPreview.vue";
-import PasteViewOutline from "./PasteViewOutline.vue";
-import PasteViewEditor from "./PasteViewEditor.vue";
+// 性能优化：大纲 / 编辑器只有在用户点击时才需要，改为按需加载
+const PasteViewOutline = defineAsyncComponent(() => import("./PasteViewOutline.vue"));
+const PasteViewEditor = defineAsyncComponent(() => import("./PasteViewEditor.vue"));
 import { formatExpiry, debugLog } from "./PasteViewUtils";
 import { usePasteService } from "@/modules/paste";
 import { isExpired } from "@/utils/timeUtils.js";
@@ -57,6 +59,8 @@ const editContent = ref(""); // 编辑内容
 const viewMode = ref("preview"); // 'preview', 'outline', 'edit'
 // 纯文本模式标志 - 控制是否显示为纯文本而非渲染的Markdown
 const isPlainTextMode = ref(false);
+// 记录是否手动选择过显示模式
+const hasUserSelectedTextMode = ref(false);
 
 // 使用认证Store
 const authStore = useAuthStore();
@@ -189,6 +193,14 @@ const loadPaste = async (password = null) => {
 
     // 保存编辑内容原始值，用于编辑模式
     editContent.value = result.content || "";
+
+    // 性能优化：如果内容看起来不像 Markdown，默认用纯文本模式展示
+    if (!hasUserSelectedTextMode.value) {
+      const contentText = String(result.content || "");
+      const looksLikeMarkdown =
+        /(?:```|~~~)|\[[^\]]+\]\([^)]+\)|(^|\n)\s{0,3}#{1,6}\s|\*\*|__|[*_-]{3,}/m.test(contentText);
+      isPlainTextMode.value = !looksLikeMarkdown;
+    }
 
     // 如果需要重新验证认证状态，则进行验证
     if (authStore.needsRevalidation) {
@@ -534,6 +546,7 @@ const togglePasswordVisibility = () => {
 
 // 切换纯文本/Markdown渲染模式
 const toggleTextMode = (isPlainText) => {
+  hasUserSelectedTextMode.value = true;
   isPlainTextMode.value = isPlainText;
   debugLog(enableDebug.value, isDev, isPlainText ? "切换到TXT模式" : "切换到MD渲染模式");
 };
@@ -543,9 +556,6 @@ onMounted(async () => {
   debugLog(enableDebug.value, isDev, "PasteView: 组件挂载", props.slug);
   mounted = true;
 
-  // 监听认证状态变化事件
-  window.addEventListener("auth-state-changed", handleAuthStateChange);
-
   // 延迟加载以确保DOM已准备就绪
   setTimeout(async () => {
     await loadPaste();
@@ -553,19 +563,20 @@ onMounted(async () => {
 });
 
 // 处理认证状态变化
-const handleAuthStateChange = (event) => {
+function handleAuthStateChange(event) {
   debugLog(enableDebug.value, isDev, "PasteViewMain: 认证状态变化", event.detail);
   // 重新检查创建者状态
   checkCreatorStatus();
-};
+}
+
+// 监听认证状态变化（自动清理）
+useEventListener(window, "auth-state-changed", handleAuthStateChange);
 
 // 组件卸载时清理资源
 onBeforeUnmount(() => {
   debugLog(enableDebug.value, isDev, "PasteView: 组件卸载");
   mounted = false;
   paste.value = null;
-  // 移除事件监听
-  window.removeEventListener("auth-state-changed", handleAuthStateChange);
 });
 </script>
 

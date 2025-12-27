@@ -3,52 +3,32 @@
  * 管理文本瀑布流的列数、间距等配置
  */
 
-import { ref, computed, watch, onMounted, onUnmounted } from "vue";
+import { ref, computed, watch } from "vue";
+import { useLocalStorage, useWindowSize } from "@vueuse/core";
 
 export function usePasteMasonryView() {
-  // ===== localStorage设置管理 =====
+  // ===== 设置持久化 =====
 
-  // localStorage键名
   const STORAGE_KEYS = {
     COLUMN_COUNT: "paste_masonry_column_count",
     HORIZONTAL_GAP: "paste_masonry_horizontal_gap",
     VERTICAL_GAP: "paste_masonry_vertical_gap",
   };
 
-  // 从localStorage恢复设置
-  const getStoredValue = (key, defaultValue) => {
-    try {
-      const stored = localStorage.getItem(key);
-      return stored !== null ? JSON.parse(stored) : defaultValue;
-    } catch (error) {
-      console.warn(`恢复文本瀑布流设置失败 (${key}):`, error);
-      return defaultValue;
-    }
-  };
-
-  // 保存设置到localStorage
-  const saveToStorage = (key, value) => {
-    try {
-      localStorage.setItem(key, JSON.stringify(value));
-    } catch (error) {
-      console.warn(`保存文本瀑布流设置失败 (${key}):`, error);
-    }
-  };
-
   // ===== 瀑布流设置状态 =====
 
-  // 列数控制 - 从localStorage恢复或使用默认值（自动）
-  const columnCount = ref(getStoredValue(STORAGE_KEYS.COLUMN_COUNT, "auto"));
+  // 列数控制 - 默认值（自动）
+  const columnCount = useLocalStorage(STORAGE_KEYS.COLUMN_COUNT, "auto");
 
-  // 水平和垂直间距 - 从localStorage恢复或使用默认值
-  const horizontalGap = ref(getStoredValue(STORAGE_KEYS.HORIZONTAL_GAP, 16));
-  const verticalGap = ref(getStoredValue(STORAGE_KEYS.VERTICAL_GAP, 16));
+  // 水平和垂直间距 - 默认值
+  const horizontalGap = useLocalStorage(STORAGE_KEYS.HORIZONTAL_GAP, 16);
+  const verticalGap = useLocalStorage(STORAGE_KEYS.VERTICAL_GAP, 16);
 
   // 工具栏状态管理
   const showViewSettings = ref(false);
 
   // 窗口宽度响应式状态
-  const windowWidth = ref(typeof window !== "undefined" ? window.innerWidth : 1024);
+  const { width: windowWidth } = useWindowSize({ initialWidth: 1024 });
 
   // ===== MasonryWall配置 =====
 
@@ -97,14 +77,10 @@ export function usePasteMasonryView() {
     horizontalGap.value = 16;
     verticalGap.value = 16;
 
-    // 清除localStorage中的设置
-    Object.values(STORAGE_KEYS).forEach((key) => {
-      try {
-        localStorage.removeItem(key);
-      } catch (error) {
-        console.warn(`清除文本瀑布流设置失败 (${key}):`, error);
-      }
-    });
+    // 清除存储中的设置
+    columnCount.remove?.();
+    horizontalGap.remove?.();
+    verticalGap.remove?.();
 
     console.log("文本瀑布流设置已重置为默认值");
   };
@@ -117,45 +93,23 @@ export function usePasteMasonryView() {
 
   // ===== 监听器设置 =====
 
-  // 窗口resize处理
-  let resizeTimer = null;
-  const handleResize = () => {
-    // 防抖处理
-    if (resizeTimer) clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(() => {
-      windowWidth.value = window.innerWidth;
-    }, 150);
-  };
-
-  // 监听设置变化并自动保存到localStorage
+  // 监听设置变化（这里主要用于打印日志，持久化由 useLocalStorage 自动完成）
   const setupWatchers = () => {
     watch(columnCount, (newValue) => {
-      saveToStorage(STORAGE_KEYS.COLUMN_COUNT, newValue);
       console.log(`文本瀑布流列数设置已保存: ${newValue}`);
     });
 
     watch(horizontalGap, (newValue) => {
-      saveToStorage(STORAGE_KEYS.HORIZONTAL_GAP, newValue);
       console.log(`文本瀑布流水平间距设置已保存: ${newValue}px`);
     });
 
     watch(verticalGap, (newValue) => {
-      saveToStorage(STORAGE_KEYS.VERTICAL_GAP, newValue);
       console.log(`文本瀑布流垂直间距设置已保存: ${newValue}px`);
     });
-
-    // 监听窗口大小变化
-    if (typeof window !== "undefined") {
-      window.addEventListener("resize", handleResize);
-    }
   };
 
   // 清理监听器
   const cleanupWatchers = () => {
-    if (typeof window !== "undefined") {
-      window.removeEventListener("resize", handleResize);
-    }
-    if (resizeTimer) clearTimeout(resizeTimer);
   };
 
   // 返回所有需要的状态和方法

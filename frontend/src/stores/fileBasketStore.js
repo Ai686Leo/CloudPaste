@@ -5,6 +5,7 @@
 
 import { defineStore } from "pinia";
 import { ref, computed, nextTick } from "vue";
+import { useLocalStorage } from "@vueuse/core";
 
 export const useFileBasketStore = defineStore("fileBasket", () => {
   // ===== 状态管理 =====
@@ -26,6 +27,8 @@ export const useFileBasketStore = defineStore("fileBasket", () => {
 
   // localStorage键名
   const STORAGE_KEY = "cloudpaste_file_basket";
+  const storedBasketData = useLocalStorage(STORAGE_KEY, null, { writeDefaults: false });
+  const storedForceCleanFlag = useLocalStorage(STORAGE_KEY + "_force_clean", null, { writeDefaults: false });
 
   // ===== 计算属性 =====
 
@@ -259,7 +262,7 @@ export const useFileBasketStore = defineStore("fileBasket", () => {
         lastCollectionTime: lastCollectionTime.value,
         savedAt: new Date().toISOString(),
       };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      storedBasketData.value = data;
     } catch (error) {
       console.error("保存文件篮状态失败:", error);
     }
@@ -270,9 +273,8 @@ export const useFileBasketStore = defineStore("fileBasket", () => {
    */
   const loadFromStorage = () => {
     try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const data = JSON.parse(stored);
+      const data = storedBasketData.value;
+      if (data && typeof data === "object") {
 
         // 检查数据是否过期（超过24小时）
         if (data.savedAt) {
@@ -333,12 +335,8 @@ export const useFileBasketStore = defineStore("fileBasket", () => {
       }
     } catch (error) {
       console.error("加载文件篮状态失败，清理localStorage:", error);
-      // 清理损坏的localStorage数据
-      try {
-        localStorage.removeItem(STORAGE_KEY);
-      } catch (e) {
-        console.error("清理localStorage失败:", e);
-      }
+      // 清理损坏的存储数据
+      storedBasketData.remove?.();
       collectedFiles.value = [];
       lastCollectionTime.value = null;
     }
@@ -375,7 +373,7 @@ export const useFileBasketStore = defineStore("fileBasket", () => {
    */
   const forceCleanStorage = () => {
     try {
-      localStorage.removeItem(STORAGE_KEY);
+      storedBasketData.remove?.();
       console.log("已强制清理文件篮localStorage数据");
     } catch (error) {
       console.error("强制清理localStorage失败:", error);
@@ -383,10 +381,9 @@ export const useFileBasketStore = defineStore("fileBasket", () => {
   };
 
   // 检查是否需要强制清理（开发时临时使用）
-  const shouldForceClean = localStorage.getItem(STORAGE_KEY + "_force_clean");
-  if (shouldForceClean) {
+  if (storedForceCleanFlag.value) {
     forceCleanStorage();
-    localStorage.removeItem(STORAGE_KEY + "_force_clean");
+    storedForceCleanFlag.remove?.();
   }
 
   // 立即初始化，但使用同步方式确保数据完整性

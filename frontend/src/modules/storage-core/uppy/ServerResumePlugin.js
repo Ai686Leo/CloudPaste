@@ -290,9 +290,13 @@ export default class ServerResumePlugin extends BasePlugin {
           if (!partsResponse) return null;
 
           let uploadedParts = [];
+          let partErrors = [];
           if (partsResponse.success && partsResponse.data.parts) {
             uploadedParts = partsResponse.data.parts;
             console.log(`[ServerResumePlugin] 上传 ${upload.uploadId.substring(0, 8)}... 有 ${uploadedParts.length} 个分片`);
+          }
+          if (partsResponse.success && Array.isArray(partsResponse.data?.errors)) {
+            partErrors = partsResponse.data.errors;
           }
 
           return {
@@ -300,6 +304,7 @@ export default class ServerResumePlugin extends BasePlugin {
             matchScore: this.calculateMatchScore(upload, options.file),
             fileSize: options.file.size,
             uploadedParts: uploadedParts, // 添加分片信息
+            partErrors: partErrors, // 添加失败分片信息
           };
         } catch (error) {
           console.error(`[ServerResumePlugin] 获取上传 ${upload.uploadId} 的分片信息失败:`, error);
@@ -308,6 +313,7 @@ export default class ServerResumePlugin extends BasePlugin {
             matchScore: this.calculateMatchScore(upload, options.file),
             fileSize: options.file.size,
             uploadedParts: [], // 失败时使用空数组
+            partErrors: [],
           };
         }
       })

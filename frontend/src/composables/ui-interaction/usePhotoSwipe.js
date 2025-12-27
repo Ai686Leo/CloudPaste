@@ -4,6 +4,7 @@
  */
 
 import { ref, nextTick } from "vue";
+import { useSessionStorage, useWindowSize } from "@vueuse/core";
 import PhotoSwipeLightbox from "photoswipe/lightbox";
 import "photoswipe/style.css";
 import "@/styles/photoswipe-custom.css";
@@ -13,6 +14,8 @@ import { LIVE_PHOTO_BADGE_ICON_SVG } from "@/components/common/LivePhoto/livePho
 export function usePhotoSwipe() {
   const lightbox = ref(null);
   const isInitialized = ref(false);
+  const storedMuted = useSessionStorage("cloudpaste.lightbox.muted", true, { writeDefaults: false });
+  const { width: windowWidth, height: windowHeight } = useWindowSize();
 
   const session = {
     items: /** @type {Array<any>} */ ([]),
@@ -60,7 +63,7 @@ export function usePhotoSwipe() {
     if (el && typeof el.clientWidth === "number" && typeof el.clientHeight === "number") {
       return { x: el.clientWidth, y: el.clientHeight };
     }
-    return { x: document.documentElement.clientWidth, y: window.innerHeight };
+    return { x: windowWidth.value, y: windowHeight.value };
   };
 
   const getPadding = (viewport, data) => {
@@ -409,7 +412,7 @@ export function usePhotoSwipe() {
     });
 
     // 信息侧栏
-    if (window.innerWidth > mobileBreakpoint) {
+    if (windowWidth.value > mobileBreakpoint) {
       pswp.ui.registerElement({
         name: "sidebar-button",
         className: "pswp__button pswp__button--info-button pswp__button--mdi",
@@ -468,14 +471,7 @@ export function usePhotoSwipe() {
       },
       onInit: (el) => {
         soundButtonEl = el;
-        try {
-          const saved = window.sessionStorage.getItem("cloudpaste.lightbox.muted");
-          if (saved === "true" || saved === "false") {
-            session.muted = saved === "true";
-          }
-        } catch {
-          // ignore
-        }
+        session.muted = !!storedMuted.value;
         pswp.on("change", () => {
           updateSoundButton();
           applyMutedToCurrentVideo();
@@ -485,11 +481,7 @@ export function usePhotoSwipe() {
       },
       onClick: () => {
         session.muted = !session.muted;
-        try {
-          window.sessionStorage.setItem("cloudpaste.lightbox.muted", String(session.muted));
-        } catch {
-          // ignore
-        }
+        storedMuted.value = session.muted;
         updateSoundButton();
         applyMutedToCurrentVideo();
       },

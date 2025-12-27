@@ -85,6 +85,7 @@
 
 <script setup>
 import { computed, watch, onMounted, onBeforeUnmount, ref, toRef } from "vue";
+import { useResizeObserver } from "@vueuse/core";
 import { useI18n } from "vue-i18n";
 import { useLivePhoto, PlaybackStyle, LivePhotoErrorType } from "./useLivePhoto.js";
 import { LIVE_PHOTO_BADGE_ICON_SVG } from "./livePhotoBadgeIconSvg.js";
@@ -284,7 +285,6 @@ const parseAspectRatio = (value) => {
 
 const measuredAspectRatio = ref(null);
 const containerSize = ref({ width: 0, height: 0 });
-let resizeObserver = null;
 
 const measureContainer = () => {
   const el = containerRef.value;
@@ -292,6 +292,10 @@ const measureContainer = () => {
   const rect = el.getBoundingClientRect();
   containerSize.value = { width: rect.width, height: rect.height };
 };
+
+const { stop: stopResizeObserver } = useResizeObserver(containerRef, () => {
+  measureContainer();
+});
 
 const baseAspectRatio = computed(() => {
   return parseAspectRatio(props.aspectRatio) ?? measuredAspectRatio.value ?? null;
@@ -430,15 +434,10 @@ defineExpose({
 // 自动播放
 onMounted(() => {
   measureContainer();
-  if (typeof ResizeObserver !== "undefined" && containerRef.value) {
-    resizeObserver = new ResizeObserver(() => measureContainer());
-    resizeObserver.observe(containerRef.value);
-  }
 });
 
 onBeforeUnmount(() => {
-  resizeObserver?.disconnect();
-  resizeObserver = null;
+  stopResizeObserver?.();
 });
 </script>
 

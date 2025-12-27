@@ -5,6 +5,7 @@
 
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
+import { useLocalStorage } from "@vueuse/core";
 import { api } from "@/api";
 
 // 配置常量
@@ -99,6 +100,9 @@ export const useSiteConfigStore = defineStore("siteConfig", () => {
   const lastUpdated = ref(null);
   const isInitialized = ref(false);
 
+  // 缓存：只在需要时写入，避免首次加载就占用 localStorage
+  const storedConfig = useLocalStorage(STORAGE_KEY, null, { writeDefaults: false });
+
   // ===== 计算属性 =====
 
   /**
@@ -130,9 +134,8 @@ export const useSiteConfigStore = defineStore("siteConfig", () => {
    */
   const loadFromStorage = () => {
     try {
-      const cached = localStorage.getItem(STORAGE_KEY);
-      if (cached) {
-        const config = JSON.parse(cached);
+      const config = storedConfig.value;
+      if (config && typeof config === "object") {
         if (config.title) {
           siteTitle.value = config.title;
         }
@@ -157,7 +160,7 @@ export const useSiteConfigStore = defineStore("siteConfig", () => {
     } catch (error) {
       console.warn("加载站点配置缓存失败:", error);
       // 清除损坏的缓存
-      localStorage.removeItem(STORAGE_KEY);
+      storedConfig.remove?.();
     }
     return false;
   };
@@ -175,7 +178,7 @@ export const useSiteConfigStore = defineStore("siteConfig", () => {
         customBody: siteCustomBody.value,
         lastUpdated: lastUpdated.value,
       };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
+      storedConfig.value = config;
       console.log("站点配置已保存到缓存:", config);
     } catch (error) {
       console.error("保存站点配置到缓存失败:", error);
@@ -514,7 +517,7 @@ export const useSiteConfigStore = defineStore("siteConfig", () => {
     siteCustomBody.value = "";
     lastUpdated.value = null;
     isInitialized.value = false;
-    localStorage.removeItem(STORAGE_KEY);
+    storedConfig.remove?.();
 
     // 重置favicon为默认
     updatePageFavicon("");

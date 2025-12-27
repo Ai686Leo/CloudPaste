@@ -12,9 +12,11 @@ import { OneDriveStorageDriver } from "../drivers/onedrive/OneDriveStorageDriver
 import { GoogleDriveStorageDriver } from "../drivers/googledrive/GoogleDriveStorageDriver.js";
 import { GithubReleasesStorageDriver } from "../drivers/github/GithubReleasesStorageDriver.js";
 import { GithubApiStorageDriver } from "../drivers/github/GithubApiStorageDriver.js";
+import { TelegramStorageDriver } from "../drivers/telegram/TelegramStorageDriver.js";
 import { githubApiTestConnection } from "../drivers/github/tester/GithubApiTester.js";
 import { githubReleasesTestConnection } from "../drivers/github/tester/GithubReleasesTester.js";
 import { googleDriveTestConnection } from "../drivers/googledrive/tester/GoogleDriveTester.js";
+import { telegramTestConnection } from "../drivers/telegram/tester/TelegramTester.js";
 import {
   CAPABILITIES,
   REQUIRED_METHODS_BY_CAPABILITY,
@@ -161,6 +163,7 @@ export class StorageFactory {
     GOOGLE_DRIVE: "GOOGLE_DRIVE",
     GITHUB_RELEASES: "GITHUB_RELEASES",
     GITHUB_API: "GITHUB_API",
+    TELEGRAM: "TELEGRAM",
   };
 
   // 注册驱动
@@ -1713,6 +1716,190 @@ StorageFactory.registerDriver(StorageFactory.SUPPORTED_TYPES.GITHUB_API, {
         },
       ],
       summaryFields: ["owner", "repo", "ref", "default_folder"],
+    },
+  },
+});
+
+// 注册 Telegram 驱动（Bot API 优先：VFS 目录树 + 代理访问）
+StorageFactory.registerDriver(StorageFactory.SUPPORTED_TYPES.TELEGRAM, {
+  ctor: TelegramStorageDriver,
+  tester: telegramTestConnection,
+  displayName: "Telegram Bot API",
+  validate: (cfg) => {
+    const errors = [];
+    if (!cfg?.bot_token) errors.push("TELEGRAM 配置缺少必填字段: bot_token");
+    if (!cfg?.target_chat_id) errors.push("TELEGRAM 配置缺少必填字段: target_chat_id");
+    if (cfg?.target_chat_id && !/^-?\\d+$/.test(String(cfg.target_chat_id).trim())) {
+      errors.push("TELEGRAM 配置字段 target_chat_id 必须是纯数字字符串（例如 -100...）");
+    }
+    const botApiMode = String(cfg?.bot_api_mode || "official").trim().toLowerCase();
+    if (botApiMode && !["official", "self_hosted"].includes(botApiMode)) {
+      errors.push("bot_api_mode 只能是 official 或 self_hosted");
+    }
+    // 官方托管 Bot API 常见下载侧限制在 20MB
+    // - self_hosted（自建 Bot API server）可放宽限制（官方可到 2GB）
+    const partSizeMb = Number(cfg?.part_size_mb ?? 15);
+    if (botApiMode !== "self_hosted" && Number.isFinite(partSizeMb) && partSizeMb > 20) {
+      errors.push("part_size_mb 在 official 模式下建议 ≤ 20（避免下载受限导致无法读取分片）");
+    }
+    if (cfg?.api_base_url) {
+      try {
+        const parsed = new URL(String(cfg.api_base_url));
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+          errors.push("api_base_url 必须以 http:// 或 https:// 开头");
+        }
+      } catch {
+        errors.push("api_base_url 格式无效");
+      }
+    }
+    return { valid: errors.length === 0, errors };
+  },
+  capabilities: [CAPABILITIES.READER, CAPABILITIES.WRITER, CAPABILITIES.PROXY, CAPABILITIES.MULTIPART, CAPABILITIES.ATOMIC],
+  ui: {
+    icon: "storage-telegram",
+    i18nKey: "admin.storage.type.telegram",
+    badgeTheme: "telegram",
+  },
+  configProjector(cfg, { withSecrets = false } = {}) {
+    const projected = {
+      target_chat_id: cfg?.target_chat_id,
+      api_base_url: cfg?.api_base_url,
+      bot_api_mode: cfg?.bot_api_mode,
+      part_size_mb: cfg?.part_size_mb,
+      upload_concurrency: cfg?.upload_concurrency,
+      verify_after_upload: cfg?.verify_after_upload,
+      default_folder: cfg?.default_folder,
+    };
+    if (withSecrets) {
+      projected.bot_token = cfg?.bot_token;
+    }
+    return projected;
+  },
+  configSchema: {
+    fields: [
+      {
+        name: "bot_token",
+        type: "secret",
+        required: true,
+        labelKey: "admin.storage.fields.telegram.bot_token",
+        ui: {
+          fullWidth: true,
+          placeholderKey: "admin.storage.placeholder.telegram.bot_token",
+          descriptionKey: "admin.storage.description.telegram.bot_token",
+        },
+      },
+      {
+        name: "target_chat_id",
+        type: "string",
+        required: true,
+        labelKey: "admin.storage.fields.telegram.target_chat_id",
+        ui: {
+          fullWidth: true,
+          placeholderKey: "admin.storage.placeholder.telegram.target_chat_id",
+          descriptionKey: "admin.storage.description.telegram.target_chat_id",
+        },
+      },
+      {
+        name: "bot_api_mode",
+        type: "enum",
+        required: false,
+        defaultValue: "official",
+        labelKey: "admin.storage.fields.telegram.bot_api_mode",
+        enumValues: [
+          { value: "official", labelKey: "admin.storage.enum.telegram.bot_api_mode.official" },
+          { value: "self_hosted", labelKey: "admin.storage.enum.telegram.bot_api_mode.self_hosted" },
+        ],
+        ui: {
+          fullWidth: true,
+          renderAs: "toggle",
+          toggleLabelKey: "admin.storage.toggle.telegram.bot_api_mode",
+          descriptionKey: "admin.storage.description.telegram.bot_api_mode",
+        },
+      },
+      {
+        name: "api_base_url",
+        type: "string",
+        required: false,
+        defaultValue: "https://api.telegram.org",
+        labelKey: "admin.storage.fields.telegram.api_base_url",
+        validation: { rule: "url" },
+        ui: {
+          fullWidth: true,
+          dependsOn: { field: "bot_api_mode", value: "self_hosted" },
+          placeholderKey: "admin.storage.placeholder.telegram.api_base_url",
+          descriptionKey: "admin.storage.description.telegram.api_base_url",
+        },
+      },
+      {
+        name: "part_size_mb",
+        type: "number",
+        required: false,
+        defaultValue: 15,
+        labelKey: "admin.storage.fields.telegram.part_size_mb",
+        ui: {
+          placeholderKey: "admin.storage.placeholder.telegram.part_size_mb",
+          descriptionKey: "admin.storage.description.telegram.part_size_mb",
+        },
+      },
+      {
+        name: "upload_concurrency",
+        type: "number",
+        required: false,
+        defaultValue: 2,
+        labelKey: "admin.storage.fields.telegram.upload_concurrency",
+        ui: {
+          placeholderKey: "admin.storage.placeholder.telegram.upload_concurrency",
+          descriptionKey: "admin.storage.description.telegram.upload_concurrency",
+        },
+      },
+      {
+        name: "verify_after_upload",
+        type: "boolean",
+        required: false,
+        defaultValue: false,
+        labelKey: "admin.storage.fields.telegram.verify_after_upload",
+        ui: {
+          descriptionKey: "admin.storage.description.telegram.verify_after_upload",
+        },
+      },
+      {
+        name: "url_proxy",
+        type: "string",
+        required: false,
+        labelKey: "admin.storage.fields.url_proxy",
+        validation: { rule: "url" },
+        ui: {
+          fullWidth: true,
+          placeholderKey: "admin.storage.placeholder.url_proxy",
+          descriptionKey: "admin.storage.description.url_proxy",
+        },
+      },
+      {
+        name: "default_folder",
+        type: "string",
+        required: false,
+        labelKey: "admin.storage.fields.default_folder",
+        ui: {
+          fullWidth: true,
+          placeholderKey: "admin.storage.placeholder.default_folder",
+          emptyTextKey: "admin.storage.display.default_folder.root",
+        },
+      },
+    ],
+    layout: {
+      groups: [
+        {
+          name: "basic",
+          titleKey: "admin.storage.groups.basic",
+          fields: ["bot_token", "target_chat_id", "default_folder"],
+        },
+        {
+          name: "advanced",
+          titleKey: "admin.storage.groups.advanced",
+          fields: ["bot_api_mode", "api_base_url", ["part_size_mb", "upload_concurrency"], "verify_after_upload", "url_proxy"],
+        },
+      ],
+      summaryFields: ["target_chat_id", "default_folder", "part_size_mb", "upload_concurrency"],
     },
   },
 });

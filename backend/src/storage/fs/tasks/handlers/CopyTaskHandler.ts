@@ -227,6 +227,16 @@ export class CopyTaskHandler implements TaskHandler {
           if (isSkipped) {
             // 驱动显式表示跳过：不计入失败，但标记为 skipped
             fileSkipped = true;
+            // 记录跳过原因，供前端展示（不影响任务最终状态）
+            // - 优先使用驱动返回的 message/error
+            // - 否则给一个可读的默认原因（最常见是 skipExisting 导致）
+            const skipReason =
+              copyResult?.message ||
+              copyResult?.error ||
+              (payload.options?.skipExisting
+                ? "目标已存在，已按“跳过已存在文件”设置跳过"
+                : "已跳过");
+            itemResults[i].message = String(skipReason);
           } else if (resultStatus === "failed") {
             // 驱动显式表示失败：抛出错误触发重试/失败分支，并保留 message 供上层使用
             const reason = copyResult?.message || copyResult?.error || "复制失败";

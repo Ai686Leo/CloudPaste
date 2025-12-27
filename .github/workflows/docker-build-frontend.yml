@@ -38,6 +38,8 @@ jobs:
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
+        with:
+          lfs: true
 
       - name: 设置QEMU
         uses: docker/setup-qemu-action@v3
@@ -50,6 +52,27 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # 先做一次 amd64 本地 build + 自检，避免 push 后/assets 404
+      - name: 构建前端镜像（amd64）用于静态资源自检
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./docker/frontend/Dockerfile
+          load: true
+          tags: cloudpaste-frontend:ci-check
+          platforms: linux/amd64
+          cache-from: type=gha
+
+      - name: 校验镜像内静态资源（vditor / libarchive.js）
+        run: |
+          set -e
+          VDITOR_VERSION=$(node -e "const fs=require('fs'); const t=fs.readFileSync('frontend/src/utils/vditorLoader.js','utf8'); const m=t.match(/export\\s+const\\s+VDITOR_VERSION\\s*=\\s*\\\"([^\\\"]+)\\\"/); if(!m){console.error('VDITOR_VERSION not found'); process.exit(1);} process.stdout.write(m[1]);")
+          echo "VDITOR_VERSION=${VDITOR_VERSION}"
+          docker run --rm cloudpaste-frontend:ci-check sh -c "test -f /usr/share/nginx/html/assets/vditor/${VDITOR_VERSION}/dist/index.min.js"
+          docker run --rm cloudpaste-frontend:ci-check sh -c "test -f /usr/share/nginx/html/assets/vditor/${VDITOR_VERSION}/dist/index.css"
+          docker run --rm cloudpaste-frontend:ci-check sh -c 'test -f /usr/share/nginx/html/libarchive.js/dist/worker-bundle.js'
+          echo "✅ 静态资源校验通过：vditor + libarchive.js"
 
       - name: 构建并推送前端镜像
         uses: docker/build-push-action@v6

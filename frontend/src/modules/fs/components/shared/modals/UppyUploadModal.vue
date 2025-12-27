@@ -129,6 +129,7 @@ import { useStorageConfigsStore } from "@/stores/storageConfigsStore.js";
 import { STORAGE_STRATEGIES } from "@/modules/storage-core/drivers/types.js";
 import { resolveDriverByConfigId } from "@/modules/storage-core/drivers/registry.js";
 import { useShareUploadController } from "@/modules/upload";
+import { normalizeFsPath } from "@/utils/fsPathUtils.js";
 
 // 导入插件管理器
 import { createUppyPluginManager } from "@/modules/storage-core/uppy/UppyPluginManager.js";
@@ -252,13 +253,8 @@ const enforceUploadMethodByDriver = (driver) => {
   }
 };
 
-const normalizePath = (path) => {
-  if (!path) return "/";
-  return path.startsWith("/") ? path : `/${path}`;
-};
-
 const getMountRootFromPath = (path) => {
-  const normalized = normalizePath(path);
+  const normalized = normalizeFsPath(path);
   const segments = normalized.split("/").filter(Boolean);
   if (!segments.length) return null;
   return `/${segments[0]}`;
@@ -548,7 +544,7 @@ const setupUppy = async () => {
       setupResumeDialogEvents();
     }
 
-    pluginManager.addPluginsToUppy();
+    await pluginManager.addPluginsToUppy();
   } catch (error) {
     console.error("[Uppy] 初始化失败:", error);
     errorMessage.value = t("mount.uppy.initializationFailed", { message: error.message });

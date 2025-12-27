@@ -5,6 +5,7 @@
  * 配置变更时自动注入 CSS 变量
  */
 import { ref, watch, computed } from 'vue'
+import { useLocalStorage, useMutationObserver } from '@vueuse/core'
 import { defineStore } from 'pinia'
 import { semanticColors } from '@/styles/design-tokens'
 
@@ -46,7 +47,7 @@ function lerp(min, max, t) {
 
 export const useExplorerSettings = defineStore('explorerSettings', () => {
   // 配置状态
-  const settings = ref({ ...defaultSettings })
+  const settings = useLocalStorage(STORAGE_KEY, { ...defaultSettings })
   
   // 是否已初始化
   const initialized = ref(false)
@@ -73,22 +74,19 @@ export const useExplorerSettings = defineStore('explorerSettings', () => {
   // 从 localStorage 恢复配置
   function loadSettings() {
     try {
-      const stored = localStorage.getItem(STORAGE_KEY)
-      if (stored) {
-        const parsed = JSON.parse(stored)
-        // 合并配置，确保新增字段有默认值
-        settings.value = { ...defaultSettings, ...parsed }
-        
-        // 兼容旧版配置：将旧的 density 字符串转换为数值
-        if (typeof parsed.density === 'string') {
-          const densityMap = { compact: 0, comfortable: 50, spacious: 100 }
-          settings.value.densityValue = densityMap[parsed.density] ?? 50
-        }
-        // 兼容旧版配置：将旧的 itemSpacing 字符串转换为数值
-        if (typeof parsed.itemSpacing === 'string') {
-          const spacingMap = { compact: 0, standard: 50, relaxed: 100 }
-          settings.value.spacingValue = spacingMap[parsed.itemSpacing] ?? 50
-        }
+      const parsed = settings.value || {}
+      // 合并配置，确保新增字段有默认值
+      settings.value = { ...defaultSettings, ...parsed }
+      
+      // 兼容旧版配置：将旧的 density 字符串转换为数值
+      if (typeof parsed.density === 'string') {
+        const densityMap = { compact: 0, comfortable: 50, spacious: 100 }
+        settings.value.densityValue = densityMap[parsed.density] ?? 50
+      }
+      // 兼容旧版配置：将旧的 itemSpacing 字符串转换为数值
+      if (typeof parsed.itemSpacing === 'string') {
+        const spacingMap = { compact: 0, standard: 50, relaxed: 100 }
+        settings.value.spacingValue = spacingMap[parsed.itemSpacing] ?? 50
       }
     } catch (e) {
       console.warn('[ExplorerSettings] 加载配置失败，使用默认值:', e)
@@ -99,11 +97,6 @@ export const useExplorerSettings = defineStore('explorerSettings', () => {
 
   // 保存配置到 localStorage
   function saveSettings() {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(settings.value))
-    } catch (e) {
-      console.warn('[ExplorerSettings] 保存配置失败:', e)
-    }
   }
 
   // 注入 CSS 变量到 document root
@@ -189,35 +182,34 @@ export const useExplorerSettings = defineStore('explorerSettings', () => {
   // 监听配置变化，自动保存和注入 CSS 变量
   watch(settings, () => {
     if (initialized.value) {
-      saveSettings()
       injectCSSVariables()
     }
   }, { deep: true })
 
-  // 暗色模式观察器实例
-  let darkModeObserver = null
+  // 暗色模式观察器 stop（VueUse 管理）
+  let stopDarkModeObserver = null
 
   // 监听暗色模式变化
   function setupDarkModeObserver() {
     // 避免重复创建
-    if (darkModeObserver) return darkModeObserver
-    
-    darkModeObserver = new MutationObserver((mutations) => {
-      mutations.forEach((mutation) => {
-        if (mutation.attributeName === 'class') {
-          injectCSSVariables()
-        }
-      })
-    })
-    darkModeObserver.observe(document.documentElement, { attributes: true })
-    return darkModeObserver
+    if (typeof stopDarkModeObserver === 'function') return stopDarkModeObserver
+
+    const { stop } = useMutationObserver(
+      document.documentElement,
+      () => {
+        injectCSSVariables()
+      },
+      { attributes: true, attributeFilter: ['class'] }
+    )
+    stopDarkModeObserver = stop
+    return stopDarkModeObserver
   }
 
   // 清理暗色模式观察器
   function cleanupDarkModeObserver() {
-    if (darkModeObserver) {
-      darkModeObserver.disconnect()
-      darkModeObserver = null
+    if (typeof stopDarkModeObserver === 'function') {
+      stopDarkModeObserver()
+      stopDarkModeObserver = null
     }
   }
 

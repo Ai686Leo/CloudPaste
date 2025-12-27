@@ -44,6 +44,39 @@ function initFromEnv(env) {
 
 const textEncoder = new TextEncoder();
 
+function buildCorsHeaders(requestOrigin, allowHeaders = null) {
+  const origin = requestOrigin || "*";
+  const headers = {
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+    "Access-Control-Max-Age": "86400",
+    "Access-Control-Expose-Headers": "Content-Length, Content-Range, Accept-Ranges, ETag, Last-Modified, Content-Type, X-Request-Id",
+  };
+  if (allowHeaders) {
+    headers["Access-Control-Allow-Headers"] = allowHeaders;
+  }
+  return headers;
+}
+
+function withCors(response, requestOrigin) {
+  const resp = new Response(response.body, response);
+  const cors = buildCorsHeaders(requestOrigin);
+  for (const [k, v] of Object.entries(cors)) {
+    resp.headers.set(k, v);
+  }
+  resp.headers.append("Vary", "Origin");
+  return resp;
+}
+
+function jsonWithCors(payload, { status = 200, requestOrigin = "*", extraHeaders = null } = {}) {
+  const headers = {
+    "content-type": "application/json;charset=UTF-8",
+    ...buildCorsHeaders(requestOrigin),
+    ...(extraHeaders || {}),
+  };
+  return new Response(JSON.stringify(payload), { status, headers });
+}
+
 /** 将 HMAC-SHA256 结果编码为标准 Base64 字符串（与 Node.js crypto.digest("base64") 对齐） */
 async function hmacSha256Base64(secret, data) {
   const key = await crypto.subtle.importKey("raw", textEncoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
@@ -83,55 +116,81 @@ async function verifyFsSign(path, sign, secret) {
   return "";
 }
 
-/** 将 CloudPaste /api/proxy/link 响应的 header 映射到请求头 */
+/**
+ * 组装“发往上游”的请求
+ */
 function applyUpstreamHeaders(request, headerMap) {
-  if (!headerMap || typeof headerMap !== "object") {
-    return request;
+  const headers = new Headers();
+  // Range/条件请求
+  const keepFromClient = ["range", "if-range", "if-none-match", "if-modified-since", "if-match", "if-unmodified-since", "accept"];
+  for (const name of keepFromClient) {
+    const v = request.headers.get(name);
+    if (v) headers.set(name, v);
   }
-  const next = new Request(request);
-  for (const [k, values] of Object.entries(headerMap)) {
-    if (!Array.isArray(values)) continue;
-    for (const v of values) {
-      next.headers.set(k, String(v));
+
+  const skip = new Set(["host", "connection", "keep-alive", "proxy-connection", "transfer-encoding", "content-length"]);
+
+  if (headerMap && typeof headerMap === "object") {
+    for (const [k, values] of Object.entries(headerMap)) {
+      if (!Array.isArray(values)) continue;
+      const lower = String(k || "").toLowerCase();
+      if (!lower) continue;
+      if (skip.has(lower)) continue;
+      if (lower.startsWith("cf-")) continue;
+      for (const v of values) {
+        headers.set(k, String(v));
+      }
     }
   }
-  return next;
+
+  // 保留客户端的 Range
+  const originalRange = request.headers.get("Range") || request.headers.get("range") || "";
+  if (originalRange) {
+    headers.set("Range", originalRange);
+    headers.set("Accept-Encoding", "identity");
+  }
+
+  // 返回一个“同方法的新请求”
+  return new Request(request.url, { method: request.method, headers });
 }
 
 /** 判断重定向是否指向当前反代自身（用于避免无限循环） */
-function isSelfRedirect(location, currentHost) {
-  if (!location) return false;
+function isSelfRedirect(targetUrl, currentHost) {
+  if (!targetUrl) return false;
+  let targetHost = "";
   try {
-    const loc = new URL(location, "http://dummy");
-    const target = loc.host;
-
-    // 1. 显式配置的 WORKER_BASE
-    if (WORKER_BASE) {
-      const base = new URL(WORKER_BASE);
-      if (target === base.host) return true;
-    }
-
-    // 2. 回落到当前请求 Host
-    if (currentHost && target === currentHost) {
-      return true;
-    }
+    const u = targetUrl instanceof URL ? targetUrl : new URL(String(targetUrl));
+    targetHost = u.host;
   } catch {
-    // location 不是完整 URL 时，视为相对路径，由平台按照当前 Host 解析，这种情况也认为是“自身”
+    return false;
+  }
+
+  // 1) 显式配置的 WORKER_BASE
+  if (WORKER_BASE) {
+    try {
+      const base = new URL(WORKER_BASE);
+      if (targetHost === base.host) return true;
+    } catch {
+      // ignore
+    }
+  }
+
+  // 2) 回落到当前请求 Host
+  if (currentHost && targetHost === currentHost) {
     return true;
   }
+
   return false;
 }
 
 /** 处理 /proxy/fs 与 /proxy/share 的统一入口（平台无关核心逻辑） */
 export async function handleProxyRequest(request, env) {
-  // 优先使用传入 env 覆盖全局配置，方便在不同平台注入机密
+  // 优先使用传入 env 覆盖全局配置，方便在不同平台注入
   initFromEnv(env);
 
   if (!ORIGIN || !TOKEN || !SIGN_SECRET) {
-    return new Response(JSON.stringify({ code: 500, message: "proxy env not configured" }), {
-      status: 500,
-      headers: { "content-type": "application/json;charset=UTF-8" },
-    });
+    const requestOrigin = request.headers.get("Origin") || "*";
+    return jsonWithCors({ code: 500, message: "proxy env not configured" }, { status: 500, requestOrigin });
   }
 
   const url = new URL(request.url);
@@ -145,10 +204,7 @@ export async function handleProxyRequest(request, env) {
     return new Response(null, {
       status: 204,
       headers: {
-        "Access-Control-Allow-Origin": requestOrigin,
-        "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
-        "Access-Control-Allow-Headers": allowHeaders,
-        "Access-Control-Max-Age": "86400",
+        ...buildCorsHeaders(requestOrigin, allowHeaders),
       },
     });
   }
@@ -166,10 +222,7 @@ export async function handleProxyRequest(request, env) {
     // 签名校验
     const verifyMsg = await verifyFsSign(fsPath, sign, SIGN_SECRET);
     if (verifyMsg) {
-      return new Response(JSON.stringify({ code: 401, message: verifyMsg }), {
-        status: 401,
-        headers: { "content-type": "application/json;charset=UTF-8" },
-      });
+      return jsonWithCors({ code: 401, message: verifyMsg }, { status: 401, requestOrigin });
     }
 
     // 调用 CloudPaste /api/proxy/link 获取上游 URL
@@ -195,9 +248,11 @@ export async function handleProxyRequest(request, env) {
       linkJson = null;
     }
 
-    const code = linkJson?.code ?? linkResp.status;
+    const httpStatus = linkResp.status;
     const data = linkJson?.data ?? null;
-    if (code !== 200 || !data?.url) {
+    const ok = httpStatus === 200 && linkJson && linkJson.code === 200 && data?.url;
+
+    if (!ok) {
       console.error(
           JSON.stringify({
             type: "proxy.debug",
@@ -207,56 +262,103 @@ export async function handleProxyRequest(request, env) {
             origin: ORIGIN,
             controlUrl: controlUrl.toString(),
             httpStatus: linkResp.status,
-            code,
+            responseCode: linkJson?.code ?? null,
             // 为防止日志过大，截断响应体
             rawBody: rawBody && rawBody.length > 2048 ? rawBody.slice(0, 2048) + "...truncated" : rawBody,
           })
       );
 
-      return new Response(JSON.stringify({ code, message: "proxy link resolve failed" }), {
-        status: 502,
-        headers: { "content-type": "application/json;charset=UTF-8" },
-      });
+      const payload = linkJson && typeof linkJson === "object" ? linkJson : { code: httpStatus || 502, message: "proxy link resolve failed" };
+      return jsonWithCors(payload, { status: httpStatus || 502, requestOrigin });
     }
 
     // 转发到上游
     let upstreamReq = applyUpstreamHeaders(request, data.header);
     upstreamReq = new Request(data.url, upstreamReq);
 
-    let upstreamRes = await fetch(upstreamReq);
+    let upstreamRes;
+    try {
+      upstreamRes = await fetch(upstreamReq, { redirect: "manual" });
+    } catch (e) {
+      console.error(
+          JSON.stringify({
+            type: "proxy.debug",
+            scope: "fs",
+            reason: "upstream-fetch-failed",
+            requestPath: fsPath,
+            upstreamUrl: data.url,
+            error: e?.message || String(e),
+          })
+      );
+      return jsonWithCors({ code: 502, message: "upstream fetch failed" }, { status: 502, requestOrigin });
+    }
     const currentHost = url.host;
+
+    // Range 观测日志
+    const incomingRange = request.headers.get("Range") || request.headers.get("range") || "";
 
     // 跟随重定向，避免自递归
     for (let i = 0; i < 5 && upstreamRes.status >= 300 && upstreamRes.status < 400; i++) {
       const location = upstreamRes.headers.get("Location");
       if (!location) break;
+      let nextUrl;
+      try {
+        nextUrl = new URL(location, upstreamReq.url);
+      } catch {
+        break;
+      }
 
-      if (isSelfRedirect(location, currentHost)) {
+      if (isSelfRedirect(nextUrl, currentHost)) {
         // 自身重定向：递归交给 handleProxyRequest 处理
-        const nextReq = new Request(new URL(location, request.url).toString(), request);
+        const nextReq = new Request(nextUrl.toString(), request);
         return handleProxyRequest(nextReq, env);
       }
 
-      upstreamReq = new Request(location, upstreamReq);
-      upstreamRes = await fetch(upstreamReq);
+      upstreamReq = new Request(nextUrl.toString(), upstreamReq);
+      try {
+        upstreamRes = await fetch(upstreamReq, { redirect: "manual" });
+      } catch (e) {
+        console.error(
+            JSON.stringify({
+              type: "proxy.debug",
+              scope: "fs",
+              reason: "upstream-redirect-fetch-failed",
+              requestPath: fsPath,
+              upstreamUrl: upstreamReq.url || nextUrl.toString(),
+              error: e?.message || String(e),
+            })
+        );
+        return jsonWithCors({ code: 502, message: "upstream fetch failed" }, { status: 502, requestOrigin });
+      }
+    }
+
+    if (incomingRange) {
+      const hasContentRange = !!(upstreamRes.headers.get("Content-Range") || upstreamRes.headers.get("content-range"));
+      if (upstreamRes.status !== 206 && !hasContentRange) {
+        console.warn(
+            JSON.stringify({
+              type: "proxy.range",
+              scope: "fs",
+              requestPath: fsPath,
+              range: incomingRange,
+              upstreamStatus: upstreamRes.status,
+              contentRange: upstreamRes.headers.get("Content-Range") || upstreamRes.headers.get("content-range") || "",
+              note: "client sent Range but upstream did not return 206/Content-Range (may not support seek)",
+            })
+        );
+      }
     }
 
     const resp = new Response(upstreamRes.body, upstreamRes);
     resp.headers.delete("set-cookie");
-    resp.headers.set("Access-Control-Allow-Origin", requestOrigin);
-    resp.headers.set("Access-Control-Expose-Headers", "Content-Length, Content-Range, Accept-Ranges, ETag, Last-Modified, Content-Type");
-    resp.headers.append("Vary", "Origin");
-    return resp;
+    return withCors(resp, requestOrigin);
   }
 
   // 分享视图：/proxy/share/:slug
   if (path.startsWith("/proxy/share/")) {
     const slug = decodeURIComponent(path.slice("/proxy/share/".length));
     if (!slug) {
-      return new Response(JSON.stringify({ code: 400, message: "missing share slug" }), {
-        status: 400,
-        headers: { "content-type": "application/json;charset=UTF-8" },
-      });
+      return jsonWithCors({ code: 400, message: "missing share slug" }, { status: 400, requestOrigin });
     }
 
     const controlUrl = new URL(ORIGIN);
@@ -281,9 +383,10 @@ export async function handleProxyRequest(request, env) {
       linkJson = null;
     }
 
-    const code = linkJson?.code ?? linkResp.status;
+    const httpStatus = linkResp.status;
     const data = linkJson?.data ?? null;
-    if (code !== 200 || !data?.url) {
+    const ok = httpStatus === 200 && linkJson && linkJson.code === 200 && data?.url;
+    if (!ok) {
       console.error(
           JSON.stringify({
             type: "proxy.debug",
@@ -293,42 +396,93 @@ export async function handleProxyRequest(request, env) {
             origin: ORIGIN,
             controlUrl: controlUrl.toString(),
             httpStatus: linkResp.status,
-            code,
+            responseCode: linkJson?.code ?? null,
             rawBody: rawBody && rawBody.length > 2048 ? rawBody.slice(0, 2048) + "...truncated" : rawBody,
           })
       );
 
-      return new Response(JSON.stringify({ code, message: "proxy link resolve failed" }), {
-        status: 502,
-        headers: { "content-type": "application/json;charset=UTF-8" },
-      });
+      const payload = linkJson && typeof linkJson === "object" ? linkJson : { code: httpStatus || 502, message: "proxy link resolve failed" };
+      return jsonWithCors(payload, { status: httpStatus || 502, requestOrigin });
     }
 
     let upstreamReq = applyUpstreamHeaders(request, data.header);
     upstreamReq = new Request(data.url, upstreamReq);
 
-    let upstreamRes = await fetch(upstreamReq);
+    let upstreamRes;
+    try {
+      upstreamRes = await fetch(upstreamReq, { redirect: "manual" });
+    } catch (e) {
+      console.error(
+          JSON.stringify({
+            type: "proxy.debug",
+            scope: "share",
+            reason: "upstream-fetch-failed",
+            slug,
+            upstreamUrl: data.url,
+            error: e?.message || String(e),
+          })
+      );
+      return jsonWithCors({ code: 502, message: "upstream fetch failed" }, { status: 502, requestOrigin });
+    }
     const currentHost = url.host;
 
+    // Range 观测日志
+    const incomingRange = request.headers.get("Range") || request.headers.get("range") || "";
+
+    // 跟随重定向（这里必须用 upstreamReq.url 解析相对 Location）
     for (let i = 0; i < 5 && upstreamRes.status >= 300 && upstreamRes.status < 400; i++) {
       const location = upstreamRes.headers.get("Location");
       if (!location) break;
+      let nextUrl;
+      try {
+        nextUrl = new URL(location, upstreamReq.url);
+      } catch {
+        break;
+      }
 
-      if (isSelfRedirect(location, currentHost)) {
-        const nextReq = new Request(new URL(location, request.url).toString(), request);
+      if (isSelfRedirect(nextUrl, currentHost)) {
+        const nextReq = new Request(nextUrl.toString(), request);
         return handleProxyRequest(nextReq, env);
       }
 
-      upstreamReq = new Request(location, upstreamReq);
-      upstreamRes = await fetch(upstreamReq);
+      upstreamReq = new Request(nextUrl.toString(), upstreamReq);
+      try {
+        upstreamRes = await fetch(upstreamReq, { redirect: "manual" });
+      } catch (e) {
+        console.error(
+            JSON.stringify({
+              type: "proxy.debug",
+              scope: "share",
+              reason: "upstream-redirect-fetch-failed",
+              slug,
+              upstreamUrl: upstreamReq.url || nextUrl.toString(),
+              error: e?.message || String(e),
+            })
+        );
+        return jsonWithCors({ code: 502, message: "upstream fetch failed" }, { status: 502, requestOrigin });
+      }
+    }
+
+    if (incomingRange) {
+      const hasContentRange = !!(upstreamRes.headers.get("Content-Range") || upstreamRes.headers.get("content-range"));
+      if (upstreamRes.status !== 206 && !hasContentRange) {
+        console.warn(
+            JSON.stringify({
+              type: "proxy.range",
+              scope: "share",
+              slug,
+              range: incomingRange,
+              upstreamStatus: upstreamRes.status,
+              contentRange: upstreamRes.headers.get("Content-Range") || upstreamRes.headers.get("content-range") || "",
+              note: "client sent Range but upstream did not return 206/Content-Range (may not support seek)",
+            })
+        );
+      }
     }
 
     const resp = new Response(upstreamRes.body, upstreamRes);
     resp.headers.delete("set-cookie");
-    resp.headers.set("Access-Control-Allow-Origin", requestOrigin);
-    resp.headers.set("Access-Control-Expose-Headers", "Content-Length, Content-Range, Accept-Ranges, ETag, Last-Modified, Content-Type");
-    resp.headers.append("Vary", "Origin");
-    return resp;
+    return withCors(resp, requestOrigin);
   }
 
   return new Response("Not Found", { status: 404 });

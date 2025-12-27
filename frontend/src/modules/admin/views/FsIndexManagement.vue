@@ -213,6 +213,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch, h } from "vue";
+import { useIntervalFn } from "@vueuse/core";
 import { useI18n } from "vue-i18n";
 import { useGlobalMessage } from "@/composables/core/useGlobalMessage.js";
 import { useThemeMode } from "@/composables/core/useThemeMode.js";
@@ -261,7 +262,32 @@ const { getStorageTypeIcon, getStorageTypeIconClass } = useStorageTypeIcon();
 const isLoading = ref(false);
 const indexStatusData = ref(null);
 const viewMode = ref("card");
-let refreshInterval = null;
+
+// 自动刷新（仅当“索引重建进行中”时才会触发真正的请求）
+let autoRefreshInFlight = false;
+const { pause: stopAutoRefresh, resume: startAutoRefresh } = useIntervalFn(
+  async () => {
+    const hasRunningJobs =
+      Array.isArray(indexStatusData.value?.runningJobs) &&
+      indexStatusData.value.runningJobs.length > 0;
+
+    const hasIndexingMounts =
+      Array.isArray(indexStatusData.value?.items) &&
+      indexStatusData.value.items.some((x) => x?.status === "indexing");
+
+    if (!hasRunningJobs && !hasIndexingMounts) return;
+    if (autoRefreshInFlight) return;
+
+    autoRefreshInFlight = true;
+    try {
+      await loadIndexStatus({ silent: true });
+    } finally {
+      autoRefreshInFlight = false;
+    }
+  },
+  2000,
+  { immediate: false }
+);
 
 // 操作面板组件引用
 const actionPanelRef = ref(null);
@@ -700,28 +726,10 @@ async function handleStopJob(jobId) {
 // 生命周期
 onMounted(async () => {
   await loadIndexStatus();
-
-  // 每 2 秒自动刷新数据（仅当有“索引重建进行中”的迹象时）
-  // - runningJobs：任务系统已进入 running
-  // - items[].status === 'indexing'：索引状态被预先标记为 indexing（可能早于任务进入 running）
-  refreshInterval = setInterval(async () => {
-    const hasRunningJobs =
-      Array.isArray(indexStatusData.value?.runningJobs) &&
-      indexStatusData.value.runningJobs.length > 0;
-
-    const hasIndexingMounts =
-      Array.isArray(indexStatusData.value?.items) &&
-      indexStatusData.value.items.some((x) => x?.status === "indexing");
-
-    if (!hasRunningJobs && !hasIndexingMounts) return;
-
-    await loadIndexStatus({ silent: true });
-  }, 2000);
+  startAutoRefresh();
 });
 
 onUnmounted(() => {
-  if (refreshInterval) {
-    clearInterval(refreshInterval);
-  }
+  stopAutoRefresh();
 });
 </script>

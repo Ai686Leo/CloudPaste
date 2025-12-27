@@ -6,7 +6,7 @@
 <template>
   <div class="gallery-view">
     <!-- 现代化图廊工具栏 -->
-    <div class="gallery-toolbar mb-4" :class="darkMode ? 'bg-gray-800/80' : 'bg-white/90'">
+    <div ref="toolbarRef" class="gallery-toolbar mb-4" :class="darkMode ? 'bg-gray-800/80' : 'bg-white/90'">
       <!-- 主工具栏 -->
       <div class="px-3 py-2 border-b" :class="darkMode ? 'border-gray-700' : 'border-gray-200'">
         <div class="flex items-center justify-between">
@@ -336,6 +336,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from "vue";
+import { onClickOutside, useIntersectionObserver } from "@vueuse/core";
 import { useI18n } from "vue-i18n";
 import { useGalleryView } from "@/composables/ui-interaction/useGalleryView";
 import { useContextMenu } from "@/composables/useContextMenu";
@@ -419,6 +420,14 @@ const {
 } = useGalleryView({ items: computed(() => props.items) });
 
 const fsLightbox = useFsMediaLightbox();
+const toolbarRef = ref(null);
+
+// 点击外部关闭菜单（VueUse 自动管理监听器与清理）
+onClickOutside(toolbarRef, () => {
+  if (!showSortMenu.value && !showViewSettings.value) return;
+  showSortMenu.value = false;
+  showViewSettings.value = false;
+});
 
 // ===== 操作菜单相关方法 =====
 
@@ -623,8 +632,39 @@ const handleContextMenu = (event, image) => {
   contextMenu.showContextMenu(event, image, itemsForMenu, props.darkMode, props.isCheckboxMode);
 };
 
-// 懒加载：IntersectionObserver实现
-const imageObserver = ref(null);
+// 懒加载：IntersectionObserver（VueUse）
+const lazyImageTargets = ref([]);
+const { stop: stopLazyImageObserver } = useIntersectionObserver(
+  lazyImageTargets,
+  (entries, observer) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+
+      const placeholder = /** @type {HTMLElement} */ (entry.target);
+      const imagePath = placeholder?.dataset?.imagePath;
+      if (!imagePath) return;
+
+      // 查找对应的图片对象
+      const image = imagesByPath.value.get(imagePath);
+      if (!image) return;
+
+      // 根据可见比例确定优先级
+      const priority = entry.intersectionRatio > 0.5 ? "high" : "normal";
+      void loadImageUrl(image, { priority, signal: galleryAbortController?.signal });
+
+      // 停止观察这个占位符，避免重复触发
+      try {
+        observer?.unobserve?.(placeholder);
+      } catch {
+        // ignore
+      }
+    });
+  },
+  {
+    rootMargin: "200px",
+    threshold: [0.1, 0.5],
+  }
+);
 
 // 定时器管理
 const timers = new Set();
@@ -639,44 +679,13 @@ const safeSetTimeout = (callback, delay) => {
   return id;
 };
 
-// 初始化图片懒加载Observer
+// 初始化/重置懒加载观察目标（Observer 实例由 VueUse 管理）
 const initImageLazyLoading = () => {
-  if (imageObserver.value) {
-    imageObserver.value.disconnect();
-  }
-
-  imageObserver.value = new IntersectionObserver(
-    (entries) => {
-      entries.forEach((entry) => {
-        if (entry.isIntersecting) {
-          const placeholder = entry.target;
-          const imagePath = placeholder.dataset.imagePath;
-
-          if (imagePath) {
-            // 查找对应的图片对象
-            const image = imagesByPath.value.get(imagePath);
-            if (image) {
-              // 根据可见比例确定优先级
-              const priority = entry.intersectionRatio > 0.5 ? "high" : "normal";
-              void loadImageUrl(image, { priority, signal: galleryAbortController?.signal });
-              // 停止观察这个占位符
-              imageObserver.value.unobserve(placeholder);
-            }
-          }
-        }
-      });
-    },
-    {
-      rootMargin: "200px",
-      threshold: [0.1, 0.5],
-    }
-  );
+  lazyImageTargets.value = [];
 };
 
 // 观察所有懒加载占位符（带重试机制）
 const observeLazyImages = (retryCount = 0) => {
-  if (!imageObserver.value) return;
-
   // 查找所有懒加载占位符
   const lazyPlaceholders = document.querySelectorAll(".lazy-image");
 
@@ -691,25 +700,18 @@ const observeLazyImages = (retryCount = 0) => {
     return;
   }
 
-  let observedCount = 0;
+  /** @type {HTMLElement[]} */
+  const targets = [];
   lazyPlaceholders.forEach((placeholder) => {
     // 只观察还没有URL的图片
     const imagePath = placeholder.dataset.imagePath;
     const imageState = imageStates.value.get(imagePath);
     if (imageState?.status === "idle") {
-      imageObserver.value.observe(placeholder);
-      observedCount++;
+      targets.push(/** @type {HTMLElement} */ (placeholder));
     }
   });
-};
 
-// 点击外部关闭菜单
-const handleClickOutside = (event) => {
-  // 关闭工具栏菜单
-  if (!event.target.closest(".gallery-toolbar")) {
-    showSortMenu.value = false;
-    showViewSettings.value = false;
-  }
+  lazyImageTargets.value = targets;
 };
 
 // 事件处理 - 集成 PhotoSwipe 预览
@@ -770,36 +772,23 @@ watch(
     safeSetTimeout(() => {
       observeLazyImages();
     }, 100);
-    safeSetTimeout(() => {
-      initLoadMoreObserver();
-    }, 0);
   },
   { flush: "post" }
 );
 
 // 渐进渲染：观察底部哨兵，按需扩展渲染窗口
 const loadMoreSentinelRef = ref(null);
-const loadMoreObserver = ref(null);
-
-const initLoadMoreObserver = () => {
-  if (loadMoreObserver.value) {
-    loadMoreObserver.value.disconnect();
-    loadMoreObserver.value = null;
-  }
-  if (!loadMoreSentinelRef.value) return;
-
-  loadMoreObserver.value = new IntersectionObserver(
-    (entries) => {
-      const entry = entries[0];
-      if (!entry?.isIntersecting) return;
-      if (!hasMoreImages.value) return;
-      loadMoreImages();
-      nextTick(() => observeLazyImages());
-    },
-    { rootMargin: "800px" }
-  );
-  loadMoreObserver.value.observe(loadMoreSentinelRef.value);
-};
+const { stop: stopLoadMoreObserver } = useIntersectionObserver(
+  loadMoreSentinelRef,
+  (entries) => {
+    const entry = entries?.[0];
+    if (!entry?.isIntersecting) return;
+    if (!hasMoreImages.value) return;
+    loadMoreImages();
+    nextTick(() => observeLazyImages());
+  },
+  { rootMargin: "800px" }
+);
 
 // 生命周期
 onMounted(() => {
@@ -809,11 +798,9 @@ onMounted(() => {
   nextTick(() => {
     updateSpacingCSSVariables();
     initImageLazyLoading();
-    initLoadMoreObserver();
   });
 
   safeSetTimeout(() => observeLazyImages(), 100);
-  document.addEventListener("click", handleClickOutside);
 });
 
 // 目录切换/刷新：取消在途加载，避免旧目录请求回写到新目录的状态
@@ -826,25 +813,16 @@ watch(
     initImageLazyLoading();
     nextTick(() => {
       observeLazyImages();
-      initLoadMoreObserver();
     });
   }
 );
 
 onBeforeUnmount(() => {
-  document.removeEventListener("click", handleClickOutside);
-
   timers.forEach((id) => clearTimeout(id));
   timers.clear();
 
-  if (imageObserver.value) {
-    imageObserver.value.disconnect();
-    imageObserver.value = null;
-  }
-  if (loadMoreObserver.value) {
-    loadMoreObserver.value.disconnect();
-    loadMoreObserver.value = null;
-  }
+  stopLazyImageObserver?.();
+  stopLoadMoreObserver?.();
 
   galleryAbortController?.abort();
   galleryAbortController = null;

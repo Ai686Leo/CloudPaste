@@ -51,6 +51,10 @@ const BADGE_THEME_CLASS = {
     light: "bg-gray-100 text-gray-800",
     dark: "bg-gray-700 text-gray-100",
   },
+  telegram: {
+    light: "bg-sky-100 text-sky-700",
+    dark: "bg-sky-800 text-sky-100",
+  },
   default: {
     light: "bg-gray-100 text-gray-700",
     dark: "bg-gray-700 text-gray-300",
@@ -75,6 +79,8 @@ function resolveBadgeTheme(type) {
       return "googledrive";
     case "LOCAL":
       return "local";
+    case "TELEGRAM":
+      return "telegram";
     default:
       return "default";
   }

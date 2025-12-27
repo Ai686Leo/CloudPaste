@@ -96,6 +96,7 @@
 <script setup>
 import { computed, ref, onMounted, onBeforeUnmount, watch, nextTick } from "vue";
 import { useI18n } from "vue-i18n";
+import { useEventListener } from "@vueuse/core";
 import AudioPlayer from "@/components/common/AudioPlayer.vue";
 import { FileType } from "@/utils/fileTypes.js";
 import { useFsService } from "@/modules/fs";
@@ -493,10 +494,12 @@ const handleKeydown = (event) => {
   }
 };
 
+// 注册键盘事件（自动清理）
+useEventListener(document, "keydown", handleKeydown);
+
 // 生命周期钩子
 onMounted(() => {
   originalTitle.value = document.title;
-  document.addEventListener("keydown", handleKeydown);
 
   nextTick(async () => {
     await initializeCurrentAudio();
@@ -506,7 +509,6 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   restoreOriginalTitle();
-  document.removeEventListener("keydown", handleKeydown);
   console.log("🧹 音频预览组件已卸载");
 });
 </script>

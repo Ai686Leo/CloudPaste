@@ -2,6 +2,7 @@
  * 文件搜索组合式函数
  */
 import { ref, computed, watch } from "vue";
+import { useLocalStorage } from "@vueuse/core";
 import { useAuthStore } from "@/stores/authStore.js";
 import { api } from "@/api";
 import { useI18n } from "vue-i18n";
@@ -35,7 +36,7 @@ export function useFileSearch() {
   });
 
   // 搜索历史
-  const searchHistory = ref([]);
+  const searchHistory = useLocalStorage("fileSearchHistory", []);
   const maxHistoryItems = 10;
 
   // 计算属性
@@ -267,26 +268,13 @@ export function useFileSearch() {
 
     // 添加到开头
     searchHistory.value = [trimmedQuery, ...filteredHistory].slice(0, maxHistoryItems);
-
-    // 保存到本地存储
-    try {
-      localStorage.setItem("fileSearchHistory", JSON.stringify(searchHistory.value));
-    } catch (error) {
-      console.warn("保存搜索历史失败:", error);
-    }
   };
 
   /**
    * 加载搜索历史
    */
   const loadSearchHistory = () => {
-    try {
-      const saved = localStorage.getItem("fileSearchHistory");
-      if (saved) {
-        searchHistory.value = JSON.parse(saved);
-      }
-    } catch (error) {
-      console.warn("加载搜索历史失败:", error);
+    if (!Array.isArray(searchHistory.value)) {
       searchHistory.value = [];
     }
   };
@@ -296,11 +284,6 @@ export function useFileSearch() {
    */
   const clearSearchHistory = () => {
     searchHistory.value = [];
-    try {
-      localStorage.removeItem("fileSearchHistory");
-    } catch (error) {
-      console.warn("清除搜索历史失败:", error);
-    }
   };
 
   /**

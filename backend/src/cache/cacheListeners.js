@@ -5,6 +5,7 @@ import { clearUrlCache } from "./UrlCache.js";
 import { clearSearchCache } from "./SearchCache.js";
 import { previewSettingsCache } from "./PreviewSettingsCache.js";
 import { bumpMountsVersion } from "./cacheState.js";
+import { clearTelegramFileInfoCache } from "../storage/drivers/telegram/TelegramFileInfoCache.js";
 
 const logEvent = (message, payload) => {
   try {
@@ -87,6 +88,7 @@ cacheBus.on(CACHE_EVENTS.INVALIDATE, async (payload = {}) => {
       fsFolderSummaryCacheManager.invalidateAll();
       await clearUrlCache();
       clearSearchCache();
+      clearTelegramFileInfoCache();
       logEvent(`缓存全量失效(原因:${reason})`, payload);
       return;
     }

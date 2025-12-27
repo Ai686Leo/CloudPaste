@@ -4,6 +4,7 @@
  */
 
 import { ref, computed, watch } from "vue";
+import { useLocalStorage } from "@vueuse/core";
 import { useI18n } from "vue-i18n";
 import { useFsService } from "@/modules/fs";
 import { decodeImagePreviewUrlToObjectUrl, revokeObjectUrl, shouldAttemptDecodeImagePreview } from "@/utils/imageDecode";
@@ -25,47 +26,13 @@ export function useGalleryView(input = {}) {
   const fsService = useFsService();
   const itemsRef = input.items;
 
-  // ===== localStorage设置管理 =====
-
-  // localStorage键名
-  const STORAGE_KEYS = {
-    COLUMN_COUNT: "gallery_column_count",
-    HORIZONTAL_GAP: "gallery_horizontal_gap",
-    VERTICAL_GAP: "gallery_vertical_gap",
-    SORT_BY: "gallery_sort_by",
-  };
-
-  // 从localStorage恢复设置
-  const getStoredValue = (key, defaultValue) => {
-    try {
-      const stored = localStorage.getItem(key);
-      return stored !== null ? JSON.parse(stored) : defaultValue;
-    } catch (error) {
-      console.warn(`恢复图廊设置失败 (${key}):`, error);
-      return defaultValue;
-    }
-  };
-
-  // 保存设置到localStorage
-  const saveToStorage = (key, value) => {
-    try {
-      localStorage.setItem(key, JSON.stringify(value));
-    } catch (error) {
-      console.warn(`保存图廊设置失败 (${key}):`, error);
-    }
-  };
+  // ===== 设置持久化 =====
+  const columnCount = useLocalStorage("gallery_column_count", "auto");
+  const horizontalGap = useLocalStorage("gallery_horizontal_gap", 16);
+  const verticalGap = useLocalStorage("gallery_vertical_gap", 20);
+  const sortBy = useLocalStorage("gallery_sort_by", "name");
 
   // ===== 图廊设置状态 =====
-
-  // 瀑布流布局控制 - 从localStorage恢复或使用默认值
-  const columnCount = ref(getStoredValue(STORAGE_KEYS.COLUMN_COUNT, "auto"));
-
-  // 分别控制水平和垂直间距 - 从localStorage恢复或使用默认值
-  const horizontalGap = ref(getStoredValue(STORAGE_KEYS.HORIZONTAL_GAP, 16));
-  const verticalGap = ref(getStoredValue(STORAGE_KEYS.VERTICAL_GAP, 20));
-
-  // 排序方式 - 从localStorage恢复或使用默认值
-  const sortBy = ref(getStoredValue(STORAGE_KEYS.SORT_BY, "name"));
 
   // 工具栏状态管理
   const showSortMenu = ref(false);
@@ -369,15 +336,6 @@ export function useGalleryView(input = {}) {
     horizontalGap.value = 16;
     verticalGap.value = 20;
     sortBy.value = "name";
-
-    // 清除localStorage中的设置
-    Object.values(STORAGE_KEYS).forEach((key) => {
-      try {
-        localStorage.removeItem(key);
-      } catch (error) {
-        console.warn(`清除图廊设置失败 (${key}):`, error);
-      }
-    });
   };
 
   // ===== 工具栏交互方法 =====
@@ -405,27 +363,11 @@ export function useGalleryView(input = {}) {
 
   let watchersInitialized = false;
 
-  // 监听设置变化并自动保存到localStorage
+  // 兼容旧调用：保留方法名
   const setupWatchers = () => {
     // 避免重复注册
     if (watchersInitialized) return;
     watchersInitialized = true;
-
-    watch(columnCount, (newValue) => {
-      saveToStorage(STORAGE_KEYS.COLUMN_COUNT, newValue);
-    });
-
-    watch(horizontalGap, (newValue) => {
-      saveToStorage(STORAGE_KEYS.HORIZONTAL_GAP, newValue);
-    });
-
-    watch(verticalGap, (newValue) => {
-      saveToStorage(STORAGE_KEYS.VERTICAL_GAP, newValue);
-    });
-
-    watch(sortBy, (newValue) => {
-      saveToStorage(STORAGE_KEYS.SORT_BY, newValue);
-    });
   };
 
   // 返回所有需要的状态和方法

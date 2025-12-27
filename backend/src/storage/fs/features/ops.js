@@ -3,6 +3,7 @@ import { AppError, DriverError } from "../../../http/errors.js";
 import { CAPABILITIES } from "../../interfaces/capabilities/index.js";
 import { findMountPointByPath } from "../utils/MountResolver.js";
 import { isDirectoryPath, isSelfOrSubPath, normalizePath, resolveCopyTargetPath } from "../utils/PathResolver.js";
+import { normalizeFsViewPath, validateRenameSameDirectory } from "../utils/FsInputValidator.js";
 
 export async function renameItem(fs, oldPath, newPath, userIdOrInfo, userType) {
   // 分别解析旧路径和新路径，确保仍在同一挂载下
@@ -25,6 +26,31 @@ export async function renameItem(fs, oldPath, newPath, userIdOrInfo, userType) {
     throw new DriverError(`存储驱动 ${driver.getType()} 不支持原子操作`, {
       status: ApiStatus.NOT_IMPLEMENTED,
       code: "DRIVER_ERROR.NOT_IMPLEMENTED",
+      expose: true,
+    });
+  }
+
+  // ===== 重命名语义校验 =====
+  // 这里用 subPath 做校验：只在挂载内部对比目录层级，避免挂载前缀影响判断
+  const oldForCheck = typeof oldSubPath === "string" ? oldSubPath : oldPath;
+  const newForCheck = typeof newSubPath === "string" ? newSubPath : newPath;
+  const oldNormalized = normalizeFsViewPath(oldForCheck);
+  const newNormalized = normalizeFsViewPath(newForCheck);
+
+  // 禁止重命名挂载根
+  if (oldNormalized === "/" || newNormalized === "/") {
+    throw new DriverError("不支持重命名挂载根目录", {
+      status: ApiStatus.BAD_REQUEST,
+      code: "FS.RENAME.ROOT_NOT_SUPPORTED",
+      expose: true,
+    });
+  }
+
+  const renameValidation = validateRenameSameDirectory(oldNormalized, newNormalized);
+  if (!renameValidation.valid) {
+    throw new DriverError(renameValidation.message, {
+      status: ApiStatus.BAD_REQUEST,
+      code: "FS.RENAME.INVALID_NAME",
       expose: true,
     });
   }
@@ -334,7 +360,6 @@ async function copyBetweenDrivers(fs, sourceCtx, targetCtx, sourcePath, targetPa
       source: sourcePath,
       target: targetPath,
       uploadResult,
-      // 新增: 返回文件大小信息供任务统计使用
       contentLength: contentLength || 0,
     };
   } catch (error) {

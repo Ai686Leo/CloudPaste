@@ -25,6 +25,8 @@ export const DbTables = {
   SCHEDULED_JOBS: "scheduled_jobs", // 后台调度作业表
   SCHEDULED_JOB_RUNS: "scheduled_job_runs", // 后台调度作业运行日志表
   UPLOAD_SESSIONS: "upload_sessions", // 通用上传会话表（前端分片/断点续传）
+  UPLOAD_PARTS: "upload_parts", // 上传分片明细表（临时账本，一片一行）
+  VFS_NODES: "vfs_nodes", // 虚拟目录树索引表（长期目录树/条目）
 };
 
 // 默认的最大上传大小（MB）

@@ -1,5 +1,5 @@
 <template>
-  <div class="video-player-container" :class="{ 'dark-theme': darkMode }">
+  <div class="video-player-container" :class="{ 'dark-theme': darkMode, 'is-fullscreen': isFullscreen }">
     <div ref="artplayerContainer" class="artplayer-container"></div>
   </div>
 </template>
@@ -7,6 +7,13 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount, watch, nextTick } from "vue";
 import Artplayer from "artplayer";
+
+const getExtLower = (name) => {
+  const n = String(name || "");
+  const idx = n.lastIndexOf(".");
+  if (idx < 0) return "";
+  return n.slice(idx + 1).toLowerCase();
+};
 
 // Props 定义
 const props = defineProps({
@@ -60,6 +67,16 @@ const props = defineProps({
   subtitleUrl: {
     type: String,
     default: "",
+  },
+  // 是否显示全屏按钮
+  showFullscreenControl: {
+    type: Boolean,
+    default: true,
+  },
+  // 外层容器是否处于全屏状态（用于样式控制）
+  isFullscreen: {
+    type: Boolean,
+    default: false,
   },
 
   // 自定义控制器数组
@@ -117,9 +134,8 @@ const getThemeColor = () => {
 };
 
 // 是否应当为当前视频 URL 启用 CORS 模式
-// 说明：
 // - 同源资源：启用 CORS 模式可支持截图等高级能力
-// - 代理链路（linkType=proxy）：由我们控制，预期返回 ACAO 头，启用更安全
+// - 代理链路（linkType=proxy）：预期返回 ACAO 头，启用更安全
 // - 第三方直链（linkType=direct 且跨域）：禁用 CORS 模式，避免 PWA Service Worker 以 cors 请求导致播放失败（如 GitHub Releases 302 链）
 const shouldEnableCorsMode = (rawUrl, linkType) => {
   if (!rawUrl) return false;
@@ -194,12 +210,13 @@ const initArtplayer = async () => {
   // 功能配置
   options.playbackRate = true;
   options.setting = true;
+  options.settings = [];
   options.hotkey = true;
   options.pip = true;
   options.screenshot = true;
   options.miniProgressBar = true;
-  options.fullscreen = true;
-  options.fullscreenWeb = true;
+  options.fullscreen = props.showFullscreenControl;
+  options.fullscreenWeb = props.showFullscreenControl;
   options.flip = true;
   options.aspectRatio = true;
 
@@ -224,6 +241,59 @@ const initArtplayer = async () => {
       encoding: "utf-8",
       escape: true,
     };
+  }
+
+  // 字幕列表
+  const rawTracks = Array.isArray(props.video?.subtitleTracks) ? props.video.subtitleTracks : [];
+  const effectiveTracks =
+    rawTracks.length > 0
+      ? rawTracks
+      : props.showSubtitle && props.subtitleUrl
+        ? [{ name: "字幕", url: props.subtitleUrl, type: "srt", default: true }]
+        : [];
+
+  if (effectiveTracks.length > 0) {
+    const defaultTrack = effectiveTracks.find((t) => t && t.default && t.url) || effectiveTracks.find((t) => t && t.url) || null;
+
+    // 如果外层没显式给 subtitleUrl，但我们有默认字幕，就自动带上
+    if (!options.subtitle && defaultTrack?.url) {
+      options.subtitle = {
+        url: defaultTrack.url,
+        type: String(defaultTrack.type || getExtLower(defaultTrack.name) || "srt"),
+        encoding: "utf-8",
+        escape: true,
+      };
+    }
+
+    const selector = [
+      { default: !defaultTrack, html: "关闭字幕", url: "" },
+      ...effectiveTracks.map((t) => ({
+        default: !!t.default,
+        html: String(t.name || "字幕"),
+        url: String(t.url || ""),
+        type: String(t.type || getExtLower(t.name) || "srt"),
+      })),
+    ];
+
+    options.settings.push({
+      name: "subtitle",
+      html: "字幕",
+      width: 260,
+      tooltip: defaultTrack?.name || "关闭字幕",
+      selector,
+      onSelect: function (item) {
+        const art = artplayerInstance.value;
+        if (!art) return item?.html;
+        const nextUrl = String(item?.url || "");
+        if (!nextUrl) {
+          art.subtitle.show = false;
+          return "关闭字幕";
+        }
+        art.subtitle.url = nextUrl;
+        art.subtitle.show = true;
+        return String(item?.html || "字幕");
+      },
+    });
   }
 
   // 添加跨域支持以启用截图功能
@@ -255,7 +325,7 @@ const initArtplayer = async () => {
     if (artplayerInstance.value.video) {
       if (artplayerInstance.value.video.streamPlayer) {
         artplayerInstance.value.streamPlayer = artplayerInstance.value.video.streamPlayer;
-        console.log("🎬 流媒体播放器实例已转移到Artplayer实例");
+        console.log("流媒体播放器实例已转移到Artplayer实例");
       }
     }
 
@@ -265,7 +335,6 @@ const initArtplayer = async () => {
     // 应用主题样式
     applyThemeStyles();
 
-    // 播放速度由 Artplayer 内置功能提供 (options.playbackRate = true)
 
     emit("ready", artplayerInstance.value);
   } catch (error) {
@@ -277,8 +346,13 @@ const initArtplayer = async () => {
 // 检测流媒体格式
 const detectStreamingFormat = (url, contentType, fileName) => {
   // HLS 检测
-  if (url.toLowerCase().includes(".m3u8") || contentType.includes("mpegurl") || contentType.includes("application/vnd.apple.mpegurl")) {
-    return "hls";
+  if (
+    url.toLowerCase().includes(".m3u8") ||
+    fileName.toLowerCase().endsWith(".m3u8") ||
+    contentType.includes("mpegurl") ||
+    contentType.includes("application/vnd.apple.mpegurl")
+  ) {
+    return "m3u8";
   }
   // MPEG-TS 检测
   if (
@@ -307,23 +381,23 @@ const addStreamingSupport = async (options) => {
   const streamingFormat = detectStreamingFormat(videoUrl, contentType, fileName);
 
   if (!streamingFormat) {
-    console.log("🎬 非流媒体格式，使用默认播放器");
+    console.log("非流媒体格式，使用默认播放器");
     return;
   }
 
-  console.log(`🎬 检测到${streamingFormat.toUpperCase()}格式，正在加载相应播放器...`);
+  console.log(`检测到${streamingFormat.toUpperCase()}格式，正在加载相应播放器...`);
 
   try {
     // 初始化customType对象
     options.customType = options.customType || {};
 
-    if (streamingFormat === "hls") {
+    if (streamingFormat === "m3u8") {
       await setupHLSPlayer(options, videoUrl);
     } else if (streamingFormat === "flv" || streamingFormat === "mpegts") {
       await setupMpegTSPlayer(options, videoUrl, streamingFormat);
     }
   } catch (error) {
-    console.error(`🎬 加载${streamingFormat}播放器失败:`, error);
+    console.error(`加载${streamingFormat}播放器失败:`, error);
     emit("error", {
       type: `${streamingFormat}_load_error`,
       message: `加载${streamingFormat.toUpperCase()}播放器失败: ${error.message}`,
@@ -339,7 +413,7 @@ const setupHLSPlayer = async (options, videoUrl) => {
 
   // 检查浏览器支持
   if (!Hls.default.isSupported()) {
-    console.warn("🎬 当前浏览器不支持HLS播放");
+    console.warn(" 当前浏览器不支持HLS播放");
     emit("error", {
       type: "hls_not_supported",
       message: "当前浏览器不支持HLS播放，请使用Chrome、Firefox或Edge浏览器",
@@ -348,9 +422,101 @@ const setupHLSPlayer = async (options, videoUrl) => {
   }
 
   // 配置HLS自定义类型
-  options.customType.hls = function (video, url) {
-    // 获取HLS分片URL映射
-    const hlsSegmentUrls = props.video?.hlsSegmentUrls;
+  options.customType.m3u8 = function (video, url, art) {
+    const urlTransform = typeof props.video?.hlsUrlTransform === "function" ? props.video.hlsUrlTransform : null;
+
+    const installHlsMenus = (targetArt, hlsInstance) => {
+      // 只在 setting 打开时才加菜单
+      if (!targetArt?.setting || typeof targetArt.setting.add !== "function") return;
+
+      // 1) 清晰度（levels）
+      const updateQuality = () => {
+        const levels = Array.isArray(hlsInstance.levels) ? hlsInstance.levels : [];
+        if (!levels.length) return;
+
+        const auto = hlsInstance.currentLevel === -1 || hlsInstance.autoLevelEnabled === true;
+        const selector = [
+          { default: auto, html: "自动", level: -1 },
+          ...levels.map((lvl, idx) => {
+            const label = lvl?.height ? `${lvl.height}P` : lvl?.bitrate ? `${Math.round(lvl.bitrate / 1000)}kbps` : `L${idx}`;
+            return { default: !auto && hlsInstance.currentLevel === idx, html: label, level: idx };
+          }),
+        ];
+
+        const currentLabel = auto
+          ? "自动"
+          : selector.find((x) => x.default)?.html || "自动";
+
+        const payload = {
+          name: "hls-quality",
+          html: "清晰度",
+          width: 180,
+          tooltip: currentLabel,
+          selector,
+          onSelect: function (item) {
+            const level = Number(item?.level);
+            if (!Number.isFinite(level)) return String(item?.html || "自动");
+            if (level < 0) {
+              hlsInstance.currentLevel = -1;
+              return "自动";
+            }
+            hlsInstance.currentLevel = level;
+            return String(item?.html || "清晰度");
+          },
+        };
+
+        if (!targetArt.__cpHlsQualityInstalled) {
+          targetArt.setting.add(payload);
+          targetArt.__cpHlsQualityInstalled = true;
+        } else if (typeof targetArt.setting.update === "function") {
+          targetArt.setting.update(payload);
+        }
+      };
+
+      // 2) 音轨（audioTracks）
+      const updateAudio = () => {
+        const tracks = Array.isArray(hlsInstance.audioTracks) ? hlsInstance.audioTracks : [];
+        if (tracks.length <= 1) return;
+        const selector = tracks.map((tr, idx) => ({
+          default: hlsInstance.audioTrack === idx,
+          html: String(tr?.name || tr?.lang || `音轨 ${idx + 1}`),
+          track: idx,
+        }));
+        const currentLabel = selector.find((x) => x.default)?.html || "音轨";
+        const payload = {
+          name: "hls-audio",
+          html: "音轨",
+          width: 220,
+          tooltip: currentLabel,
+          selector,
+          onSelect: function (item) {
+            const track = Number(item?.track);
+            if (!Number.isFinite(track) || track < 0) return String(item?.html || "音轨");
+            hlsInstance.audioTrack = track;
+            return String(item?.html || "音轨");
+          },
+        };
+        if (!targetArt.__cpHlsAudioInstalled) {
+          targetArt.setting.add(payload);
+          targetArt.__cpHlsAudioInstalled = true;
+        } else if (typeof targetArt.setting.update === "function") {
+          targetArt.setting.update(payload);
+        }
+      };
+
+      // 触发一次 + 后续在事件里更新
+      updateQuality();
+      updateAudio();
+
+      try {
+        hlsInstance.on(Hls.default.Events.MANIFEST_PARSED, () => updateQuality());
+        hlsInstance.on(Hls.default.Events.LEVEL_SWITCHED, () => updateQuality());
+        hlsInstance.on(Hls.default.Events.AUDIO_TRACKS_UPDATED, () => updateAudio());
+        hlsInstance.on(Hls.default.Events.AUDIO_TRACK_SWITCHED, () => updateAudio());
+      } catch {
+        // ignore
+      }
+    };
 
     const hlsPlayer = new Hls.default({
       debug: false,
@@ -401,29 +567,56 @@ const setupHLSPlayer = async (options, videoUrl) => {
           },
         },
       },
-      // HLS请求拦截和URL重写
-      xhrSetup: function (xhr, requestUrl) {
-        // 检测是否为 .ts 分片文件
-        if (requestUrl.includes(".ts") || requestUrl.includes(".m2ts")) {
-          // 从URL中提取文件名
-          const urlParts = requestUrl.split("/");
-          const fileName = urlParts[urlParts.length - 1].split("?")[0];
-
-          // 查找对应的预签名URL
-          if (hlsSegmentUrls && hlsSegmentUrls.has(fileName)) {
-            const presignedUrl = hlsSegmentUrls.get(fileName);
-
-            // 重写请求URL
-            const originalOpen = xhr.open;
-            xhr.open = function (method, originalUrl, async, user, password) {
-              originalOpen.call(xhr, method, presignedUrl, async, user, password);
-            };
-          } else {
-            console.warn("⚠️ 未找到TS文件的预签名URL:", fileName);
+      // 用自定义 loader 在加载前“改 URL”
+      ...(urlTransform
+        ? {
+            pLoader: class extends Hls.default.DefaultConfig.loader {
+              constructor(config) {
+                super(config);
+                const originalLoad = this.load.bind(this);
+                this.load = function (context, config, callbacks) {
+                  urlTransform(context.url, true)
+                    .then((nextUrl) => {
+                      const finalUrl = nextUrl || context.url;
+                      const complete = callbacks.onSuccess;
+                      callbacks.onSuccess = (loaderResponse, stats, successContext, networkDetails) => {
+                        loaderResponse.url = finalUrl;
+                        complete(loaderResponse, stats, successContext, networkDetails);
+                      };
+                      originalLoad({ ...context, url: finalUrl }, config, callbacks);
+                    })
+                    .catch(() => originalLoad(context, config, callbacks));
+                };
+              }
+            },
+            fLoader: class extends Hls.default.DefaultConfig.loader {
+              constructor(config) {
+                super(config);
+                const originalLoad = this.load.bind(this);
+                this.load = function (context, config, callbacks) {
+                  urlTransform(context.url, false)
+                    .then((nextUrl) => {
+                      const finalUrl = nextUrl || context.url;
+                      const complete = callbacks.onSuccess;
+                      callbacks.onSuccess = (loaderResponse, stats, successContext, networkDetails) => {
+                        loaderResponse.url = finalUrl;
+                        complete(loaderResponse, stats, successContext, networkDetails);
+                      };
+                      // fragment 需要同时改 frag 的 url 字段
+                      originalLoad(
+                        { ...context, frag: { ...(context.frag || {}), relurl: finalUrl, _url: finalUrl }, url: finalUrl },
+                        config,
+                        callbacks,
+                      );
+                    })
+                    .catch(() => originalLoad(context, config, callbacks));
+                };
+              }
+            },
           }
-        }
-
-        // 禁用凭据传递
+        : {}),
+      // 兜底：禁用凭据传递
+      xhrSetup: function (xhr) {
         xhr.withCredentials = false;
       },
     });
@@ -441,7 +634,7 @@ const setupHLSPlayer = async (options, videoUrl) => {
             break;
           default:
             errorMessage = `HLS播放错误: ${data.details || "未知错误"}`;
-            console.error("🔧 HLS致命错误，销毁播放器:", data.details);
+            console.error("HLS致命错误，销毁播放器:", data.details);
             hlsPlayer.destroy();
             break;
         }
@@ -458,26 +651,44 @@ const setupHLSPlayer = async (options, videoUrl) => {
     // 加载HLS源
     hlsPlayer.loadSource(url);
     hlsPlayer.attachMedia(video);
+    // 兜底：让 video 元素也拿到 src
+    if (!video.src) {
+      try {
+        video.src = url;
+      } catch {
+        // ignore
+      }
+    }
 
     // 存储hlsPlayer实例以便后续清理
     video.streamPlayer = hlsPlayer;
-    console.log("🎬 HLS播放器初始化完成");
+    if (art) {
+      art.hls = hlsPlayer;
+      try {
+        art.on("destroy", () => hlsPlayer.destroy());
+      } catch {
+        // ignore
+      }
+      // 菜单：只在 HLS 时出现
+      installHlsMenus(art, hlsPlayer);
+    }
+    console.log("HLS播放器初始化完成");
   };
 
-  // 设置URL类型为hls
-  options.type = "hls";
+  // 设置URL类型为 m3u8
+  options.type = "m3u8";
 };
 
 // 设置 mpegts.js 播放器 (支持 FLV 和 MPEG-TS)
 const setupMpegTSPlayer = async (options, videoUrl, format) => {
-  console.log(`🎬 正在加载 mpegts.js 用于 ${format.toUpperCase()} 播放...`);
+  console.log(`正在加载 mpegts.js 用于 ${format.toUpperCase()} 播放...`);
 
   // 动态导入 mpegts.js
   const mpegts = await import("mpegts.js");
 
   // 检查浏览器支持
-  if (!mpegts.getFeatureList().mseLivePlayback) {
-    console.warn("🎬 当前浏览器不支持MPEG-TS/FLV播放");
+  if (!mpegts.isSupported?.()) {
+    console.warn("当前浏览器不支持MPEG-TS/FLV播放");
     emit("error", {
       type: `${format}_not_supported`,
       message: `当前浏览器不支持${format.toUpperCase()}播放，请使用Chrome、Firefox或Edge浏览器`,
@@ -485,38 +696,39 @@ const setupMpegTSPlayer = async (options, videoUrl, format) => {
     return;
   }
 
-  console.log(`🎬 mpegts.js加载成功，配置${format.toUpperCase()}播放器...`);
+  console.log(`mpegts.js加载成功，配置${format.toUpperCase()}播放器...`);
 
   // 配置自定义类型
   options.customType[format] = function (video, url) {
-    console.log(`🎬 初始化${format.toUpperCase()}播放器，URL:`, url);
+    console.log(`初始化${format.toUpperCase()}播放器，URL:`, url);
+
+    const inferredTsType =
+      format === "flv"
+        ? "flv"
+        : url.toLowerCase().includes(".m2ts") || (props.video?.name || "").toLowerCase().endsWith(".m2ts")
+          ? "m2ts"
+          : "mpegts";
 
     const playerConfig = {
-      type: format === "flv" ? "flv" : "mse",
+      type: inferredTsType,
       isLive: false,
+      cors: true,
+      withCredentials: false,
       url: url,
     };
 
     const mediaConfig = {
-      enableWorker: true,
-      enableStashBuffer: true,
-      stashInitialSize: 128,
-      autoCleanupSourceBuffer: true,
-      autoCleanupMaxBackwardDuration: 20,
-      autoCleanupMinBackwardDuration: 10,
-      fixAudioTimestampGap: true,
       accurateSeek: true,
       seekType: "range",
-      lazyLoad: true,
-      lazyLoadMaxDuration: 60,
-      lazyLoadRecoverDuration: 30,
+      lazyLoadMaxDuration: 5 * 60,
+      reuseRedirectedURL: true,
     };
 
     const streamPlayer = mpegts.createPlayer(playerConfig, mediaConfig);
 
     // 播放器事件处理
     streamPlayer.on(mpegts.Events.ERROR, (errorType, errorDetail) => {
-      console.error(`🎬 ${format.toUpperCase()}播放错误:`, errorType, errorDetail);
+      console.error(`${format.toUpperCase()}播放错误:`, errorType, errorDetail);
 
       let errorMessage = `${format.toUpperCase()}播放出现错误`;
       switch (errorType) {
@@ -542,15 +754,15 @@ const setupMpegTSPlayer = async (options, videoUrl, format) => {
     });
 
     streamPlayer.on(mpegts.Events.LOADING_COMPLETE, () => {
-      console.log(`🎬 ${format.toUpperCase()}加载完成`);
+      console.log(`${format.toUpperCase()}加载完成`);
     });
 
     streamPlayer.on(mpegts.Events.RECOVERED_EARLY_EOF, () => {
-      console.log(`🎬 ${format.toUpperCase()}早期EOF恢复`);
+      console.log(`${format.toUpperCase()}早期EOF恢复`);
     });
 
     streamPlayer.on(mpegts.Events.MEDIA_INFO, (mediaInfo) => {
-      console.log(`🎬 ${format.toUpperCase()}媒体信息:`, mediaInfo);
+      console.log(`${format.toUpperCase()}媒体信息:`, mediaInfo);
     });
 
     // 绑定到video元素并加载
@@ -560,13 +772,13 @@ const setupMpegTSPlayer = async (options, videoUrl, format) => {
     // 存储streamPlayer实例以便后续清理
     video.streamPlayer = streamPlayer;
 
-    console.log(`🎬 ${format.toUpperCase()}播放器初始化完成`);
+    console.log(`${format.toUpperCase()}播放器初始化完成`);
   };
 
   // 设置URL类型
   options.type = format;
 
-  console.log(`🎬 ${format.toUpperCase()}支持配置完成`);
+  console.log(` ${format.toUpperCase()}支持配置完成`);
 };
 
 // 绑定事件监听器
@@ -957,94 +1169,26 @@ onBeforeUnmount(() => {
 
 .artplayer-container {
   width: 100%;
-  height: 480px; /* 明确设置高度，确保播放器有足够空间 */
+  aspect-ratio: 16 / 9;
+  max-height: 80vh;
   min-height: 200px;
+}
+
+/* 全屏模式：通过 prop 控制，移除宽高比和最大高度限制 */
+.is-fullscreen .artplayer-container {
+  aspect-ratio: unset;
+  max-height: none;
+  height: 100%;
 }
 </style>
 
 <style>
-/* Artplayer 深色模式样式 */
-.dark-theme .art-video-player {
-  background: #1f2937 !important;
-}
-
-.dark-theme .art-bottom {
-  background: linear-gradient(transparent, rgba(31, 41, 55, 0.8)) !important;
-}
-
-.dark-theme .art-controls {
-  background: rgba(31, 41, 55, 0.9) !important;
-}
-
-.dark-theme .art-control-progress {
-  background: rgba(156, 163, 175, 0.3) !important; /* 进度条容器背景 - 浅灰色 */
-}
-
-.dark-theme .art-control-progress-inner {
-  background: transparent !important; /* 内容容器背景透明 */
-}
-
-.dark-theme .art-progress-loaded {
-  background: rgba(139, 92, 246, 0.4) !important; /* 已加载进度 - 紫色40%透明度 */
-}
-
-.dark-theme .art-progress-played {
-  background: var(--art-theme, #8b5cf6) !important; /* 已播放进度 - 紫色100% */
-}
-
-.dark-theme .art-progress-indicator {
-  background: var(--art-theme, #8b5cf6) !important; /* 进度指示器 - 紫色100% */
-}
-
-.dark-theme .art-control .art-icon {
-  color: #f9fafb !important;
-}
-
-.dark-theme .art-control .art-icon:hover {
-  color: var(--art-theme, #8b5cf6) !important;
-}
-
-.dark-theme .art-control-time {
-  color: #d1d5db !important;
-}
-
-.dark-theme .art-setting {
-  background: rgba(31, 41, 55, 0.95) !important;
-  border: 1px solid #374151 !important;
-}
-
-.dark-theme .art-setting-item {
-  color: #f9fafb !important;
-  border-bottom: 1px solid #374151 !important;
-}
-
-.dark-theme .art-setting-item:hover {
-  background: rgba(55, 65, 81, 0.5) !important;
-}
-
-.dark-theme .art-contextmenu {
-  background: rgba(31, 41, 55, 0.95) !important;
-  border: 1px solid #374151 !important;
-}
-
-.dark-theme .art-contextmenu-item {
-  color: #f9fafb !important;
-  border-bottom: 1px solid #374151 !important;
-}
-
-.dark-theme .art-contextmenu-item:hover {
-  background: rgba(55, 65, 81, 0.5) !important;
-}
-
-.dark-theme .art-info {
-  background: rgba(31, 41, 55, 0.95) !important;
-  color: #f9fafb !important;
-  border: 1px solid #374151 !important;
-}
-
-.dark-theme .art-subtitle {
-  color: #f9fafb !important;
-  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8) !important;
+/* 播放器自身全屏时的样式 */
+.artplayer-container:fullscreen,
+.art-video-player:fullscreen {
+  width: 100vw !important;
+  height: 100vh !important;
+  border-radius: 0 !important;
 }
 
 /* 响应式设计 */
@@ -1052,23 +1196,11 @@ onBeforeUnmount(() => {
   .artplayer-container {
     min-height: 180px;
   }
-
-  .dark-theme .art-controls {
-    padding: 5px 10px !important;
-  }
-
-  .dark-theme .art-control {
-    margin: 0 3px !important;
-  }
 }
 
 /* 确保播放器在容器中正确显示 */
 .artplayer-container .art-video-player {
   border-radius: 8px;
   overflow: hidden;
-}
-
-.dark-theme .artplayer-container .art-video-player {
-  border: 1px solid #374151;
 }
 </style>

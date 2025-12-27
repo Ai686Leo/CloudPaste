@@ -230,10 +230,6 @@ import Dashboard from "@uppy/dashboard";
 // 导入Uppy样式
 import "@uppy/core/dist/style.min.css";
 import "@uppy/dashboard/dist/style.min.css";
-import "@uppy/webcam/dist/style.min.css";
-import "@uppy/screen-capture/dist/style.min.css";
-import "@uppy/audio/dist/style.min.css";
-import "@uppy/image-editor/dist/style.min.css";
 
 // 导入共享CSS
 import "@/styles/uppy-dashboard.css";
@@ -250,7 +246,9 @@ import UppyDashboardContainer from "@/components/uppy/UppyDashboardContainer.vue
 import { resolveDriverByConfigId } from "@/modules/storage-core/drivers/registry.js";
 import { useShareUploadController, useShareUploadDomain, useUploadService } from "@/modules/upload";
 import { useShareSettingsForm } from "@/composables/upload/useShareSettingsForm.js";
-import { useFileshareService } from "@/modules/fileshare";
+// ⚠️ 性能：不要从 "@/modules/fileshare" 聚合入口导入
+// 因为它会连带引入 FileView / FileManagementView 等大组件，导致上传页首屏 JS 体积暴涨。
+import { useFileshareService } from "@/modules/fileshare/fileshareService.js";
 import { createUppyPluginManager } from "@/modules/storage-core/uppy/UppyPluginManager.js";
 import { formatFileSize } from "@/utils/fileUtils.js";
 import { validateUrlInfo, fetchUrlContent } from "@/api/services/urlUploadService.js";
@@ -505,7 +503,7 @@ const setupUppy = async ({ preserveFiles = false } = {}) => {
     });
 
     uppyInstance.value.use(Dashboard, getDashboardConfig());
-    pluginManager.addPluginsToUppy();
+    await pluginManager.addPluginsToUppy();
 
     restoreFiles(preservedFiles);
   } catch (error) {

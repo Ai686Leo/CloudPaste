@@ -52,6 +52,7 @@
 
 <script setup>
 import { nextTick, onBeforeUnmount, watch, ref } from "vue";
+import { useEventListener } from "@vueuse/core";
 import { usePhotoSwipe } from "@/composables/ui-interaction/usePhotoSwipe";
 import { useFsService } from "@/modules/fs";
 import { useFsMediaLightbox } from "../../composables/useFsMediaLightbox";
@@ -270,9 +271,11 @@ const onKeyDown = (e) => {
   }
 };
 
+// 注册键盘事件（自动清理；内部会根据 isOpen 判断是否处理）
+useEventListener(window, "keydown", onKeyDown, { passive: false });
+
 const cleanup = () => {
   stopSlideshow();
-  window.removeEventListener("keydown", onKeyDown);
   unlockBodyScroll();
   closePhotoSwipe();
   destroyPhotoSwipe();
@@ -298,7 +301,6 @@ watch(
     await nextTick();
 
     lockBodyScroll();
-    window.addEventListener("keydown", onKeyDown, { passive: false });
 
     // PhotoSwipe 容器与外部控制回调
     setAppendToEl(pswpHostRef.value);

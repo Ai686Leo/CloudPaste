@@ -75,6 +75,10 @@ export default {
         name: "Multipart Upload Session Management",
         description: "Multipart upload session records and status",
       },
+      vfs_management: {
+        name: "VFS Management",
+        description: "Virtual directory tree index. Recommended to backup with 'Storage Config' and 'Mount Management'",
+      },
     },
 
     // Logs and status messages

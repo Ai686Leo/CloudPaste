@@ -98,7 +98,7 @@ export class ObjectStore {
     };
   }
 
-  async uploadDirect({ storage_config_id, directory, filename, bodyStream, size, contentType, uploadId = null }) {
+  async uploadDirect({ storage_config_id, directory, filename, bodyStream, size, contentType, uploadId = null, userIdOrInfo = null, userType = null }) {
     const storageConfig = await this._getStorageConfig(storage_config_id);
     if (!storageConfig.storage_type) {
       throw new ValidationError("存储配置缺少 storage_type");
@@ -122,6 +122,8 @@ export class ObjectStore {
       contentType,
       contentLength: size,
       uploadId: uploadId || undefined,
+      userIdOrInfo,
+      userType,
     });
 
     // 触发与存储配置相关的缓存失效（清理URL缓存，联动关联挂载目录缓存）
@@ -149,7 +151,7 @@ export class ObjectStore {
    * @param {number} params.size
    * @param {string|null} params.contentType
    */
-  async uploadFileForShare({ storage_config_id, directory, filename, file, size, contentType, uploadId = null }) {
+  async uploadFileForShare({ storage_config_id, directory, filename, file, size, contentType, uploadId = null, userIdOrInfo = null, userType = null }) {
     const storageConfig = await this._getStorageConfig(storage_config_id);
     if (!storageConfig.storage_type) {
       throw new ValidationError("存储配置缺少 storage_type");
@@ -173,6 +175,8 @@ export class ObjectStore {
       contentType: contentType || undefined,
       contentLength: size,
       uploadId: uploadId || undefined,
+      userIdOrInfo,
+      userType,
     });
 
     try {

@@ -134,95 +134,42 @@ jobs:
         run: |
           npx wrangler d1 execute cloudpaste-db --file=./schema.sql || echo "表可能已存在，继续部署"
 
-      - name: Set ENCRYPTION_SECRET environment variable
+      - name: Resolve ENCRYPTION_SECRET for deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          echo "检查ENCRYPTION_SECRET配置情况..."
+          echo "检查 ENCRYPTION_SECRET 配置..."
 
-          # 1. 检查wrangler.toml中是否有硬编码的ENCRYPTION_SECRET
-          if grep -q "ENCRYPTION_SECRET =" wrangler.toml; then
-            echo "⚠️ 检测到wrangler.toml中存在硬编码的ENCRYPTION_SECRET"
-            echo "为确保GitHub Actions的密钥设置生效，将从wrangler.toml中移除硬编码密钥"
-
-            # 临时备份wrangler.toml
-            cp wrangler.toml wrangler.toml.bak
-
-            # 移除硬编码的ENCRYPTION_SECRET行
-            sed -i '/ENCRYPTION_SECRET =/d' wrangler.toml
-
-            echo "✅ 已从wrangler.toml中移除硬编码的ENCRYPTION_SECRET"
-          else
-            echo "✅ wrangler.toml中未检测到硬编码的ENCRYPTION_SECRET"
-          fi
-
-          # 2. 检查GitHub中是否已配置ENCRYPTION_SECRET
-          if [[ -n "${{ secrets.ENCRYPTION_SECRET }}" ]]; then
-            echo "✅ GitHub中已配置ENCRYPTION_SECRET"
-            GITHUB_HAS_SECRET=true
-          else
-            echo "⚠️ GitHub中未配置ENCRYPTION_SECRET"
-            GITHUB_HAS_SECRET=false
-          fi
-
-          # 3. 检查Worker中是否已存在ENCRYPTION_SECRET (作为secret变量)
+          # 1) 如果 Worker 里已存在 ENCRYPTION_SECRET（作为 Secret），则保持不变（跳过）
           set +e
           SECRET_LIST_OUTPUT=$(npx wrangler secret list 2>&1)
           set -e
-
           if echo "$SECRET_LIST_OUTPUT" | grep -q "ENCRYPTION_SECRET"; then
-            echo "✅ Worker中已存在ENCRYPTION_SECRET(作为secret变量)"
-            WORKER_HAS_SECRET=true
-          else
-            echo "⚠️ Worker中未检测到ENCRYPTION_SECRET(作为secret变量)"
-            WORKER_HAS_SECRET=false
+            echo "✅ Worker 已存在 ENCRYPTION_SECRET（Secret），保持不变"
+            exit 0
           fi
 
-          # 如果Worker中已有密钥，则跳过创建
-          if [[ "$WORKER_HAS_SECRET" == "true" ]]; then
-            echo "✅ Worker中已存在ENCRYPTION_SECRET(作为secret变量)，跳过创建步骤"
+          # 2) 如果 GitHub Secrets 里配置了 ENCRYPTION_SECRET，则使用
+          if [[ -n "${{ secrets.ENCRYPTION_SECRET }}" ]]; then
+            echo "✅ 使用 GitHub Secrets 中的 ENCRYPTION_SECRET"
+            ENCRYPTION_VALUE="${{ secrets.ENCRYPTION_SECRET }}"
+            ENCRYPTION_ESCAPED=$(printf '%s' "$ENCRYPTION_VALUE" | sed -e 's/[\\/&]/\\&/g')
+
+            if grep -q "^ENCRYPTION_SECRET =" wrangler.toml; then
+              sed -i -E "s/^ENCRYPTION_SECRET = \".*\"$/ENCRYPTION_SECRET = \"${ENCRYPTION_ESCAPED}\"/" wrangler.toml
+            else
+              sed -i -E "/^\\[vars\\]$/a\\ENCRYPTION_SECRET = \"${ENCRYPTION_ESCAPED}\"" wrangler.toml
+            fi
+            exit 0
+          fi
+
+          # 3) GitHub 没配：用 wrangler.toml 
+          if grep -q "^ENCRYPTION_SECRET =" wrangler.toml; then
+            echo "✅ 使用 wrangler.toml 中的 ENCRYPTION_SECRET"
           else
-            # 确定要使用的密钥值
-            if [[ "$GITHUB_HAS_SECRET" == "true" ]]; then
-              echo "使用GitHub中配置的ENCRYPTION_SECRET值"
-              ENCRYPTION_VALUE="${{ secrets.ENCRYPTION_SECRET }}"
-            else
-              echo "生成随机ENCRYPTION_SECRET值"
-              ENCRYPTION_VALUE=$(openssl rand -base64 32)
-            fi
-
-            # 设置密钥到Worker
-            set +e
-            echo "正在设置ENCRYPTION_SECRET..."
-            SECRET_PUT_OUTPUT=$(echo "$ENCRYPTION_VALUE" | npx wrangler secret put ENCRYPTION_SECRET 2>&1)
-            SECRET_RESULT=$?
-            set -e
-
-            echo "Secret put 输出:"
-            echo "$SECRET_PUT_OUTPUT" | grep -v "Please update to the latest version"
-
-            if [ $SECRET_RESULT -ne 0 ]; then
-              # 如果错误是由于密钥已存在导致的，视为成功
-              if echo "$SECRET_PUT_OUTPUT" | grep -q -E "(already in use|already exists|conflict)"; then
-                echo "⚠️ 密钥已存在于Worker中但未被列表命令检测到，继续执行"
-              else
-                # 最后再检查一次是否因为密钥已存在但未被正确检测
-                set +e
-                FINAL_CHECK=$(npx wrangler secret list 2>&1)
-                set -e
-
-                if echo "$FINAL_CHECK" | grep -q "ENCRYPTION_SECRET"; then
-                  echo "虽然设置密钥失败，但密钥似乎已存在于Worker中，继续执行"
-                else
-                  echo "❌ 设置密钥失败，且密钥确实不存在，退出部署"
-                  echo "详细错误信息: $SECRET_PUT_OUTPUT"
-                  exit 1
-                fi
-              fi
-            else
-              echo "✅ ENCRYPTION_SECRET 已成功创建(作为secret变量)"
-            fi
+            echo "❌ 缺少 ENCRYPTION_SECRET：GitHub Secrets 未配置，wrangler.toml 也没写"
+            exit 1
           fi
 
       - name: Deploy to Cloudflare Workers

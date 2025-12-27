@@ -21,6 +21,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { useResizeObserver } from "@vueuse/core";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { IconMinus, IconPlus } from "@/components/icons";
@@ -98,7 +99,9 @@ const attributionText = computed(() => {
 let map = null;
 let marker = null;
 let tileLayer = null;
-let resizeObserver = null;
+const { stop: stopResizeObserver } = useResizeObserver(mapEl, () => {
+  if (map) map.invalidateSize({ animate: false });
+});
 
 let providerIndex = 0;
 let tileErrorCount = 0;
@@ -256,13 +259,6 @@ const initMap = () => {
   requestAnimationFrame(() => {
     if (map) map.invalidateSize({ animate: false });
   });
-
-  if (typeof ResizeObserver !== "undefined") {
-    resizeObserver = new ResizeObserver(() => {
-      if (map) map.invalidateSize({ animate: false });
-    });
-    resizeObserver.observe(mapEl.value);
-  }
 };
 
 onMounted(() => {
@@ -288,13 +284,7 @@ watch(
 onBeforeUnmount(() => {
   clearLoadTimer();
   destroyTileLayer();
-  if (resizeObserver) {
-    try {
-      resizeObserver.disconnect();
-    } catch {
-      // ignore
-    }
-  }
+  stopResizeObserver?.();
   if (map) {
     try {
       map.remove();

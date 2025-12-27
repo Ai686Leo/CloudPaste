@@ -74,7 +74,9 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch, nextTick } from "vue";
+import { ref, computed, onMounted, watch, nextTick } from "vue";
+import { onKeyStroke } from "@vueuse/core";
+import { useLocalStorage } from "@vueuse/core";
 import { useI18n } from "vue-i18n";
 import { loadVditor, VDITOR_ASSETS_BASE } from "@/utils/vditorLoader.js";
 import { IconCheck, IconClose, IconInformationCircle } from "@/components/icons";
@@ -105,6 +107,7 @@ const titleId = `announcement-title-${Math.random().toString(36).substr(2, 9)}`;
 // 用户关闭状态管理
 const STORAGE_KEY = "cloudpaste_announcement_dismissed";
 const MAX_DISMISSED_COUNT = 7; // 最多记住7个公告
+const dismissedState = useLocalStorage(STORAGE_KEY, "");
 
 // 生成内容唯一标识
 const getContentKey = (content) => {
@@ -123,15 +126,14 @@ const getContentKey = (content) => {
 // 检查是否已被用户关闭
 const isDismissed = (contentKey) => {
   if (!contentKey) return false;
-  const dismissed = localStorage.getItem(STORAGE_KEY);
-  return dismissed && dismissed.includes(contentKey);
+  return dismissedState.value && dismissedState.value.includes(contentKey);
 };
 
 // 标记为已关闭
 const markDismissed = (contentKey) => {
   if (!contentKey) return;
 
-  const dismissed = localStorage.getItem(STORAGE_KEY) || "";
+  const dismissed = dismissedState.value || "";
   let dismissedArray = dismissed ? dismissed.split(",").filter(Boolean) : [];
 
   // 添加新的哈希（如果不存在）
@@ -144,7 +146,7 @@ const markDismissed = (contentKey) => {
     dismissedArray = dismissedArray.slice(-MAX_DISMISSED_COUNT);
   }
 
-  localStorage.setItem(STORAGE_KEY, dismissedArray.join(","));
+  dismissedState.value = dismissedArray.join(",");
 };
 
 // 使用 Vditor 渲染 Markdown 内容
@@ -211,11 +213,11 @@ const handleBackdropClick = () => {
 };
 
 // 键盘事件处理
-const handleKeydown = (event) => {
-  if (event.key === "Escape" && showModal.value) {
+onKeyStroke("Escape", () => {
+  if (showModal.value) {
     closeModal();
   }
-};
+});
 
 // 检查是否应该显示公告
 const checkShouldShow = async () => {
@@ -236,11 +238,6 @@ const checkShouldShow = async () => {
 
 onMounted(() => {
   checkShouldShow();
-  document.addEventListener("keydown", handleKeydown);
-});
-
-onUnmounted(() => {
-  document.removeEventListener("keydown", handleKeydown);
 });
 
 // 监听 props 变化

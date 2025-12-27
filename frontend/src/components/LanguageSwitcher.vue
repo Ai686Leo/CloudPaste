@@ -1,6 +1,7 @@
 <template>
   <button
     type="button"
+    ref="buttonRef"
     @click="toggleLanguageMenu"
     :class="[
       'p-2 rounded-full focus:outline-none transition-colors relative',
@@ -49,7 +50,8 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from "vue";
+import { ref, computed, onMounted } from "vue";
+import { useLocalStorage, onClickOutside } from "@vueuse/core";
 import { useI18n } from "vue-i18n";
 import { saveLanguagePreference } from "../i18n";
 import { IconTranslate } from "@/components/icons";
@@ -62,15 +64,16 @@ const props = defineProps({
 });
 
 const { locale, t } = useI18n();
+const buttonRef = ref(null);
 const showLanguageMenu = ref(false);
 const currentLanguage = computed(() => locale.value);
+const storedLanguage = useLocalStorage("language", locale.value);
 
 // 初始化时检查当前语言
 onMounted(() => {
   // 确保语言与本地存储一致
-  const savedLang = localStorage.getItem("language");
-  if (savedLang && savedLang !== locale.value) {
-    locale.value = savedLang;
+  if (storedLanguage.value && storedLanguage.value !== locale.value) {
+    locale.value = storedLanguage.value;
   }
 });
 
@@ -89,20 +92,9 @@ const changeLanguage = (lang) => {
   window.dispatchEvent(new CustomEvent("languageChanged", { detail: { locale: lang } }));
 };
 
-// 点击外部区域关闭菜单
-const handleClickOutside = (event) => {
-  const target = event.target;
-  if (showLanguageMenu.value && !target.closest("button")) {
-    showLanguageMenu.value = false;
-  }
-};
-
-// 挂载和卸载点击外部关闭事件
-onMounted(() => {
-  document.addEventListener("click", handleClickOutside);
-});
-
-onBeforeUnmount(() => {
-  document.removeEventListener("click", handleClickOutside);
+// 点击外部关闭菜单（VueUse 自动管理监听器与清理）
+onClickOutside(buttonRef, () => {
+  if (!showLanguageMenu.value) return;
+  showLanguageMenu.value = false;
 });
 </script>

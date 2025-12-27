@@ -593,7 +593,7 @@ export async function handlePropfind(c, path, userId, userType, db) {
     const { getEncryptionSecret } = await import("../../utils/environmentUtils.js");
     const encryptionSecret = getEncryptionSecret(c);
     const repositoryFactory = c.get("repos");
-    return await processPropfindRequest(path, requestInfo, userIdOrInfo, actualUserType, db, encryptionSecret, repositoryFactory);
+    return await processPropfindRequest(path, requestInfo, userIdOrInfo, actualUserType, db, encryptionSecret, repositoryFactory, c.env);
   }, { includeDetails: false });
 }
 
@@ -606,9 +606,10 @@ export async function handlePropfind(c, path, userId, userType, db) {
  * @param {D1Database} db - 数据库实例
  * @param {string} encryptionSecret - 加密密钥
  * @param {RepositoryFactory} repositoryFactory - 仓储工厂实例
+ * @param {Object} env - Worker/Hono 环境
  * @returns {Response} HTTP响应
  */
-async function processPropfindRequest(path, requestInfo, userIdOrInfo, actualUserType, db, encryptionSecret, repositoryFactory) {
+async function processPropfindRequest(path, requestInfo, userIdOrInfo, actualUserType, db, encryptionSecret, repositoryFactory, env) {
   try {
     // 检查API密钥用户的路径权限
     if (actualUserType === UserType.API_KEY) {
@@ -628,7 +629,7 @@ async function processPropfindRequest(path, requestInfo, userIdOrInfo, actualUse
     }
 
     // 处理实际存储路径
-    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory, { env: c.env });
+    const mountManager = new MountManager(db, encryptionSecret, repositoryFactory, { env });
     const fileSystem = new FileSystem(mountManager);
 
     return await handleStoragePropfind(fileSystem, path, requestInfo, userIdOrInfo, actualUserType);

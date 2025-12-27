@@ -4,6 +4,8 @@
  * 支持本地开发、生产和Docker部署环境
  */
 
+import { useLocalStorage } from "@vueuse/core";
+
 // 默认的开发环境API基础URL
 const DEFAULT_DEV_API_URL = "http://localhost:8787";
 
@@ -26,7 +28,7 @@ function getApiBaseUrl() {
 
   // 非Docker环境下才检查localStorage
   if (!isDockerEnvironment() && typeof window !== "undefined" && window.localStorage) {
-    const storedUrl = localStorage.getItem("vite-api-base-url");
+    const storedUrl = useLocalStorage("vite-api-base-url", "").value;
     if (storedUrl) {
       console.log("非Docker环境：使用localStorage中的后端URL:", storedUrl);
       return storedUrl;

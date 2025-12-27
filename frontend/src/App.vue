@@ -1,6 +1,7 @@
 <script setup>
-import { ref, onMounted, onBeforeUnmount, computed } from "vue";
+import { ref, onMounted, computed } from "vue";
 import { useRoute } from "vue-router";
+import { useEventListener } from "@vueuse/core";
 import EnvSwitcher from "./components/EnvSwitcher.vue";
 import LanguageSwitcher from "./components/LanguageSwitcher.vue";
 import PWAInstallPrompt from "./components/PWAInstallPrompt.vue";
@@ -11,7 +12,7 @@ import FooterMarkdownRenderer from "./modules/admin/components/FooterMarkdownRen
 import { useGlobalMessage } from "@/composables/core/useGlobalMessage.js";
 import { useThemeMode } from "@/composables/core/useThemeMode.js";
 import { IconClose, IconComputerDesktop, IconGithub, IconHamburger, IconMoon, IconSun } from "@/components/icons";
-import { Notivue, NotivueSwipe, Notification, NotificationProgress } from "notivue";
+import { Notivue, NotivueSwipe, Notification } from "notivue";
 import { cloudPasteLightTheme, cloudPasteDarkTheme } from "@/styles/notivueTheme";
 
 const route = useRoute();
@@ -50,6 +51,11 @@ const isDev = import.meta.env.DEV;
   const shouldShowFooter = computed(() => {
     // 管理面板页面不显示页脚
     if (activePage.value === "admin") {
+      return false;
+    }
+
+    // 站点配置还没初始化完之前，不要先按默认值显示页脚
+    if (!siteConfigStore.isInitialized) {
       return false;
     }
 
@@ -96,15 +102,11 @@ const isDev = import.meta.env.DEV;
 
     console.log("应用初始化完成");
 
-    window.addEventListener("global-message", handleGlobalMessageEvent);
-    window.addEventListener("global-message-clear", handleGlobalMessageClearEvent);
+    useEventListener(window, "global-message", handleGlobalMessageEvent);
+    useEventListener(window, "global-message-clear", handleGlobalMessageClearEvent);
   });
 
-  // 组件卸载时不再需要额外清理主题监听（由 useThemeMode 管理）
-  onBeforeUnmount(() => {
-    window.removeEventListener("global-message", handleGlobalMessageEvent);
-    window.removeEventListener("global-message-clear", handleGlobalMessageClearEvent);
-  });
+
 </script>
 
 <template>
@@ -344,9 +346,7 @@ const isDev = import.meta.env.DEV;
         <Notification
           :item="item"
           :theme="isDarkMode ? cloudPasteDarkTheme : cloudPasteLightTheme"
-        >
-          <NotificationProgress :item="item" />
-        </Notification>
+        />
       </NotivueSwipe>
     </Notivue>
   </div>

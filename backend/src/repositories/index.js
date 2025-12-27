@@ -13,6 +13,8 @@ export { PasteRepository } from "./PasteRepository.js";
 export { SystemRepository } from "./SystemRepository.js";
 export { PrincipalStorageAclRepository } from "./PrincipalStorageAclRepository.js";
 export { FsMetaRepository } from "./FsMetaRepository.js";
+export { UploadPartsRepository } from "./UploadPartsRepository.js";
+export { VfsNodesRepository } from "./VfsNodesRepository.js";
 
 // 导入所有Repository类用于工厂类
 import { BaseRepository } from "./BaseRepository.js";
@@ -25,6 +27,8 @@ import { PasteRepository } from "./PasteRepository.js";
 import { SystemRepository } from "./SystemRepository.js";
 import { PrincipalStorageAclRepository } from "./PrincipalStorageAclRepository.js";
 import { FsMetaRepository } from "./FsMetaRepository.js";
+import { UploadPartsRepository } from "./UploadPartsRepository.js";
+import { VfsNodesRepository } from "./VfsNodesRepository.js";
 import { createDbRuntime } from "../db/runtime.js";
 
 /**
@@ -135,6 +139,28 @@ export class RepositoryFactory {
   }
 
   /**
+   * 获取 UploadPartsRepository 实例
+   * @returns {UploadPartsRepository}
+   */
+  getUploadPartsRepository() {
+    if (!this._repositories.has("uploadParts")) {
+      this._repositories.set("uploadParts", new UploadPartsRepository(this.db, this.dialect));
+    }
+    return this._repositories.get("uploadParts");
+  }
+
+  /**
+   * 获取 VfsNodesRepository 实例
+   * @returns {VfsNodesRepository}
+   */
+  getVfsNodesRepository() {
+    if (!this._repositories.has("vfsNodes")) {
+      this._repositories.set("vfsNodes", new VfsNodesRepository(this.db, this.dialect));
+    }
+    return this._repositories.get("vfsNodes");
+  }
+
+  /**
    * 清理所有Repository实例缓存
    */
   clearCache() {
@@ -156,6 +182,8 @@ export class RepositoryFactory {
       system: this.getSystemRepository(),
       principalStorageAcl: this.getPrincipalStorageAclRepository(),
       fsMeta: this.getFsMetaRepository(),
+      uploadParts: this.getUploadPartsRepository(),
+      vfsNodes: this.getVfsNodesRepository(),
     };
   }
 

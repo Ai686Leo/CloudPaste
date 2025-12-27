@@ -12,7 +12,9 @@ COPY backend/package.json backend/package-lock.json ./
 
 # 构建期依赖：用于编译 sqlite3/better-sqlite3 等原生模块
 RUN apk add --no-cache --virtual .build-deps python3 make g++ sqlite-dev && \
-    npm ci --include=optional --no-audit --no-fund && \
+    npm ci --omit=dev --include=optional --no-audit --no-fund --cache /tmp/npm-cache && \
+    rm -rf /tmp/npm-cache && \
+    find node_modules -type f \( -name "*.d.ts" -o -name "*.map" -o -name "*.md" -o -name "*.markdown" \) -delete && \
     apk del .build-deps
 
 # 第二阶段：创建最终镜像
@@ -44,4 +46,4 @@ ENV ENCRYPTION_SECRET=default-encryption-key
 EXPOSE 8787
 
 # 启动命令
-CMD ["npx", "tsx", "--expose-gc", "unified-entry.js"]
+CMD ["node", "--expose-gc", "--import", "tsx", "unified-entry.js"]

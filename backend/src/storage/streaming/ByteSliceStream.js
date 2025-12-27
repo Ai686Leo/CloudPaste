@@ -77,8 +77,67 @@ export function createByteSliceStream(start, end) {
  * @returns {ReadableStream<Uint8Array>} 切片后的流
  */
 export function wrapStreamWithByteSlice(fullStream, start, end) {
-  const sliceStream = createByteSliceStream(start, end);
-  return fullStream.pipeThrough(sliceStream);
+  const reader = fullStream.getReader();
+  let position = 0;
+  let finished = false;
+
+  const closeUpstream = async () => {
+    try {
+      await reader.cancel();
+    } catch {
+      // ignore
+    }
+  };
+
+  return new ReadableStream({
+    async pull(controller) {
+      if (finished) return;
+      try {
+        const { done, value } = await reader.read();
+        if (done) {
+          finished = true;
+          controller.close();
+          return;
+        }
+
+        const data = value instanceof Uint8Array ? value : new Uint8Array(value);
+        const chunkStart = position;
+        const chunkEnd = position + data.byteLength - 1;
+        position += data.byteLength;
+
+        if (chunkEnd < start) {
+          return;
+        }
+
+        if (chunkStart > end) {
+          finished = true;
+          await closeUpstream();
+          controller.close();
+          return;
+        }
+
+        const sliceStart = Math.max(0, start - chunkStart);
+        const sliceEnd = Math.min(data.byteLength, end - chunkStart + 1);
+        if (sliceStart < sliceEnd) {
+          controller.enqueue(data.subarray(sliceStart, sliceEnd));
+        }
+
+        if (chunkEnd >= end) {
+          finished = true;
+          await closeUpstream();
+          controller.close();
+        }
+      } catch (e) {
+        finished = true;
+        await closeUpstream();
+        controller.error(e);
+      }
+    },
+    async cancel() {
+      finished = true;
+      await closeUpstream();
+    },
+  });
 }
 
 /**
@@ -101,7 +160,7 @@ export function wrapNodeStreamWithByteSlice(nodeStream, start, end) {
         }
 
         // 确保 chunk 是 Uint8Array
-        const data = chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk);
+        const data = typeof chunk === "string" ? Buffer.from(chunk) : chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk);
 
         const chunkStart = position;
         const chunkEnd = position + data.byteLength - 1;

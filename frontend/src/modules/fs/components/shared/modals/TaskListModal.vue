@@ -233,6 +233,7 @@
 
 <script setup>
 import { ref, watch, onUnmounted } from 'vue';
+import { useIntervalFn } from '@vueuse/core';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { listJobs, getJobStatus, cancelJob } from '@/api/services/fsService.js';
@@ -260,9 +261,6 @@ const emit = defineEmits(['close', 'task-completed']);
 const tasks = ref([]);
 const isLoading = ref(false);
 const expandedIds = ref(new Set());
-
-// Polling timer
-let pollTimer = null;
 
 /**
  * 从路径中提取文件/文件夹名称
@@ -454,23 +452,11 @@ const close = () => {
   emit('close');
 };
 
-/**
- * 启动轮询
- */
-const startPolling = () => {
-  if (pollTimer) return;
-  pollTimer = setInterval(pollRunningTasks, 3000);
-};
-
-/**
- * 停止轮询
- */
-const stopPolling = () => {
-  if (pollTimer) {
-    clearInterval(pollTimer);
-    pollTimer = null;
-  }
-};
+// 轮询：用 VueUse 统一管理定时器
+const { pause: stopPolling, resume: startPolling } = useIntervalFn(pollRunningTasks, 3000, {
+  immediate: false,
+  immediateCallback: true,
+});
 
 // 监听模态框打开/关闭
 watch(

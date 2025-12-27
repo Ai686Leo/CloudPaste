@@ -1,5 +1,5 @@
 <template>
-  <div class="file-info-container flex flex-col min-h-0 flex-grow">
+  <div :class="['file-info-container flex flex-col min-h-0', previewKey === PREVIEW_KEYS.AUDIO ? '' : 'flex-grow']">
     <!-- 文件头部信息 -->
     <div class="file-header mb-6">
       <div class="flex items-center gap-3">
@@ -24,14 +24,56 @@
     </div>
 
     <!--使用动态组件进行文件预览 -->
-    <div v-if="shouldShowPreview" class="file-preview mb-6 flex-grow flex flex-col justify-center items-center">
-      <component
-        :is="currentPreviewComponent"
-        v-bind="previewComponentProps"
-        @load="handlePreviewLoad"
-        @error="handlePreviewError"
-        @toggle-mode="handleToggleMode"
-      />
+    <div
+      v-if="shouldShowPreview"
+      :class="['file-preview mb-6 flex flex-col min-h-0 w-full', previewKey === PREVIEW_KEYS.AUDIO ? '' : 'flex-grow']"
+    >
+      <!-- Iframe 预览 -->
+      <div
+        ref="iframeContainerRef"
+        v-if="previewKey === PREVIEW_KEYS.IFRAME"
+        class="iframe-preview-container rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex flex-col flex-grow min-h-0"
+      >
+        <PreviewProviderHeader
+          v-if="iframeProviderOptions.length > 1"
+          :show-fullscreen="true"
+          :fullscreen-target="iframeContainerRef"
+          @fullscreen-change="handleIframeFullscreenChange"
+          v-model="iframeProviderKey"
+          :title="fileInfo.filename"
+          :options="iframeProviderOptions"
+        />
+        <div class="flex-grow min-h-0">
+          <component
+            :is="currentPreviewComponent"
+            v-bind="previewComponentProps"
+            class="w-full h-full"
+            @load="handlePreviewLoad"
+            @error="handlePreviewError"
+            @toggle-mode="handleToggleMode"
+            @provider-options="handlePreviewProviderOptions"
+          />
+        </div>
+      </div>
+
+      <!-- 其他预览类型：保持原有结构 -->
+      <template v-else>
+        <component
+          :is="currentPreviewComponent"
+          v-bind="previewComponentProps"
+          :class="
+            previewKey === PREVIEW_KEYS.AUDIO
+              ? 'w-full max-w-3xl mx-auto'
+              : previewKey === PREVIEW_KEYS.VIDEO
+                ? 'w-full'
+                : 'w-full h-full'
+          "
+          @load="handlePreviewLoad"
+          @error="handlePreviewError"
+          @toggle-mode="handleToggleMode"
+          @provider-options="handlePreviewProviderOptions"
+        />
+      </template>
     </div>
     <!-- 当处于直链模式但当前存储不具备直链预览能力时，在原本内容区域显示占位提示 -->
     <div
@@ -217,6 +259,7 @@
 import { computed, ref, onMounted, watch, onUnmounted } from "vue";
 import { useRoute } from "vue-router";
 import { useI18n } from "vue-i18n";
+import { setFilePassword } from "@/utils/filePasswordUtils.js";
 import { getFilePassword as resolveFilePassword } from "@/utils/filePasswordUtils.js";
 import { useFileshareService } from "@/modules/fileshare/fileshareService.js";
 import { isImageLikeForExif, loadExifTagsFromArrayBufferAsync, buildExifRows, resolveGpsCoordinates } from "@/utils/exifReaderUtils.js";
@@ -241,6 +284,7 @@ import OfficeSharePreview from "./previews/OfficeSharePreview.vue";
 import GenericPreview from "./previews/GenericPreview.vue";
 import IframePreview from "@/components/common/IframePreview.vue";
 import MapEmbed from "@/components/common/MapEmbed.vue";
+import PreviewProviderHeader from "@/components/common/preview/PreviewProviderHeader.vue";
 
 const props = defineProps({
   fileInfo: {
@@ -294,7 +338,7 @@ const formattedSize = computed(() => {
 
 // 格式化的MIME类型
 const formattedMimeType = computed(() => {
-  return props.fileInfo.filename || props.fileInfo.name || "";
+  return props.fileInfo.mimetype || "";
 });
 
 // 格式化的创建时间
@@ -316,6 +360,31 @@ const isAudio = computed(() => previewKey.value === PREVIEW_KEYS.AUDIO);
 const isPdf = computed(() => previewKey.value === PREVIEW_KEYS.PDF);
 const isEpub = computed(() => previewKey.value === PREVIEW_KEYS.EPUB);
 const isText = computed(() => previewKey.value === PREVIEW_KEYS.TEXT);
+
+// Iframe 多渠道选择
+const iframeContainerRef = ref(null);
+const iframeFullscreen = ref(false);
+const iframeProviderOptions = ref([]);
+const iframeProviderKey = ref("");
+
+const handleIframeFullscreenChange = (val) => {
+  iframeFullscreen.value = val;
+};
+
+const handlePreviewProviderOptions = (options) => {
+  if (previewKey.value !== PREVIEW_KEYS.IFRAME) return;
+  const normalized = Array.isArray(options) ? options : [];
+  iframeProviderOptions.value = normalized;
+
+  // 默认选择第一个可用渠道；同时保证当前选择仍然存在
+  if (!normalized.length) {
+    iframeProviderKey.value = "";
+    return;
+  }
+  if (!iframeProviderKey.value || !normalized.some((opt) => opt.key === iframeProviderKey.value)) {
+    iframeProviderKey.value = normalized[0]?.key || "";
+  }
+};
 
 // 文件图标类名 - 使用标准的 getIconType 函数
 const iconClass = computed(() => {
@@ -400,6 +469,7 @@ const previewComponentProps = computed(() => {
   if (previewKey.value === PREVIEW_KEYS.IFRAME) {
     return {
       providers: resolvedPreview.value.providers || {},
+      selectedProvider: iframeProviderKey.value,
       darkMode: props.darkMode,
       loadingText: t("fileView.preview.loading"),
       errorText: t("fileView.preview.error"),
@@ -420,6 +490,7 @@ const previewComponentProps = computed(() => {
   // EPUB：支持 native（foliate-js 本地渲染）+ 外部 iframe 预览器
   if (isEpub.value) {
     return {
+      ...baseProps,
       providers: resolvedPreview.value.providers || {},
       previewUrl,
       nativeUrl: previewUrl,
@@ -433,12 +504,16 @@ const previewComponentProps = computed(() => {
       filename: props.fileInfo.filename,
       downloadUrl: fileshareService.getPermanentDownloadUrl(props.fileInfo),
       contentUrl: effectiveContentUrl,
+      darkMode: props.darkMode,
     };
   }
 
-  if (isImage.value || isAudio.value) {
+  // Image：统一多源预览架构
+  if (isImage.value) {
     return {
       ...baseProps,
+      providers: resolvedPreview.value.providers || {},
+      nativeUrl: previewUrl,
       previewUrl,
       darkMode: props.darkMode,
       // Live Photo 支持：videoUrl 需要从外部传入（如果有配对的视频文件）
@@ -447,9 +522,23 @@ const previewComponentProps = computed(() => {
     };
   }
 
+  // Audio：统一多源预览架构
+  if (isAudio.value) {
+    return {
+      ...baseProps,
+      providers: resolvedPreview.value.providers || {},
+      nativeUrl: previewUrl,
+      previewUrl,
+      darkMode: props.darkMode,
+    };
+  }
+
+  // Video：统一多源预览架构
   if (isVideo.value) {
     return {
       ...baseProps,
+      providers: resolvedPreview.value.providers || {},
+      nativeUrl: previewUrl,
       previewUrl,
       linkType: props.fileInfo.linkType || null,
       darkMode: props.darkMode,
@@ -618,7 +707,7 @@ const savePasswordToSessionStorage = () => {
 
     // 如果找到了密码，保存到会话存储
     if (password) {
-      sessionStorage.setItem(`file_password_${props.fileInfo.slug}`, password);
+      setFilePassword(props.fileInfo.slug, password);
     }
   } catch {
     // ignore

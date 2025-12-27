@@ -1,6 +1,6 @@
 <template>
   <div class="preview-channel-toolbar p-3 mb-4 rounded-lg bg-opacity-50" :class="darkMode ? 'bg-gray-700/50' : 'bg-gray-100'">
-    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+    <div class="flex items-center justify-between gap-3">
       <!-- 左侧：标题 + 可选扩展内容 -->
       <div class="toolbar-left flex flex-wrap items-center gap-3">
         <span class="font-medium" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">{{ title }}</span>

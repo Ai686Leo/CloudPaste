@@ -4,35 +4,30 @@
  */
 
 import { defineStore } from "pinia";
-import { ref } from "vue";
+import { computed } from "vue";
+import { useLocalStorage } from "@vueuse/core";
 
 export const useDeleteSettingsStore = defineStore("deleteSettings", () => {
+  const storedSettings = useLocalStorage("cloudpaste_delete_settings", { deleteRecordOnly: false });
+
   // 删除模式状态：false = 同时删除文件和记录，true = 仅删除记录
-  const deleteRecordOnly = ref(false);
+  const deleteRecordOnly = computed({
+    get: () => !!storedSettings.value?.deleteRecordOnly,
+    set: (value) => {
+      storedSettings.value = { ...(storedSettings.value || {}), deleteRecordOnly: !!value };
+    },
+  });
 
   // 从localStorage加载设置
   const loadSettings = () => {
-    try {
-      const saved = localStorage.getItem("cloudpaste_delete_settings");
-      if (saved) {
-        const settings = JSON.parse(saved);
-        deleteRecordOnly.value = settings.deleteRecordOnly || false;
-      }
-    } catch (error) {
-      console.warn("加载删除设置失败:", error);
-    }
+    // VueUse 已自动加载，这里保留方法名用于兼容旧调用
+    deleteRecordOnly.value = !!storedSettings.value?.deleteRecordOnly;
   };
 
   // 保存设置到localStorage
   const saveSettings = () => {
-    try {
-      const settings = {
-        deleteRecordOnly: deleteRecordOnly.value,
-      };
-      localStorage.setItem("cloudpaste_delete_settings", JSON.stringify(settings));
-    } catch (error) {
-      console.warn("保存删除设置失败:", error);
-    }
+    // VueUse 会自动保存，这里保留方法名用于兼容旧调用
+    storedSettings.value = { ...(storedSettings.value || {}), deleteRecordOnly: !!deleteRecordOnly.value };
   };
 
   // 切换删除模式

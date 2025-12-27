@@ -5,6 +5,19 @@
 
 import { useAuthStore } from "@/stores/authStore.js";
 import * as fsApi from "@/api/services/fsService.js";
+import { API_BASE_URL } from "@/api/config.js";
+
+function resolveAbsoluteApiUrl(url) {
+  const raw = String(url || "").trim();
+  if (!raw) return raw;
+  if (raw.startsWith("http://") || raw.startsWith("https://")) return raw;
+  // 后端有些场景会直接返回以 /api/... 开头的路径（例如 /api/fs/multipart/upload-chunk）
+  if (raw.startsWith("/api/")) {
+    return `${API_BASE_URL}${raw}`;
+  }
+  // 兜底：保持相对路径，避免重复拼接 /api 前缀
+  return raw;
+}
 
 // ===== 内部工具类 =====
 
@@ -122,9 +135,15 @@ class SessionManager {
     this.pausedFiles = new Set();
 
     // 定期清理过期会话
-    this.cleanupInterval = setInterval(() => {
-      this.cleanupExpiredSessions();
-    }, 5 * 60 * 1000); // 5分钟清理一次
+    this.cleanupTimer = null;
+    const loop = () => {
+      try {
+        this.cleanupExpiredSessions();
+      } finally {
+        this.cleanupTimer = setTimeout(loop, 5 * 60 * 1000);
+      }
+    };
+    this.cleanupTimer = setTimeout(loop, 5 * 60 * 1000);
   }
 
   createSession(fileId, sessionData) {
@@ -195,8 +214,9 @@ class SessionManager {
   }
 
   destroy() {
-    if (this.cleanupInterval) {
-      clearInterval(this.cleanupInterval);
+    if (this.cleanupTimer) {
+      clearTimeout(this.cleanupTimer);
+      this.cleanupTimer = null;
     }
     this.sessions.clear();
     this.pausedFiles.clear();
@@ -956,7 +976,8 @@ export class StorageAdapter {
           );
         }
 
-        const url = session.session?.uploadUrl || session.uploadId;
+        const urlRaw = session.session?.uploadUrl || session.uploadId;
+        const url = resolveAbsoluteApiUrl(urlRaw);
         if (!url) {
           throw new Error("single_session 会话缺少有效的 uploadUrl");
         }
@@ -971,11 +992,10 @@ export class StorageAdapter {
             "Content-Type": "application/octet-stream",
             "Content-Range": `bytes ${start}-${end}/${totalSize}`,
           },
-          // 标记单会话策略，供 uploadPartBytes 区分处理（不强制要求 ETag）
           strategy: "single_session",
-          // 将当前分片编号与文件ID一并传递，方便在 uploadPartBytes 中进行跳过逻辑
           partNumber,
           fileId: file.id,
+          key: session.key || null,
         };
       }
 
@@ -1119,6 +1139,8 @@ export class StorageAdapter {
       console.log(`[StorageAdapter] uploadPartBytes被调用: ${url}`);
 
       const isSingleSession = signature && signature.strategy === "single_session";
+      const signatureKey =
+        signature && typeof signature.key === "string" && signature.key ? signature.key : null;
 
       // 初始从签名中获取分片编号和文件ID（single_session 会显式传递）
       let partNumber = signature && typeof signature.partNumber === "number"
@@ -1149,6 +1171,29 @@ export class StorageAdapter {
 
       if (partNumber != null) {
         console.log(`[StorageAdapter] 🔄 处理分片${partNumber}上传...`);
+      }
+
+      // 基于 listParts 回源结果（写入 localStorage）的“已存在分片跳过”：
+      if (signatureKey && partNumber != null) {
+        const cachedParts = this.getUploadedPartsFromStorage(signatureKey);
+        const existingPart = cachedParts.find((part) => part.PartNumber === partNumber);
+        if (existingPart) {
+          console.log(
+            `[StorageAdapter] ✅ 分片${partNumber}已在服务器存在（缓存命中），跳过上传 (ETag: ${existingPart.ETag})`,
+          );
+
+          return new Promise((resolve) => {
+            setTimeout(() => {
+              try {
+                onProgress(size);
+              } catch {}
+              try {
+                onComplete(existingPart.ETag);
+              } catch {}
+              resolve({ ETag: existingPart.ETag });
+            }, 0);
+          });
+        }
       }
 
       // 针对 single_session（OneDrive 等）执行基于会话状态的跳过逻辑
@@ -1212,9 +1257,13 @@ export class StorageAdapter {
 
           // 返回一个等待恢复的Promise
           return new Promise((resolve, reject) => {
-            const checkResumeInterval = setInterval(() => {
+            let resumeTimer = null;
+            const checkResume = () => {
               if (!this.isFilePaused(fileId)) {
-                clearInterval(checkResumeInterval);
+                if (resumeTimer) {
+                  clearTimeout(resumeTimer);
+                  resumeTimer = null;
+                }
                 console.log(`[StorageAdapter] ▶️ 分片${partNumber}恢复上传`);
                 this.uploadPartBytes({
                   signature,
@@ -1226,12 +1275,18 @@ export class StorageAdapter {
                 })
                   .then(resolve)
                   .catch(reject);
+                return;
               }
-            }, 100);
+              resumeTimer = setTimeout(checkResume, 100);
+            };
+            resumeTimer = setTimeout(checkResume, 100);
 
             if (signal) {
               signal.addEventListener("abort", () => {
-                clearInterval(checkResumeInterval);
+                if (resumeTimer) {
+                  clearTimeout(resumeTimer);
+                  resumeTimer = null;
+                }
                 reject(new DOMException("The operation was aborted", "AbortError"));
               });
             }

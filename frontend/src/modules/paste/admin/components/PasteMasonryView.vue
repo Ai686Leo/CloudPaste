@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from "vue";
+import { onClickOutside } from "@vueuse/core";
 import MasonryWall from "@yeger/vue-masonry-wall";
 import PasteMasonryCard from "./PasteMasonryCard.vue";
 import { usePasteMasonryView } from "../usePasteMasonryView";
@@ -37,6 +38,8 @@ const props = defineProps({
 
 const emit = defineEmits(["toggle-select-all", "toggle-select-item", "view", "copy-link", "copy-raw-link", "preview", "edit", "delete", "show-qrcode", "quick-edit-content"]);
 
+const toolbarRef = ref(null);
+
 // 使用瀑布流视图配置
 const {
   // 设置状态
@@ -63,18 +66,11 @@ const {
   cleanupWatchers,
 } = usePasteMasonryView();
 
-// 处理窗口大小变化
-const handleResize = () => {
-  // MasonryWall会自动响应宽度变化，这里保留以防未来需要
-};
-
-// 点击外部关闭菜单
-const handleClickOutside = (event) => {
-  // 关闭工具栏菜单
-  if (!event.target.closest(".paste-masonry-toolbar")) {
-    showViewSettings.value = false;
-  }
-};
+// 点击外部关闭菜单（VueUse 自动管理监听器与清理）
+onClickOutside(toolbarRef, () => {
+  if (!showViewSettings.value) return;
+  showViewSettings.value = false;
+});
 
 // 更新CSS变量以控制垂直间距（水平间距由MasonryWall的gap属性控制）
 const updateSpacingCSSVariables = () => {
@@ -94,9 +90,6 @@ watch(
 );
 
 onMounted(() => {
-  window.addEventListener("resize", handleResize);
-  document.addEventListener("click", handleClickOutside);
-
   // 设置监听器
   setupWatchers();
 
@@ -107,8 +100,6 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
-  window.removeEventListener("resize", handleResize);
-  document.removeEventListener("click", handleClickOutside);
   // 清理瀑布流视图的监听器
   cleanupWatchers();
 });
@@ -125,7 +116,7 @@ const handleCardClick = (paste) => {
 <template>
   <div class="paste-masonry-view">
     <!-- 瀑布流工具栏 -->
-    <div class="paste-masonry-toolbar mb-4" :class="darkMode ? 'bg-gray-800/80' : 'bg-white/90'">
+    <div ref="toolbarRef" class="paste-masonry-toolbar mb-4" :class="darkMode ? 'bg-gray-800/80' : 'bg-white/90'">
       <!-- 主工具栏 -->
       <div class="px-3 py-2 border-b" :class="darkMode ? 'border-gray-700' : 'border-gray-200'">
         <div class="flex items-center justify-between">

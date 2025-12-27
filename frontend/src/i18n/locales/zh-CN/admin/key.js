@@ -211,7 +211,7 @@ export default {
     storageAcl: {
       help: "不勾选：可使用所有公开存储配置；勾选后：仅可使用已勾选的存储配置。",
       empty: "暂无存储配置或尚未加载。",
-      public: "公开（API 密钥可用）",
+      public: "公开",
     },
   },
 };

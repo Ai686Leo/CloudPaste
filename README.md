@@ -61,7 +61,7 @@
 ### Multi-Storage Support
 
 - **S3 Compatible**: Cloudflare R2, Backblaze B2, AWS S3, Alibaba Cloud OSS, Tencent Cloud COS, MinIO, etc.
-- **Cloud Storage Integration**: WebDAV, OneDrive, Google Drive, GitHub API/Releases (read-only), etc.
+- **Cloud Storage Integration**: WebDAV, OneDrive, Google Drive, Telegram, GitHub API/Releases (read-only), etc.
 - **Local Storage**: Docker deployment supports local file system
 - **Smart Upload**: Frontend pre-signed direct upload + streaming upload + chunked resumable upload, with real-time progress display, minimizing CF limitations
 - **File Preview**: Direct preview support for 30+ formats (images, videos, audio, PDF, Office, code, e-books, etc.), others can be previewed through external IFrame embedding [KKFileview](https://github.com/kekingcn/kkFileView)

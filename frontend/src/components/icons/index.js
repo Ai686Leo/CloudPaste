@@ -430,6 +430,7 @@ export const IconStorageGoogleDrive = createIcon(IconGoogleDriveSvg)
 export const IconStorageGitHub = createIcon(IconStorageGitHubSvg)
 export const IconStorageWebDAV = createIcon(IconCloudSyncOutlineSvg)
 export const IconStorageLocal = createIcon(IconMdiFolderSvg)
+export const IconStorageTelegram = createIcon(IconTelegramSvg)
 
 // 压缩文件类型图标（MDI）
 export const IconFolderZip = createIcon(IconFolderZipSvg)
@@ -567,6 +568,7 @@ export default {
   IconStorageGitHub,
   IconStorageWebDAV,
   IconStorageLocal,
+  IconStorageTelegram,
   IconFolderZip,
   IconFolderZipOutline,
   IconZipBox,

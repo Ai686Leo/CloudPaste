@@ -355,7 +355,10 @@ export function useCodeHighlight() {
       }
 
       // 检查主题文件是否存在的路径列表
-      const possiblePaths = [`/assets/vditor/dist/js/highlight.js/styles/${theme}.min.css`, `/assets/vditor/dist/js/highlight.js/styles/${theme}.css`];
+      const possiblePaths = [
+        `${VDITOR_ASSETS_BASE}/dist/js/highlight.js/styles/${theme}.min.css`,
+        `${VDITOR_ASSETS_BASE}/dist/js/highlight.js/styles/${theme}.css`,
+      ];
 
       // 尝试加载主题
       let loaded = false;

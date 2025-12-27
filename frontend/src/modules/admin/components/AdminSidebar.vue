@@ -466,6 +466,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from "vue";
+import { useLocalStorage } from "@vueuse/core";
 import { useI18n } from "vue-i18n";
 import { useSiteConfigStore } from "@/stores/siteConfigStore.js";
 import { IconBellAlert, IconBookOpen, IconChartBar, IconChevronDown, IconChevronLeft, IconChevronRight, IconCircleStack, IconCloud, IconClose, IconDocumentText, IconEye, IconFolder, IconGlobeAlt, IconHome, IconInformationCircle, IconKey, IconLink, IconLogout, IconMenu, IconSearch, IconServerStack, IconSettings, IconTaskList, IconUser, IconList } from "@/components/icons";
@@ -492,16 +493,11 @@ const props = defineProps({
 const emit = defineEmits(["close-mobile-sidebar", "logout", "sidebar-toggle"]);
 
 // 侧边栏收缩状态
-const isCollapsed = ref(false);
+const isCollapsed = useLocalStorage("admin-sidebar-collapsed", false);
 
-// 恢复保存的收缩状态
+// 初始化时通知父组件
 onMounted(() => {
-  const saved = localStorage.getItem("admin-sidebar-collapsed");
-  if (saved !== null) {
-    isCollapsed.value = JSON.parse(saved);
-    // 初始化时也要通知父组件
-    emit("sidebar-toggle", { collapsed: isCollapsed.value });
-  }
+  emit("sidebar-toggle", { collapsed: isCollapsed.value });
 });
 
 // 菜单组的展开状态
@@ -519,11 +515,6 @@ const logoutText = computed(() => (props.permissions.isAdmin ? t("admin.sidebar.
 // 图标错误处理 - 直接切换到默认图标
 const handleImageError = (event) => {
   event.target.src = "/cloudpaste.svg";
-};
-
-// 提取localStorage操作
-const saveCollapseState = (collapsed) => {
-  localStorage.setItem("admin-sidebar-collapsed", JSON.stringify(collapsed));
 };
 
 // 常量
@@ -635,14 +626,12 @@ const toggleTaskManagement = () => {
 // 收缩/展开切换函数
 const toggleCollapse = () => {
   isCollapsed.value = !isCollapsed.value;
-  saveCollapseState(isCollapsed.value);
   emit("sidebar-toggle", { collapsed: isCollapsed.value });
 };
 
 // 处理收缩状态下的组菜单项点击 - 展开侧边栏并展开子菜单
 const handleGroupItemClick = () => {
   isCollapsed.value = false;
-  saveCollapseState(false);
   emit("sidebar-toggle", { collapsed: false });
   // 展开所有菜单组
   isSystemSettingsExpanded.value = true;

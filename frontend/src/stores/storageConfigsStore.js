@@ -67,6 +67,17 @@ const STORAGE_TYPE_SCHEMA = {
       preview: "proxy",
     },
   },
+  TELEGRAM: {
+    type: "TELEGRAM",
+    label: "Telegram Bot API",
+    description: "把 Telegram 频道当作内容存储后端（目录树与元数据在 CloudPaste）",
+    capabilities: {
+      multipart: true,
+      presigned: false,
+      requiresProxy: true,
+      preview: "proxy",
+    },
+  },
   GITHUB_API: {
     type: "GITHUB_API",
     label: "GitHub API 存储",

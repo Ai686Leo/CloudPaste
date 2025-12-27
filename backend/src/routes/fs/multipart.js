@@ -6,6 +6,7 @@ import { FileSystem } from "../../storage/fs/FileSystem.js";
 import { getEncryptionSecret } from "../../utils/environmentUtils.js";
 import { usePolicy } from "../../security/policies/policies.js";
 import { findUploadSessionById } from "../../utils/uploadSessions.js";
+import { validateFsItemName } from "../../storage/fs/utils/FsInputValidator.js";
 
 const toAbsoluteUrlIfRelative = (requestUrl, maybeUrl) => {
   if (typeof maybeUrl !== "string" || maybeUrl.length === 0) {
@@ -79,6 +80,12 @@ export const registerMultipartRoutes = (router, helpers) => {
     return { db: c.env.DB, encryptionSecret: getEncryptionSecret(c), repositoryFactory: c.get("repos"), userInfo, userIdOrInfo, userType };
   };
 
+  const assertValidFileName = (fileName) => {
+    const result = validateFsItemName(fileName);
+    if (result.valid) return;
+    throw new ValidationError(result.message);
+  };
+
   router.post("/api/fs/multipart/init", parseJsonBody, usePolicy("fs.upload", { pathResolver: jsonPathResolver() }), async (c) => {
     const { db, encryptionSecret, repositoryFactory, userIdOrInfo, userType } = requireUserContext(c);
     const body = c.get("jsonBody");
@@ -87,6 +94,8 @@ export const registerMultipartRoutes = (router, helpers) => {
     if (!path || !fileName) {
       throw new ValidationError("缺少必要参数");
     }
+
+    assertValidFileName(fileName);
 
     const mountManager = new MountManager(db, encryptionSecret, repositoryFactory, { env: c.env });
     const fileSystem = new FileSystem(mountManager);
@@ -112,6 +121,10 @@ export const registerMultipartRoutes = (router, helpers) => {
       throw new ValidationError("缺少必要参数");
     }
 
+    if (fileName) {
+      assertValidFileName(fileName);
+    }
+
     const mountManager = new MountManager(db, encryptionSecret, repositoryFactory, { env: c.env });
     const fileSystem = new FileSystem(mountManager);
   const result = await fileSystem.completeFrontendMultipartUpload(path, uploadId, parts, fileName, fileSize, userIdOrInfo, userType);
@@ -127,6 +140,8 @@ export const registerMultipartRoutes = (router, helpers) => {
     if (!path || !uploadId || !fileName) {
       throw new ValidationError("缺少必要参数");
     }
+
+    assertValidFileName(fileName);
 
     const mountManager = new MountManager(db, encryptionSecret, repositoryFactory, { env: c.env });
     const fileSystem = new FileSystem(mountManager);
@@ -155,6 +170,8 @@ export const registerMultipartRoutes = (router, helpers) => {
     if (!path || !uploadId || !fileName) {
       throw new ValidationError("缺少必要参数");
     }
+
+    assertValidFileName(fileName);
 
     const mountManager = new MountManager(db, encryptionSecret, repositoryFactory, { env: c.env });
     const fileSystem = new FileSystem(mountManager);
@@ -208,10 +225,6 @@ export const registerMultipartRoutes = (router, helpers) => {
       throw new ValidationError("未找到对应的上传会话");
     }
 
-    if (sessionRow.storage_type !== "GOOGLE_DRIVE") {
-      throw new ValidationError("当前上传会话的存储类型不支持通过该端点上传分片");
-    }
-
     const mountManager = new MountManager(db, encryptionSecret, repositoryFactory, { env: c.env });
     const fileSystem = new FileSystem(mountManager);
 
@@ -221,12 +234,17 @@ export const registerMultipartRoutes = (router, helpers) => {
       userType,
     );
 
-    if (driver.getType() !== "GOOGLE_DRIVE") {
-      throw new ValidationError("上传会话对应的驱动不是 Google Drive");
+    if (String(driver.getType()) !== String(sessionRow.storage_type)) {
+      throw new ValidationError("上传会话对应的驱动类型与会话记录不一致");
     }
 
-    // 委托给 GoogleDriveStorageDriver 进行分片转发
-    // 仅 GoogleDriveStorageDriver 实现该方法，其他驱动不会触发此逻辑
+    if (typeof driver.proxyFrontendMultipartChunk !== "function") {
+      throw new ValidationError("当前上传会话的存储类型不支持通过该端点上传分片");
+    }
+
+    // 委托给 driver 自己实现“分片中转”
+    // - GoogleDrive：后端转发到 Google Drive resumable session
+    // - Telegram：后端上传该分片到 Telegram，并写入 upload_parts
     // @ts-ignore
     const result = await driver.proxyFrontendMultipartChunk(sessionRow, /** @type {any} */ (body), {
       contentRange,
@@ -243,6 +261,7 @@ export const registerMultipartRoutes = (router, helpers) => {
         success: true,
         done: result?.done === true,
         status: result?.status ?? 200,
+        skipped: result?.skipped === true,
       },
       "分片上传成功",
     );
@@ -256,6 +275,8 @@ export const registerMultipartRoutes = (router, helpers) => {
     if (!path || !fileName) {
       throw new ValidationError("请提供上传路径和文件名");
     }
+
+    assertValidFileName(fileName);
 
     const targetPath = presignTargetResolver(c);
 
@@ -308,6 +329,10 @@ export const registerMultipartRoutes = (router, helpers) => {
     }
 
     const fileName = targetPath.split("/").filter(Boolean).pop();
+    if (!fileName) {
+      throw new ValidationError("无效的目标路径：缺少文件名");
+    }
+    assertValidFileName(fileName);
 
     const mountManager = new MountManager(db, encryptionSecret, repositoryFactory, { env: c.env });
     const fileSystem = new FileSystem(mountManager);

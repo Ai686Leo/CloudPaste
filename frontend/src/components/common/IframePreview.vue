@@ -1,9 +1,11 @@
 <template>
-  <!-- iframe 预览组件：纯内容渲染，工具栏由父组件通过 PreviewChannelToolbar 统一管理 -->
-  <div class="iframe-preview h-full rounded-lg overflow-hidden flex-grow w-full relative border border-gray-200 dark:border-gray-700">
-    <div class="iframe-container relative w-full h-full min-h-[300px]">
+  <!-- iframe 预览组件：纯内容渲染，工具栏由父组件通过 PreviewProviderHeader 统一管理 -->
+  <div class="iframe-preview flex flex-col h-full w-full relative bg-white dark:bg-gray-800">
+    <div class="iframe-container relative flex-grow h-[calc(100vh-350px)] min-h-[300px]">
       <iframe
         :src="currentPreviewUrl"
+        allow="fullscreen"
+        allowfullscreen
         frameborder="0"
         class="w-full h-full"
         @load="handleLoad"

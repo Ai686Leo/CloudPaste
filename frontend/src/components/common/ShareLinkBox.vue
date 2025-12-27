@@ -50,6 +50,7 @@
 
 <script setup>
 import { ref, onUnmounted, watch, computed } from "vue";
+import { useIntervalFn } from "@vueuse/core";
 import { copyToClipboard } from "@/utils/clipboard";
 import { IconCopy, IconLink, IconQrCode } from "@/components/icons";
 
@@ -74,26 +75,23 @@ const props = defineProps({
 const emit = defineEmits(["show-qr-code", "status-message", "countdown-end"]);
 
 const countdown = ref(props.countdownSeconds);
-let countdownTimer = null;
-
-const stopCountdown = () => {
-  if (countdownTimer) {
-    clearInterval(countdownTimer);
-    countdownTimer = null;
-  }
-};
-
-const startCountdown = () => {
-  if (!props.showCountdown) return;
-  stopCountdown();
-  countdown.value = props.countdownSeconds;
-  countdownTimer = setInterval(() => {
+const { pause: stopCountdown, resume: resumeCountdown } = useIntervalFn(
+  () => {
     countdown.value--;
     if (countdown.value <= 0) {
       stopCountdown();
       emit("countdown-end");
     }
-  }, 1000);
+  },
+  1000,
+  { immediate: false }
+);
+
+const startCountdown = () => {
+  if (!props.showCountdown) return;
+  stopCountdown();
+  countdown.value = props.countdownSeconds;
+  resumeCountdown();
 };
 
 watch(

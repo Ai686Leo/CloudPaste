@@ -197,7 +197,8 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from "vue";
+import { ref } from "vue";
+import { useEventListener } from "@vueuse/core";
 import { useI18n } from "vue-i18n";
 import { useThemeMode } from "@/composables/core/useThemeMode.js";
 import {
@@ -247,13 +248,7 @@ function handleClickOutside(event) {
   }
 }
 
-onMounted(() => {
-  document.addEventListener("click", handleClickOutside);
-});
-
-onUnmounted(() => {
-  document.removeEventListener("click", handleClickOutside);
-});
+useEventListener(document, "click", handleClickOutside);
 
 // 状态图标
 function getStatusIcon(status) {

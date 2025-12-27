@@ -4,6 +4,7 @@
  */
 
 import { ref, computed, watch, onMounted, onUnmounted } from "vue";
+import { useEventListener } from "@vueuse/core";
 import { formatDateTime } from "@/utils/timeUtils.js";
 import { formatFileSize as formatFileSizeUtil, FileType, getExtension, isArchiveFile } from "@/utils/fileTypes.js";
 import { decodeImagePreviewUrlToPngObjectUrl, revokeObjectUrl, shouldAttemptDecodeImagePreview } from "@/utils/imageDecode.js";
@@ -209,6 +210,10 @@ export function usePreviewRenderers(file, emit, darkMode) {
     }
   };
   
+  //自动清理
+  useEventListener(document, "fullscreenchange", handleFullscreenChange);
+  useEventListener(document, "keydown", handleKeyDown);
+
   // ===== 事件处理 =====
 
   /**
@@ -457,10 +462,6 @@ export function usePreviewRenderers(file, emit, darkMode) {
    * 组件挂载时的初始化
    */
   onMounted(() => {
-    // 添加事件监听器
-    document.addEventListener("fullscreenchange", handleFullscreenChange);
-    document.addEventListener("keydown", handleKeyDown);
-
     console.log("文件预览组件已挂载");
   });
 
@@ -475,10 +476,6 @@ export function usePreviewRenderers(file, emit, darkMode) {
       imageDecodeAbortController.value.abort();
       imageDecodeAbortController.value = null;
     }
-
-    // 移除事件监听器
-    document.removeEventListener("fullscreenchange", handleFullscreenChange);
-    document.removeEventListener("keydown", handleKeyDown);
 
     // 清除计时器
     if (previewTimeoutId.value) {

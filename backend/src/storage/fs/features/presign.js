@@ -62,6 +62,8 @@ export async function commitPresignedUpload(fs, path, filename, userIdOrInfo, us
       fileSize,
       contentType,
       etag,
+      userIdOrInfo,
+      userType,
     });
 
     fs.emitCacheInvalidation({ mount, paths: [path], reason: "upload-complete" });

@@ -125,8 +125,9 @@
 </template>
 
 <script>
-import { ref, watch, nextTick, onUnmounted } from "vue";
+import { ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
+import { onKeyStroke } from "@vueuse/core";
 import { copyToClipboard } from "@/utils/clipboard";
 import { formatFileSize } from "@/utils/fileUtils";
 import { generateQRCode as createQRCodeImage } from "@/utils/qrcodeUtils.js";
@@ -287,12 +288,12 @@ export default {
       emit("close");
     };
 
-    // 监听ESC键关闭
-    const handleKeydown = (event) => {
-      if (event.key === "Escape" && props.visible) {
+    // 监听 ESC 键关闭
+    onKeyStroke("Escape", () => {
+      if (props.visible) {
         closeModal();
       }
-    };
+    });
 
     // 点击外部关闭 - 更健壮的检测方式
     const handleClickOutside = (event) => {
@@ -306,17 +307,7 @@ export default {
     watch(
       () => props.visible,
       (newVal) => {
-        if (newVal) {
-          // 立即添加键盘事件监听器
-          document.addEventListener("keydown", handleKeydown);
-          // 使用nextTick确保DOM更新后再添加点击事件监听器
-          nextTick(() => {
-            document.addEventListener("click", handleClickOutside);
-          });
-        } else {
-          // 移除事件监听器并重置状态
-          document.removeEventListener("keydown", handleKeydown);
-          document.removeEventListener("click", handleClickOutside);
+        if (!newVal) {
           // 重置二维码相关状态
           showQRCode.value = false;
           qrCodeDataURL.value = "";
@@ -324,12 +315,6 @@ export default {
         }
       }
     );
-
-    // 组件卸载时清理事件监听器
-    onUnmounted(() => {
-      document.removeEventListener("keydown", handleKeydown);
-      document.removeEventListener("click", handleClickOutside);
-    });
 
     return {
       t,

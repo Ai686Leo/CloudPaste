@@ -1,12 +1,14 @@
 <template>
-  <div class="office-preview-wrapper flex-grow flex flex-col w-full">
+  <div ref="previewContainerRef" class="office-preview-wrapper flex-grow flex flex-col w-full">
     <OfficePreviewContainer
       :content-url="contentUrl"
       :filename="filename"
       :providers="providers"
-      :height-mode="'fixed'"
+      :height-mode="isFullscreen ? 'flex' : 'fixed'"
       :show-provider-selector="true"
       :show-footer="true"
+      :show-fullscreen="true"
+      :fullscreen-target="previewContainerRef"
       :download-url="downloadUrl"
       :error-message="localErrorMessage"
       @load="handleLoad"
@@ -46,7 +48,7 @@ import { OfficePreviewContainer } from "@/components/office";
 
 const { t } = useI18n();
 
-const props = defineProps({
+defineProps({
   // DocumentApp providers 映射，例如 { native: 'native', microsoft: 'https://...', google: 'https://...' }
   providers: {
     type: Object,
@@ -65,9 +67,16 @@ const props = defineProps({
     type: String,
     default: "",
   },
+  darkMode: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 const emit = defineEmits(["load", "error"]);
+
+const previewContainerRef = ref(null);
+const isFullscreen = ref(false);
 
 // 本地错误消息状态
 const localErrorMessage = ref("");
@@ -83,7 +92,7 @@ const handleError = (err) => {
   emit("error", err);
 };
 
-const handleProviderChange = (key) => {
+const handleProviderChange = () => {
   // 切换渠道时清除错误
   localErrorMessage.value = "";
 };

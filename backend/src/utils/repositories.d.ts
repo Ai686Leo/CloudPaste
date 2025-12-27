@@ -10,8 +10,31 @@ export interface MountRepositoryLike {
   findAll(includeDisabled?: boolean): Promise<any[]>;
 }
 
+export interface UploadPartsRepositoryLike {
+  upsertPart(params: any): Promise<any>;
+  markPartError?(params: any): Promise<any>;
+  listParts(uploadId: string): Promise<any[]>;
+  listPartNumbers(uploadId: string): Promise<number[]>;
+  deletePartsByUploadId(uploadId: string): Promise<any>;
+  deletePartsByUploadIds(uploadIds: string[], options?: any): Promise<any>;
+}
+
+export interface VfsNodesRepositoryLike {
+  listChildrenByParentId(params: any): Promise<any[]>;
+  resolveNodeByPath(params: any): Promise<any>;
+  ensureDirectoryPath(params: any): Promise<any>;
+  createDirectory(params: any): Promise<any>;
+  createFileNode(params: any): Promise<any>;
+  renameNode(params: any): Promise<any>;
+  moveNode(params: any): Promise<any>;
+  deleteNode(params: any): Promise<any>;
+  getNodeById(params: any): Promise<any>;
+}
+
 export interface RepositoryFactoryLike {
   getMountRepository(): MountRepositoryLike;
+  getUploadPartsRepository(): UploadPartsRepositoryLike;
+  getVfsNodesRepository(): VfsNodesRepositoryLike;
 }
 
 /**
@@ -34,4 +57,3 @@ export function ensureRepositoryFactory(
  * 可选中间件：确保每次请求都有 RepositoryFactory
  */
 export function withRepositories(): (c: any, next: () => Promise<void>) => Promise<void>;
-

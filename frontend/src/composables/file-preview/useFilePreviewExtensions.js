@@ -6,6 +6,7 @@
 import { ref, onMounted, onUnmounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { api } from "@/api";
+import { copyToClipboard } from "@/utils/clipboard";
 
 export function useFilePreviewExtensions(
   file,
@@ -166,7 +167,10 @@ export function useFilePreviewExtensions(
       if (result.success) {
         // 复制分享链接到剪贴板
         const shareUrl = `${window.location.origin}${result.data.url}`;
-        await navigator.clipboard.writeText(shareUrl);
+        const success = await copyToClipboard(shareUrl);
+        if (!success) {
+          throw new Error("复制分享链接失败");
+        }
 
         // 显示成功消息
         emit("show-message", {

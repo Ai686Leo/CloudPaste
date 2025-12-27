@@ -1,10 +1,8 @@
 import { FILE_TYPES, FILE_TYPE_NAMES } from "../../constants/index.js";
-import { GetFileType, getFileTypeName } from "../../utils/fileTypeDetector.js";
 
 /**
  * FileInfo 构造工具
  *
- * 目标：
  * - 为所有存储驱动提供统一的 FileInfo 构造逻辑
  * - 避免在各个驱动内部重复实现 name/type/typeName/mimetype 等细节
  * - 仅关注“挂载视图下的文件/目录信息”这一领域模型
@@ -37,8 +35,24 @@ export async function buildFileInfo({
 }) {
   const finalName = name || inferNameFromPath(fsPath, isDirectory);
 
-  const type = isDirectory ? FILE_TYPES.FOLDER : await GetFileType(finalName, db);
-  const typeName = isDirectory ? FILE_TYPE_NAMES[FILE_TYPES.FOLDER] : await getFileTypeName(finalName, db);
+  // 动态 import，避免在模块加载阶段引入大串依赖（触发循环依赖：StorageFactory <-> fileTypeDetector/PreviewSettingsCache）
+  let type = FILE_TYPES.UNKNOWN;
+  let typeName = FILE_TYPE_NAMES[FILE_TYPES.UNKNOWN];
+  if (isDirectory) {
+    type = FILE_TYPES.FOLDER;
+    typeName = FILE_TYPE_NAMES[FILE_TYPES.FOLDER];
+  } else {
+    try {
+      const { GetFileType, getFileTypeName } = await import("../../utils/fileTypeDetector.js");
+      type = await GetFileType(finalName, db);
+      typeName = await getFileTypeName(finalName, db);
+    } catch (error) {
+      // 失败时回退 unknown
+      console.warn("buildFileInfo: 文件类型检测加载失败，已回退 unknown", error);
+      type = FILE_TYPES.UNKNOWN;
+      typeName = FILE_TYPE_NAMES[FILE_TYPES.UNKNOWN];
+    }
+  }
 
   // - 目录大小：存储无法直接给出“文件夹总大小”，未知就保持 null，显示 “-”。
   // - 文件大小：若存储未给出也保持 null

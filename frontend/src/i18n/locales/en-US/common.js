@@ -56,6 +56,9 @@ export default {
       processing: "Processing...",
       requiredField: "This field is required",
       invalidInput: "Invalid input",
+      invalidNameEmpty: "Name cannot be empty",
+      invalidNameDots: "Name cannot be . or ..",
+      invalidNameChars: 'Name cannot contain / \\\\ ? < > * : | "',
       // Common delete confirmation dialogs
       deleteTitle: "Confirm Delete",
       deleteItem: "Are you sure you want to delete {name}? This action cannot be undone.",
@@ -77,6 +80,7 @@ export default {
         recommended: "Recommended",
         matchScore: "Match {score}%",
         partsInfo: "{count}/{total} parts",
+        partErrors: "{count} failed",
         partialComplete: "Partially complete",
         atLeastParts: "At least {count} parts",
         progressInfo: "{percentage}% ({uploaded}/{total}MB)",

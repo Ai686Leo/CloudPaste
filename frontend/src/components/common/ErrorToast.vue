@@ -34,6 +34,7 @@
 
 <script setup>
 import { ref, watch, onMounted, onUnmounted } from "vue";
+import { useTimeoutFn } from "@vueuse/core";
 import { useI18n } from "vue-i18n";
 import { IconClose, IconXCircle } from "@/components/icons";
 
@@ -72,7 +73,13 @@ const props = defineProps({
 
 const emit = defineEmits(["close"]);
 
-let autoCloseTimer = null;
+const { start: startAutoCloseTimer, stop: stopAutoCloseTimer } = useTimeoutFn(
+  () => {
+    close();
+  },
+  () => props.duration,
+  { immediate: false }
+);
 
 const close = () => {
   emit("close");
@@ -80,17 +87,13 @@ const close = () => {
 
 const startAutoClose = () => {
   if (props.autoClose && props.duration > 0) {
-    autoCloseTimer = setTimeout(() => {
-      close();
-    }, props.duration);
+    stopAutoCloseTimer();
+    startAutoCloseTimer();
   }
 };
 
 const clearAutoClose = () => {
-  if (autoCloseTimer) {
-    clearTimeout(autoCloseTimer);
-    autoCloseTimer = null;
-  }
+  stopAutoCloseTimer();
 };
 
 watch(

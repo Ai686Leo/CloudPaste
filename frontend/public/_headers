@@ -1,0 +1,25 @@
+# Cloudflare Pages 响应头配置
+
+/sw.js
+  Cache-Control: no-cache, no-store, must-revalidate
+  Pragma: no-cache
+
+/dev-sw.js
+  Cache-Control: no-cache, no-store, must-revalidate
+  Pragma: no-cache
+
+/registerSW.js
+  Cache-Control: no-cache, no-store, must-revalidate
+  Pragma: no-cache
+
+/workbox-*.js
+  Cache-Control: no-cache, no-store, must-revalidate
+  Pragma: no-cache
+
+/manifest.webmanifest
+  Cache-Control: no-cache, no-store, must-revalidate
+  Pragma: no-cache
+
+/manifest.json
+  Cache-Control: no-cache, no-store, must-revalidate
+  Pragma: no-cache

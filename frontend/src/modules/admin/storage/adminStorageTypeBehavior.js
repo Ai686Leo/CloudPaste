@@ -101,6 +101,9 @@ const STORAGE_TYPE_BEHAVIOR_DEF = {
   GITHUB_API: {
     secretFields: ["token"],
   },
+  TELEGRAM: {
+    secretFields: ["bot_token"],
+  },
 };
 
 /**
@@ -142,6 +145,11 @@ export function useAdminStorageTypeBehavior(options) {
       loaded: ref(false),
     },
     GITHUB_API: {
+      visible: ref(false),
+      revealing: ref(false),
+      loaded: ref(false),
+    },
+    TELEGRAM: {
       visible: ref(false),
       revealing: ref(false),
       loaded: ref(false),
@@ -210,6 +218,8 @@ export function useAdminStorageTypeBehavior(options) {
             formData.value.token = data.token || "";
           } else if (type === "GITHUB_API") {
             formData.value.token = data.token || "";
+          } else if (type === "TELEGRAM") {
+            formData.value.bot_token = data.bot_token || "";
           }
           state.loaded.value = true;
         }

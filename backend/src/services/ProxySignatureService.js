@@ -127,7 +127,7 @@ export class ProxySignatureService {
    * @param {string} signature - 签名值
    * @returns {Object} 验证结果
    */
-  verifyStorageSignature(path, signature) {
+  verifyStorageSignature(path, signature, options = {}) {
     try {
       const [hash, timestampStr] = signature.split(":");
       const expireTimestamp = parseInt(timestampStr);

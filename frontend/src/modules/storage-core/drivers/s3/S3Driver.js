@@ -1,10 +1,10 @@
-import { api } from "@/api";
 import { createCapabilities, STORAGE_STRATEGIES } from "../types.js";
 import AwsS3 from "@uppy/aws-s3";
 import { StorageAdapter } from "@/modules/storage-core/uppy/StorageAdapter.js";
 import XHRUpload from "@uppy/xhr-upload";
 import { getFullApiUrl } from "@/api/config.js";
 import { buildAuthHeadersForRequest } from "@/modules/security/index.js";
+import { api } from "@/api";
 
 export class S3Driver {
   constructor(config = {}) {

@@ -5,6 +5,7 @@
 
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
+import { useLocalStorage } from "@vueuse/core";
 import { api } from "@/api";
 import { Permission, PermissionChecker } from "@/constants/permissions.js";
 import { registerAuthBridge } from "./authBridge.js";
@@ -168,17 +169,20 @@ export const useAuthStore = defineStore("auth", () => {
 
   // ===== 私有方法 =====
 
+  // 用 VueUse 统一管理本地持久化（减少手写 localStorage get/set/remove）
+  const storedAdminToken = useLocalStorage(STORAGE_KEYS.ADMIN_TOKEN, null);
+  const storedApiKey = useLocalStorage(STORAGE_KEYS.API_KEY, null);
+  const storedApiKeyPermissions = useLocalStorage(STORAGE_KEYS.API_KEY_PERMISSIONS, 0);
+  const storedApiKeyInfo = useLocalStorage(STORAGE_KEYS.API_KEY_INFO, null);
+
   /**
    * 从localStorage加载认证状态
    */
   const loadFromStorage = () => {
-    // 分别处理每个存储项，避免一个失败影响全部
-
-    // 尝试加载管理员token
+    // 管理员 token
     try {
-      const storedAdminToken = localStorage.getItem(STORAGE_KEYS.ADMIN_TOKEN);
-      if (storedAdminToken) {
-        adminToken.value = storedAdminToken;
+      if (storedAdminToken.value) {
+        adminToken.value = storedAdminToken.value;
         authType.value = "admin";
         isAuthenticated.value = true;
         userInfo.value = {
@@ -186,52 +190,46 @@ export const useAuthStore = defineStore("auth", () => {
           name: "Administrator",
           basicPath: "/",
         };
-        return; // 管理员认证成功，直接返回
+        return;
       }
     } catch (error) {
       console.warn("加载管理员token失败:", error);
-      localStorage.removeItem(STORAGE_KEYS.ADMIN_TOKEN);
+      storedAdminToken.value = null;
     }
 
-    // 尝试加载API密钥
+    // API Key
     try {
-      const storedApiKey = localStorage.getItem(STORAGE_KEYS.API_KEY);
-      if (storedApiKey) {
-        apiKey.value = storedApiKey;
+      if (storedApiKey.value) {
+        apiKey.value = storedApiKey.value;
         authType.value = "apikey";
         isAuthenticated.value = true;
 
-        // 尝试加载API密钥权限
+        // 权限：统一按 bitFlag number 读取
         try {
-          const storedPermissions = localStorage.getItem(STORAGE_KEYS.API_KEY_PERMISSIONS);
-          if (storedPermissions) {
-            apiKeyPermissions.value = convertPermissionsToBitFlag(JSON.parse(storedPermissions));
-          }
+          apiKeyPermissions.value = convertPermissionsToBitFlag(storedApiKeyPermissions.value);
         } catch (permError) {
           console.warn("加载API密钥权限失败:", permError);
-          localStorage.removeItem(STORAGE_KEYS.API_KEY_PERMISSIONS);
+          storedApiKeyPermissions.value = 0;
         }
 
-        // 尝试加载API密钥信息
+        // Key info
         try {
-          const storedKeyInfo = localStorage.getItem(STORAGE_KEYS.API_KEY_INFO);
-          if (storedKeyInfo) {
-            const keyInfo = JSON.parse(storedKeyInfo);
-            apiKeyInfo.value = keyInfo;
+          if (storedApiKeyInfo.value && typeof storedApiKeyInfo.value === "object") {
+            apiKeyInfo.value = storedApiKeyInfo.value;
             userInfo.value = {
-              id: keyInfo.id,
-              name: keyInfo.name,
-              basicPath: keyInfo.basic_path || "/",
+              id: storedApiKeyInfo.value.id,
+              name: storedApiKeyInfo.value.name,
+              basicPath: storedApiKeyInfo.value.basic_path || "/",
             };
           }
         } catch (infoError) {
           console.warn("加载API密钥信息失败:", infoError);
-          localStorage.removeItem(STORAGE_KEYS.API_KEY_INFO);
+          storedApiKeyInfo.value = null;
         }
       }
     } catch (error) {
       console.warn("加载API密钥失败:", error);
-      localStorage.removeItem(STORAGE_KEYS.API_KEY);
+      storedApiKey.value = null;
     }
   };
 
@@ -259,15 +257,15 @@ export const useAuthStore = defineStore("auth", () => {
   const saveToStorage = () => {
     try {
       if (authType.value === "admin" && adminToken.value) {
-        localStorage.setItem(STORAGE_KEYS.ADMIN_TOKEN, adminToken.value);
+        storedAdminToken.value = adminToken.value;
+        storedApiKey.value = null;
+        storedApiKeyPermissions.value = 0;
+        storedApiKeyInfo.value = null;
       } else if (authType.value === "apikey" && apiKey.value) {
-        localStorage.setItem(STORAGE_KEYS.API_KEY, apiKey.value);
-        if (apiKeyPermissions.value) {
-          localStorage.setItem(STORAGE_KEYS.API_KEY_PERMISSIONS, JSON.stringify(apiKeyPermissions.value));
-        }
-        if (apiKeyInfo.value) {
-          localStorage.setItem(STORAGE_KEYS.API_KEY_INFO, JSON.stringify(apiKeyInfo.value));
-        }
+        storedAdminToken.value = null;
+        storedApiKey.value = apiKey.value;
+        storedApiKeyPermissions.value = apiKeyPermissions.value || 0;
+        storedApiKeyInfo.value = apiKeyInfo.value || null;
       }
     } catch (error) {
       console.error("保存认证状态到localStorage失败:", error);
@@ -278,9 +276,10 @@ export const useAuthStore = defineStore("auth", () => {
    * 清除localStorage中的认证数据
    */
   const clearStorage = () => {
-    Object.values(STORAGE_KEYS).forEach((key) => {
-      localStorage.removeItem(key);
-    });
+    storedAdminToken.value = null;
+    storedApiKey.value = null;
+    storedApiKeyPermissions.value = 0;
+    storedApiKeyInfo.value = null;
   };
 
   // ===== 公共方法 =====

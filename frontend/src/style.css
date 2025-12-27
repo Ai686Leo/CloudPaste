@@ -50,3 +50,14 @@ body {
     font-size: 14px;
   }
 }
+
+/* ===== Notivue 样式微调 ===== */
+
+/* 内容区域 - 防止长文本溢出 */
+.Notivue__content-message {
+  display: -webkit-box !important;
+  -webkit-line-clamp: 3 !important;
+  -webkit-box-orient: vertical !important;
+  overflow: hidden !important;
+  word-break: break-word;
+}

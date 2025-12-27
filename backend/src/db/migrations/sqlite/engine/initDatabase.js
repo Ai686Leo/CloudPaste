@@ -12,6 +12,8 @@ import {
   createSystemTables,
   createTasksTables,
   createUploadSessionsTables,
+  createUploadPartsTables,
+  createVfsTables,
 } from "./schema.js";
 import {
   addCustomContentSettings,
@@ -43,6 +45,8 @@ export async function initDatabase(db) {
   await createScheduledJobsTables(db);
   await createScheduledJobRunsTables(db);
   await createUploadSessionsTables(db);
+  await createVfsTables(db);
+  await createUploadPartsTables(db);
 
   await createIndexes(db);
 

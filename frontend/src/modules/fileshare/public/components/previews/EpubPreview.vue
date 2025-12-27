@@ -1,34 +1,17 @@
 <template>
-  <div class="epub-preview rounded-lg overflow-hidden mb-2 flex-grow w-full relative border border-gray-200 dark:border-gray-700">
-    <!-- 外层工具栏：Provider 切换 + 全屏按钮 -->
-    <div class="flex items-center justify-between px-3 py-2 bg-gray-100 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
-      <span class="text-sm font-medium" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">EPUB</span>
-      <div class="flex items-center gap-2">
-        <select
-          v-if="providerOptions.length > 1"
-          v-model="selectedProviderKey"
-          class="text-sm px-2 py-1 rounded border bg-white dark:bg-gray-800 dark:border-gray-600 dark:text-gray-100"
-        >
-          <option v-for="opt in providerOptions" :key="opt.key" :value="opt.key">
-            {{ opt.label }}
-          </option>
-        </select>
-        <button
-          type="button"
-          class="flex items-center px-2 py-1 text-sm border rounded transition-colors"
-          :class="darkMode ? 'bg-gray-600 hover:bg-gray-500 border-gray-500 text-gray-200' : 'bg-white hover:bg-gray-50 border-gray-300 text-gray-700'"
-          @click="toggleFullscreen"
-          :title="isFullscreen ? t('fileView.preview.exitFullscreen') : t('fileView.preview.fullscreen')"
-        >
-          <IconExpand v-if="!isFullscreen" size="sm" class="w-4 h-4" />
-          <IconCollapse v-else size="sm" class="w-4 h-4" />
-        </button>
-      </div>
-    </div>
+  <div ref="previewContainerRef" class="epub-preview rounded-lg overflow-hidden mb-2 flex-grow w-full relative border border-gray-200 dark:border-gray-700">
+    <PreviewProviderHeader
+      :title="filename || 'EPUB'"
+      :options="providerOptions"
+      v-model="selectedProviderKey"
+      :show-select="providerOptions.length > 1"
+      :show-fullscreen="true"
+      :fullscreen-target="previewContainerRef"
+      @fullscreen-change="handleFullscreenChange"
+    />
 
     <!-- 预览内容 -->
     <div
-      ref="previewContainerRef"
       class="relative w-full"
       :class="isFullscreen ? 'h-screen' : 'h-[calc(100vh-350px)] min-h-[300px]'"
     >
@@ -62,9 +45,8 @@ import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import FoliateEpubView from "@/components/common/FoliateEpubView.vue";
 import IframePreview from "@/components/common/IframePreview.vue";
-import { IconExpand, IconCollapse } from "@/components/icons";
 import { useProviderSelector } from "@/composables/file-preview/useProviderSelector.js";
-import { useElementFullscreen } from "@/composables/useElementFullscreen.js";
+import PreviewProviderHeader from "@/components/common/preview/PreviewProviderHeader.vue";
 
 const { t } = useI18n();
 
@@ -87,13 +69,20 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  filename: {
+    type: String,
+    default: "",
+  },
 });
 
 const emit = defineEmits(["load", "error"]);
 
 const previewContainerRef = ref(null);
+const isFullscreen = ref(false);
 
-const { isFullscreen, toggleFullscreen } = useElementFullscreen(previewContainerRef);
+const handleFullscreenChange = (val) => {
+  isFullscreen.value = val;
+};
 
 const resolvedNativeUrl = computed(() => props.nativeUrl || props.previewUrl || "");
 

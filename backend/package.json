@@ -1,6 +1,6 @@
 {
   "name": "cloudpaste-api",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "CloudPaste API基于Cloudflare Workers和D1数据库",
   "main": "unified-entry.js",
   "scripts": {
@@ -35,13 +35,13 @@
     "mime-types": "^3.0.1",
     "node-schedule": "^2.1.1",
     "cron-parser": "^5.4.0",
+    "tsx": "^4.21.0",
     "webdav": "^5.8.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20251128.0",
     "@types/better-sqlite3": "^7.6.13",
     "cross-env": "^7.0.3",
-    "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "wrangler": "^4.50.0"
   },

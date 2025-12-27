@@ -117,6 +117,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, h } from 'vue'
+import { useLocalStorage } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import {
   IconSettings,
@@ -205,16 +206,11 @@ const emit = defineEmits([
 const { t } = useI18n()
 
 // 展开/收起状态
-const isExpanded = ref(false)
+const isExpanded = useLocalStorage('floating-toolbar-expanded', false)
 let hoverTimeout = null
 
-// 从 localStorage 恢复状态
-onMounted(() => {
-  const saved = localStorage.getItem('floating-toolbar-expanded')
-  if (saved !== null) {
-    isExpanded.value = saved === 'true'
-  }
-})
+// 保留生命周期钩子，方便未来扩展
+onMounted(() => {})
 
 // 组件卸载时清理 timeout
 onBeforeUnmount(() => {
@@ -234,7 +230,6 @@ const triggerButtonClass = computed(() => {
 // 切换展开/收起
 function toggleExpand() {
   isExpanded.value = !isExpanded.value
-  localStorage.setItem('floating-toolbar-expanded', isExpanded.value.toString())
 }
 
 // Hover 触发（可选）

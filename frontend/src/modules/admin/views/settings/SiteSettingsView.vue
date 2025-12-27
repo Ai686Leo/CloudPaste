@@ -100,10 +100,6 @@ const handleUpdateSiteSettings = async (event) => {
       } catch (storeError) {
         console.warn("更新站点配置Store失败:", storeError);
       }
-
-      setTimeout(() => {
-        settingsStatus.value.success = false;
-      }, 3000);
   } catch (error) {
     console.error("更新站点设置失败:", error);
     const message = error.message || "更新站点设置失败";

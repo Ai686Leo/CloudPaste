@@ -12,6 +12,7 @@ export default {
       googledrive: "Google Drive",
       github_releases: "GitHub Releases",
       github_api: "GitHub API",
+      telegram: "Telegram Bot API",
     },
 
     // 分组标题
@@ -103,6 +104,17 @@ export default {
         author_email: "作者邮箱（author.email）",
         token: "GitHub 访问令牌",
       },
+
+      // Telegram 特有字段
+      telegram: {
+        bot_token: "Bot Token",
+        target_chat_id: "目标频道/群 Chat ID",
+        api_base_url: "Bot API 地址",
+        bot_api_mode: "Bot API 模式",
+        part_size_mb: "分片大小（MB）",
+        upload_concurrency: "上传并发",
+        verify_after_upload: "上传后校验",
+      },
     },
 
     // 占位符文本
@@ -160,6 +172,31 @@ export default {
         author_name: "例如：Your Name（可选）",
         author_email: "{'例如：you@example.com（可选）'}",
         token: "必填：建议使用具有仓库读写权限的访问令牌",
+      },
+
+      telegram: {
+        bot_token: "粘贴从 ＠BotFather 拿到的 token（形如 123:ABC...）",
+        target_chat_id: "例如：-100xxxxxxxxxx（必须是纯数字）",
+        bot_api_mode: "默认使用官方",
+        api_base_url: "例如：https://api.telegram.org（自建 Bot API server 可改为你的地址）",
+        part_size_mb: "默认 15；未勾选自建时建议 ≤20；勾选自建可不限制",
+        upload_concurrency: "默认 2；调大更快但更容易被限流",
+      },
+    },
+
+    // 枚举选项
+    enum: {
+      telegram: {
+        bot_api_mode: {
+          official: "官方（api.telegram.org）",
+          self_hosted: "自建 Bot API Server",
+        },
+      },
+    },
+
+    toggle: {
+      telegram: {
+        bot_api_mode: "使用自建 Bot API Server",
       },
     },
 
@@ -228,6 +265,16 @@ export default {
         author_name: "可选：自定义 commit 的 author.name（与 author_email 成对填写）。",
         author_email: "可选：自定义 commit 的 author.email（与 author_name 成对填写）。",
         token: "必填：GitHub 访问令牌。用于提升 API 速率限制，并用于写入（创建 commit/更新 refs）。",
+      },
+
+      telegram: {
+        bot_token: "用于调用 Telegram Bot API 上传/下载文件",
+        target_chat_id: "文件会被发送到这个频道/群（需要把 bot 拉进并授予发消息权限）",
+        api_base_url: "默认官方地址；如果你后续自建 Bot API server，可以切到自建地址",
+        bot_api_mode: "未勾选自建：按官方 Bot API 规则单次最大上传大小 ≤20MB ；勾选自建：你自己提供 Bot API Server，可放宽这些限制",
+        part_size_mb: "挂载页断点续传的分片大小；默认 15MB。未勾选自建时建议 ≤20MB；勾选自建可不限制",
+        upload_concurrency: "限制同一存储配置同时向 Telegram 发请求的数量，避免并发过高导致限流",
+        verify_after_upload: "开启后每片上传成功会再次校验大小，速度稍慢但更稳(无特殊情况默认即可)",
       },
     },
 

@@ -282,6 +282,10 @@ export default {
     videoPreview: {
       loadingVideo: "Loading...",
       videoPlayer: "Video Player",
+      prevVideo: "Previous",
+      nextVideo: "Next",
+      playlist: "Playlist",
+      showPlaylist: "Show Playlist",
     },
     textPreview: {
       loadingText: "Loading...",

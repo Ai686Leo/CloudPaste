@@ -1,4 +1,5 @@
-import { ref, reactive, onMounted, onUnmounted } from "vue";
+import { ref, reactive, watch } from "vue";
+import { useLocalStorage, useTimeoutFn, useWindowSize } from "@vueuse/core";
 import { useGlobalMessage } from "@/composables/core/useGlobalMessage.js";
 import { formatCurrentTime } from "@/utils/timeUtils.js";
 
@@ -47,8 +48,10 @@ import { formatCurrentTime } from "@/utils/timeUtils.js";
  */
 export function useAdminBase(pageKey = "default", options = {}) {
   const { viewMode: viewModeConfig = null, mobileDetect: mobileDetectConfig = null } = options;
+  const { width: windowWidth } = useWindowSize();
 
   const globalMessage = useGlobalMessage();
+  const storedPageSizes = useLocalStorage("admin-page-size", {});
 
   // ========== 基础状态管理 ==========
   const loading = ref(false);
@@ -61,17 +64,18 @@ export function useAdminBase(pageKey = "default", options = {}) {
   const pageSizeOptions = [10, 20, 30, 50, 100];
 
   const getDefaultPageSize = () => {
-    let saved = null;
     try {
-      saved = localStorage.getItem("admin-page-size");
-      if (saved) {
-        const pageSizes = JSON.parse(saved);
-        return pageSizes[pageKey] || 20;
+      const saved = storedPageSizes.value;
+      if (saved && typeof saved === "object") {
+        return saved[pageKey] || 20;
       }
     } catch (error) {
-      const oldValue = parseInt(saved, 10) || 20;
-      const newFormat = { default: oldValue };
-      localStorage.setItem("admin-page-size", JSON.stringify(newFormat));
+      // ignore
+    }
+    // 兼容旧格式：曾经直接存一个数字
+    if (typeof storedPageSizes.value === "number") {
+      const oldValue = storedPageSizes.value || 20;
+      storedPageSizes.value = { default: oldValue };
       return pageKey === "default" ? oldValue : 20;
     }
     return 20;
@@ -115,10 +119,7 @@ export function useAdminBase(pageKey = "default", options = {}) {
 
   const changePageSize = (newLimit) => {
     try {
-      const saved = localStorage.getItem("admin-page-size");
-      const pageSizes = saved ? JSON.parse(saved) : {};
-      pageSizes[pageKey] = newLimit;
-      localStorage.setItem("admin-page-size", JSON.stringify(pageSizes));
+      storedPageSizes.value = { ...(storedPageSizes.value || {}), [pageKey]: newLimit };
     } catch (error) {
       console.warn("保存分页设置失败:", error);
     }
@@ -149,11 +150,20 @@ export function useAdminBase(pageKey = "default", options = {}) {
   };
 
   // ========== 消息管理 ==========
+  const clearSuccessDelayMs = ref(0);
+  const { start: startClearSuccess, stop: stopClearSuccess } = useTimeoutFn(
+    () => {
+      successMessage.value = "";
+    },
+    clearSuccessDelayMs,
+    { immediate: false }
+  );
+
   const showSuccess = (message, duration = 4000) => {
     successMessage.value = message;
-    setTimeout(() => {
-      successMessage.value = "";
-    }, duration);
+    stopClearSuccess();
+    clearSuccessDelayMs.value = duration;
+    startClearSuccess();
     globalMessage.showSuccess(message, duration);
   };
 
@@ -199,6 +209,7 @@ export function useAdminBase(pageKey = "default", options = {}) {
 
   if (viewModeConfig) {
     const { storageKey, defaultMode, responsive } = viewModeConfig;
+    const storedViewMode = useLocalStorage(storageKey, "");
 
     if (!storageKey) {
       throw new Error("useAdminBase: viewMode.storageKey is required");
@@ -207,31 +218,30 @@ export function useAdminBase(pageKey = "default", options = {}) {
     const getRecommendedMode = () => {
       if (!responsive) return defaultMode;
       const { breakpoint = 640, mobileMode, desktopMode } = responsive;
-      return window.innerWidth < breakpoint ? mobileMode : desktopMode;
+      return windowWidth.value < breakpoint ? mobileMode : desktopMode;
     };
 
     const getInitialMode = () => {
-      const saved = localStorage.getItem(storageKey);
-      if (saved) return saved;
+      if (storedViewMode.value) return storedViewMode.value;
       return responsive ? getRecommendedMode() : defaultMode;
     };
 
     viewMode.value = getInitialMode();
-    userHasChosenView.value = !!localStorage.getItem(storageKey);
+    userHasChosenView.value = !!storedViewMode.value;
 
     switchViewMode = (mode) => {
       viewMode.value = mode;
-      localStorage.setItem(storageKey, mode);
+      storedViewMode.value = mode;
       userHasChosenView.value = true;
     };
 
     // 响应式处理
     if (responsive) {
-      let lastBreakpointState = window.innerWidth < responsive.breakpoint;
+      let lastBreakpointState = windowWidth.value < responsive.breakpoint;
 
       const handleViewResize = () => {
         const { breakpoint = 640, mobileMode, desktopMode } = responsive;
-        const isNowMobile = window.innerWidth < breakpoint;
+        const isNowMobile = windowWidth.value < breakpoint;
 
         // 只在跨越断点时强制切换视图
         if (isNowMobile !== lastBreakpointState) {
@@ -243,13 +253,7 @@ export function useAdminBase(pageKey = "default", options = {}) {
         }
       };
 
-      onMounted(() => {
-        window.addEventListener("resize", handleViewResize);
-      });
-
-      onUnmounted(() => {
-        window.removeEventListener("resize", handleViewResize);
-      });
+      watch(windowWidth, handleViewResize);
     }
   }
 
@@ -261,17 +265,10 @@ export function useAdminBase(pageKey = "default", options = {}) {
     const breakpoint = typeof mobileDetectConfig === "object" ? mobileDetectConfig.breakpoint || 768 : 768;
 
     checkMobile = () => {
-      isMobile.value = window.innerWidth < breakpoint;
+      isMobile.value = windowWidth.value < breakpoint;
     };
 
-    onMounted(() => {
-      checkMobile();
-      window.addEventListener("resize", checkMobile);
-    });
-
-    onUnmounted(() => {
-      window.removeEventListener("resize", checkMobile);
-    });
+    watch(windowWidth, () => checkMobile(), { immediate: true });
   }
 
   // ========== 返回值 ==========

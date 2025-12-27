@@ -2,6 +2,7 @@
  * useUppyPaste - Uppy粘贴上传Composable
  */
 import { watch } from 'vue';
+import { useEventListener } from '@vueuse/core';
 
 /**
  * Uppy粘贴上传Composable
@@ -13,13 +14,15 @@ import { watch } from 'vue';
  */
 export function useUppyPaste(options) {
   let pasteHandler = null;
+  let stopPasteListener = null;
 
   /**
    * 设置粘贴监听器
    */
   const setupPasteListener = () => {
-    if (pasteHandler) {
-      document.removeEventListener('paste', pasteHandler);
+    if (typeof stopPasteListener === 'function') {
+      stopPasteListener();
+      stopPasteListener = null;
     }
 
     pasteHandler = (event) => {
@@ -56,7 +59,7 @@ export function useUppyPaste(options) {
       }
     };
 
-    document.addEventListener('paste', pasteHandler);
+    stopPasteListener = useEventListener(document, 'paste', pasteHandler);
 
     // 保存清理函数到uppy实例
     if (options.uppy?.value) {
@@ -68,10 +71,11 @@ export function useUppyPaste(options) {
    * 清理粘贴监听器
    */
   const cleanupPasteListener = () => {
-    if (pasteHandler) {
-      document.removeEventListener('paste', pasteHandler);
-      pasteHandler = null;
+    if (typeof stopPasteListener === 'function') {
+      stopPasteListener();
+      stopPasteListener = null;
     }
+    pasteHandler = null;
   };
 
   // 监听uppy实例变化

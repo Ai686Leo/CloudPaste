@@ -18,7 +18,8 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { computed } from 'vue'
+import { useScroll } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { IconArrowUp } from '@/components/icons'
 
@@ -34,43 +35,13 @@ const props = defineProps({
 })
 
 const { t } = useI18n()
-const isVisible = ref(false)
-
-// 滚动事件处理
-function handleScroll() {
-  isVisible.value = window.scrollY > props.threshold
-}
+const { y } = useScroll(window, { behavior: 'smooth' })
+const isVisible = computed(() => y.value > props.threshold)
 
 // 平滑滚动到顶部
 function scrollToTop() {
-  window.scrollTo({
-    top: 0,
-    behavior: 'smooth'
-  })
+  y.value = 0
 }
-
-// 节流函数
-function throttle(fn, delay) {
-  let lastCall = 0
-  return function (...args) {
-    const now = Date.now()
-    if (now - lastCall >= delay) {
-      lastCall = now
-      fn.apply(this, args)
-    }
-  }
-}
-
-const throttledScroll = throttle(handleScroll, 100)
-
-onMounted(() => {
-  window.addEventListener('scroll', throttledScroll, { passive: true })
-  handleScroll() // 初始检查
-})
-
-onUnmounted(() => {
-  window.removeEventListener('scroll', throttledScroll)
-})
 </script>
 
 <style scoped>

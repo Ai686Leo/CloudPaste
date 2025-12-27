@@ -9,6 +9,7 @@ import {
   IconStorageGitHub,
   IconStorageWebDAV,
   IconStorageLocal,
+  IconStorageTelegram,
 } from "@/components/icons";
 
 /**
@@ -64,6 +65,13 @@ const STORAGE_TYPE_CONFIG = {
     darkColor: "text-gray-300",
     lightBg: "bg-gray-100",
     darkBg: "bg-gray-700",
+  },
+  TELEGRAM: {
+    icon: IconStorageTelegram,
+    lightColor: "text-sky-500",
+    darkColor: "text-sky-400",
+    lightBg: "bg-sky-100",
+    darkBg: "bg-sky-900/30",
   },
 };
 

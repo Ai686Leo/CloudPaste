@@ -183,17 +183,37 @@ export function createHttpStreamDescriptor({
     supportsRange,
     async probeSize(options = {}) {
       if (typeof currentSize === "number" && currentSize >= 0) return currentSize;
-      if (typeof fetchHeadResponse !== "function") return currentSize;
-
       const { signal } = options;
-      const resp = await fetchWithRetry("HEAD", () => fetchHeadResponse(signal), { signal });
-      if (!resp) return currentSize;
-      if (!resp.ok) return currentSize;
 
-      const inferred = tryInferSizeFromResponse(resp);
-      if (typeof inferred === "number") {
-        currentSize = inferred;
+      // 1) 优先 HEAD
+      if (typeof fetchHeadResponse === "function") {
+        const resp = await fetchWithRetry("HEAD", () => fetchHeadResponse(signal), { signal });
+        if (resp && resp.ok) {
+          const inferred = tryInferSizeFromResponse(resp);
+          if (typeof inferred === "number") {
+            currentSize = inferred;
+            return currentSize;
+          }
+        }
       }
+
+      // 2) 某些上游不支持 HEAD 或不返回 Content-Length：用 bytes=0-0 探测
+      if (typeof fetchRangeResponse === "function") {
+        const rangeHeader = "bytes=0-0";
+        const resp = await fetchWithRetry("GET(RangeProbe)", () => fetchRangeResponse(signal, rangeHeader, { start: 0, end: 0 }), {
+          signal,
+        });
+        if (resp && resp.ok) {
+          const inferred = tryInferSizeFromResponse(resp);
+          if (typeof inferred === "number") {
+            currentSize = inferred;
+          }
+        }
+        try {
+          await resp?.body?.cancel?.();
+        } catch {}
+      }
+
       return currentSize;
     },
     async getStream(options = {}) {
@@ -233,7 +253,7 @@ export function createHttpStreamDescriptor({
     descriptor.getRange = async (range, options = {}) => {
       const { signal } = options;
       const rangeHeader = `bytes=${range.start}-${range.end}`;
-      const resp = await fetchWithRetry("GET(Range)", () => fetchRangeResponse(signal, rangeHeader, range), { signal });
+      let resp = await fetchWithRetry("GET(Range)", () => fetchRangeResponse(signal, rangeHeader, range), { signal });
 
       if (!resp.ok) {
         if (resp.status === 404) {
@@ -247,16 +267,32 @@ export function createHttpStreamDescriptor({
         if (typeof inferred === "number") currentSize = inferred;
       }
 
-      const stream = resp.body;
-      const isPartial = resp.status === 206 && !!resp.headers.get("content-range");
+      // 判断上游是否“真的”按 Range 返回了部分内容：
+      let contentRange = resp.headers.get("content-range");
+      let isPartial = false;
+      if (resp.status === 206) {
+        isPartial = true;
+      }
+      if (!isPartial && contentRange) {
+        const m = String(contentRange).match(/^bytes\s+(\d+)-(\d+)\/(\d+|\*)/i);
+        if (m && m[1]) {
+          const start = Number(m[1]);
+          if (Number.isFinite(start) && start === range.start) {
+            isPartial = true;
+          }
+        }
+      }
 
       return {
-        stream,
+        stream: resp.body,
         supportsRange: isPartial,
+        upstreamStatus: resp.status,
+        upstreamContentRange: contentRange || null,
         async close() {
-          if (stream && typeof stream.cancel === "function") {
+          const responseStream = resp.body;
+          if (responseStream && typeof responseStream.cancel === "function") {
             try {
-              await stream.cancel();
+              await responseStream.cancel();
             } catch {}
           }
         },

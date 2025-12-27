@@ -16,6 +16,9 @@ class UrlCacheManager extends BaseCache {
     this.config = {
       customHostTtl: options.customHostTtl || 86400 * 7,
     };
+
+    // - 通过版本号让旧缓存自动失效（不需要手动清缓存）
+    this.keyVersion = options.keyVersion || "v3";
   }
 
   generateKey(storageConfigId, storagePath, forceDownload, userType, userId) {
@@ -25,7 +28,7 @@ class UrlCacheManager extends BaseCache {
     const userScope = `${userType}:${userId}`;
     const downloadFlag = forceDownload ? "dl" : "pv";
     const encodedPath = Buffer.from(storagePath).toString("base64");
-    return `url:${storageConfigId}:${userScope}:${downloadFlag}:${encodedPath}`;
+    return `url:${this.keyVersion}:${storageConfigId}:${userScope}:${downloadFlag}:${encodedPath}`;
   }
 
   get(storageConfigId, storagePath, forceDownload, userType, userId) {

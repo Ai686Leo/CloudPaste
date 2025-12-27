@@ -1,7 +1,8 @@
 <script setup>
 // PasteViewOutline组件 - 实现文档大纲及分栏布局功能
 // 该组件负责显示文档的标题结构，并允许用户通过拖动分隔线调整大纲与内容的比例
-import { ref, computed, onMounted, onBeforeUnmount } from "vue";
+import { ref, computed, onBeforeUnmount, watch } from "vue";
+import { useEventListener, useBreakpoints, breakpointsTailwind } from "@vueuse/core";
 import { debugLog } from "./PasteViewUtils";
 import { IconChevronDown } from "@/components/icons";
 
@@ -47,9 +48,12 @@ const leftPanelWidth = ref(25); // 默认左侧面板宽度占比，单位为百
 const isDragging = ref(false); // 是否正在拖动分隔线
 const startX = ref(0); // 拖动开始时的X坐标
 const startWidth = ref(0); // 拖动开始时的宽度
+let stopDragMouseMove = null;
+let stopDragMouseUp = null;
 
 // 移动端适配和控制
-const isMobile = ref(false); // 是否为移动设备
+const breakpoints = useBreakpoints(breakpointsTailwind);
+const isMobile = breakpoints.smaller("md"); // < 768px
 const isOutlineExpanded = ref(false); // 移动端下大纲是否展开
 
 // 点击大纲项跳转到对应标题位置
@@ -85,8 +89,10 @@ const startDrag = (e) => {
   startWidth.value = leftPanelWidth.value;
 
   // 添加全局事件监听，使拖动可以在整个窗口范围内进行
-  document.addEventListener("mousemove", onDrag);
-  document.addEventListener("mouseup", stopDrag);
+  if (typeof stopDragMouseMove === "function") stopDragMouseMove();
+  if (typeof stopDragMouseUp === "function") stopDragMouseUp();
+  stopDragMouseMove = useEventListener(document, "mousemove", onDrag, { passive: false });
+  stopDragMouseUp = useEventListener(document, "mouseup", stopDrag);
 
   // 修改光标样式，提高用户体验
   document.body.style.cursor = "col-resize";
@@ -135,8 +141,10 @@ const onDrag = (e) => {
 // 停止拖动处理 - 清理事件监听和恢复原有状态
 const stopDrag = () => {
   isDragging.value = false;
-  document.removeEventListener("mousemove", onDrag);
-  document.removeEventListener("mouseup", stopDrag);
+  if (typeof stopDragMouseMove === "function") stopDragMouseMove();
+  if (typeof stopDragMouseUp === "function") stopDragMouseUp();
+  stopDragMouseMove = null;
+  stopDragMouseUp = null;
 
   // 恢复光标样式
   document.body.style.cursor = "";
@@ -174,14 +182,14 @@ const rightPanelStyle = computed(() => {
   };
 });
 
-// 检查是否为移动设备 - 根据屏幕宽度判断
-const checkMobile = () => {
-  isMobile.value = window.innerWidth < 768;
-  // 在移动端默认收起大纲，优化小屏幕下的空间利用
-  if (isMobile.value) {
-    isOutlineExpanded.value = false;
-  }
-};
+// 移动端时默认收起大纲，避免挤占空间
+watch(
+  isMobile,
+  (mobile) => {
+    if (mobile) isOutlineExpanded.value = false;
+  },
+  { immediate: true }
+);
 
 // 切换移动端大纲展开状态
 const toggleOutlineOnMobile = () => {
@@ -191,17 +199,16 @@ const toggleOutlineOnMobile = () => {
   }
 };
 
-// 监听窗口大小变化，动态适应布局
-onMounted(() => {
-  checkMobile();
-  window.addEventListener("resize", checkMobile);
-});
-
 // 组件卸载时清理事件监听，避免内存泄漏
 onBeforeUnmount(() => {
-  window.removeEventListener("resize", checkMobile);
-  document.removeEventListener("mousemove", onDrag);
-  document.removeEventListener("mouseup", stopDrag);
+  if (isDragging.value) {
+    stopDrag();
+  } else {
+    if (typeof stopDragMouseMove === "function") stopDragMouseMove();
+    if (typeof stopDragMouseUp === "function") stopDragMouseUp();
+  }
+  stopDragMouseMove = null;
+  stopDragMouseUp = null;
 });
 </script>
 

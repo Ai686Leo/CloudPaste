@@ -234,6 +234,10 @@ export default {
     videoPreview: {
       loadingVideo: "加载中...",
       videoPlayer: "视频播放器",
+      prevVideo: "上一集",
+      nextVideo: "下一集",
+      playlist: "播放列表",
+      showPlaylist: "显示播放列表",
     },
     textPreview: {
       loadingText: "加载中...",

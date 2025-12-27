@@ -73,11 +73,6 @@ const handleUpdateWebdavSettings = async (event) => {
     });
     // 更新成功
     showSuccess(t("admin.webdav.messages.updateSuccess"));
-
-    // 3秒后清除成功消息
-    setTimeout(() => {
-      webdavSettingsStatus.value.success = false;
-    }, 3000);
   } catch (error) {
     const message = error.message || t("admin.webdav.messages.updateFailed");
     showError(message);
