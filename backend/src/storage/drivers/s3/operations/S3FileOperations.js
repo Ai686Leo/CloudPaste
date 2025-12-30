@@ -18,6 +18,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { getMimeTypeFromFilename } from "../../../../utils/fileUtils.js";
 import { handleFsError } from "../../../fs/utils/ErrorHandler.js";
 import { updateParentDirectoriesModifiedTime } from "../utils/S3DirectoryUtils.js";
+import { applyS3RootPrefix } from "../utils/S3PathUtils.js";
 import { CAPABILITIES } from "../../../interfaces/capabilities/index.js";
 import { buildFileInfo } from "../../../utils/FileInfoBuilder.js";
 import { createHttpStreamDescriptor } from "../../../streaming/StreamDescriptorUtils.js";
@@ -51,7 +52,8 @@ export class S3FileOperations {
     // 注意：S3StorageDriver.initialize 已经创建并初始化了 this.s3Client。
     // 这里优先复用，避免每次下载都重复解密/创建 client（Worker 冷启动时更容易抖动）。
     const s3Client = this.s3Client || (await createS3Client(s3Config, encryptionSecret));
-    const key = s3SubPath.startsWith("/") ? s3SubPath.slice(1) : s3SubPath;
+    const fullKey = applyS3RootPrefix(s3Config, s3SubPath);
+    const key = fullKey.startsWith("/") ? fullKey.slice(1) : fullKey;
 
     // 使用统一的 HTTP 流描述构造器（Web ReadableStream）：
     const expiresIn = 300;
@@ -121,12 +123,14 @@ export class S3FileOperations {
 
     return handleFsError(
       async () => {
+        const fullKey = applyS3RootPrefix(this.config, s3SubPath);
+
         // 使用 ListObjectsV2Command 获取文件信息
-        console.log(`getFileInfo - 使用 ListObjects 查询文件: ${s3SubPath}`);
+        console.log(`getFileInfo - 使用 ListObjects 查询文件: ${fullKey}`);
 
         const listParams = {
           Bucket: this.config.bucket_name,
-          Prefix: s3SubPath,
+          Prefix: fullKey,
           MaxKeys: 1,
         };
 
@@ -135,7 +139,7 @@ export class S3FileOperations {
           const listResponse = await this.s3Client.send(listCommand);
 
           // 检查是否找到精确匹配的文件
-          const exactMatch = listResponse.Contents?.find((item) => item.Key === s3SubPath);
+          const exactMatch = listResponse.Contents?.find((item) => item.Key === fullKey);
 
           if (!exactMatch) {
             throw new NotFoundError("文件不存在");
@@ -173,7 +177,7 @@ export class S3FileOperations {
           try {
             const getParams = {
               Bucket: this.config.bucket_name,
-              Key: s3SubPath,
+              Key: fullKey,
               Range: "bytes=0-0", // 只获取第一个字节来检查文件存在性
             };
 
@@ -248,6 +252,8 @@ export class S3FileOperations {
 
     return handleFsError(
       async () => {
+        const fullKey = applyS3RootPrefix(this.config, s3SubPath);
+
         const rawPath = typeof s3SubPath === "string" ? s3SubPath : "";
         const trimmedPath = rawPath.trim();
         if (!trimmedPath || trimmedPath.endsWith("/")) {
@@ -262,7 +268,7 @@ export class S3FileOperations {
 
         const presignedUrl = await generateDownloadUrl(
           this.config,
-          s3SubPath,
+          fullKey,
           this.encryptionSecret,
           expiresIn,
           forceDownload,
@@ -298,7 +304,7 @@ export class S3FileOperations {
    * @returns {Promise<boolean>} 是否存在
    */
   async exists(s3SubPath) {
-    const key = s3SubPath.startsWith("/") ? s3SubPath.slice(1) : s3SubPath;
+    const key = applyS3RootPrefix(this.config, s3SubPath);
     const isDirectory = key === "" || key.endsWith("/");
 
     // 文件优先使用 HEAD，避免 List 前缀误判
@@ -354,6 +360,8 @@ export class S3FileOperations {
 
     return handleFsError(
       async () => {
+        const fullKey = applyS3RootPrefix(this.config, s3SubPath);
+
         const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
         // 检查内容大小
@@ -371,14 +379,14 @@ export class S3FileOperations {
         try {
           const listParams = {
             Bucket: this.config.bucket_name,
-            Prefix: s3SubPath,
+            Prefix: fullKey,
             MaxKeys: 1,
           };
           const listCommand = new ListObjectsV2Command(listParams);
           const listResponse = await this.s3Client.send(listCommand);
 
           // 检查是否找到精确匹配的文件
-          const exactMatch = listResponse.Contents?.find((item) => item.Key === s3SubPath);
+          const exactMatch = listResponse.Contents?.find((item) => item.Key === fullKey);
           if (exactMatch) {
             originalMetadata = {
               LastModified: exactMatch.LastModified,
@@ -393,17 +401,17 @@ export class S3FileOperations {
 
         const putParams = {
           Bucket: this.config.bucket_name,
-          Key: s3SubPath,
+          Key: fullKey,
           Body: content,
           ContentType: contentType,
         };
 
-        console.log(`准备更新S3对象: ${s3SubPath}, 内容类型: ${contentType}`);
+        console.log(`准备更新S3对象: ${fullKey}, 内容类型: ${contentType}`);
         const putCommand = new PutObjectCommand(putParams);
         const result = await this.s3Client.send(putCommand);
 
         // 更新父目录的修改时间
-        await updateParentDirectoriesModifiedTime(this.s3Client, this.config.bucket_name, s3SubPath);
+        await updateParentDirectoriesModifiedTime(this.s3Client, this.config.bucket_name, fullKey, this.config.root_prefix);
 
         return {
           success: true,
@@ -429,6 +437,9 @@ export class S3FileOperations {
   async renameFile(oldS3SubPath, newS3SubPath, options = {}) {
     return handleFsError(
       async () => {
+        const oldKey = applyS3RootPrefix(this.config, oldS3SubPath);
+        const newKey = applyS3RootPrefix(this.config, newS3SubPath);
+
         // 检查源文件是否存在
         const sourceExists = await this.exists(oldS3SubPath);
         if (!sourceExists) {
@@ -444,8 +455,8 @@ export class S3FileOperations {
         // 复制文件到新位置
         const copyParams = {
           Bucket: this.config.bucket_name,
-          CopySource: encodeURIComponent(this.config.bucket_name + "/" + oldS3SubPath),
-          Key: newS3SubPath,
+          CopySource: encodeURIComponent(this.config.bucket_name + "/" + oldKey),
+          Key: newKey,
         };
 
         const copyCommand = new CopyObjectCommand(copyParams);
@@ -454,7 +465,7 @@ export class S3FileOperations {
         // 删除原文件
         const deleteParams = {
           Bucket: this.config.bucket_name,
-          Key: oldS3SubPath,
+          Key: oldKey,
         };
 
         const deleteCommand = new DeleteObjectCommand(deleteParams);
@@ -483,6 +494,9 @@ export class S3FileOperations {
     const { skipExisting = true } = options;
 
     try {
+      const sourceKey = applyS3RootPrefix(this.config, sourceS3SubPath);
+      const targetKey = applyS3RootPrefix(this.config, targetS3SubPath);
+
       // 检查源文件是否存在
       const sourceExists = await this.exists(sourceS3SubPath);
       if (!sourceExists) {
@@ -507,8 +521,8 @@ export class S3FileOperations {
       // 执行复制
       const copyParams = {
         Bucket: this.config.bucket_name,
-        CopySource: encodeURIComponent(this.config.bucket_name + "/" + sourceS3SubPath),
-        Key: targetS3SubPath,
+        CopySource: encodeURIComponent(this.config.bucket_name + "/" + sourceKey),
+        Key: targetKey,
         MetadataDirective: "COPY", // 保持原有元数据
       };
 
@@ -516,7 +530,7 @@ export class S3FileOperations {
       await this.s3Client.send(copyCommand);
 
       // 更新父目录的修改时间
-      await updateParentDirectoriesModifiedTime(this.s3Client, this.config.bucket_name, targetS3SubPath);
+      await updateParentDirectoriesModifiedTime(this.s3Client, this.config.bucket_name, targetKey, this.config.root_prefix);
 
       return {
         success: true,

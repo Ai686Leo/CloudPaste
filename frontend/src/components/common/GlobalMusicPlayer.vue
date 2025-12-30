@@ -52,11 +52,13 @@ import { useI18n } from "vue-i18n";
 import { useDraggable, useWindowSize } from "@vueuse/core";
 import { useGlobalPlayerStore } from "@/stores/globalPlayerStore.js";
 import { useThemeMode } from "@/composables/core/useThemeMode.js";
+import { useFsService } from "@/modules/fs";
 
 const { t } = useI18n();
 
 // Store
 const store = useGlobalPlayerStore();
+const fsService = useFsService();
 
 // 主题
 const { isDarkMode } = useThemeMode();
@@ -70,6 +72,7 @@ const aplayerInstance = ref(null);
 let APlayerConstructor = null;
 let aplayerCssLoaded = false;
 let initTaskId = 0;
+let suppressNextListSwitch = false;
 
 const ensureAPlayerLoaded = async () => {
   if (APlayerConstructor) return APlayerConstructor;
@@ -150,11 +153,139 @@ const formatAudioList = (playlist) => {
   return playlist.map((audio) => ({
     name: audio.name || audio.title || t('mount.audioPreview.unknownAudio'),
     artist: audio.artist || t('mount.audioPreview.unknownArtist'),
-    url: audio.url,
+    url: audio.url || PLACEHOLDER_AUDIO_URL,
     cover: audio.cover || audio.poster || generateDefaultCover(audio.name),
     lrc: audio.lrc || audio.lyrics,
     theme: getThemeColor(),
+    // 透传原始文件信息：用于“切歌时按需获取直链”
+    originalFile: audio.originalFile || null,
   }));
+};
+
+// ===== “按需获取直链”缓存 =====
+const audioUrlCache = new Map();
+const audioUrlPending = new Map();
+
+// 用一个“很短的静音 wav”当占位 url：避免 APlayer 遇到空 url 就直接报错/自动跳歌
+const PLACEHOLDER_AUDIO_URL =
+  "data:audio/wav;base64,UklGRuwAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YcgAAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgA==";
+
+const safePlayAudioEl = (audioEl) => {
+  if (!audioEl?.play) return;
+  try {
+    const p = audioEl.play();
+    if (p && typeof p.catch === "function") {
+      p.catch(() => {
+      });
+    }
+  } catch {
+    // 忽略同步异常
+  }
+};
+
+const waitForAPlayerListDomReady = async (ap, { minItems = 1, timeoutMs = 1500 } = {}) => {
+  const start = performance.now?.() ?? Date.now();
+  // “轮询 + 短等待”是为了等 APlayer 把列表 DOM 插入
+  while (true) {
+    const now = performance.now?.() ?? Date.now();
+    if (now - start > timeoutMs) return false;
+
+    try {
+      const items = ap?.container?.querySelectorAll?.(".aplayer-list ol li");
+      if (items && items.length >= minItems) return true;
+    } catch {
+      // 忽略 DOM 探测异常
+    }
+
+    // 让出一帧，给 APlayer 自己渲染 DOM
+    await new Promise((r) => setTimeout(r, 50));
+  }
+};
+
+const syncAPlayerAudioUrl = (index, url) => {
+  const ap = aplayerInstance.value;
+  if (!ap?.list?.audios || typeof index !== "number") return;
+
+  const audio = ap.list.audios[index];
+  if (audio) {
+    audio.url = url;
+  }
+
+  if (ap.list.index === index && ap.audio) {
+    try {
+      ap.audio.src = url;
+      // 恢复 loop 语义：占位时强制 loop=true；真实音频则按 APlayer 配置（loop==='one'）决定
+      ap.audio.loop = url === PLACEHOLDER_AUDIO_URL ? true : ap.options?.loop === "one";
+      ap.audio.load?.();
+    } catch (e) {
+      console.warn("同步 audio.src 失败:", e);
+    }
+  }
+};
+
+const ensureTrackUrlReady = async (index, { playAfter = false } = {}) => {
+  const track = store.playlist?.[index];
+  if (!track) return null;
+
+  const syncUrlAndMaybeResume = (url) => {
+    const ap = aplayerInstance.value;
+    const wasPlayingBeforeSwap = !!ap?.audio && !ap.audio.paused;
+
+    track.url = url;
+    syncAPlayerAudioUrl(index, url);
+
+    const shouldResume = playAfter || wasPlayingBeforeSwap;
+    if (!shouldResume) return;
+    safePlayAudioEl(ap?.audio);
+  };
+
+  // 已有真实 url：直接返回
+  if (track.url && track.url !== PLACEHOLDER_AUDIO_URL) {
+    if (playAfter) {
+      safePlayAudioEl(aplayerInstance.value?.audio);
+    }
+    return track.url;
+  }
+
+  const filePath = track.originalFile?.path;
+  if (!filePath) return null;
+
+  if (audioUrlCache.has(filePath)) {
+    const cachedUrl = audioUrlCache.get(filePath);
+    syncUrlAndMaybeResume(cachedUrl);
+    return cachedUrl;
+  }
+
+  if (audioUrlPending.has(filePath)) {
+    const pending = audioUrlPending.get(filePath);
+    const url = await pending;
+    if (url) {
+      syncUrlAndMaybeResume(url);
+    }
+    return url;
+  }
+
+  const task = (async () => {
+    try {
+      const url = await fsService.getFileLink(filePath, null, false);
+      if (url) audioUrlCache.set(filePath, url);
+      return url;
+    } catch (error) {
+      console.error(`获取音频直链失败: ${filePath}`, error);
+      return null;
+    }
+  })();
+
+  audioUrlPending.set(filePath, task);
+  try {
+    const url = await task;
+    if (url) {
+      syncUrlAndMaybeResume(url);
+    }
+    return url;
+  } finally {
+    audioUrlPending.delete(filePath);
+  }
 };
 
 // 初始化 APlayer
@@ -174,7 +305,7 @@ const initAPlayer = () => {
   const options = {
     container: aplayerContainer.value,
     audio: audioData,
-    autoplay: true,
+    autoplay: false,
     theme: getThemeColor(),
     loop: store.loopMode,
     order: store.orderMode,
@@ -184,7 +315,7 @@ const initAPlayer = () => {
     mini: isMiniMode.value,
     listFolded: true,
     listMaxHeight: "200px",
-    storageName: "cloudpaste-aplayer",
+    storageName: "cloudpaste-aplayer-global",
   };
 
   // 动态加载 APlayer
@@ -208,18 +339,8 @@ const initAPlayer = () => {
 
       aplayerInstance.value = ap;
 
-      // 如果有指定的起始索引，切换到该曲目
-      if (store.currentIndex > 0 && store.currentIndex < audioData.length) {
-        aplayerInstance.value.list.switch(store.currentIndex);
-      }
-
       // 绑定事件
       bindAPlayerEvents();
-
-      // 同步模式配置
-      applyDisplayMode(store.displayMode);
-      applyLoopMode(store.loopMode);
-      applyOrderMode(store.orderMode);
 
       // 保存实例引用到 store
       store.setAPlayerInstance(aplayerInstance.value);
@@ -230,10 +351,46 @@ const initAPlayer = () => {
       });
 
       console.log("🎵 全局播放器 APlayer 初始化成功");
+
+      // 等 APlayer 列表 DOM 真正就绪后再 switch
+      void (async () => {
+        await nextTick();
+        if (taskId !== initTaskId) return;
+
+        const maxIndex = Math.max(0, (ap?.list?.audios?.length || 1) - 1);
+        const idx = Math.min(Math.max(store.currentIndex || 0, 0), maxIndex);
+
+        // 等列表 DOM（至少要有 idx+1 个 li）
+        const ok = await waitForAPlayerListDomReady(ap, { minItems: idx + 1, timeoutMs: 2000 });
+        if (taskId !== initTaskId) return;
+
+        if (ok && idx > 0) {
+          suppressNextListSwitch = true;
+          try {
+            ap.list.switch(idx);
+          } catch {
+            // 忽略同步异常（真正的崩溃通常是 APlayer 内部异步触发，这里已经通过 wait 尽量避免）
+          }
+        }
+
+        // 切到目标曲目后，再按需补齐直链并播放
+        void ensureTrackUrlReady(idx, { playAfter: true });
+      })();
     })
     .catch((error) => {
       console.error("APlayer 初始化失败:", error);
     });
+};
+
+// 避免同一时刻被多处 watch/onMounted 重复触发 init
+let initScheduled = false;
+const scheduleInitAPlayer = () => {
+  if (initScheduled) return;
+  initScheduled = true;
+  nextTick(() => {
+    initScheduled = false;
+    initAPlayer();
+  });
 };
 
 // 绑定 APlayer 事件
@@ -255,16 +412,51 @@ const bindAPlayerEvents = () => {
   });
 
   ap.on("listswitch", (index) => {
-    store.syncCurrentIndex(index.index !== undefined ? index.index : index);
+    const resolvedIndex = index && typeof index === "object" && "index" in index ? index.index : index;
+    store.syncCurrentIndex(resolvedIndex);
+
+    // 初始化阶段我们会主动 switch 到目标曲目，这一次不需要再触发“按需取直链”
+    if (suppressNextListSwitch) {
+      suppressNextListSwitch = false;
+      return;
+    }
+
+    // 切到某一首时再取直链
+    const wasPlaying = !!ap?.audio && !ap.audio.paused;
+
+    // 如果切到的是“占位静音”，先强制 loop，避免它瞬间结束→APlayer 自动跳走
+    try {
+      const currentUrl = ap?.list?.audios?.[resolvedIndex]?.url;
+      if (ap?.audio && currentUrl === PLACEHOLDER_AUDIO_URL) {
+        ap.audio.loop = true;
+      }
+    } catch {
+      // 忽略
+    }
+
+    void ensureTrackUrlReady(resolvedIndex, { playAfter: wasPlaying });
   });
 
   ap.on("error", (error) => {
+    // “按需获取直链”场景：如果当前这首还没拿到 url，APlayer 可能会先抛一次错误，先忽略即可
+    try {
+      const idx = ap?.list?.index;
+      const current = typeof idx === "number" ? ap?.list?.audios?.[idx] : null;
+      if (current && (!current.url || current.url === "" || current.url === PLACEHOLDER_AUDIO_URL)) {
+        console.log("🎵 正在按需获取音频直链，先忽略一次播放错误");
+        return;
+      }
+    } catch {
+      // 忽略探测异常
+    }
     console.error("APlayer 播放错误:", error);
   });
 };
 
 // 销毁 APlayer
 const destroyAPlayer = () => {
+  // 任何销毁都视为“取消当前 init 任务”，防止异步 init 回来后又把实例塞回去
+  initTaskId++;
   if (aplayerInstance.value) {
     try {
       aplayerInstance.value.destroy();
@@ -410,16 +602,8 @@ watch(
   () => store.playlist,
   (newPlaylist, oldPlaylist) => {
     if (!newPlaylist || newPlaylist.length === 0 || !store.isVisible) return;
-    if (!aplayerInstance.value) {
-      nextTick(() => {
-        initAPlayer();
-      });
-      return;
-    }
     if (newPlaylist === oldPlaylist) return;
-    nextTick(() => {
-      initAPlayer();
-    });
+    scheduleInitAPlayer();
   }
 );
 
@@ -427,9 +611,7 @@ watch(
   () => store.isVisible,
   (visible) => {
     if (visible && store.hasPlaylist) {
-      nextTick(() => {
-        initAPlayer();
-      });
+      scheduleInitAPlayer();
     } else if (!visible) {
       destroyAPlayer();
     }
@@ -461,9 +643,7 @@ watch(
 
 onMounted(() => {
   if (store.isVisible && store.hasPlaylist) {
-    nextTick(() => {
-      initAPlayer();
-    });
+    scheduleInitAPlayer();
   }
   void dockToBottomLeftIfNeeded();
 });

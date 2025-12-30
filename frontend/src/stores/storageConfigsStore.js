@@ -28,7 +28,7 @@ const STORAGE_TYPE_SCHEMA = {
     label: "OneDrive 存储",
     description: "基于 Microsoft OneDrive / Graph API 的云存储，支持预签名直传",
     capabilities: {
-      multipart: false,
+      multipart: true,
       presigned: true,
       requiresProxy: false,
       preview: "signed-url",
@@ -96,6 +96,17 @@ const STORAGE_TYPE_SCHEMA = {
     capabilities: {
       multipart: false,
       presigned: false,
+      requiresProxy: true,
+      preview: "proxy",
+    },
+  },
+  HUGGINGFACE_DATASETS: {
+    type: "HUGGINGFACE_DATASETS",
+    label: "HuggingFace Datasets",
+    description: "将 HuggingFace Datasets 映射为文件系统，支持预签名直传与分片上传",
+    capabilities: {
+      multipart: true,
+      presigned: true,
       requiresProxy: true,
       preview: "proxy",
     },

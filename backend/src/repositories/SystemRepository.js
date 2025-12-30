@@ -5,9 +5,44 @@
 
 import { BaseRepository } from "./BaseRepository.js";
 import { DbTables } from "../constants/index.js";
-import { SETTING_GROUPS, SETTING_TYPES, SETTING_FLAGS, validateSettingValue, convertSettingValue } from "../constants/settings.js";
+import { DEFAULT_SETTINGS, SETTING_GROUPS, SETTING_TYPES, SETTING_FLAGS, validateSettingValue, convertSettingValue } from "../constants/settings.js";
 
 export class SystemRepository extends BaseRepository {
+  /**
+   * - 只会在 metadata 不存在时尝试 INSERT OR IGNORE
+   * - 如果 DEFAULT_SETTINGS 也没有该 key，则返回 null
+   *
+   * @param {string} key
+   * @returns {Promise<Object|null>}
+   */
+  async ensureSettingMetadata(key) {
+    if (!key) return null;
+
+    const existing = await this.getSettingMetadata(key);
+    if (existing) return existing;
+
+    const defaults = DEFAULT_SETTINGS || {};
+    const def = defaults[key];
+    if (!def) return null;
+
+    // 将 DEFAULT_SETTINGS 的字段映射到 DB 列
+    const value = def.default_value ?? "";
+    const description = def.help ?? "";
+    const type = def.type ?? SETTING_TYPES.TEXT;
+    const groupId = def.group_id ?? SETTING_GROUPS.GLOBAL;
+    const options = def.options ?? null;
+    const sortOrder = def.sort_order ?? 0;
+    const flags = def.flag ?? SETTING_FLAGS.PUBLIC;
+
+    await this.execute(
+      `INSERT OR IGNORE INTO ${DbTables.SYSTEM_SETTINGS} (key, value, description, type, group_id, options, sort_order, flags)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [key, String(value), String(description), String(type), Number(groupId), options, Number(sortOrder), Number(flags)],
+    );
+
+    return await this.getSettingMetadata(key);
+  }
+
   /**
    * 获取系统统计数据
    * @returns {Promise<Object>} 统计数据
@@ -276,7 +311,7 @@ export class SystemRepository extends BaseRepository {
 
     // 验证所有设置项都属于指定分组
     for (const key of keys) {
-      const metadata = await this.getSettingMetadata(key);
+      const metadata = await this.ensureSettingMetadata(key);
       if (!metadata) {
         errors.push({ key, error: `设置项不存在: ${key}` });
         continue;

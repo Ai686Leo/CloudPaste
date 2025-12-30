@@ -1,7 +1,7 @@
-import { DriverError } from "../../../http/errors.js";
 import { ApiStatus } from "../../../constants/index.js";
 import { CAPABILITIES } from "../../interfaces/capabilities/index.js";
 import { generateFileLink as fsGenerateFileLink } from "../utils/FsLinkStrategy.js";
+import { DriverError } from "../../../http/errors.js";
 
 /**
  * 严格的预签名上传URL生成功能：
@@ -64,6 +64,7 @@ export async function commitPresignedUpload(fs, path, filename, userIdOrInfo, us
       etag,
       userIdOrInfo,
       userType,
+      ...options,
     });
 
     fs.emitCacheInvalidation({ mount, paths: [path], reason: "upload-complete" });

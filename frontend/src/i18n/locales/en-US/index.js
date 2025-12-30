@@ -22,7 +22,7 @@ export default {
   ...gallery,
   announcement: {
     title: "Announcement",
-    dontShowAgain: "Don't show again",
+    dontShowAgain: "Mark as read",
     gotIt: "Got it",
   },
 };

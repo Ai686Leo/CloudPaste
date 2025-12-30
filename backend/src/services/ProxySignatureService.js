@@ -18,14 +18,23 @@ export class ProxySignatureService {
   }
 
   /**
+   * 是否启用了“全局签名所有”
+   * - 这是“强制模式”：一旦开启，就认为所有代理签名策略都应以全局配置为准
+   * @returns {Promise<boolean>}
+   */
+  async isGlobalSignAllEnabled() {
+    const signAll = await this._getSystemSetting("proxy_sign_all");
+    return signAll === "true";
+  }
+
+  /**
    * 判断挂载点是否需要签名
    * @param {Object} mount - 挂载点配置
    * @returns {Promise<Object>} 签名需求结果
    */
   async needsSignature(mount) {
     // 1. 检查全局"签名所有"设置
-    const signAll = await this._getSystemSetting("proxy_sign_all");
-    if (signAll === "true") {
+    if (await this.isGlobalSignAllEnabled()) {
       return {
         required: true,
         reason: "sign_all_enabled",
@@ -77,15 +86,23 @@ export class ProxySignatureService {
   /**
    * 获取签名过期时间
    * @param {Object} mount - 挂载点配置
+   * @param {{ signAllEnabled?: boolean }} [options] - 可选：外部可传入 signAllEnabled 避免重复读配置
    * @returns {Promise<number>} 过期时间（秒），0表示永不过期
    */
-  async getSignatureExpiration(mount) {
-    // 1. 挂载点自定义时间
-    if (mount.sign_expires !== null && mount.sign_expires !== undefined) {
+  async getSignatureExpiration(mount, options = {}) {
+    const signAllEnabled = typeof options.signAllEnabled === "boolean" ? options.signAllEnabled : await this.isGlobalSignAllEnabled();
+
+    // 强制模式：全局 sign_all 开启时，过期时间也应统一由全局 proxy_sign_expires 决定（不允许挂载覆盖）
+    if (signAllEnabled) {
+      const globalExpires = await this._getSystemSetting("proxy_sign_expires");
+      return parseInt(globalExpires) || 0;
+    }
+
+    // 非强制模式：挂载点可覆盖过期时间（NULL 表示使用全局设置）
+    if (mount && mount.sign_expires !== null && mount.sign_expires !== undefined) {
       return mount.sign_expires;
     }
 
-    // 2. 使用全局默认时间
     const globalExpires = await this._getSystemSetting("proxy_sign_expires");
     return parseInt(globalExpires) || 0;
   }
@@ -98,8 +115,25 @@ export class ProxySignatureService {
    * @returns {Promise<Object>} 签名信息
    */
   async generateStorageSignature(path, mount, options = {}) {
-    // 获取过期时间
-    const expiresIn = options.expiresIn !== undefined ? options.expiresIn : await this.getSignatureExpiration(mount);
+    // 强制模式：全局 sign_all 开启时，过期时间统一以全局为准
+    const signAllEnabled = await this.isGlobalSignAllEnabled();
+    const configuredExpiresIn = await this.getSignatureExpiration(mount, { signAllEnabled });
+
+    let expiresIn = configuredExpiresIn;
+    if (options.expiresIn !== undefined && options.expiresIn !== null) {
+      const requested = Number(options.expiresIn);
+      if (!Number.isNaN(requested) && requested >= 0) {
+        if (!signAllEnabled) {
+          expiresIn = requested;
+        } else if (configuredExpiresIn === 0) {
+          // 全局永不过期时：允许按需生成短期签名
+          expiresIn = requested;
+        } else {
+          // 全局有上限时：不允许超过全局上限
+          expiresIn = Math.min(requested, configuredExpiresIn);
+        }
+      }
+    }
 
     // 0表示永不过期
     const expireTimestamp = expiresIn > 0 ? Math.floor(Date.now() / 1000) + expiresIn : 0;

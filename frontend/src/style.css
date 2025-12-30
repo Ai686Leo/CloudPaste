@@ -12,8 +12,14 @@ html {
   scroll-behavior: smooth;
 }
 
+/* Match header background to hide overscroll gap */
 body {
   min-height: 100vh;
+  @apply bg-custom-surface transition-colors duration-200;
+}
+
+.dark body {
+  @apply bg-custom-surface-dark;
 }
 
 /* 自定义组件样式 */

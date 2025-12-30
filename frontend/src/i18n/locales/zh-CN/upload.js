@@ -162,6 +162,7 @@ export default {
     showQRCode: "显示二维码",
     downloadQrCode: "下载二维码",
     uploadSuccessful: "文件上传成功",
+    skippedExistingUploads: "其中 {count} 个已存在，已跳过上传（秒传）",
     urlUploadSuccess: "URL文件上传成功",
     multipleUploadsSuccessful: "成功上传 {count} 个文件",
     retrySuccessful: "重试上传成功",

@@ -18,8 +18,6 @@ import { S3FileOperations } from "./operations/S3FileOperations.js";
 import { S3DirectoryOperations } from "./operations/S3DirectoryOperations.js";
 import { S3BatchOperations } from "./operations/S3BatchOperations.js";
 import { S3UploadOperations } from "./operations/S3UploadOperations.js";
-import { S3SearchOperations } from "./operations/S3SearchOperations.js";
-
 export class S3StorageDriver extends BaseDriver {
   /**
    * 构造函数
@@ -42,7 +40,7 @@ export class S3StorageDriver extends BaseDriver {
       CAPABILITIES.MULTIPART, // 分片上传能力：multipart upload
       CAPABILITIES.ATOMIC, // 原子操作能力：rename, copy
       CAPABILITIES.PROXY, // 代理能力：generateProxyUrl
-      CAPABILITIES.SEARCH, // 搜索能力：search(query, options)
+      CAPABILITIES.PAGED_LIST, // 目录分页能力：S3 ListObjectsV2 天然分页（ContinuationToken）
     ];
 
     // 操作模块实例
@@ -51,7 +49,6 @@ export class S3StorageDriver extends BaseDriver {
     this.batchOps = null;
     this.uploadOps = null;
     this.backendMultipartOps = null;
-    this.searchOps = null;
   }
 
   /**
@@ -94,7 +91,6 @@ export class S3StorageDriver extends BaseDriver {
       this.batchOps = new S3BatchOperations(this.s3Client, this.config, this.encryptionSecret);
       this.uploadOps = new S3UploadOperations(this.s3Client, this.config, this.encryptionSecret);
       // this.backendMultipartOps = new S3BackendMultipartOperations(this.s3Client, this.config, this.encryptionSecret); // 已废弃，使用前端分片上传
-      this.searchOps = new S3SearchOperations(this.s3Client, this.config, this.encryptionSecret);
 
       this.initialized = true;
       console.log(`S3存储驱动初始化成功: ${this.config.name} (${this.config.provider_type})`);
@@ -590,24 +586,12 @@ export class S3StorageDriver extends BaseDriver {
     }
   }
 
-  /**
-   * 搜索文件
-   * @param {string} query - 搜索查询
-   * @param {Object} options - 搜索选项
-   * @param {Object} options.mount - 挂载点对象
-   * @param {string} options.searchPath - 搜索路径范围
-   * @param {number} options.maxResults - 最大结果数量
-   * @param {D1Database} options.db - 数据库实例
-   * @returns {Promise<Array>} 搜索结果数组
-   */
-  async search(query, options = {}) {
-    this._ensureInitialized();
-    try {
-      // 委托给搜索操作模块
-      return await this.searchOps.searchInMount(query, options);
-    } catch (error) {
-      throw this._rethrow(error, "搜索失败");
-    }
+  // ===== 可选能力：目录分页 =====
+  // S3 的 ListObjectsV2 天然分页（MaxKeys<=1000 + NextContinuationToken）。
+  // - UI 列目录：可以按页返回，避免一次性返回太多导致卡顿
+  // - 索引重建：可以按页迭代，避免漏数据
+  supportsDirectoryPagination() {
+    return true;
   }
 
   /**
@@ -666,6 +650,7 @@ export class S3StorageDriver extends BaseDriver {
         db,
         userIdOrInfo,
         userType,
+        rawSubPath: subPath,
       });
     } catch (error) {
       throw this._rethrow(error, "初始化分片上传失败");
@@ -743,9 +728,6 @@ export class S3StorageDriver extends BaseDriver {
 
     const { mount, db } = options;
 
-    // 规范化S3子路径
-    const s3SubPath = normalizeS3SubPath(subPath, false);
-
     // 更新挂载点的最后使用时间
     if (db && mount && mount.id) {
       await updateMountLastUsed(db, mount.id);
@@ -753,7 +735,8 @@ export class S3StorageDriver extends BaseDriver {
 
     try {
       // 委托给上传操作模块
-      return await this.uploadOps.listMultipartUploads(s3SubPath, options);
+      // subPath 是“FS 视图的相对路径”，用于过滤 upload_sessions.fs_path 前缀
+      return await this.uploadOps.listMultipartUploads(subPath, options);
     } catch (error) {
       throw this._rethrow(error, "列出进行中的分片上传失败");
     }
@@ -771,9 +754,6 @@ export class S3StorageDriver extends BaseDriver {
 
     const { mount, db } = options;
 
-    // 规范化S3子路径
-    const s3SubPath = normalizeS3SubPath(subPath, false);
-
     // 更新挂载点的最后使用时间
     if (db && mount && mount.id) {
       await updateMountLastUsed(db, mount.id);
@@ -781,7 +761,7 @@ export class S3StorageDriver extends BaseDriver {
 
     try {
       // 委托给上传操作模块
-      return await this.uploadOps.listMultipartParts(s3SubPath, uploadId, options);
+      return await this.uploadOps.listMultipartParts(subPath, uploadId, options);
     } catch (error) {
       throw this._rethrow(error, "列出已上传分片失败");
     }
@@ -795,13 +775,10 @@ export class S3StorageDriver extends BaseDriver {
    * @param {Object} options - 选项参数
    * @returns {Promise<Object>} 刷新的预签名URL列表
    */
-  async refreshMultipartUrls(subPath, uploadId, partNumbers, options = {}) {
+  async signMultipartParts(subPath, uploadId, partNumbers, options = {}) {
     this._ensureInitialized();
 
     const { mount, db } = options;
-
-    // 规范化S3子路径
-    const s3SubPath = normalizeS3SubPath(subPath, false);
 
     // 更新挂载点的最后使用时间
     if (db && mount && mount.id) {
@@ -810,9 +787,9 @@ export class S3StorageDriver extends BaseDriver {
 
     try {
       // 委托给上传操作模块
-      return await this.uploadOps.refreshMultipartUrls(s3SubPath, uploadId, partNumbers, options);
+      return await this.uploadOps.signMultipartParts(subPath, uploadId, partNumbers, options);
     } catch (error) {
-      throw this._rethrow(error, "刷新分片URL失败");
+      throw this._rethrow(error, "签名分片上传参数失败");
     }
   }
 

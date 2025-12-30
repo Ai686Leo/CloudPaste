@@ -14,15 +14,18 @@
 
     <!-- 主内容区域 - 混合导航模式，响应侧边栏收缩状态 -->
     <main
-      class="fixed left-0 top-32 md:top-16 right-0 bottom-0 overflow-y-auto focus:outline-none z-40 transition-all duration-300"
-      :class="[sidebarCollapsed ? 'md:left-16' : 'md:left-64', darkMode ? 'bg-gray-900' : 'bg-gray-100']"
+      class="w-full md:w-auto md:fixed md:left-64 md:top-16 md:right-0 md:bottom-0 md:overflow-y-auto focus:outline-none z-40 transition-all duration-300"
+      :class="[sidebarCollapsed ? 'md:left-16' : 'md:left-64', darkMode ? 'bg-gray-900' : 'bg-white md:bg-gray-100']"
     >
-      <!-- 内容区域 -->
-      <div class="mx-auto w-full px-2 sm:px-4 md:px-6 lg:px-8 mt-2 md:mt-4 pb-4" style="max-width: 1280px">
-        <div class="rounded-lg flex-1 flex flex-col" :class="darkMode ? 'bg-gray-800' : 'bg-white border border-gray-200'">
-          <!-- 页面内容 -->
-          <div class="p-2 md:p-4 flex-1 flex flex-col">
-            <router-view :permissions="userPermissions" :dark-mode="darkMode" @logout="handleLogout" />
+      <!-- 背景颜色包装器 -->
+      <div class="min-h-full flex flex-col pt-2 md:pt-4 pb-4 px-2 sm:px-4 md:px-6 lg:px-8" :class="darkMode ? 'bg-gray-900' : 'bg-gray-100 md:bg-transparent'">
+        <!-- 内容区域 -->
+        <div class="w-full mx-auto flex-1 flex flex-col" style="max-width: 1280px">
+          <div class="rounded-lg flex-1 flex flex-col" :class="darkMode ? 'bg-gray-800' : 'bg-white border border-gray-200'">
+            <!-- 页面内容 -->
+            <div class="p-2 md:p-4 flex-1 flex flex-col">
+              <router-view :permissions="userPermissions" :dark-mode="darkMode" @logout="handleLogout" />
+            </div>
           </div>
         </div>
       </div>

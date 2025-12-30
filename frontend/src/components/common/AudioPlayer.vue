@@ -177,6 +177,7 @@ const formatAudioItem = (audio) => {
     cover: audio.cover || audio.poster || generateDefaultCover(audio.name),
     lrc: audio.lrc || audio.lyrics,
     theme: getThemeColor(),
+    originalFile: audio.originalFile || null,
   };
 };
 
@@ -247,9 +248,27 @@ const bindEvents = () => {
   });
 
   ap.on("error", (error) => {
+    if (!error?.target) {
+      console.log("忽略一次无 target 的播放错误事件");
+      return;
+    }
+
+    // “按需获取直链”场景：如果当前曲目还没补上真实 url，audio 会先报一次 error（先静默）
+    const currentUrl = ap?.list?.audios?.[ap.list.index]?.url;
+    if (!currentUrl) {
+      console.log("正在按需获取音频直链，先忽略一次播放错误");
+      return;
+    }
+
+    // 占位静音 audio（data:）本身不重要，报错也不影响最终播放，直接忽略减少噪音
+    if (typeof currentUrl === "string" && currentUrl.startsWith("data:audio/")) {
+      console.log("忽略占位音频的播放错误");
+      return;
+    }
+
     // 检查是否是Service Worker相关的误报错误
     if (error?.target?.src?.includes(window.location.origin) && ap?.list?.audios?.[ap.list.index]?.url?.startsWith("https://")) {
-      console.log("🎵 忽略Service Worker相关的误报错误，音频实际可以正常播放");
+      console.log("忽略Service Worker相关的误报错误，音频实际可以正常播放");
       return; // 忽略Service Worker误报错误
     }
 
@@ -258,12 +277,13 @@ const bindEvents = () => {
   });
 
   ap.on("listswitch", (index) => {
+    const resolvedIndex = typeof index === "object" && index !== null && typeof index.index === "number" ? index.index : index;
     // 确保索引有效且音频数据存在
-    const audio = ap.list && ap.list.audios && ap.list.audios[index] ? ap.list.audios[index] : null;
+    const audio = ap.list && ap.list.audios && ap.list.audios[resolvedIndex] ? ap.list.audios[resolvedIndex] : null;
 
     emit("listswitch", {
       audio: audio,
-      index: index,
+      index: resolvedIndex,
     });
   });
 };
@@ -273,7 +293,11 @@ const applyThemeStyles = () => {
   if (!aplayerContainer.value) return;
 
   nextTick(() => {
-    const aplayerElement = aplayerContainer.value.querySelector(".aplayer");
+    // nextTick 期间组件可能被卸载/重建，容器会变成 null（这里必须二次判空）
+    const container = aplayerContainer.value;
+    if (!container) return;
+
+    const aplayerElement = container.querySelector(".aplayer");
     if (!aplayerElement) return;
 
     // 更新主题色
@@ -282,9 +306,9 @@ const applyThemeStyles = () => {
 
     // 应用暗色主题类
     if (props.darkMode) {
-      aplayerContainer.value.classList.add("dark-theme");
+      container.classList.add("dark-theme");
     } else {
-      aplayerContainer.value.classList.remove("dark-theme");
+      container.classList.remove("dark-theme");
     }
   });
 };
@@ -371,11 +395,11 @@ watch(
 );
 
 watch(
-  () => [props.currentAudio, props.audioList, props.loop, props.order],
+  () => [props.currentAudio, props.audioList, props.audioList?.length || 0, props.loop, props.order],
   () => {
     initAPlayer();
   },
-  { deep: true }
+  { deep: false }
 );
 
 watch(

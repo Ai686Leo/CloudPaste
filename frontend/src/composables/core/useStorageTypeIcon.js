@@ -10,6 +10,7 @@ import {
   IconStorageWebDAV,
   IconStorageLocal,
   IconStorageTelegram,
+  IconStorageHuggingFace,
 } from "@/components/icons";
 
 /**
@@ -72,6 +73,13 @@ const STORAGE_TYPE_CONFIG = {
     darkColor: "text-sky-400",
     lightBg: "bg-sky-100",
     darkBg: "bg-sky-900/30",
+  },
+  HUGGINGFACE_DATASETS: {
+    icon: IconStorageHuggingFace,
+    lightColor: "text-yellow-600",
+    darkColor: "text-yellow-400",
+    lightBg: "bg-yellow-100",
+    darkBg: "bg-yellow-900/30",
   },
 };
 

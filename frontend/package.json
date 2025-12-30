@@ -44,6 +44,7 @@
     "exifreader": "^4.33.1",
     "file-saver": "^2.0.5",
     "foliate-js": "https://codeload.github.com/johnfactotum/foliate-js/tar.gz/6b11e1744346f60504b727984f7d42f0fef3ab54",
+    "hash-wasm": "^4.12.0",
     "hls.js": "^1.6.7",
     "leaflet": "^1.9.4",
     "libarchive.js": "^2.0.2",

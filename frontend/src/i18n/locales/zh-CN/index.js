@@ -22,7 +22,7 @@ export default {
   ...gallery,
   announcement: {
     title: "公告",
-    dontShowAgain: "不再显示",
+    dontShowAgain: "不再提示",
     gotIt: "我知道了",
   },
 };

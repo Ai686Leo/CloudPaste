@@ -17,9 +17,6 @@
       </div>
     </div>
 
-    <!-- 公告弹窗 --->
-    <AnnouncementModal :content="siteSettings.site_announcement_content" :enabled="siteSettings.site_announcement_enabled" :dark-mode="darkMode" />
-
     <!-- 权限管理组件 -->
     <PermissionManager
       :dark-mode="darkMode"
@@ -111,7 +108,6 @@ import EditorForm from "@/modules/paste/editor/components/EditorForm.vue";
 import ShareLinkBox from "@/components/common/ShareLinkBox.vue";
 import QRCodeModal from "@/modules/paste/editor/components/QRCodeModal.vue";
 import CopyFormatMenu from "@/modules/paste/editor/components/CopyFormatMenu.vue";
-import AnnouncementModal from "@/modules/admin/components/AnnouncementModal.vue";
 
 const { t } = useI18n();
 
@@ -171,12 +167,6 @@ const showQRCodeModal = ref(false);
 // 复制格式菜单状态
 const copyFormatMenuVisible = ref(false);
 const copyFormatMenuPosition = ref({ x: 0, y: 0 });
-
-// 站点设置状态
-const siteSettings = ref({
-  site_announcement_enabled: false,
-  site_announcement_content: "",
-});
 
 // 权限变化处理 - 当权限状态改变时执行相应的业务逻辑
 const handlePermissionChange = (hasPermissionValue) => {
@@ -450,21 +440,6 @@ onMounted(async () => {
     }
   } catch (e) {
     console.warn(t("markdown.messages.restoreContentFailed"), e);
-  }
-
-  // 获取站点设置
-  try {
-    const settings = await pasteService.getMarkdownSettings();
-    settings.forEach((setting) => {
-      if (setting.key === "site_announcement_enabled") {
-        siteSettings.value.site_announcement_enabled = setting.value === "true";
-      } else if (setting.key === "site_announcement_content") {
-        siteSettings.value.site_announcement_content = setting.value || "";
-      }
-    });
-  } catch (error) {
-    console.error("获取站点设置失败:", error);
-    // 获取站点设置失败不影响页面正常使用
   }
 });
 

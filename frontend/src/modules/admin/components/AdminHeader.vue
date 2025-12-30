@@ -1,6 +1,6 @@
 <template>
   <!-- 移动端顶部栏 - 混合导航模式下位于全局header下方 -->
-  <div class="md:hidden fixed top-16 left-0 right-0 z-40 border-b px-4 py-3 flex items-center" :class="darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'">
+  <div class="md:hidden sticky top-16 left-0 right-0 z-40 border-b px-4 py-3 flex items-center" :class="darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'">
     <button
       type="button"
       @click="$emit('toggle-mobile-sidebar')"

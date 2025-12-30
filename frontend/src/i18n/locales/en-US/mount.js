@@ -85,6 +85,8 @@ export default {
       selectAll: "Select All",
       deselectAll: "Deselect All",
       clickToSort: "Click to sort",
+      loadMore: "Load More",
+      pagedHint: "If this directory contains many items, only part of it is shown first. Scroll down to auto-load more, or click “Load More”.",
     },
     rename: {
       title: "Rename",
@@ -139,6 +141,9 @@ export default {
       getFileLinkError: "Error getting file direct link: {message}",
       noItemsSelected: "Please select items to operate on",
       uploadSuccess: "Upload successful",
+      uploadSuccessWithCount: "Successfully uploaded {count} files",
+      uploadSuccessWithSkipped:
+        "Upload completed: {count} files, {skipped} already existed so upload was skipped",
       uploadFailed: "Upload failed: {message}",
       shareCreated: "Share link created and copied to clipboard: {url}",
       shareCreateFailed: "Failed to create share link: {message}",

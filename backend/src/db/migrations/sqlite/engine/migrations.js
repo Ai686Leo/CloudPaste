@@ -664,6 +664,31 @@ export async function runLegacyMigrationByVersion(db, version) {
       console.log("版本32：vfs_nodes 与 upload_parts 表检查/创建完成。");
       break;
 
+    case 33:
+      console.log("版本33：统一 upload_sessions.status 状态值（active -> initiated/uploading）...");
+      try {
+        const result = await db
+          .prepare(
+            `UPDATE ${DbTables.UPLOAD_SESSIONS}
+             SET status = CASE
+               WHEN (bytes_uploaded > 0)
+                 OR (uploaded_parts > 0)
+                 OR (next_expected_range IS NOT NULL AND next_expected_range != '')
+               THEN 'uploading'
+               ELSE 'initiated'
+             END
+             WHERE status = 'active'`,
+          )
+          .run();
+
+        console.log("版本33：upload_sessions.status 迁移完成", {
+          changes: result?.changes ?? result?.meta?.changes ?? 0,
+        });
+      } catch (error) {
+        console.warn("版本33：upload_sessions.status 迁移失败（可忽略，将由新代码覆盖旧状态）:", error?.message || error);
+      }
+      break;
+
     default:
       console.log(`未知的迁移版本: ${version}`);
       break;

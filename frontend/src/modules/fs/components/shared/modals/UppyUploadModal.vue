@@ -120,9 +120,8 @@ import { useUppyCore, useUppyEvents, useUppyPaste, useUppyBackendProgress } from
 import UploadModeSelector from "@/components/uppy/UploadModeSelector.vue";
 import AdvancedPluginsPanel from "@/components/uppy/AdvancedPluginsPanel.vue";
 import UppyDashboardContainer from "@/components/uppy/UppyDashboardContainer.vue";
-
-// 导入ServerResumePlugin插件
-import ServerResumePlugin from "@/modules/storage-core/uppy/ServerResumePlugin.js";
+import ServerResumePlugin from "@/modules/storage-core/uppy/plugins/ServerResumePlugin.js";
+import Sha256PreprocessPlugin from "@/modules/storage-core/uppy/plugins/Sha256PreprocessPlugin.js";
 import { api } from "@/api";
 import { getUploadProgress } from "@/api/services/systemService.js";
 import { useStorageConfigsStore } from "@/stores/storageConfigsStore.js";
@@ -431,6 +430,9 @@ const getServerResumeConfig = () => ({
   showMatchScore: true,
   shouldUseMultipart: () => uploadMethod.value === 'multipart',
   resolveStorageConfigId: async () => await ensureStorageConfigForCurrentPath(),
+  // 让 ServerResumePlugin 能读取 StorageAdapter 的本地分片账本（client_keeps）
+  storagePrefix: fsAdapterHandle?.adapter?.config?.storagePrefix || 'uppy_multipart_',
+  cacheExpiry: fsAdapterHandle?.adapter?.config?.cacheExpiry || 24 * 60 * 60 * 1000,
 });
 
 const strategyMap = {
@@ -490,7 +492,50 @@ const configureServerResumePlugin = () => {
     }
   } else if (existing) {
     // 非分片模式时移除插件，避免多次初始化
-    uppy.removePlugin('ServerResumePlugin');
+    try {
+      uppy.removePlugin(existing);
+    } catch (e) {
+      console.warn("[Uppy] 移除 ServerResumePlugin 失败（可忽略）", e);
+    }
+  }
+};
+
+/**
+ * 配置 Sha256PreprocessPlugin 插件（预签名模式使用）
+ * “计算 sha256” 发生在 preprocess 阶段，Uppy 面板就能显示进度
+ */
+const configureSha256PreprocessPlugin = () => {
+  const uppy = uppyInstance.value;
+  if (!uppy) return;
+
+  const existing = uppy.getPlugin("Sha256PreprocessPlugin");
+
+  // 只有当“该驱动的预签名模式确实需要 sha256”时才开启：
+  // HuggingFace LFS 需要 sha256(oid) 才能换到 uploadUrl
+  const requireSha256ForPresign = fsAdapterHandle?.adapter?.config?.requireSha256ForPresign === true;
+
+  if ((uploadMethod.value === "presigned" || uploadMethod.value === "multipart") && requireSha256ForPresign) {
+    const opts = {
+      enabled: true,
+      maxWebCryptoSize: 10_000_000,
+      metaKey: "cloudpasteSha256",
+    };
+
+    if (existing) {
+      try {
+        existing.setOptions(opts);
+      } catch (e) {
+        console.warn("[Uppy] 更新 Sha256PreprocessPlugin 配置失败", e);
+      }
+    } else {
+      uppy.use(Sha256PreprocessPlugin, opts);
+    }
+  } else if (existing) {
+    try {
+      uppy.removePlugin(existing);
+    } catch (e) {
+      console.warn("[Uppy] 移除 Sha256PreprocessPlugin 失败（可忽略）", e);
+    }
   }
 };
 
@@ -537,12 +582,18 @@ const setupUppy = async () => {
 
     uppyInstance.value.use(Dashboard, getDashboardConfig());
 
-    await configureUploadMethod();
-
+    // 安装“断点续传检查”插件：
     configureServerResumePlugin();
     if (uploadMethod.value === "multipart") {
       setupResumeDialogEvents();
     }
+
+    await configureUploadMethod();
+    // configureUploadMethod 可能会创建 StorageAdapter（其中含有 storagePrefix/cacheExpiry），
+    // 这里再更新一次 ServerResumePlugin 的配置，确保 client_keeps 能读到本地账本。
+    configureServerResumePlugin();
+
+    configureSha256PreprocessPlugin();
 
     await pluginManager.addPluginsToUppy();
   } catch (error) {
@@ -559,8 +610,28 @@ const handleUploadComplete = async (result) => {
   isUploading.value = false;
 
   if (result.successful.length > 0) {
+    // skipUpload（秒传/去重）统计来源说明：
+    // - 对 presigned-single：commit 阶段会清理 uploadSessions，所以必须在 runFsCommitIfNeeded 里先做快照并写回 result.cloudpaste
+    // - 对 multipart（HuggingFace 的 skipUpload=true）：complete 阶段会清理 uploadSessions，因此必须依赖 file.meta.cloudpasteSkipUpload
+    let skippedUploadCount = 0;
+    try {
+      const fromMeta = result.successful.filter((file) => file?.meta?.cloudpasteSkipUpload === true).length;
+      const fromCloudpaste = Number(result?.cloudpaste?.skippedUploadCount || 0);
+      skippedUploadCount = Math.max(fromMeta, fromCloudpaste);
+    } catch {
+      skippedUploadCount = Number(result?.cloudpaste?.skippedUploadCount || 0);
+    }
+
+    const successCount = result.successful.length;
+    const message =
+      skippedUploadCount > 0
+        ? `上传完成：成功 ${successCount} 个（其中 ${skippedUploadCount} 个已跳过上传/秒传）`
+        : `上传完成：成功 ${successCount} 个`;
+
     emit("upload-success", {
       count: result.successful.length,
+      skippedUploadCount,
+      message,
       commitFailures: [],
       commitStats: {
         successCount: result.successful.length,
@@ -599,10 +670,28 @@ const runFsCommitIfNeeded = async (result) => {
     return;
   }
 
+  // 先快照本次上传的 skipUpload 信息（对象已存在/秒传/去重）：
+  // commitPresignedUpload 成功后会 delete uploadSessions，所以必须在 commit 前保存。
+  const adapter = fsAdapterHandle.adapter;
+  const skipSnapshot = {};
+  try {
+    if (adapter?.isUploadSkipped && typeof adapter.isUploadSkipped === "function") {
+      result.successful.forEach((file) => {
+        skipSnapshot[file.id] = adapter.isUploadSkipped(file.id) === true;
+      });
+    }
+  } catch (e) {
+    console.warn("[Uppy] 生成 skipUpload 快照失败，将忽略该提示", e);
+  }
+
   try {
     const summary = await fsAdapterHandle.adapter.batchCommitPresignedUploads(result.successful);
     const failures = summary?.failures || [];
     if (!failures.length) {
+      result.cloudpaste = {
+        ...(result.cloudpaste || {}),
+        skippedUploadCount: result.successful.filter((file) => skipSnapshot[file.id] === true).length,
+      };
       return;
     }
 
@@ -626,6 +715,10 @@ const runFsCommitIfNeeded = async (result) => {
     });
 
     result.successful = remaining;
+    result.cloudpaste = {
+      ...(result.cloudpaste || {}),
+      skippedUploadCount: result.successful.filter((file) => skipSnapshot[file.id] === true).length,
+    };
   } catch (error) {
     const failureError = error instanceof Error ? error : new Error(String(error));
     const failedFiles = result.successful.slice();
@@ -636,6 +729,10 @@ const runFsCommitIfNeeded = async (result) => {
       result.failed.push({ file, error: failureError });
     });
     result.successful = [];
+    result.cloudpaste = {
+      ...(result.cloudpaste || {}),
+      skippedUploadCount: 0,
+    };
   }
 };
 

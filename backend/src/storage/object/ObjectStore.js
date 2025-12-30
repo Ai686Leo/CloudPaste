@@ -68,7 +68,7 @@ export class ObjectStore {
     return await this._composeKeyWithStrategy(storageConfig, directory, filename);
   }
 
-  async presignUpload({ storage_config_id, directory, filename, fileSize, contentType }) {
+  async presignUpload({ storage_config_id, directory, filename, fileSize, contentType, sha256 = null }) {
     const storageConfig = await this._getStorageConfig(storage_config_id);
     if (!storageConfig.storage_type) {
       throw new ValidationError("存储配置缺少 storage_type");
@@ -81,9 +81,11 @@ export class ObjectStore {
     }
 
     const presign = await driver.generateUploadUrl(key, {
+      subPath: key,
       fileName: filename,
       fileSize,
       contentType,
+      sha256: sha256 || undefined,
     });
 
     return {
@@ -95,6 +97,8 @@ export class ObjectStore {
       storage_config_id,
       provider_type: storageConfig.provider_type,
       headers: presign.headers || undefined,
+      sha256: presign.sha256 || sha256 || undefined,
+      skipUpload: presign.skipUpload === true ? true : undefined,
     };
   }
 
@@ -193,9 +197,41 @@ export class ObjectStore {
     };
   }
 
-  async commitUpload({ storage_config_id, key, filename, size, etag }) {
-    // 对象存储提交阶段无需再与 S3 交互（驱动在直传/预签名 PUT 阶段已完成写入）
-    // 这里仅将必要信息汇总给上层记录建档
+  async commitUpload({ storage_config_id, key, filename, size, etag, sha256 = null, contentType = null }) {
+    // 对象存储提交阶段：
+    // 大部分驱动（S3 等）：无需再与云端交互（直传/预签名 PUT 已完成写入），这里只做建档
+    // 少数驱动（HuggingFace 等）：还需要一次“登记/提交”，让仓库树里能看见文件
+    let uploadResult = {
+      storagePath: key,
+      publicUrl: null,
+      etag: etag || null,
+    };
+
+    const storageConfig = await this._getStorageConfig(storage_config_id);
+    if (!storageConfig?.storage_type) {
+      throw new ValidationError("存储配置缺少 storage_type");
+    }
+
+    const driver = await StorageFactory.createDriver(storageConfig.storage_type, storageConfig, this.encryptionSecret);
+
+    if (typeof driver.handleUploadComplete === "function") {
+      const result = await driver.handleUploadComplete(key, {
+        subPath: key,
+        db: this.db,
+        fileName: filename,
+        fileSize: Number(size) || 0,
+        contentType: contentType || undefined,
+        etag: etag || undefined,
+        sha256: sha256 || undefined,
+      });
+
+      uploadResult = {
+        storagePath: result?.storagePath || key,
+        publicUrl: result?.publicUrl || null,
+        etag: etag || null,
+      };
+    }
+
     // 通知缓存失效（上传完成）
     try {
       invalidateFsCache({ storageConfigId: storage_config_id, reason: "upload-complete", db: this.db });
@@ -203,11 +239,7 @@ export class ObjectStore {
 
     return {
       key,
-      uploadResult: {
-        storagePath: key,
-        publicUrl: null,
-        etag: etag || null,
-      },
+      uploadResult,
       filename,
       size: Number(size) || 0,
       storage_config_id,

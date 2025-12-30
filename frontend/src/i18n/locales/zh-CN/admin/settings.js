@@ -227,9 +227,25 @@ export default {
       hint: "支持 Markdown 格式，可以使用链接、粗体等语法，留空则不显示页脚",
       placeholder: "© 2025 CloudPaste. 保留所有权利。",
     },
+    frontendEntries: {
+      title: "前台入口开关",
+      hint: "这里的开关只影响“前端页面入口/顶部导航”。关闭后：入口会隐藏，用户访问对应地址会自动跳转到其它可用页面。",
+      homeEditor: {
+        label: "文本编辑（/）",
+        hint: "关闭后：文本编辑入口不显示，访问 / 会自动跳转。",
+      },
+      uploadPage: {
+        label: "文件上传页（/upload）",
+        hint: "关闭后：上传入口不显示，访问 /upload 会自动跳转。",
+      },
+      mountExplorer: {
+        label: "挂载浏览（/mount-explorer）",
+        hint: "关闭后：挂载入口不显示，访问挂载页面会自动跳转。",
+      },
+    },
     announcement: {
-      enableLabel: "启用公告栏",
-      enableHint: "开启后将在首页显示公告栏",
+      enableLabel: "启用公告提示",
+      enableHint: "开启并且填写公告内容后：页面右上角会出现“公告”图标，有新公告会有红点，点击查看。",
       contentLabel: "公告内容",
       contentHint: "支持 Markdown 格式，可以使用粗体、斜体、链接等",
       contentPlaceholder: "请输入公告内容，支持 Markdown 格式...",
@@ -255,7 +271,7 @@ export default {
 
 // 公告弹窗
 export const announcement = {
-  title: "网站公告",
-  dontShowAgain: "不再显示此公告",
+  title: "公告",
+  dontShowAgain: "不再提示",
   gotIt: "我知道了",
 };

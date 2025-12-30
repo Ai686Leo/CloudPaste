@@ -32,7 +32,6 @@ export class LocalStorageDriver extends BaseDriver {
       CAPABILITIES.READER,
       CAPABILITIES.WRITER,
       CAPABILITIES.ATOMIC,
-      CAPABILITIES.SEARCH,
       CAPABILITIES.PROXY,
     ];
 
@@ -687,121 +686,6 @@ export class LocalStorageDriver extends BaseDriver {
       }
       throw error;
     }
-  }
-
-  // ========== SEARCH 能力：search ==========
-
-  /**
-   * 在本地文件系统挂载内搜索文件（按文件名模糊匹配）
-   * @param {string} query   搜索关键字
-   * @param {Object} options 搜索选项
-   * @param {Object} options.mount       挂载对象
-   * @param {string|null} options.searchPath 搜索起始路径（挂载视图）
-   * @param {number} options.maxResults  最大结果数量
-   * @param {D1Database} options.db      数据库实例
-   * @returns {Promise<Array<Object>>}
-   */
-  async search(query, options = {}) {
-    this._ensureInitialized();
-    const { mount, searchPath = null, maxResults = 1000, db } = options;
-
-    if (!mount) {
-      throw new ValidationError("LOCAL 搜索需要提供挂载点信息");
-    }
-
-    const trimmedQuery = String(query || "").trim();
-    if (!trimmedQuery) {
-      throw new ValidationError("搜索关键字不能为空");
-    }
-
-    // 计算相对于挂载点的子路径
-    let baseSubPath = "";
-    if (searchPath) {
-      baseSubPath = this._extractSubPath(searchPath, mount) || "";
-    }
-    const normalizedBaseSubPath = this._normalizeSubPath(baseSubPath);
-
-    // 解析搜索起点目录（如果是文件则退化为其父目录）
-    const { fullPath: startPath, stat } = await this._resolveLocalPath(normalizedBaseSubPath || "/", {
-      mustBeDirectory: false,
-    });
-
-    const startDir = stat.isDirectory() ? startPath : path.dirname(startPath);
-    const startSubPath = stat.isDirectory()
-      ? normalizedBaseSubPath
-      : this._normalizeSubPath(path.posix.dirname(normalizedBaseSubPath || ""));
-
-    const lowerQuery = trimmedQuery.toLowerCase();
-    const results = [];
-
-    const walk = async (dirOsPath, currentSubPath) => {
-      if (results.length >= maxResults) return;
-
-      let entries;
-      try {
-        entries = await fs.promises.readdir(dirOsPath, { withFileTypes: true });
-      } catch (error) {
-        throw this._wrapFsError(error, "扫描本地目录失败");
-      }
-
-      for (const entry of entries) {
-        if (results.length >= maxResults) break;
-
-        if (entry.isSymbolicLink()) {
-          // 为避免 symlink 逃逸或循环，这里不跟随符号链接
-          continue;
-        }
-
-        const entryName = entry.name;
-        const nextSubPath = this._normalizeSubPath(
-          currentSubPath ? `${currentSubPath}/${entryName}` : entryName,
-        );
-        const entryOsPath = path.join(dirOsPath, entryName);
-
-        if (entry.isDirectory()) {
-          await walk(entryOsPath, nextSubPath);
-          continue;
-        }
-
-        const normalizedName = entryName.toLowerCase();
-        if (!normalizedName.includes(lowerQuery)) {
-          continue;
-        }
-
-        let statInfo;
-        try {
-          statInfo = await fs.promises.stat(entryOsPath);
-        } catch (error) {
-          // 读取失败时跳过当前条目
-          continue;
-        }
-
-        const size = statInfo.size || 0;
-        const modified = statInfo.mtime ? new Date(statInfo.mtime) : null;
-        const fsPath = this._buildMountPath(mount, nextSubPath || "/");
-
-        const info = await buildFileInfo({
-          fsPath,
-          name: entryName,
-          isDirectory: false,
-          size,
-          modified,
-          mimetype: getEffectiveMimeType(null, entryName),
-          mount,
-          storageType: mount.storage_type,
-          db,
-        });
-
-        results.push({
-          ...info,
-          mount_name: mount.name,
-        });
-      }
-    };
-
-    await walk(startDir, startSubPath);
-
-    return results;
   }
 
   // ========== PROXY 能力：generateProxyUrl / supportsProxyMode / getProxyConfig ==========

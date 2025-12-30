@@ -90,6 +90,13 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  // 是否在页面加载后自动弹出
+  // - true: 自动弹出（旧行为）
+  // - false: 不自动弹出（由父组件手动触发 open()）
+  autoOpen: {
+    type: Boolean,
+    default: true,
+  },
   darkMode: {
     type: Boolean,
     default: false,
@@ -123,11 +130,18 @@ const getContentKey = (content) => {
   return Math.abs(hash).toString(36); // 转换为36进制字符串
 };
 
+const contentKey = computed(() => getContentKey(props.content));
+
 // 检查是否已被用户关闭
 const isDismissed = (contentKey) => {
   if (!contentKey) return false;
   return dismissedState.value && dismissedState.value.includes(contentKey);
 };
+
+// 是否存在“未读公告”（用于父组件显示红点等）
+const hasUnseenAnnouncement = computed(() => {
+  return !!(props.enabled && props.content && !isDismissed(contentKey.value));
+});
 
 // 标记为已关闭
 const markDismissed = (contentKey) => {
@@ -199,12 +213,19 @@ const renderContent = async () => {
 // 关闭弹窗
 const closeModal = () => {
   if (props.content) {
-    const contentKey = getContentKey(props.content);
     if (dontShowAgain.value) {
-      markDismissed(contentKey);
+      markDismissed(contentKey.value);
     }
   }
   showModal.value = false;
+};
+
+// 手动打开
+const open = async () => {
+  if (!props.enabled || !props.content) return;
+  showModal.value = true;
+  await nextTick();
+  renderContent();
 };
 
 // 背景点击关闭
@@ -221,9 +242,8 @@ onKeyStroke("Escape", () => {
 
 // 检查是否应该显示公告
 const checkShouldShow = async () => {
-  if (props.enabled && props.content) {
-    const contentKey = getContentKey(props.content);
-    if (!isDismissed(contentKey)) {
+  if (props.enabled && props.content && props.autoOpen) {
+    if (!isDismissed(contentKey.value)) {
       // 延迟显示，让页面先加载完成
       await nextTick();
       setTimeout(async () => {
@@ -257,6 +277,12 @@ watch(
     }
   }
 );
+
+defineExpose({
+  open,
+  close: closeModal,
+  hasUnseenAnnouncement,
+});
 </script>
 
 <style scoped>

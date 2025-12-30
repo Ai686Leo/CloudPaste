@@ -2,6 +2,7 @@ import type { TaskHandler, InternalJob, ExecutionContext } from "../TaskHandler.
 import { ValidationError } from "../../../../http/errors.js";
 import { ensureRepositoryFactory } from "../../../../utils/repositories.js";
 import { FsSearchIndexStore } from "../../search/FsSearchIndexStore.js";
+import { iterateListDirectoryItems } from "../../utils/listDirectoryPaging.js";
 
 type FsIndexApplyDirtyPayload = {
   mountIds?: string[];
@@ -337,10 +338,13 @@ export class FsIndexApplyDirtyTaskHandler implements TaskHandler {
                 if (seenDirs.has(dir)) continue;
                 seenDirs.add(dir);
 
-                const listing = await fileSystem.listDirectory(dir, job.userId, job.userType, { refresh });
-                const items = Array.isArray(listing?.items) ? listing.items : [];
-
-                for (const item of items) {
+                for await (const item of iterateListDirectoryItems(
+                  fileSystem,
+                  dir,
+                  job.userId,
+                  job.userType,
+                  { refresh },
+                )) {
                   const childPath = String(item?.path || "");
                   if (!childPath) continue;
 

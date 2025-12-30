@@ -124,6 +124,7 @@ const emit = defineEmits([
 // 响应式数据
 const artplayerContainer = ref(null);
 const artplayerInstance = ref(null);
+const didAutoApplyDefaultSubtitle = ref(false);
 
 // 计算主题色
 const getThemeColor = () => {
@@ -131,6 +132,100 @@ const getThemeColor = () => {
     return "#8b5cf6"; // 深色模式下使用紫色，与视频文件类型色彩一致
   }
   return props.theme;
+};
+
+const getVideoSourceKey = () => {
+  const v = props.video || {};
+  const url = String(v.url || "");
+  const name = String(v.name || v.title || "");
+  const contentType = String(v.contentType || v.mimetype || "");
+  const linkType = String(v.linkType || v.originalFile?.linkType || "");
+  return `${url}::${name}::${contentType}::${linkType}`;
+};
+
+const getEffectiveSubtitleTracks = () => {
+  const rawTracks = Array.isArray(props.video?.subtitleTracks) ? props.video.subtitleTracks : [];
+  if (rawTracks.length > 0) return rawTracks;
+  if (props.showSubtitle && props.subtitleUrl) {
+    return [{ name: "字幕", url: props.subtitleUrl, type: "srt", default: true }];
+  }
+  return [];
+};
+
+const buildSubtitleSettingPayload = (tracks) => {
+  const effectiveTracks = Array.isArray(tracks) ? tracks : [];
+  if (effectiveTracks.length <= 0) return null;
+
+  const defaultTrack =
+    effectiveTracks.find((t) => t && t.default && t.url) ||
+    effectiveTracks.find((t) => t && t.url) ||
+    null;
+
+  const selector = [
+    { default: !defaultTrack, html: "关闭字幕", url: "" },
+    ...effectiveTracks.map((t) => ({
+      default: !!t?.default,
+      html: String(t?.name || "字幕"),
+      url: String(t?.url || ""),
+      type: String(t?.type || getExtLower(t?.name) || "srt"),
+    })),
+  ];
+
+  return {
+    name: "subtitle",
+    html: "字幕",
+    width: 260,
+    tooltip: defaultTrack?.name || "关闭字幕",
+    selector,
+    onSelect: function (item) {
+      const art = artplayerInstance.value;
+      if (!art) return item?.html;
+      const nextUrl = String(item?.url || "");
+      if (!nextUrl) {
+        if (art.subtitle) art.subtitle.show = false;
+        didAutoApplyDefaultSubtitle.value = true;
+        return "关闭字幕";
+      }
+      if (art.subtitle) {
+        art.subtitle.url = nextUrl;
+        art.subtitle.show = true;
+      }
+      didAutoApplyDefaultSubtitle.value = true;
+      return String(item?.html || "字幕");
+    },
+  };
+};
+
+const applySubtitleSettingsToInstance = () => {
+  const art = artplayerInstance.value;
+  if (!art) return;
+
+  const tracks = getEffectiveSubtitleTracks();
+  const payload = buildSubtitleSettingPayload(tracks);
+  if (!payload) return;
+
+  if (art.setting && typeof art.setting.update === "function" && art.__cpSubtitleInstalled) {
+    art.setting.update(payload);
+  } else if (art.setting && typeof art.setting.add === "function" && !art.__cpSubtitleInstalled) {
+    art.setting.add(payload);
+    art.__cpSubtitleInstalled = true;
+  }
+
+  const defaultTrack =
+    tracks.find((t) => t && t.default && t.url) ||
+    tracks.find((t) => t && t.url) ||
+    null;
+
+  if (!defaultTrack?.url) return;
+
+  const currentUrl = String(art.subtitle?.url || "");
+  if (!didAutoApplyDefaultSubtitle.value && !currentUrl) {
+    if (art.subtitle) {
+      art.subtitle.url = String(defaultTrack.url);
+      art.subtitle.show = true;
+    }
+    didAutoApplyDefaultSubtitle.value = true;
+  }
 };
 
 // 是否应当为当前视频 URL 启用 CORS 模式
@@ -156,6 +251,7 @@ const shouldEnableCorsMode = (rawUrl, linkType) => {
 // 初始化 Artplayer
 const initArtplayer = async () => {
   if (!artplayerContainer.value || !props.video?.url) return;
+  didAutoApplyDefaultSubtitle.value = false;
 
   // 销毁现有实例
   if (artplayerInstance.value) {
@@ -244,13 +340,8 @@ const initArtplayer = async () => {
   }
 
   // 字幕列表
-  const rawTracks = Array.isArray(props.video?.subtitleTracks) ? props.video.subtitleTracks : [];
-  const effectiveTracks =
-    rawTracks.length > 0
-      ? rawTracks
-      : props.showSubtitle && props.subtitleUrl
-        ? [{ name: "字幕", url: props.subtitleUrl, type: "srt", default: true }]
-        : [];
+  const effectiveTracks = getEffectiveSubtitleTracks();
+  let initialSubtitleSettingPayload = null;
 
   if (effectiveTracks.length > 0) {
     const defaultTrack = effectiveTracks.find((t) => t && t.default && t.url) || effectiveTracks.find((t) => t && t.url) || null;
@@ -265,35 +356,8 @@ const initArtplayer = async () => {
       };
     }
 
-    const selector = [
-      { default: !defaultTrack, html: "关闭字幕", url: "" },
-      ...effectiveTracks.map((t) => ({
-        default: !!t.default,
-        html: String(t.name || "字幕"),
-        url: String(t.url || ""),
-        type: String(t.type || getExtLower(t.name) || "srt"),
-      })),
-    ];
-
-    options.settings.push({
-      name: "subtitle",
-      html: "字幕",
-      width: 260,
-      tooltip: defaultTrack?.name || "关闭字幕",
-      selector,
-      onSelect: function (item) {
-        const art = artplayerInstance.value;
-        if (!art) return item?.html;
-        const nextUrl = String(item?.url || "");
-        if (!nextUrl) {
-          art.subtitle.show = false;
-          return "关闭字幕";
-        }
-        art.subtitle.url = nextUrl;
-        art.subtitle.show = true;
-        return String(item?.html || "字幕");
-      },
-    });
+    initialSubtitleSettingPayload = buildSubtitleSettingPayload(effectiveTracks);
+    if (initialSubtitleSettingPayload) options.settings.push(initialSubtitleSettingPayload);
   }
 
   // 添加跨域支持以启用截图功能
@@ -320,6 +384,9 @@ const initArtplayer = async () => {
   try {
     // 创建 Artplayer 实例
     artplayerInstance.value = new Artplayer(options);
+    if (initialSubtitleSettingPayload) {
+      artplayerInstance.value.__cpSubtitleInstalled = true;
+    }
 
     // 如果是流媒体播放器，将播放器实例从video元素转移到artplayerInstance
     if (artplayerInstance.value.video) {
@@ -335,6 +402,8 @@ const initArtplayer = async () => {
     // 应用主题样式
     applyThemeStyles();
 
+    // 字幕列表可能是异步补齐的，实例创建后再做一次“热更新”兜底
+    applySubtitleSettingsToInstance();
 
     emit("ready", artplayerInstance.value);
   } catch (error) {
@@ -1102,11 +1171,10 @@ watch(
 );
 
 watch(
-  () => [props.video, props.loop, props.volume, props.muted],
+  () => getVideoSourceKey(),
   () => {
     initArtplayer();
-  },
-  { deep: true }
+  }
 );
 
 watch(
@@ -1120,6 +1188,32 @@ watch(
   () => props.muted,
   (newMuted) => {
     setMuted(newMuted);
+  }
+);
+
+watch(
+  () => props.loop,
+  (val) => {
+    const art = artplayerInstance.value;
+    if (!art) return;
+    try {
+      art.loop = !!val;
+    } catch {
+      initArtplayer();
+    }
+  }
+);
+
+watch(
+  () => {
+    const tracks = getEffectiveSubtitleTracks();
+    const key = tracks
+      .map((t) => `${String(t?.url || "")}:${t?.default ? 1 : 0}:${String(t?.type || "")}`)
+      .join("|");
+    return `${props.showSubtitle ? 1 : 0}::${String(props.subtitleUrl || "")}::${key}`;
+  },
+  () => {
+    applySubtitleSettingsToInstance();
   }
 );
 

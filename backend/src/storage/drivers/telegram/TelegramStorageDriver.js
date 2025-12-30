@@ -754,9 +754,9 @@ export class TelegramStorageDriver extends BaseDriver {
     return this.uploadOps.listMultipartParts(subPath, uploadId, options);
   }
 
-  async refreshMultipartUrls(subPath, uploadId, partNumbers, options = {}) {
+  async signMultipartParts(subPath, uploadId, partNumbers, options = {}) {
     this._ensureInitialized();
-    return this.uploadOps.refreshMultipartUrls(subPath, uploadId, partNumbers, options);
+    return this.uploadOps.signMultipartParts(subPath, uploadId, partNumbers, options);
   }
 
   async proxyFrontendMultipartChunk(sessionRow, body, options = {}) {

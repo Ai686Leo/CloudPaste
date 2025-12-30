@@ -29,7 +29,7 @@ export class WebDavStorageDriver extends BaseDriver {
     super(config);
     this.type = "WEBDAV";
     this.encryptionSecret = encryptionSecret;
-    this.capabilities = [CAPABILITIES.READER, CAPABILITIES.WRITER, CAPABILITIES.ATOMIC, CAPABILITIES.PROXY, CAPABILITIES.SEARCH];
+    this.capabilities = [CAPABILITIES.READER, CAPABILITIES.WRITER, CAPABILITIES.ATOMIC, CAPABILITIES.PROXY];
     this.client = null;
     this.defaultFolder = config.default_folder || "";
     this.endpoint = config.endpoint_url || "";
@@ -534,112 +534,6 @@ export class WebDavStorageDriver extends BaseDriver {
 
   async updateFile(path, content, options = {}) {
     return await this.uploadFile(path, content, options);
-  }
-
-  /**
-   * 搜索当前挂载内的文件/目录（名称模糊匹配）
-   * @param {string} query - 搜索关键字
-   * @param {Object} options - 搜索选项
-   * @param {Object} options.mount - 挂载点对象
-   * @param {string|null} options.searchPath - 搜索范围路径（FS 视图路径，可为空表示全挂载）
-   * @param {number} options.maxResults - 最大结果数量
-   * @param {D1Database} options.db - 数据库实例
-   * @returns {Promise<Array<Object>>} 搜索结果
-   */
-  async search(query, options = {}) {
-    this._ensureInitialized();
-    const { mount, searchPath = null, maxResults = 1000, db } = options;
-
-    if (!mount) {
-      throw new DriverError("WebDAV 搜索需要挂载点信息", { status: ApiStatus.BAD_REQUEST, expose: true });
-    }
-
-    // 从 FS 路径还原到 WebDAV 子路径
-    let subPath = "";
-    if (searchPath) {
-      subPath = this._extractSubPath(searchPath, mount) || "";
-    }
-    const davPath = this._buildDavPath(subPath, true);
-
-    try {
-      const q = (query || "").toLowerCase();
-      const results = [];
-      const queue = [davPath];
-
-      while (queue.length > 0 && results.length < maxResults) {
-        const currentDavPath = queue.shift();
-        let raw;
-        try {
-          raw = await this.client.getDirectoryContents(currentDavPath, { deep: false, glob: "*" });
-        } catch (e) {
-          const status = this._statusFromError(e);
-          // 部分服务对某些路径返回 403/501，这里跳过该分支避免整个搜索失败
-          if (status === ApiStatus.FORBIDDEN || status === ApiStatus.NOT_IMPLEMENTED) {
-            continue;
-          }
-          throw e;
-        }
-
-        const entries = Array.isArray(raw) ? raw : raw?.data || [];
-
-        for (const item of entries) {
-          if (results.length >= maxResults) break;
-
-          const filename = item.filename || "";
-          const rawBasename = item.basename || this._basename(filename);
-          const basename = this._decodeComponent(rawBasename);
-          if (!basename) continue;
-
-          const isDirectory = item.type === "directory";
-
-          // 名称模糊匹配
-          if (basename.toLowerCase().includes(q)) {
-            const decodedFilename = this._decodeComponent(filename);
-            const normalizedFilename = this._normalize(decodedFilename);
-            let relative = normalizedFilename;
-            if (relative && !relative.startsWith("/")) {
-              relative = "/" + relative;
-            }
-
-            const mountRoot = (mount.mount_path || "/").replace(/\/+$/, "") || "/";
-            const fullPath = `${mountRoot}${relative || "/"}`.replace(/\/+/, "/");
-
-            const rawMime = item.mime || null;
-            const mime = !isDirectory && rawMime === "httpd/unix-directory" ? null : rawMime;
-
-            const info = await buildFileInfo({
-              fsPath: fullPath,
-              name: basename,
-              isDirectory,
-              size: isDirectory ? null : typeof item.size === "number" && Number.isFinite(item.size) && item.size >= 0 ? item.size : null,
-              modified: item.lastmod ? new Date(item.lastmod) : null,
-              mimetype: mime || (isDirectory ? "application/x-directory" : undefined),
-              mount,
-              storageType: mount.storage_type,
-              db,
-            });
-
-            results.push({
-              ...info,
-              mount_name: mount.name,
-            });
-          }
-
-          // 收集子目录，使用浅层 PROPFIND 递归遍历
-          if (isDirectory) {
-            const nextPath = item.filename || filename;
-            if (nextPath) {
-              const normalizedNext = nextPath.endsWith("/") ? nextPath : `${nextPath}/`;
-              queue.push(normalizedNext);
-            }
-          }
-        }
-      }
-
-      return results;
-    } catch (error) {
-      throw this._wrapError(error, "WebDAV 搜索失败", this._statusFromError(error));
-    }
   }
 
   /**

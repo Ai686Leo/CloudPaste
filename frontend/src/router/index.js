@@ -6,6 +6,7 @@ import { createRouter, createWebHistory } from "vue-router";
 import OfflineFallback from "../components/OfflineFallback.vue";
 import { showPageUnavailableToast } from "../pwa/offlineToast.js";
 import { useAuthStore } from "@/stores/authStore.js";
+import { useSiteConfigStore } from "@/stores/siteConfigStore.js";
 import NProgress from "nprogress";
 import "nprogress/nprogress.css";
 
@@ -382,6 +383,44 @@ const hasRoutePermission = (route, authStore) => {
   return true;
 };
 
+// 前台入口开关
+const isPublicEntryDisabled = (pageKey, siteConfigStore) => {
+  if (!siteConfigStore?.isInitialized) return false;
+  if (pageKey === "home") return siteConfigStore.siteHomeEditorEnabled === false;
+  if (pageKey === "upload") return siteConfigStore.siteUploadPageEnabled === false;
+  if (pageKey === "mount-explorer") return siteConfigStore.siteMountExplorerEnabled === false;
+  return false;
+};
+
+// 禁用页面时的默认落点：优先跳到仍然开启的公开页面；全关则跳管理入口
+const getFallbackRoute = (authStore, siteConfigStore) => {
+  if (!siteConfigStore?.isInitialized) {
+    return { name: "Home" };
+  }
+
+  if (siteConfigStore.siteHomeEditorEnabled) return { name: "Home" };
+  if (siteConfigStore.siteUploadPageEnabled) return { name: "Upload" };
+  if (siteConfigStore.siteMountExplorerEnabled) return { name: "MountExplorer" };
+
+  // 三个入口都关了：让用户进管理入口（未登录会自动去登录页）
+  if (authStore?.isAuthenticated) return { path: "/admin" };
+  return { name: "AdminLogin" };
+};
+
+const dispatchPublicEntryDisabledMessage = () => {
+  try {
+    window.dispatchEvent(
+      new CustomEvent("global-message", {
+        detail: {
+          type: "warning",
+          content: "该页面已被管理员关闭，已为你跳转到其它页面。（This page is disabled and you have been redirected.）",
+          duration: 2500,
+        },
+      })
+    );
+  } catch {}
+};
+
 // 获取用户默认路由
 const getDefaultRouteForUser = (authStore) => {
   if (authStore.isAdmin) {
@@ -418,10 +457,16 @@ router.beforeEach(async (to, from, next) => {
 
   try {
     const authStore = useAuthStore();
+    const siteConfigStore = useSiteConfigStore();
 
     // 确保初始化完成，避免刷新时的认证闪烁
     if (!authStore.initialized) {
       await authStore.initialize();
+    }
+
+    // 确保站点配置已初始化：用于“前台入口开关（隐藏入口 + 禁止访问路由）”
+    if (!siteConfigStore.isInitialized && typeof siteConfigStore.initialize === "function") {
+      await siteConfigStore.initialize();
     }
 
     // 自动游客会话：在首次未认证状态下尝试一次基于 Guest API Key 的登录
@@ -436,6 +481,16 @@ router.beforeEach(async (to, from, next) => {
     if (to.meta.requiresAuth && authStore.needsRevalidation) {
       console.log("路由守卫：需要重新验证认证状态");
       await authStore.validateAuth();
+    }
+
+    // ===== 公开页面入口开关 =====
+    const pageKey = to.meta?.originalPage;
+    if (typeof pageKey === "string" && isPublicEntryDisabled(pageKey, siteConfigStore)) {
+      console.log("路由守卫：公开页面入口已关闭，执行跳转", { pageKey, to: to.fullPath });
+      dispatchPublicEntryDisabledMessage();
+      NProgress.done();
+      next(getFallbackRoute(authStore, siteConfigStore));
+      return;
     }
 
     // 登录页面访问控制

@@ -358,7 +358,7 @@ CREATE TABLE upload_sessions (
   provider_meta TEXT,                    -- JSON 扩展字段（驱动私有）
 
   -- 会话状态与错误
-  status TEXT NOT NULL,                  -- active / completed / aborted / expired / error
+  status TEXT NOT NULL,                  -- initiated / uploading / completed / aborted / expired / error
   error_code TEXT,
   error_message TEXT,
 

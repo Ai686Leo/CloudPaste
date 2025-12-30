@@ -22,12 +22,14 @@ import { get, post, put, del } from "../client";
  */
 export async function getUploadPresignedUrl(options) {
   try {
+    const sha256 = typeof options?.sha256 === "string" && options.sha256 ? options.sha256 : null;
     const data = {
       filename: options.filename,
       fileSize: options.size ?? options.fileSize ?? options.filesize,
       contentType: options.mimetype,
       path: options.path || null,
       storage_config_id: options.storage_config_id || null,
+      sha256,
     };
 
     return await post("share/presign", data);
@@ -54,6 +56,7 @@ export async function completeFileUpload(data) {
     filename: data.filename,
     size: Number(data.size ?? data.fileSize ?? 0),
     etag: data.etag,
+    sha256: typeof data?.sha256 === "string" && data.sha256 ? data.sha256 : null,
     slug: data.slug,
     remark: data.remark,
     password: data.password,

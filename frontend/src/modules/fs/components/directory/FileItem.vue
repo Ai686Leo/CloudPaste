@@ -31,12 +31,25 @@
       <div 
         class="file-item__name" 
         :class="[
-          darkMode ? 'text-gray-200' : 'text-gray-700',
-          `file-item__name--${fileNameOverflow}`
+          darkMode ? 'text-gray-200' : 'text-gray-700'
         ]"
         :title="fileNameOverflow === 'ellipsis' ? item.name : undefined"
       >
-        {{ item.name }}
+        <span
+          class="file-item__name-text"
+          :class="`file-item__name--${fileNameOverflow}`"
+          :data-name="item.name"
+        >
+          {{ item.name }}
+        </span>
+        <span
+          v-if="storageBackendBadge"
+          class="file-item__backend-badge"
+          :class="storageBackendBadgeClass"
+          :title="storageBackendBadgeTitle"
+        >
+          {{ storageBackendBadge }}
+        </span>
       </div>
       <!-- 移动端文件大小显示 -->
       <div class="file-item__size-mobile" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
@@ -218,6 +231,29 @@ const modifiedTitle = computed(() => {
   if (props.item?.modified_source === "compute") return "时间来自递归计算（可能较慢）";
   return undefined;
 });
+
+// HuggingFace / 存储后端提示（小徽章）
+const storageBackendBadge = computed(() => {
+  if (props.item?.isDirectory) return "";
+  const backend = String(props.item?.storage_backend || "").toLowerCase();
+  if (backend === "xet") return "Xet";
+  if (backend === "lfs") return "LFS";
+  return "";
+});
+
+const storageBackendBadgeClass = computed(() => {
+  const backend = String(props.item?.storage_backend || "").toLowerCase();
+  if (backend === "xet") return "file-item__backend-badge--xet";
+  if (backend === "lfs") return "file-item__backend-badge--lfs";
+  return "";
+});
+
+const storageBackendBadgeTitle = computed(() => {
+  const backend = String(props.item?.storage_backend || "").toLowerCase();
+  if (backend === "xet") return "HF Xet 存储";
+  if (backend === "lfs") return "Git LFS 指针文件";
+  return undefined;
+});
 </script>
 
 <style scoped>
@@ -369,6 +405,15 @@ const modifiedTitle = computed(() => {
 .file-item__name {
   font-size: var(--explorer-font-size, 14px);
   font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.file-item__name-text {
+  min-width: 0;
+  flex: 1;
 }
 
 /* 文件名过长处理模式 - 省略号（默认） */
@@ -411,6 +456,40 @@ const modifiedTitle = computed(() => {
   white-space: normal;
   word-break: break-word;
   line-height: 1.3;
+}
+
+.file-item__backend-badge {
+  flex-shrink: 0;
+  font-size: 11px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 9999px;
+  border: 1px solid transparent;
+  user-select: none;
+}
+
+.file-item__backend-badge--lfs {
+  background: rgba(107, 114, 128, 0.12);
+  color: rgb(75, 85, 99);
+  border-color: rgba(107, 114, 128, 0.25);
+}
+
+.file-item--dark .file-item__backend-badge--lfs {
+  background: rgba(156, 163, 175, 0.15);
+  color: rgb(229, 231, 235);
+  border-color: rgba(156, 163, 175, 0.25);
+}
+
+.file-item__backend-badge--xet {
+  background: rgba(59, 130, 246, 0.12);
+  color: rgb(29, 78, 216);
+  border-color: rgba(59, 130, 246, 0.25);
+}
+
+.file-item--dark .file-item__backend-badge--xet {
+  background: rgba(96, 165, 250, 0.15);
+  color: rgb(191, 219, 254);
+  border-color: rgba(96, 165, 250, 0.25);
 }
 
 /* 移动端文件大小 */

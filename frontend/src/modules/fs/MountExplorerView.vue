@@ -265,6 +265,8 @@
                   :current-path="currentPath"
                   :items="visibleItems"
                   :loading="loading"
+                  :has-more="directoryHasMore"
+                  :loading-more="directoryLoadingMore"
                   :is-virtual="isVirtualDirectory"
                   :dark-mode="darkMode"
                   :view-mode="viewMode"
@@ -281,6 +283,7 @@
                   @rename="handleRename"
                   @delete="handleDelete"
                   @preview="handlePreview"
+                  @load-more="handleLoadMore"
                   @item-select="handleItemSelect"
                   @toggle-select-all="toggleSelectAll"
                   @show-message="handleShowMessage"
@@ -483,6 +486,8 @@ const {
   directoryItems,
   isVirtualDirectory,
   directoryMeta,
+  directoryHasMore,
+  directoryLoadingMore,
   isAdmin,
   hasApiKey,
   hasFilePermission,
@@ -506,6 +511,7 @@ const {
   consumePendingScrollRestore,
   invalidateCaches,
   removeItemsFromCurrentDirectory,
+  loadMoreCurrentDirectory,
 } = useMountExplorerController();
 
 const { y: windowScrollY } = useWindowScroll();
@@ -850,6 +856,13 @@ const handleRefresh = async () => {
 };
 
 /**
+ * 处理“加载更多”（用于上游分页的目录）
+ */
+const handleLoadMore = async () => {
+  await loadMoreCurrentDirectory();
+};
+
+/**
  * 处理视图模式变化
  */
 const handleViewModeChange = (newViewMode) => {
@@ -1160,8 +1173,18 @@ const handleCloseUploadModal = () => {
   closeUploadModal();
 };
 
-const handleUploadSuccess = async () => {
-  showMessage("success", t("mount.messages.uploadSuccess"));
+const handleUploadSuccess = async (payload) => {
+  const count = Number(payload?.count || 0);
+  const skippedUploadCount = Number(payload?.skippedUploadCount || 0);
+
+  if (skippedUploadCount > 0) {
+    showMessage("success", t("mount.messages.uploadSuccessWithSkipped", { count, skipped: skippedUploadCount }));
+  } else if (count > 1) {
+    // 兼容：多文件时给更明确的提示
+    showMessage("success", t("mount.messages.uploadSuccessWithCount", { count }));
+  } else {
+    showMessage("success", t("mount.messages.uploadSuccess"));
+  }
   invalidateCaches();
   await refreshDirectory();
 };
@@ -1391,7 +1414,13 @@ const handlePasswordError = ({ message }) => {
 };
 
 // 预览相关方法
+let lastPreviewLoadedKey = "";
 const handlePreviewLoaded = () => {
+  // 避免同一个文件在媒体事件重复触发时刷屏
+  const f = previewInfo.value || previewFile.value;
+  const key = f?.path || f?.name || "";
+  if (key && key === lastPreviewLoadedKey) return;
+  lastPreviewLoadedKey = key;
   console.log("预览加载完成");
 };
 

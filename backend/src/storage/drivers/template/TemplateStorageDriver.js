@@ -162,17 +162,6 @@ export class TemplateStorageDriver extends BaseDriver {
   // ========== 可选方法：search / getStats ==========
 
   /**
-   * 搜索文件和目录（可选实现）
-   * @param {string} query    搜索关键词
-   * @param {Object} options  选项（mount/searchPath/maxResults/db）
-   */
-  async search(query, options = {}) {
-    this._ensureInitialized();
-    // 默认返回空数组，驱动可根据后端能力实现搜索逻辑
-    return [];
-  }
-
-  /**
    * 获取存储驱动统计信息（可选实现）
    * @returns {Promise<Object>} 统计信息
    */
@@ -250,8 +239,8 @@ export class TemplateStorageDriver extends BaseDriver {
     throw new Error("TemplateStorageDriver: 请在此根据目标后端实现 listMultipartParts（用于恢复已上传分片）");
   }
 
-  async refreshMultipartUrls(subPath, uploadId, partNumbers, options = {}) {
+  async signMultipartParts(subPath, uploadId, partNumbers, options = {}) {
     this._ensureInitialized();
-    throw new Error("TemplateStorageDriver: 请在此根据目标后端实现 refreshMultipartUrls（刷新上传端点或会话信息）");
+    throw new Error("TemplateStorageDriver: 请在此根据目标后端实现 signMultipartParts（获取/刷新上传参数或会话信息）");
   }
 }

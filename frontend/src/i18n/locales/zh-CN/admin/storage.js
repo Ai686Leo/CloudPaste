@@ -13,6 +13,7 @@ export default {
       github_releases: "GitHub Releases",
       github_api: "GitHub API",
       telegram: "Telegram Bot API",
+      huggingface_datasets: "HuggingFace Datasets",
     },
 
     // 分组标题
@@ -45,6 +46,12 @@ export default {
       username: "用户名",
       password: "密码",
       tls_insecure_skip_verify: "跳过 TLS 证书校验",
+
+      // S3 特有字段
+      s3: {
+        multipart_part_size_mb: "分片大小（MB）",
+        multipart_concurrency: "分片上传并发数",
+      },
 
       // LOCAL 特有字段
       local: {
@@ -115,6 +122,19 @@ export default {
         upload_concurrency: "上传并发",
         verify_after_upload: "上传后校验",
       },
+
+      // HuggingFace Datasets 特有字段
+      huggingface_datasets: {
+        repo: "数据集仓库（repo）",
+        revision: "分支/版本（revision）",
+        endpoint_base: "Hub 地址（可选）",
+        hf_token: "HF Token（可选）",
+        hf_use_paths_info: "显示更多信息（修改时间 / Xet / LFS）",
+        hf_tree_limit: "列目录每页数量（tree limit）",
+        hf_multipart_concurrency: "分片上传并发数",
+        hf_use_xet: "使用 Xet 存储后端（默认关闭）",
+        hf_delete_lfs_on_remove: "删除文件时，同时清理 HuggingFace LFS 大文件（谨慎）",
+      },
     },
 
     // 占位符文本
@@ -182,6 +202,15 @@ export default {
         part_size_mb: "默认 15；未勾选自建时建议 ≤20；勾选自建可不限制",
         upload_concurrency: "默认 2；调大更快但更容易被限流",
       },
+
+      huggingface_datasets: {
+        repo: "例如：Open-Orca/OpenOrca（不要写成完整 URL）",
+        revision: "例如：main（分支名）；也可以填 tag/commit，但那样只能读不能写",
+        endpoint_base: "默认 https://huggingface.co；自建镜像/代理时才需要改",
+        hf_token: "可选：从 https://huggingface.co/settings/tokens 创建；private/gated 必填",
+        hf_tree_limit: "默认 100；数值越大单次返回越多",
+        hf_multipart_concurrency: "默认 5；数值越大越快，但更吃网络/更容易失败",
+      },
     },
 
     // 枚举选项
@@ -207,6 +236,10 @@ export default {
       signature_expires_in: "预签名 URL 的有效期，单位为秒，默认 3600",
       custom_host: "用于生成公开访问链接的自定义域名（CDN 加速等场景）",
       url_proxy: "通过代理服务器访问存储，适用于需要中转的场景",
+      s3: {
+        multipart_part_size_mb: "前端直传分片上传的分片大小（MB）。默认 5MB；分片越大分片数量越少，但单片失败重传成本更高。",
+        multipart_concurrency: "前端直传分片上传并发数（同时上传多少片）。默认 3；越大速度可能越快，但更吃网络也更容易失败。",
+      },
       webdav_endpoint: "WebDAV 服务的完整访问地址",
       tls_insecure_skip_verify: "跳过 TLS 证书验证（不安全，仅用于测试环境）",
       root_path: "本地文件存储的根目录路径，例如 /data/local-files ",
@@ -275,6 +308,19 @@ export default {
         part_size_mb: "挂载页断点续传的分片大小；默认 15MB。未勾选自建时建议 ≤20MB；勾选自建可不限制",
         upload_concurrency: "限制同一存储配置同时向 Telegram 发请求的数量，避免并发过高导致限流",
         verify_after_upload: "开启后每片上传成功会再次校验大小，速度稍慢但更稳(无特殊情况默认即可)",
+      },
+
+      huggingface_datasets: {
+        repo: "HuggingFace 数据集仓库 ID（形如 owner/name）。这是 HuggingFace Datasets 的“仓库”，不是本地路径。",
+        revision: "分支/版本：建议填分支名（如 main）。如果填 tag 或 commit sha，只能读不能写。",
+        endpoint_base: "Hub 站点地址。默认 https://huggingface.co；只有你自建镜像/代理时才需要改。",
+        hf_token: "可选：用于访问 private/gated 或提升额度/限流上限。",
+        hf_use_paths_info: "开启后，目录列表会额外获取详细信息，如：“修改时间 + Xet/LFS 标记”。信息更全，但响应体更大、也更容易触发限流。",
+        hf_tree_limit: "tree API 每页返回文件数量（对应HF的 limit 参数）。配合“显示更多信息”开关使用，开启时最大100数量限制，关闭时最大1000数量限制。默认即可",
+        hf_multipart_concurrency: "一次同时上传多少个分片。数值越大速度越快，但会更吃网络，也更容易失败（默认 3，建议 3~8）。",
+        hf_use_xet: "开启后，写入会尝试走 Xet（新后端）。但某些运行环境（例如 Cloudflare Workers）可能禁止运行时编译 WebAssembly，导致写入报错。默认关闭更稳。",
+        hf_delete_lfs_on_remove:
+          "开启后：你在 CloudPaste 删除文件时，会额外请求 HuggingFace，把对应的 LFS 大文件也一起“永久删除”（从 HuggingFace 的 “List LFS files” 里也消失）。\n不开启：只会删掉仓库里的文件记录（类似“指针”），LFS 大文件可能仍然留在 HF，所以你再次上传“完全相同内容”的文件时，可能会出现“秒传/跳过上传”。\n注意：如果两个文件内容完全一样（同一个 SHA），清理 LFS 可能会影响另一个文件或旧版本下载。\n",
       },
     },
 

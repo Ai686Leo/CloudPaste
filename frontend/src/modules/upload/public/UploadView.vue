@@ -209,7 +209,23 @@ const handleUploadSuccess = (fileData) => {
     loadFiles();
   }
 
-  showSuccess(t("file.uploadSuccessful"));
+  // Share 上传页的“预签名秒传/去重”：部分文件可能会被标记为 skipUpload=true（对象已存在，跳过 PUT）
+  const files = Array.isArray(fileData)
+    ? fileData
+    : Array.isArray(fileData?.uploadResults)
+      ? fileData.uploadResults
+      : [];
+
+  const successCount = files.length;
+  const skippedUploadCount = files.filter((item) => item?.meta?.skipUpload === true).length;
+
+  // 文案：单文件/多文件分别用已有 key，跳过上传则追加提示
+  let message = successCount > 1 ? t("file.multipleUploadsSuccessful", { count: successCount }) : t("file.uploadSuccessful");
+  if (skippedUploadCount > 0) {
+    message += `（${t("file.skippedExistingUploads", { count: skippedUploadCount })}）`;
+  }
+
+  showSuccess(message);
 };
 
 const handleShareResults = (results = []) => {

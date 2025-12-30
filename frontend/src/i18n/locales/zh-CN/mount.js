@@ -85,6 +85,8 @@ export default {
       selectAll: "全选",
       deselectAll: "取消全选",
       clickToSort: "点击排序",
+      loadMore: "加载更多",
+      pagedHint: "如果这个目录文件很多，系统会先显示一部分；往下滑会自动继续加载，也可以点“加载更多”。",
     },
     rename: {
       title: "重命名",
@@ -139,6 +141,8 @@ export default {
       getFileLinkError: "获取文件直链错误: {message}",
       noItemsSelected: "请选择要操作的项目",
       uploadSuccess: "上传成功",
+      uploadSuccessWithCount: "成功上传 {count} 个文件",
+      uploadSuccessWithSkipped: "上传完成：{count} 个文件，其中 {skipped} 个内容已存在，已跳过上传（秒传）",
       uploadFailed: "上传失败: {message}",
       shareCreated: "分享链接已创建并复制到剪贴板：{url}",
       shareCreateFailed: "创建分享链接失败: {message}",

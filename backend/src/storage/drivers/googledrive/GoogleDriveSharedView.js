@@ -106,15 +106,41 @@ export async function resolveSharedWithMePath(segments, apiClient) {
  * @param {any} params.mount 挂载信息
  * @param {D1Database} params.db D1 数据库实例
  */
-export async function listSharedWithMeDirectory({ path, segments, apiClient, mount, db }) {
+export async function listSharedWithMeDirectory({ path, segments, apiClient, mount, db, options = {} }) {
+  const cursorRaw = options?.cursor != null && String(options.cursor).trim() ? String(options.cursor).trim() : null;
+  const limitRaw = options?.limit != null && options.limit !== "" ? Number(options.limit) : null;
+  const limit =
+    limitRaw != null && Number.isFinite(limitRaw) && limitRaw > 0 ? Math.max(1, Math.min(1000, Math.floor(limitRaw))) : null;
+  const paged = options?.paged === true || !!cursorRaw || limit != null;
+
   let res;
+  let nextCursor = null;
 
   // 根：使用 sharedWithMe = true 过滤
   if (segments.length === 1) {
-    res = await apiClient.listFiles(null, {
-      q: "sharedWithMe = true and trashed = false",
-      pageSize: 1000,
-    });
+    if (paged) {
+      res = await apiClient.listFiles(null, {
+        q: "sharedWithMe = true and trashed = false",
+        pageSize: limit ?? 1000,
+        pageToken: cursorRaw || undefined,
+      });
+      nextCursor = res?.nextPageToken ? String(res.nextPageToken) : null;
+    } else {
+      /** @type {any[]} */
+      const all = [];
+      let pageToken = undefined;
+      while (true) {
+        const page = await apiClient.listFiles(null, {
+          q: "sharedWithMe = true and trashed = false",
+          pageSize: limit ?? 1000,
+          pageToken,
+        });
+        all.push(...(Array.isArray(page?.files) ? page.files : []));
+        pageToken = page?.nextPageToken ? String(page.nextPageToken) : undefined;
+        if (!pageToken) break;
+      }
+      res = { files: all };
+    }
   } else {
     // 非根：最后一段视为父目录 fileId
     const parentId = segments[segments.length - 1];
@@ -126,7 +152,24 @@ export async function listSharedWithMeDirectory({ path, segments, apiClient, mou
       throw new DriverError("目标路径不是目录", { status: 400 });
     }
 
-    res = await apiClient.listFiles(parentId, { pageSize: 1000 });
+    if (paged) {
+      res = await apiClient.listFiles(parentId, {
+        pageSize: limit ?? 1000,
+        pageToken: cursorRaw || undefined,
+      });
+      nextCursor = res?.nextPageToken ? String(res.nextPageToken) : null;
+    } else {
+      /** @type {any[]} */
+      const all = [];
+      let pageToken = undefined;
+      while (true) {
+        const page = await apiClient.listFiles(parentId, { pageSize: limit ?? 1000, pageToken });
+        all.push(...(Array.isArray(page?.files) ? page.files : []));
+        pageToken = page?.nextPageToken ? String(page.nextPageToken) : undefined;
+        if (!pageToken) break;
+      }
+      res = { files: all };
+    }
   }
 
   const files = Array.isArray(res.files) ? res.files : [];
@@ -175,6 +218,7 @@ export async function listSharedWithMeDirectory({ path, segments, apiClient, mou
     mount_id: mount?.id,
     storage_type: mount?.storage_type || "GOOGLE_DRIVE",
     items: formattedItems,
+    ...(paged ? { hasMore: !!nextCursor, nextCursor } : {}),
   };
 }
 

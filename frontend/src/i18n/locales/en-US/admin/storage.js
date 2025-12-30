@@ -13,6 +13,7 @@ export default {
       github_releases: "GitHub Releases",
       github_api: "GitHub API",
       telegram: "Telegram Bot API",
+      huggingface_datasets: "HuggingFace Datasets (Hub)",
     },
 
     // group titles
@@ -45,6 +46,12 @@ export default {
       username: "Username",
       password: "Password",
       tls_insecure_skip_verify: "Skip TLS verification",
+
+      // S3 specific
+      s3: {
+        multipart_part_size_mb: "Multipart part size (MB)",
+        multipart_concurrency: "Multipart concurrency",
+      },
 
       // LOCAL specific
       local: {
@@ -112,6 +119,19 @@ export default {
         upload_concurrency: "Upload concurrency",
         verify_after_upload: "Verify after upload",
       },
+
+      // HuggingFace Datasets specific
+      huggingface_datasets: {
+        repo: "Dataset repository (repo)",
+        revision: "Branch/version (revision)",
+        endpoint_base: "Hub address (optional)",
+        hf_token: "HF Token (optional)",
+        hf_use_paths_info: "Show more info (modification time / Xet / LFS)",
+        hf_tree_limit: "Entries per page (tree limit)",
+        hf_multipart_concurrency: "Multipart concurrency",
+        hf_use_xet: "Use Xet storage backend (disabled by default)",
+        hf_delete_lfs_on_remove: "Also delete HuggingFace LFS objects on remove (careful)",
+      },
     },
 
     // placeholder texts
@@ -177,6 +197,15 @@ export default {
         part_size_mb: "Default 15; recommended ≤ 20 when not self-hosted; no limit when self-hosted",
         upload_concurrency: "Default 2; higher is faster but easier to hit rate limits",
       },
+
+      huggingface_datasets: {
+        repo: "e.g., Open-Orca/OpenOrca (do not write the full URL)",
+        revision: "e.g., main (branch name); tags/commits can also be used, but they are read-only",
+        endpoint_base: "default https://huggingface.co; only change for self-hosted mirrors/proxies",
+        hf_token: "optional: create at https://huggingface.co/settings/tokens; required for private/gated repos",
+        hf_tree_limit: "default 100; higher values return more data per request",
+        hf_multipart_concurrency: "default 5; higher is faster but can be less stable",
+      },
     },
 
     // enum options
@@ -203,6 +232,10 @@ export default {
       signature_expires_in: "Presigned URL validity period in seconds, default 3600",
       custom_host: "Custom domain for public access links (e.g., CDN acceleration)",
       url_proxy: "Access storage through a proxy server for relay scenarios",
+      s3: {
+        multipart_part_size_mb: "Multipart part size (MB) for browser direct-upload. Default 5MB; larger parts mean fewer parts but higher cost to retry a failed part.",
+        multipart_concurrency: "How many parts to upload at the same time for browser direct-upload. Default 3; higher can be faster but less stable on weak networks.",
+      },
       webdav_endpoint: "Full access URL for the WebDAV service",
       tls_insecure_skip_verify: "Skip TLS certificate verification (insecure, for testing only)",
       root_path: "Root directory path for local file storage, must be an absolute path",
@@ -272,6 +305,22 @@ export default {
         upload_concurrency: "Limit the number of simultaneous requests to Telegram for the same storage configuration to avoid rate limiting due to high concurrency",
         verify_after_upload:
           "When enabled, each chunk will be re-verified for size after successful upload, slightly slower but more stable (default is fine unless there are special circumstances)",
+      },
+
+      huggingface_datasets: {
+        repo: "HuggingFace dataset repository ID (format: owner/name). This refers to a HuggingFace Datasets 'repository', not a local path.",
+        revision: "Branch/version: Recommended to specify a branch name (e.g., main). If a tag or commit SHA is provided, read-only access is enforced.",
+        endpoint_base: "Hub site address. Default: https://huggingface.co; modify only if using a self-hosted mirror/proxy.",
+        hf_token: "Optional: Required for accessing private/gated repositories or increasing rate limits.",
+        hf_use_paths_info:
+          "When enabled, directory listings include additional details (e.g., 'modification time + Xet/LFS flags'). More comprehensive but increases response size and may trigger rate limits more easily.",
+        hf_tree_limit:
+          "Number of items per page for the tree API (HF's 'limit' parameter). Used with the 'Show more info' toggle—max 100 when enabled, 1000 when disabled. Default is sufficient.",
+        hf_multipart_concurrency: "How many parts to upload in parallel. Higher is faster but consumes more network and is more likely to fail (default 3; suggested 3–8).",
+        hf_use_xet:
+          "When enabled, write operations attempt to use Xet (new backend). However, some environments (e.g., Cloudflare Workers) may block runtime WebAssembly compilation, causing write failures. Disabled by default for stability.",
+        hf_delete_lfs_on_remove:
+          "When enabled: deleting a file in CloudPaste will also call HuggingFace to permanently delete the matching LFS object (so it disappears from HuggingFace “List LFS files”).\nWhen disabled: CloudPaste only deletes the repo file entry (a pointer), and the LFS blob may remain on HuggingFace—so uploading the exact same content again can become “instant upload/skip”.\nNote: If two files have completely identical content (same SHA), cleaning LFS may affect another file or the download of an older version.",
       },
     },
 

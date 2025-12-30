@@ -123,7 +123,7 @@ export default {
     },
   },
   nav: {
-    home: "Home",
+    home: "Text Editor",
     upload: "File Upload",
     mountExplorer: "Mount Explorer",
     admin: "Admin Panel",

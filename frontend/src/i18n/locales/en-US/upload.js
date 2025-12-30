@@ -162,6 +162,7 @@ export default {
     showQRCode: "Show QR Code",
     downloadQrCode: "Download QR Code",
     uploadSuccessful: "File uploaded successfully",
+    skippedExistingUploads: "{count} already existed, upload skipped",
     urlUploadSuccess: "URL file uploaded successfully",
     multipleUploadsSuccessful: "Successfully uploaded {count} files",
     retrySuccessful: "Retry upload successful",

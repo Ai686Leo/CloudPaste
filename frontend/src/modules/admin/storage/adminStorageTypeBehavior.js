@@ -104,6 +104,9 @@ const STORAGE_TYPE_BEHAVIOR_DEF = {
   TELEGRAM: {
     secretFields: ["bot_token"],
   },
+  HUGGINGFACE_DATASETS: {
+    secretFields: ["hf_token"],
+  },
 };
 
 /**
@@ -150,6 +153,11 @@ export function useAdminStorageTypeBehavior(options) {
       loaded: ref(false),
     },
     TELEGRAM: {
+      visible: ref(false),
+      revealing: ref(false),
+      loaded: ref(false),
+    },
+    HUGGINGFACE_DATASETS: {
       visible: ref(false),
       revealing: ref(false),
       loaded: ref(false),
@@ -220,6 +228,8 @@ export function useAdminStorageTypeBehavior(options) {
             formData.value.token = data.token || "";
           } else if (type === "TELEGRAM") {
             formData.value.bot_token = data.bot_token || "";
+          } else if (type === "HUGGINGFACE_DATASETS") {
+            formData.value.hf_token = data.hf_token || "";
           }
           state.loaded.value = true;
         }

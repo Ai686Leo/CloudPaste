@@ -6,7 +6,7 @@
 import { NotFoundError } from "../../../../http/errors.js";
 import { S3Client, ListObjectsV2Command, PutObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { checkDirectoryExists, updateParentDirectoriesModifiedTime } from "../utils/S3DirectoryUtils.js";
-import { isMountRootPath, normalizeS3SubPath } from "../utils/S3PathUtils.js";
+import { applyS3RootPrefix, isMountRootPath, normalizeS3SubPath } from "../utils/S3PathUtils.js";
 import { handleFsError } from "../../../fs/utils/ErrorHandler.js";
 import { buildFileInfo } from "../../../utils/FileInfoBuilder.js";
 
@@ -86,18 +86,8 @@ export class S3DirectoryOperations {
     let continuationToken = undefined;
 
     const s3SubPath = normalizeS3SubPath(relativeSubPath, true);
-    const rootPrefix = this.config.root_prefix
-      ? this.config.root_prefix.endsWith("/") ? this.config.root_prefix : `${this.config.root_prefix}/`
-      : "";
-
-    let fullPrefix = rootPrefix;
-    if (s3SubPath && s3SubPath !== "/") {
-      fullPrefix += s3SubPath;
-    }
-    if (fullPrefix && !fullPrefix.endsWith("/")) {
-      fullPrefix += "/";
-    }
-
+    let fullPrefix = applyS3RootPrefix(this.config, s3SubPath);
+    if (fullPrefix && !fullPrefix.endsWith("/")) fullPrefix += "/";
     const effectivePrefix = fullPrefix ? String(fullPrefix) : "";
 
     while (true) {
@@ -192,6 +182,15 @@ export class S3DirectoryOperations {
 
     return handleFsError(
       async () => {
+        // 目录分页（可选）
+        // - cursor：ContinuationToken（不透明字符串）
+        // - limit：单页最多数量（S3 上限 1000）
+        const cursorRaw = options?.cursor != null && String(options.cursor).trim() ? String(options.cursor).trim() : null;
+        const limitRaw = options?.limit != null && options.limit !== "" ? Number(options.limit) : null;
+        const limit =
+          limitRaw != null && Number.isFinite(limitRaw) && limitRaw > 0 ? Math.max(1, Math.min(1000, Math.floor(limitRaw))) : null;
+        const paged = options?.paged === true || !!cursorRaw || limit != null;
+
         // 构造返回结果结构
         const result = {
           path: mount.mount_path + subPath,
@@ -203,51 +202,34 @@ export class S3DirectoryOperations {
           items: [],
         };
 
-        // 处理root_prefix
-        const rootPrefix = this.config.root_prefix ? (this.config.root_prefix.endsWith("/") ? this.config.root_prefix : this.config.root_prefix + "/") : "";
+        let fullPrefix = applyS3RootPrefix(this.config, s3SubPath);
+        if (fullPrefix && !fullPrefix.endsWith("/")) fullPrefix += "/";
 
-        let fullPrefix = rootPrefix;
+        const prefixLength = fullPrefix.length;
+        const separator = subPath.endsWith("/") ? "" : "/";
 
-        // 添加s3SubPath (如果不是'/')
-        if (s3SubPath && s3SubPath !== "/") {
-          fullPrefix += s3SubPath;
-        }
+        // 去重：ContinuationToken 分页下理论上不重复，但稳妥起见做一次去重
+        const seenPaths = new Set();
 
-        // 确保前缀总是以斜杠结尾 (如果不为空)
-        if (fullPrefix && !fullPrefix.endsWith("/")) {
-          fullPrefix += "/";
-        }
+        const appendFromResponse = async (response) => {
+          // 处理公共前缀（目录）
+          if (response?.CommonPrefixes) {
+            for (const prefix of response.CommonPrefixes) {
+              const prefixKey = prefix?.Prefix;
+              if (!prefixKey || typeof prefixKey !== "string") continue;
+              const relativePath = prefixKey.substring(prefixLength);
+              const dirName = relativePath.replace(/\/$/, "");
+              if (!dirName) continue;
 
-        // 列出S3对象
-        const listParams = {
-          Bucket: this.config.bucket_name,
-          Prefix: fullPrefix,
-          Delimiter: "/",
-          MaxKeys: 1000,
-        };
-
-        const listCommand = new ListObjectsV2Command(listParams);
-        const response = await this.s3Client.send(listCommand);
-
-        // 处理公共前缀（目录）
-        if (response.CommonPrefixes) {
-          const prefixLength = fullPrefix.length;
-
-          for (const prefix of response.CommonPrefixes) {
-            const prefixKey = prefix.Prefix;
-            const relativePath = prefixKey.substring(prefixLength);
-            const dirName = relativePath.replace(/\/$/, "");
-
-            if (dirName) {
               // S3 没有“目录”的原生元数据（CommonPrefixes 不包含 LastModified/Size）。
               // 这里不做递归计算/额外 HEAD，把目录 size/modified 交给上层兜底：
               // storage(本驱动返回 null) > compute(可选) > index > -
               const directoryModified = null;
               const directorySize = null;
 
-              // 构建目录路径 - 确保路径正确拼接，避免双斜杠
-              const separator = subPath.endsWith("/") ? "" : "/";
               const dirPath = mount.mount_path + subPath + separator + dirName + "/";
+              if (seenPaths.has(dirPath)) continue;
+              seenPaths.add(dirPath);
 
               const dirInfo = await buildFileInfo({
                 fsPath: dirPath,
@@ -261,59 +243,80 @@ export class S3DirectoryOperations {
                 db,
               });
 
+              result.items.push({ ...dirInfo, isVirtual: false });
+            }
+          }
+
+          // 处理内容（文件）
+          if (response?.Contents) {
+            for (const content of response.Contents) {
+              const key = content?.Key;
+              if (!key || typeof key !== "string") continue;
+
+              // 跳过作为目录标记的对象
+              if (key === fullPrefix || key === fullPrefix + "/") continue;
+
+              // 从S3 key中提取相对路径和名称
+              const relativePath = key.substring(prefixLength);
+              if (!relativePath) continue;
+
+              // 跳过嵌套在子目录中的文件
+              if (relativePath.includes("/")) continue;
+
+              const itemPath = mount.mount_path + subPath + separator + relativePath;
+              if (seenPaths.has(itemPath)) continue;
+              seenPaths.add(itemPath);
+
+              const info = await buildFileInfo({
+                fsPath: itemPath,
+                name: relativePath,
+                isDirectory: false,
+                size: content.Size,
+                modified: content.LastModified ? content.LastModified : null,
+                mimetype: null,
+                mount,
+                storageType: mount.storage_type,
+                db,
+              });
+
               result.items.push({
-                ...dirInfo,
-                isVirtual: false,
+                ...info,
+                etag: content.ETag ? content.ETag.replace(/"/g, "") : undefined,
               });
             }
           }
-        }
+        };
 
-        // 处理内容（文件）
-        if (response.Contents) {
-          const prefixLength = fullPrefix.length;
+        const fetchPage = async (continuationToken) => {
+          const listParams = {
+            Bucket: this.config.bucket_name,
+            Prefix: fullPrefix,
+            Delimiter: "/",
+            MaxKeys: limit ?? 1000,
+            ...(continuationToken ? { ContinuationToken: continuationToken } : {}),
+          };
+          const listCommand = new ListObjectsV2Command(listParams);
+          return await this.s3Client.send(listCommand);
+        };
 
-          for (const content of response.Contents) {
-            const key = content.Key;
+        let continuationToken = cursorRaw;
+        let nextCursor = null;
+        let hasMore = false;
 
-            // 跳过作为目录标记的对象
-            if (key === fullPrefix || key === fullPrefix + "/") {
-              continue;
-            }
+        if (paged) {
+          const response = await fetchPage(continuationToken);
+          await appendFromResponse(response);
+          nextCursor = response?.NextContinuationToken ? String(response.NextContinuationToken) : null;
+          hasMore = !!(response?.IsTruncated && nextCursor);
+        } else {
+          while (true) {
+            const response = await fetchPage(continuationToken);
+            await appendFromResponse(response);
 
-            // 从S3 key中提取相对路径和名称
-            const relativePath = key.substring(prefixLength);
-
-            // 跳过嵌套在子目录中的文件
-            if (relativePath.includes("/")) {
-              continue;
-            }
-
-            // 跳过空文件名
-            if (!relativePath) {
-              continue;
-            }
-
-            // 构建子项路径 - 确保路径正确拼接，避免双斜杠
-            const separator = subPath.endsWith("/") ? "" : "/";
-            const itemPath = mount.mount_path + subPath + separator + relativePath;
-
-            const info = await buildFileInfo({
-              fsPath: itemPath,
-              name: relativePath,
-              isDirectory: false,
-              size: content.Size,
-              modified: content.LastModified ? content.LastModified : null,
-              mimetype: null,
-              mount,
-              storageType: mount.storage_type,
-              db,
-            });
-
-            result.items.push({
-              ...info,
-              etag: content.ETag ? content.ETag.replace(/"/g, "") : undefined,
-            });
+            nextCursor = response?.NextContinuationToken ? String(response.NextContinuationToken) : null;
+            if (!response?.IsTruncated || !nextCursor) break;
+            if (nextCursor === continuationToken) break;
+            continuationToken = nextCursor;
           }
         }
 
@@ -324,9 +327,10 @@ export class S3DirectoryOperations {
           return a.name.localeCompare(b.name);
         });
 
-        // 目录列表操作完成，无需额外的业务逻辑处理
-
-        return result;
+        return {
+          ...result,
+          ...(paged ? { hasMore, nextCursor: hasMore ? nextCursor : null } : {}),
+        };
       },
       "列出目录",
       "列出目录失败"
@@ -391,10 +395,11 @@ export class S3DirectoryOperations {
       currentPath += pathParts[i] + "/";
 
       // 检查当前目录是否存在
-      const exists = await checkDirectoryExists(this.s3Client, this.config.bucket_name, currentPath);
+      const currentKey = applyS3RootPrefix(this.config, currentPath);
+      const exists = await checkDirectoryExists(this.s3Client, this.config.bucket_name, currentKey);
 
       if (!exists) {
-        console.log(`递归创建目录 - 创建中间目录: ${currentPath}`);
+        console.log(`递归创建目录 - 创建中间目录: ${currentKey}`);
         await this._createSingleDirectory(currentPath);
       }
     }
@@ -416,18 +421,20 @@ export class S3DirectoryOperations {
       };
     }
 
+    const fullKey = applyS3RootPrefix(this.config, s3SubPath);
+
     // 检查目录是否已存在
     try {
       const headParams = {
         Bucket: this.config.bucket_name,
-        Key: s3SubPath,
+        Key: fullKey,
       };
 
       const headCommand = new HeadObjectCommand(headParams);
       await this.s3Client.send(headCommand);
 
       // 如果没有抛出异常，说明目录已存在，直接返回成功
-      console.log(`目录已存在，跳过创建: ${s3SubPath}`);
+      console.log(`目录已存在，跳过创建: ${fullKey}`);
       return {
         success: true,
         message: "目录已存在",
@@ -437,19 +444,18 @@ export class S3DirectoryOperations {
         // 目录不存在，可以创建
         const putParams = {
           Bucket: this.config.bucket_name,
-          Key: s3SubPath,
+          Key: fullKey,
           Body: Buffer.from("", "utf-8"),
           ContentType: "application/x-directory",
         };
 
-        const putCommand = new PutObjectCommand(putParams);
-        await this.s3Client.send(putCommand);
+      const putCommand = new PutObjectCommand(putParams);
+      await this.s3Client.send(putCommand);
 
-        // 更新父目录的修改时间
-        const rootPrefix = this.config.root_prefix ? (this.config.root_prefix.endsWith("/") ? this.config.root_prefix : this.config.root_prefix + "/") : "";
-        await updateParentDirectoriesModifiedTime(this.s3Client, this.config.bucket_name, s3SubPath, rootPrefix);
+      // 更新父目录的修改时间
+        await updateParentDirectoriesModifiedTime(this.s3Client, this.config.bucket_name, fullKey, this.config.root_prefix);
 
-        console.log(`成功创建目录: ${s3SubPath}`);
+        console.log(`成功创建目录: ${fullKey}`);
         return {
           success: true,
           message: "目录创建成功",
@@ -518,7 +524,8 @@ export class S3DirectoryOperations {
    * @returns {Promise<boolean>} 是否存在
    */
   async directoryExists(s3SubPath) {
-    return await checkDirectoryExists(this.s3Client, this.config.bucket_name, s3SubPath);
+    const key = applyS3RootPrefix(this.config, s3SubPath);
+    return await checkDirectoryExists(this.s3Client, this.config.bucket_name, key);
   }
 
   /**
@@ -549,10 +556,11 @@ export class S3DirectoryOperations {
 
     // 尝试作为目录处理
     const dirPath = s3SubPath.endsWith("/") ? s3SubPath : s3SubPath + "/";
+    const fullDirPath = applyS3RootPrefix(this.config, dirPath);
 
     const listParams = {
       Bucket: this.config.bucket_name,
-      Prefix: dirPath,
+      Prefix: fullDirPath,
       MaxKeys: 1,
     };
 
@@ -564,7 +572,7 @@ export class S3DirectoryOperations {
       // 获取目录的真实修改时间
       let directoryModified = null;
       try {
-        directoryModified = await this.getS3DirectoryModifiedTime(this.s3Client, this.config.bucket_name, dirPath);
+        directoryModified = await this.getS3DirectoryModifiedTime(this.s3Client, this.config.bucket_name, fullDirPath);
       } catch (error) {
         console.warn(`获取目录修改时间失败:`, error);
       }

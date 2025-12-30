@@ -26,7 +26,7 @@ import {
   abortFrontendMultipartUpload as featureAbortMultipart,
   listMultipartUploads as featureListMultipartUploads,
   listMultipartParts as featureListMultipartParts,
-  refreshMultipartUrls as featureRefreshMultipartUrls,
+  signMultipartParts as featureSignMultipartParts,
 } from "./features/multipart.js";
 import cacheBus, { CACHE_EVENTS } from "../../cache/cacheBus.js";
 import { ensureRepositoryFactory } from "../../utils/repositories.js";
@@ -242,17 +242,22 @@ export class FileSystem {
 
   /**
    * 初始化前端分片上传（生成预签名URL列表）
-   * @param {string} path - 完整路径
-   * @param {string} fileName - 文件名
-   * @param {number} fileSize - 文件大小
-   * @param {string|Object} userIdOrInfo - 用户ID或API密钥信息
-   * @param {string} userType - 用户类型
-   * @param {number} partSize - 分片大小，默认5MB
-   * @param {number} partCount - 分片数量
-   * @returns {Promise<Object>} 初始化结果
+   *
+   * 多数驱动只需要 {fileName,fileSize,partSize,partCount}
+   * 但像 HuggingFace LFS 这种协议，需要额外透传 sha256(oid) 才能换到分片预签名 URL
+   * 例如 HuggingFace LFS 需要 sha256(oid) 才能拿到分片预签名 URL
+   *
+   * @param {string} path
+   * @param {string} fileName
+   * @param {number} fileSize
+   * @param {string|Object} userIdOrInfo
+   * @param {string} userType
+   * @param {number} partSize
+   * @param {number} partCount
+   * @param {Object} extraOptions 额外参数（可选）：{ sha256?, oid?, contentType? }
    */
-  async initializeFrontendMultipartUpload(path, fileName, fileSize, userIdOrInfo, userType, partSize = 5 * 1024 * 1024, partCount) {
-    return await featureInitMultipart(this, path, fileName, fileSize, userIdOrInfo, userType, partSize, partCount);
+  async initializeFrontendMultipartUpload(path, fileName, fileSize, userIdOrInfo, userType, partSize = 5 * 1024 * 1024, partCount, extraOptions = {}) {
+    return await featureInitMultipart(this, path, fileName, fileSize, userIdOrInfo, userType, partSize, partCount, extraOptions || {});
   }
 
   /**
@@ -319,8 +324,8 @@ export class FileSystem {
    * @param {Object} options - 选项参数
    * @returns {Promise<Object>} 刷新的预签名URL列表
    */
-  async refreshMultipartUrls(path, uploadId, partNumbers, userIdOrInfo, userType, options = {}) {
-    return await featureRefreshMultipartUrls(this, path, uploadId, partNumbers, userIdOrInfo, userType, options);
+  async signMultipartParts(path, uploadId, partNumbers, userIdOrInfo, userType, options = {}) {
+    return await featureSignMultipartParts(this, path, uploadId, partNumbers, userIdOrInfo, userType, options);
   }
 
   /**

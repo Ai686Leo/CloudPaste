@@ -124,7 +124,7 @@ export default {
     },
   },
   nav: {
-    home: "首页",
+    home: "文本编辑",
     upload: "文件上传",
     mountExplorer: "挂载浏览",
     admin: "管理面板",

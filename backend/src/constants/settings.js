@@ -324,6 +324,42 @@ export const DEFAULT_SETTINGS = {
     default_value: "",
   },
 
+  // 前台入口开关
+  // - enabled=true：显示入口 + 允许访问路由
+  // - enabled=false：隐藏入口 + 访问时前端自动跳转到其它默认页
+  site_home_editor_enabled: {
+    key: "site_home_editor_enabled",
+    type: SETTING_TYPES.BOOL,
+    group_id: SETTING_GROUPS.SITE,
+    help: "是否启用首页编辑器（/）。关闭后：首页入口不显示，访问 / 会自动跳转。",
+    options: null,
+    sort_order: 8,
+    flag: SETTING_FLAGS.PUBLIC,
+    default_value: "true",
+  },
+
+  site_upload_page_enabled: {
+    key: "site_upload_page_enabled",
+    type: SETTING_TYPES.BOOL,
+    group_id: SETTING_GROUPS.SITE,
+    help: "是否启用文件上传页面（/upload）。关闭后：上传入口不显示，访问 /upload 会自动跳转。",
+    options: null,
+    sort_order: 9,
+    flag: SETTING_FLAGS.PUBLIC,
+    default_value: "true",
+  },
+
+  site_mount_explorer_enabled: {
+    key: "site_mount_explorer_enabled",
+    type: SETTING_TYPES.BOOL,
+    group_id: SETTING_GROUPS.SITE,
+    help: "是否启用挂载浏览页面（/mount-explorer）。关闭后：挂载入口不显示，访问该页面会自动跳转。",
+    options: null,
+    sort_order: 10,
+    flag: SETTING_FLAGS.PUBLIC,
+    default_value: "true",
+  },
+
   // 系统内部设置（不在前端显示）
   db_initialized: {
     key: "db_initialized",

@@ -30,8 +30,8 @@ import { FILE_TYPES, FILE_TYPE_NAMES } from "../../../constants/index.js";
 import {
   createUploadSessionRecord,
   listActiveUploadSessions,
-  updateUploadSessionStatusByFingerprint,
-  findUploadSessionByUploadUrl,
+  findUploadSessionById,
+  updateUploadSessionById,
 } from "../../../utils/uploadSessions.js";
 import { buildFileInfo } from "../../utils/FileInfoBuilder.js";
 import { createHttpStreamDescriptor } from "../../streaming/StreamDescriptorUtils.js";
@@ -49,15 +49,15 @@ export class OneDriveStorageDriver extends BaseDriver {
     this.type = "ONEDRIVE";
     this.encryptionSecret = encryptionSecret;
 
-    // 能力：READER/WRITER/ATOMIC/PROXY/SEARCH/DIRECT_LINK/MULTIPART
+    // 能力：READER/WRITER/ATOMIC/PROXY/DIRECT_LINK/MULTIPART
     this.capabilities = [
       CAPABILITIES.READER,
       CAPABILITIES.WRITER,
       CAPABILITIES.ATOMIC,
       CAPABILITIES.PROXY,
-      CAPABILITIES.SEARCH,
       CAPABILITIES.DIRECT_LINK,
       CAPABILITIES.MULTIPART,
+      CAPABILITIES.PAGED_LIST,
     ];
 
     // 配置字段
@@ -112,6 +112,40 @@ export class OneDriveStorageDriver extends BaseDriver {
     this.initialized = true;
   }
 
+  /**
+   * 规范化 OneDrive 远端路径（相对路径，不带前后斜杠）
+   * - 统一处理：去掉开头/结尾的 / 或 \\，并把多余分隔符归一成 /
+   * - 只做字符串层面的整理，不做 URL 编码
+   */
+  _normalizeRemoteBase(value) {
+    const raw = typeof value === "string" ? value : "";
+    return raw.replace(/^[/\\\\]+|[/\\\\]+$/g, "").replace(/[\\\\/]+/g, "/");
+  }
+
+  /**
+   * 规范化远端文件路径：目录(base) + 文件名(fileName)
+   * - 如果 base 已经以 fileName 结尾（忽略大小写），则不重复拼接
+   * - base 允许为空（表示根目录）
+   */
+  _resolveRemoteFilePath(base, fileName) {
+    const normalizedBase = this._normalizeRemoteBase(base);
+    const safeName = fileName ? String(fileName) : "";
+
+    if (!safeName) {
+      return normalizedBase;
+    }
+    if (!normalizedBase) {
+      return safeName;
+    }
+
+    const segments = normalizedBase.split("/").filter(Boolean);
+    const lastSegment = segments[segments.length - 1] || "";
+    if (lastSegment.toLowerCase() === safeName.toLowerCase()) {
+      return normalizedBase;
+    }
+    return `${normalizedBase}/${safeName}`;
+  }
+
   // ========== READER 能力：listDirectory / getFileInfo / downloadFile ==========
 
   /**
@@ -126,7 +160,24 @@ export class OneDriveStorageDriver extends BaseDriver {
     // 对远端 OneDrive 来说，应当始终使用 subPath 作为实际路径，path 只是挂载视图下的展示路径
     const remotePath = typeof subPath === "string" ? subPath : path;
 
-    const items = await this.graphClient.listChildren(remotePath || "");
+    const cursorRaw = options?.cursor != null && String(options.cursor).trim() ? String(options.cursor).trim() : null;
+    const limitRaw = options?.limit != null && options.limit !== "" ? Number(options.limit) : null;
+    const limit =
+      limitRaw != null && Number.isFinite(limitRaw) && limitRaw > 0 ? Math.max(1, Math.min(999, Math.floor(limitRaw))) : null;
+    const paged = options?.paged === true || !!cursorRaw || limit != null;
+
+    let pageNextCursor = null;
+    let items = [];
+    if (paged) {
+      const page = await this.graphClient.listChildrenPage(remotePath || "", {
+        cursor: cursorRaw,
+        limit,
+      });
+      items = Array.isArray(page?.items) ? page.items : [];
+      pageNextCursor = page?.nextCursor ? String(page.nextCursor) : null;
+    } else {
+      items = await this.graphClient.listChildren(remotePath || "");
+    }
 
     // 转换为标准格式（path 仍然使用挂载视图路径，保证与 FileSystem 约定一致）
     const formattedItems = await Promise.all(
@@ -141,7 +192,14 @@ export class OneDriveStorageDriver extends BaseDriver {
       mount_id: mount?.id,
       storage_type: this.type,
       items: formattedItems,
+      ...(paged ? { hasMore: !!pageNextCursor, nextCursor: pageNextCursor } : {}),
     };
+  }
+
+  // ===== 可选能力：目录分页 =====
+  // OneDrive / Microsoft Graph children 接口是分页返回的（@odata.nextLink）。
+  supportsDirectoryPagination() {
+    return true;
   }
 
   /**
@@ -226,27 +284,12 @@ export class OneDriveStorageDriver extends BaseDriver {
 
     // 规范化远端文件路径：目录(subPath) + 文件名
     const remoteBase = typeof subPath === "string" ? subPath : path;
-    const normalizedBase =
-      typeof remoteBase === "string"
-        ? remoteBase.replace(/^\/+|\/+$/g, "").replace(/[\\/]+/g, "/")
-        : "";
     const safeName =
       filename ||
       (typeof path === "string"
         ? path.split("/").filter(Boolean).pop() || "upload.bin"
         : "upload.bin");
-    let remotePath;
-    if (!normalizedBase) {
-      remotePath = safeName;
-    } else {
-      const segments = normalizedBase.split("/").filter(Boolean);
-      const lastSegment = segments[segments.length - 1] || "";
-      if (lastSegment.toLowerCase() === safeName.toLowerCase()) {
-        remotePath = normalizedBase;
-      } else {
-        remotePath = `${normalizedBase}/${safeName}`;
-      }
-    }
+    const remotePath = this._resolveRemoteFilePath(remoteBase, safeName);
 
     const effectiveContentType =
       contentType || getMimeTypeFromFilename(safeName) || "application/octet-stream";
@@ -332,9 +375,7 @@ export class OneDriveStorageDriver extends BaseDriver {
     }
 
     // subPath 已经是挂载内的完整相对路径（包含文件名）
-    const remotePath = subPath
-      .replace(/^[/\\]+|[/\\]+$/g, "")
-      .replace(/[\\/]+/g, "/");
+    const remotePath = this._normalizeRemoteBase(subPath);
 
     const safeName =
       (typeof path === "string"
@@ -477,10 +518,7 @@ export class OneDriveStorageDriver extends BaseDriver {
 
     const { subPath } = _options;
     const rawRemotePath = typeof subPath === "string" ? subPath : path;
-    const remotePath =
-      typeof rawRemotePath === "string"
-        ? rawRemotePath.replace(/^[/\\]+|[/\\]+$/g, "").replace(/[\\/]+/g, "/")
-        : "";
+    const remotePath = this._normalizeRemoteBase(rawRemotePath);
 
     // 特殊处理：挂载点根目录在逻辑上总是存在，
     // 对应的 OneDrive 根目录不需要真正创建，避免向 Graph 发送空名称导致
@@ -540,13 +578,8 @@ export class OneDriveStorageDriver extends BaseDriver {
       });
     }
 
-    const normalizeRemote = (p) =>
-      (p || "")
-        .replace(/^[/\\]+|[/\\]+$/g, "")
-        .replace(/[\\/]+/g, "/");
-
-    const remoteOldPath = normalizeRemote(oldSubPath);
-    const remoteNewPath = normalizeRemote(newSubPath);
+    const remoteOldPath = this._normalizeRemoteBase(oldSubPath);
+    const remoteNewPath = this._normalizeRemoteBase(newSubPath);
 
     try {
       await this.graphClient.renameItem(remoteOldPath || "", remoteNewPath || "");
@@ -656,13 +689,8 @@ export class OneDriveStorageDriver extends BaseDriver {
       });
     }
 
-    const normalizeRemote = (p) =>
-      (p || "")
-        .replace(/^[/\\]+|[/\\]+$/g, "")
-        .replace(/[\\/]+/g, "/");
-
-    const remoteSourcePath = normalizeRemote(sourceSubPath);
-    const remoteTargetPath = normalizeRemote(targetSubPath);
+    const remoteSourcePath = this._normalizeRemoteBase(sourceSubPath);
+    const remoteTargetPath = this._normalizeRemoteBase(targetSubPath);
 
     try {
       await this.graphClient.copyItem(remoteSourcePath || "", remoteTargetPath || "");
@@ -691,48 +719,6 @@ export class OneDriveStorageDriver extends BaseDriver {
   }
 
   // ========== SEARCH 能力 ==========
-
-  /**
-   * 搜索文件和目录
-   * @param {string} query    搜索关键词
-   * @param {Object} options  选项（mount/searchPath/maxResults/db）
-   */
-  async search(query, options = {}) {
-    this._ensureInitialized();
-
-    const { mount, maxResults = 50, db, searchPath } = options;
-
-    try {
-      const items = await this.graphClient.search(query, { maxResults });
-
-      const normalizedMountPath =
-        (mount?.mount_path ? mount.mount_path.replace(/\/+$/g, "") : "") || "/";
-      const normalizedSearchPath = searchPath ? (searchPath.replace(/\/+$/g, "") || "/") : null;
-
-      const results = [];
-
-      for (const item of items) {
-        const parentFsPath = this._resolveFsParentPathForItem(
-          item,
-          normalizedMountPath,
-          normalizedSearchPath,
-        );
-
-        if (!parentFsPath) {
-          continue;
-        }
-
-        const formatted = await this._formatDriveItem(item, parentFsPath, mount, db);
-        results.push(formatted);
-      }
-
-      return results;
-    } catch (error) {
-      // 搜索失败时返回空数组，不抛出错误
-      console.error("OneDrive 搜索失败:", error.message);
-      return [];
-    }
-  }
 
   // ========== DIRECT_LINK 能力 ==========
 
@@ -836,23 +822,7 @@ export class OneDriveStorageDriver extends BaseDriver {
     }
 
     // 规范化远端文件路径：目录(subPath) + 文件名
-    const base =
-      typeof subPath === "string"
-        ? subPath.replace(/^[/\\]+|[/\\]+$/g, "").replace(/[\\/]+/g, "/")
-        : "";
-
-    let remotePath;
-    if (!base) {
-      remotePath = fileName;
-    } else {
-      const segments = base.split("/").filter(Boolean);
-      const lastSegment = segments[segments.length - 1] || "";
-      if (lastSegment.toLowerCase() === fileName.toLowerCase()) {
-        remotePath = base;
-      } else {
-        remotePath = `${base}/${fileName}`;
-      }
-    }
+    const remotePath = this._resolveRemoteFilePath(typeof subPath === "string" ? subPath : "", fileName);
 
     try {
       const session = await this.graphClient.createUploadSession(remotePath || "", {
@@ -863,8 +833,16 @@ export class OneDriveStorageDriver extends BaseDriver {
       const calculatedPartCount =
         partCount || Math.max(1, Math.ceil(fileSize / effectivePartSize));
 
-      // 这里不维护服务器端的 uploadId 状态，直接使用 uploadUrl 作为前端会话标识
-      const uploadId = session.uploadUrl;
+      // uploadId 使用 CloudPaste 的 upload_sessions.id（upl_xxx）
+      // session.uploadUrl 仍然返回 Graph 的 uploadUrl（浏览器直传 OneDrive）
+      // 断点续传统一用 uploadId 查本地会话，再去 Graph 拉取 nextExpectedRanges
+      if (!db || !mount?.storage_config_id || !mount?.id) {
+        throw new DriverError("OneDrive 分片上传初始化失败：缺少 db 或 mount 信息", {
+          status: 400,
+          expose: true,
+        });
+      }
+      let uploadId = null;
 
       // 规范化 FS 视图路径：mount_path + "/" + remotePath
       let fsPath = remotePath || "";
@@ -877,43 +855,36 @@ export class OneDriveStorageDriver extends BaseDriver {
         fsPath = `/${fsPath}`;
       }
 
-      // 将会话写入通用 upload_sessions 表，便于后续服务器端断点续传/可视化管理
-      if (db && mount?.storage_config_id) {
-        try {
-          await createUploadSessionRecord(db, {
-            userIdOrInfo,
-            userType: userType || null,
-            storageType: this.type,
-            storageConfigId: mount.storage_config_id,
-            mountId: mount.id ?? null,
-            fsPath,
-            source: "FS",
-            fileName,
-            fileSize,
-            mimeType: getMimeTypeFromFilename(fileName) || null,
-            checksum: null,
-            strategy: "single_session",
-            partSize: effectivePartSize,
-            totalParts: calculatedPartCount,
-            bytesUploaded: 0,
-            uploadedParts: 0,
-            nextExpectedRange:
-              Array.isArray(session.nextExpectedRanges) && session.nextExpectedRanges.length > 0
-                ? session.nextExpectedRanges[0]
-                : "0-",
-            providerUploadId: null,
-            providerUploadUrl: session.uploadUrl,
-            providerMeta: null,
-            status: "active",
-            expiresAt: session.expirationDateTime || null,
-          });
-        } catch (e) {
-          console.warn(
-            "[OneDriveStorageDriver] 创建 upload_sessions 记录失败，将不影响分片上传流程:",
-            e,
-          );
-        }
-      }
+      // 将会话写入通用 upload_sessions 表：这是断点续传的“控制面”
+      //（Graph uploadUrl 会过期，但我们用 uploadId 作为稳定标识，再通过 sign-parts 去刷新 session 信息） 
+      const { id } = await createUploadSessionRecord(db, {
+        userIdOrInfo,
+        userType: userType || null,
+        storageType: this.type,
+        storageConfigId: mount.storage_config_id,
+        mountId: mount.id ?? null,
+        fsPath,
+        source: "FS",
+        fileName,
+        fileSize,
+        mimeType: getMimeTypeFromFilename(fileName) || null,
+        checksum: null,
+        strategy: "single_session",
+        partSize: effectivePartSize,
+        totalParts: calculatedPartCount,
+        bytesUploaded: 0,
+        uploadedParts: 0,
+        nextExpectedRange:
+          Array.isArray(session.nextExpectedRanges) && session.nextExpectedRanges.length > 0
+            ? session.nextExpectedRanges[0]
+            : "0-",
+        providerUploadId: null,
+        providerUploadUrl: session.uploadUrl,
+        providerMeta: null,
+        status: "initiated",
+        expiresAt: session.expirationDateTime || null,
+      });
+      uploadId = id;
 
       return {
         uploadId,
@@ -926,6 +897,11 @@ export class OneDriveStorageDriver extends BaseDriver {
           uploadUrl: session.uploadUrl,
           expirationDateTime: session.expirationDateTime || null,
           nextExpectedRanges: session.nextExpectedRanges || null,
+        },
+        policy: {
+          refreshPolicy: "server_decides",
+          partsLedgerPolicy: "server_records",
+          retryPolicy: { maxAttempts: 3 },
         },
         mount_id: mount?.id ?? null,
         path: fsPath,
@@ -957,24 +933,9 @@ export class OneDriveStorageDriver extends BaseDriver {
     const { uploadId, fileName, fileSize, mount, db, userIdOrInfo, userType, parts } = options;
 
     // 规范化远端路径（与 initialize 保持一致）
-    const base =
-      typeof subPath === "string"
-        ? subPath.replace(/^[/\\]+|[/\\]+$/g, "").replace(/[\\/]+/g, "/")
-        : "";
-
-    let remotePath;
-    if (fileName) {
-      if (!base) {
-        remotePath = fileName;
-      } else {
-        const segments = base.split("/").filter(Boolean);
-        const lastSegment = segments[segments.length - 1] || "";
-        remotePath =
-          lastSegment.toLowerCase() === fileName.toLowerCase() ? base : `${base}/${fileName}`;
-      }
-    } else {
-      remotePath = base;
-    }
+    const remotePath = fileName
+      ? this._resolveRemoteFilePath(typeof subPath === "string" ? subPath : "", fileName)
+      : this._normalizeRemoteBase(typeof subPath === "string" ? subPath : "");
 
     try {
       // 尝试获取最终文件信息（非严格必要，仅用于返回更完整的元数据）
@@ -990,34 +951,18 @@ export class OneDriveStorageDriver extends BaseDriver {
 
       if (db && mount?.storage_config_id && uploadId) {
         try {
-          // 与初始化阶段保持一致的 FS 视图路径（mount_path + remotePath）
-          let fsPath = remotePath || "";
-          if (mount?.mount_path) {
-            const basePath = (mount.mount_path || "").replace(/\/+$/g, "") || "/";
-            const rel = (remotePath || "").replace(/^\/+/g, "");
-            fsPath = rel ? `${basePath}/${rel}` : basePath;
-          }
-          if (!fsPath.startsWith("/")) {
-            fsPath = `/${fsPath}`;
-          }
-
           const effectiveSize =
             typeof fileSize === "number" && Number.isFinite(fileSize)
               ? fileSize
               : item?.size ?? null;
 
-          await updateUploadSessionStatusByFingerprint(db, {
-            userIdOrInfo,
-            userType,
+          // uploadId 即 upload_sessions.id，直接按 id 更新状态即可。
+          await updateUploadSessionById(db, {
+            id: String(uploadId),
             storageType: this.type,
-            storageConfigId: mount.storage_config_id,
-            mountId: mount.id ?? null,
-            fsPath,
-            fileName: fileName || (remotePath ? remotePath.split("/").pop() : null),
-            fileSize: effectiveSize,
             status: "completed",
-            bytesUploaded: effectiveSize,
-            uploadedParts: Array.isArray(parts) ? parts.length : null,
+            bytesUploaded: typeof effectiveSize === "number" && Number.isFinite(effectiveSize) ? effectiveSize : 0,
+            uploadedParts: Array.isArray(parts) ? parts.length : 0,
             nextExpectedRange: null,
             errorCode: null,
             errorMessage: null,
@@ -1058,38 +1003,17 @@ export class OneDriveStorageDriver extends BaseDriver {
   async abortFrontendMultipartUpload(_subPath, options = {}) {
     this._ensureInitialized();
 
-    const { uploadId, db, userIdOrInfo, userType, mount } = options;
+    const { uploadId, db, mount } = options;
 
     if (db && mount?.storage_config_id && uploadId) {
       try {
-        // 通过 uploadUrl 查找会话记录，再按指纹统一更新状态
-        const sessionRow = await findUploadSessionByUploadUrl(db, {
-          uploadUrl: uploadId,
+        // uploadId 即 upload_sessions.id，直接按 id 更新即可。
+        await updateUploadSessionById(db, {
+          id: String(uploadId),
           storageType: this.type,
-          userIdOrInfo,
-          userType,
+          status: "aborted",
+          errorMessage: "aborted_by_client",
         });
-
-        if (sessionRow) {
-          await updateUploadSessionStatusByFingerprint(db, {
-            userIdOrInfo,
-            userType,
-            storageType: this.type,
-            storageConfigId: sessionRow.storage_config_id,
-            mountId: sessionRow.mount_id ?? mount.id ?? null,
-            fsPath: sessionRow.fs_path,
-            fileName: sessionRow.file_name,
-            fileSize: sessionRow.file_size,
-            status: "aborted",
-            errorCode: null,
-            errorMessage: "aborted_by_client",
-          });
-        } else {
-          console.warn(
-            "[OneDriveStorageDriver] 未找到对应的 upload_sessions 记录（abort），uploadUrl:",
-            uploadId,
-          );
-        }
       } catch (e) {
         console.warn(
           "[OneDriveStorageDriver] 更新 upload_sessions 状态为 aborted 失败:",
@@ -1143,7 +1067,7 @@ export class OneDriveStorageDriver extends BaseDriver {
 
     const uploads = sessions.map((row) => ({
       key: (row.fs_path || "/").replace(/^\/+/, ""),
-      uploadId: row.provider_upload_url || row.provider_upload_id || row.id,
+      uploadId: row.id,
       initiated: row.created_at,
       storageClass: null,
       owner: null,
@@ -1153,6 +1077,12 @@ export class OneDriveStorageDriver extends BaseDriver {
       partSize: row.part_size,
       strategy: row.strategy,
       sessionId: row.id,
+      bytesUploaded: Number(row.bytes_uploaded) || 0,
+      policy: {
+        refreshPolicy: "server_decides",
+        partsLedgerPolicy: "server_records",
+        retryPolicy: { maxAttempts: 3 },
+      },
     }));
 
     return {
@@ -1171,29 +1101,49 @@ export class OneDriveStorageDriver extends BaseDriver {
     this._ensureInitialized();
 
     const { mount, db, userIdOrInfo, userType } = _options || {};
+    const policy = {
+      refreshPolicy: "server_decides",
+      partsLedgerPolicy: "server_records",
+      retryPolicy: { maxAttempts: 3 },
+    };
 
     if (!uploadId || !db || !mount?.storage_config_id) {
       return {
         success: true,
         uploadId: uploadId || null,
         parts: [],
+        policy,
       };
     }
 
     try {
       // 从本地 upload_sessions 表中获取会话配置信息（文件大小与分片大小）
-      const sessionRow = await findUploadSessionByUploadUrl(db, {
-        uploadUrl: uploadId,
-        storageType: this.type,
-        userIdOrInfo,
-        userType,
-      });
+      const sessionRow = await findUploadSessionById(db, { id: uploadId });
 
       if (!sessionRow) {
         return {
           success: true,
           uploadId: uploadId || null,
           parts: [],
+          policy,
+        };
+      }
+      if (String(sessionRow.storage_type) !== String(this.type)) {
+        return {
+          success: true,
+          uploadId: uploadId || null,
+          parts: [],
+          policy,
+        };
+      }
+
+      const providerUploadUrl = sessionRow.provider_upload_url ? String(sessionRow.provider_upload_url) : "";
+      if (!providerUploadUrl) {
+        return {
+          success: true,
+          uploadId: uploadId || null,
+          parts: [],
+          policy,
         };
       }
 
@@ -1205,13 +1155,14 @@ export class OneDriveStorageDriver extends BaseDriver {
           success: true,
           uploadId: uploadId || null,
           parts: [],
+          policy,
         };
       }
 
       // 调用 Graph 获取最新的 nextExpectedRanges，以推导已上传字节数
       let bytesUploaded = 0;
       try {
-        const sessionInfo = await this.graphClient.getUploadSessionInfo(uploadId);
+        const sessionInfo = await this.graphClient.getUploadSessionInfo(providerUploadUrl);
         const ranges = Array.isArray(sessionInfo.nextExpectedRanges)
           ? sessionInfo.nextExpectedRanges
           : null;
@@ -1232,6 +1183,7 @@ export class OneDriveStorageDriver extends BaseDriver {
           success: true,
           uploadId: uploadId || null,
           parts: [],
+          policy,
         };
       }
 
@@ -1241,6 +1193,7 @@ export class OneDriveStorageDriver extends BaseDriver {
           success: true,
           uploadId: uploadId || null,
           parts: [],
+          policy,
         };
       }
 
@@ -1251,6 +1204,7 @@ export class OneDriveStorageDriver extends BaseDriver {
           success: true,
           uploadId: uploadId || null,
           parts: [],
+          policy,
         };
       }
 
@@ -1267,6 +1221,7 @@ export class OneDriveStorageDriver extends BaseDriver {
         success: true,
         uploadId: uploadId || null,
         parts,
+        policy,
       };
     } catch (error) {
       console.warn("[OneDriveStorageDriver] listMultipartParts 异常，回退为空分片列表:", error);
@@ -1274,6 +1229,7 @@ export class OneDriveStorageDriver extends BaseDriver {
         success: true,
         uploadId: uploadId || null,
         parts: [],
+        policy,
       };
     }
   }
@@ -1283,136 +1239,108 @@ export class OneDriveStorageDriver extends BaseDriver {
    * - 对于 single_session 策略，通常直接复用原始 uploadUrl
    * - 当前实现回传 uploadId 及最新的 nextExpectedRanges，调用方可将其视为 uploadUrl + 会话信息
    */
-  async refreshMultipartUrls(_subPath, uploadId, _partNumbers, options = {}) {
+  async signMultipartParts(_subPath, uploadId, _partNumbers, options = {}) {
     this._ensureInitialized();
 
-    const { mount, db, userIdOrInfo, userType } = options || {};
+    const { mount, db } = options || {};
+    const policy = {
+      refreshPolicy: "server_decides",
+      partsLedgerPolicy: "server_records",
+      retryPolicy: { maxAttempts: 3 },
+    };
+
+    if (!db || !mount?.storage_config_id || !uploadId) {
+      return {
+        success: true,
+        uploadId: uploadId || null,
+        strategy: "single_session",
+        policy,
+        session: null,
+      };
+    }
+
+    const sessionRow = await findUploadSessionById(db, { id: uploadId });
+    if (!sessionRow || String(sessionRow.storage_type) !== String(this.type)) {
+      throw new DriverError("OneDrive 上传会话不存在或不匹配，无法继续断点续传", {
+        status: 404,
+        code: "UPLOAD_SESSION_NOT_FOUND",
+        expose: true,
+      });
+    }
+
+    const providerUploadUrl = sessionRow.provider_upload_url ? String(sessionRow.provider_upload_url) : "";
+    if (!providerUploadUrl) {
+      throw new DriverError("OneDrive 上传会话缺少 provider uploadUrl，无法继续断点续传", {
+        status: 400,
+        code: "UPLOAD_SESSION_INVALID",
+        expose: true,
+      });
+    }
 
     let sessionInfo = null;
-    if (uploadId) {
-      try {
-        sessionInfo = await this.graphClient.getUploadSessionInfo(uploadId);
-      } catch (error) {
-        // 如果 uploadSession 已不存在（itemNotFound / 404），视为会话失效，标记数据库状态并让上层回退为新上传
-        if (error?.status === 404 || error?.details?.code === "itemNotFound") {
-          if (db && mount?.storage_config_id) {
-            try {
-              // 通过 uploadUrl 查找会话记录，再按指纹统一标记为 error
-              const sessionRow = await findUploadSessionByUploadUrl(db, {
-                uploadUrl: uploadId,
-                storageType: this.type,
-                userIdOrInfo,
-                userType,
-              });
-
-              if (sessionRow) {
-                await updateUploadSessionStatusByFingerprint(db, {
-                  userIdOrInfo,
-                  userType,
-                  storageType: this.type,
-                  storageConfigId: sessionRow.storage_config_id,
-                  mountId: sessionRow.mount_id ?? mount.id ?? null,
-                  fsPath: sessionRow.fs_path,
-                  fileName: sessionRow.file_name,
-                  fileSize: sessionRow.file_size,
-                  status: "error",
-                  errorCode: "UPLOAD_SESSION_NOT_FOUND",
-                  errorMessage: "OneDrive upload session not found or expired",
-                });
-              } else {
-                console.warn(
-                  "[OneDriveStorageDriver] 未找到对应的 upload_sessions 记录（refresh error），uploadUrl:",
-                  uploadId,
-                );
-              }
-            } catch (e) {
-              console.warn(
-                "[OneDriveStorageDriver] 标记 upload_sessions 会话为失效失败:",
-                e,
-              );
-            }
-          }
-
-          // 抛出明确错误，让调用方（/api/fs/multipart/refresh-urls）返回失败，前端据此放弃断点续传并创建新上传
-          throw new DriverError(
-            "OneDrive 上传会话不存在或已过期，无法继续断点续传",
-            {
-              status: 404,
-              code: "UPLOAD_SESSION_NOT_FOUND",
-              expose: true,
-            },
-          );
-        }
-
-        console.warn(
-          "[OneDriveStorageDriver] 获取 uploadSession 信息失败，将继续返回基础会话数据:",
-          error,
-        );
-      }
-
-      if (db && mount?.storage_config_id && sessionInfo) {
+    try {
+      sessionInfo = await this.graphClient.getUploadSessionInfo(providerUploadUrl);
+    } catch (error) {
+      if (error?.status === 404 || error?.details?.code === "itemNotFound") {
         try {
-          const ranges = Array.isArray(sessionInfo.nextExpectedRanges)
-            ? sessionInfo.nextExpectedRanges
-            : null;
-          const firstRange = ranges && ranges.length > 0 ? String(ranges[0]) : null;
-          let bytesUploaded = null;
-
-          if (firstRange) {
-            const startStr = firstRange.split("-")[0];
-            const parsed = Number.parseInt(startStr, 10);
-            if (Number.isFinite(parsed) && parsed >= 0) {
-              bytesUploaded = parsed;
-            }
-          }
-
-          const sessionRow = await findUploadSessionByUploadUrl(db, {
-            uploadUrl: uploadId,
+          await updateUploadSessionById(db, {
+            id: String(uploadId),
             storageType: this.type,
-            userIdOrInfo,
-            userType,
+            status: "error",
+            errorCode: "UPLOAD_SESSION_NOT_FOUND",
+            errorMessage: "OneDrive upload session not found or expired",
           });
+        } catch (e) {
+          console.warn("[OneDriveStorageDriver] 标记 upload_sessions 会话为失效失败:", e);
+        }
 
-          if (sessionRow) {
-            await updateUploadSessionStatusByFingerprint(db, {
-              userIdOrInfo,
-              userType,
-              storageType: this.type,
-              storageConfigId: sessionRow.storage_config_id,
-              mountId: sessionRow.mount_id ?? mount.id ?? null,
-              fsPath: sessionRow.fs_path,
-              fileName: sessionRow.file_name,
-              fileSize: sessionRow.file_size,
-              status: "active",
-              bytesUploaded,
-              nextExpectedRange: firstRange,
-            });
-          } else {
-            console.warn(
-              "[OneDriveStorageDriver] 未找到对应的 upload_sessions 记录（refresh active），uploadUrl:",
-              uploadId,
-            );
-          }
-        } catch (error) {
-          console.warn(
-            "[OneDriveStorageDriver] 刷新 upload_sessions 状态失败，将不影响分片上传流程:",
-            error,
-          );
+        throw new DriverError("OneDrive 上传会话不存在或已过期，无法继续断点续传", {
+          status: 404,
+          code: "UPLOAD_SESSION_NOT_FOUND",
+          expose: true,
+        });
+      }
+
+      console.warn("[OneDriveStorageDriver] 获取 uploadSession 信息失败，将回退为旧会话信息:", error);
+      sessionInfo = null;
+    }
+
+    try {
+      const ranges = Array.isArray(sessionInfo?.nextExpectedRanges) ? sessionInfo.nextExpectedRanges : null;
+      const firstRange = ranges && ranges.length > 0 ? String(ranges[0]) : null;
+      let bytesUploaded = null;
+
+      if (firstRange) {
+        const startStr = firstRange.split("-")[0];
+        const parsed = Number.parseInt(startStr, 10);
+        if (Number.isFinite(parsed) && parsed >= 0) {
+          bytesUploaded = parsed;
         }
       }
+
+      const expiresAt = sessionInfo?.expirationDateTime ? String(sessionInfo.expirationDateTime) : null;
+      await updateUploadSessionById(db, {
+        id: String(uploadId),
+        storageType: this.type,
+        status: "uploading",
+        bytesUploaded: typeof bytesUploaded === "number" && Number.isFinite(bytesUploaded) ? bytesUploaded : (Number(sessionRow.bytes_uploaded) || 0),
+        nextExpectedRange: firstRange ?? (sessionRow.next_expected_range || null),
+        expiresAt,
+      });
+    } catch (e) {
+      console.warn("[OneDriveStorageDriver] 刷新 upload_sessions 状态失败（可忽略）:", e);
     }
 
     return {
       success: true,
       uploadId: uploadId || null,
       strategy: "single_session",
-      session: uploadId
-        ? {
-            uploadUrl: uploadId,
-            expirationDateTime: sessionInfo?.expirationDateTime || null,
-            nextExpectedRanges: sessionInfo?.nextExpectedRanges || null,
-          }
-        : null,
+      policy,
+      session: {
+        uploadUrl: providerUploadUrl,
+        expirationDateTime: sessionInfo?.expirationDateTime || null,
+        nextExpectedRanges: sessionInfo?.nextExpectedRanges || null,
+      },
     };
   }
 

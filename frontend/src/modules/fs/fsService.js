@@ -87,12 +87,16 @@ export function useFsService() {
   /**
    * 获取目录列表
    * @param {string} path
-   * @param {{ refresh?: boolean }} [options]
+   * @param {{ refresh?: boolean, cursor?: (string|null), limit?: (number|null), paged?: boolean }} [options]
    * @returns {Promise<FsDirectoryResponse>}
    */
   const getDirectoryList = async (path, options = {}) => {
     const normalizedPath = normalizeDirApiPath(path || "/");
     const isAdmin = authStore.isAdmin;
+    const cursor = options && options.cursor != null && String(options.cursor).trim() ? String(options.cursor).trim() : null;
+    const limitRaw = options && options.limit != null && options.limit !== "" ? Number(options.limit) : null;
+    const limit = limitRaw != null && Number.isFinite(limitRaw) && limitRaw > 0 ? Math.floor(limitRaw) : null;
+    const paged = options && options.paged === true;
 
     // 取消之前的目录请求，避免竞态条件
     cancelDirectoryRequest();
@@ -101,14 +105,21 @@ export function useFsService() {
     const controller = new AbortController();
     abortControllers.directory = controller;
 
-    /** @type {{ refresh?: boolean; headers?: Record<string,string>; signal?: AbortSignal }} */
+    /** @type {{ refresh?: boolean; cursor?: (string|null); limit?: (number|null); paged?: boolean; headers?: Record<string,string>; signal?: AbortSignal }} */
     const requestOptions = {
       refresh: options.refresh,
+      cursor,
+      limit,
+      paged,
       signal: controller.signal,
     };
 
-    const cached = directoryListCache.get(normalizedPath) || null;
-    const shouldUseConditional = !options.refresh && !!cached?.etag;
+    // 分页请求的 cache key 必须包含 cursor/limit/paged
+    const cacheKey = `${normalizedPath}|cursor=${cursor || ""}|limit=${limit || ""}|paged=${paged ? "1" : "0"}`;
+
+    const cached = directoryListCache.get(cacheKey) || null;
+    // 只有“首页”才值得走 If-None-Match：分页页的 304 对后端没意义（后端仍要打上游才能算 ETag）
+    const shouldUseConditional = !options.refresh && !cursor && !!cached?.etag;
 
     // 非管理员访问时，如果已有 token，则附带在请求头中
     if (!isAdmin) {
@@ -144,7 +155,7 @@ export function useFsService() {
       const data = /** @type {FsDirectoryResponse} */ (response.data);
       const etag = typeof data?.dirEtag === "string" && data.dirEtag ? data.dirEtag : null;
       if (etag && data) {
-        setDirectoryListCache(normalizedPath, { etag, data });
+        setDirectoryListCache(cacheKey, { etag, data });
       }
       return data;
     } catch (error) {
@@ -292,7 +303,9 @@ export function useFsService() {
     }
 
     try {
-      const cached = directoryListCache.get(normalizedPath) || null;
+      // prefetch 只用于“首页”，因此 key 固定为 cursor/limit/paged 都为空
+      const baseKey = `${normalizedPath}|cursor=|limit=|paged=0`;
+      const cached = directoryListCache.get(baseKey) || null;
       if (!options.refresh && cached?.etag) {
         requestOptions.headers = {
           ...(requestOptions.headers || {}),
@@ -314,7 +327,7 @@ export function useFsService() {
       const data = /** @type {FsDirectoryResponse} */ (response.data);
       const etag = typeof data?.dirEtag === "string" && data.dirEtag ? data.dirEtag : null;
       if (etag && data) {
-        setDirectoryListCache(normalizedPath, { etag, data });
+        setDirectoryListCache(baseKey, { etag, data });
       }
       return data;
     } catch (error) {
@@ -494,7 +507,6 @@ export function useFsService() {
     cancelJob,
     listJobs,
     deleteJob,
-    // 请求取消方法
     cancelDirectoryRequest,
     cancelFileInfoRequest,
     cancelAllRequests,

@@ -128,7 +128,16 @@ export class FileShareService {
   }
 
   // 预签名初始化
-  async createPresignedShareUpload({ filename, fileSize, contentType, path = null, storage_config_id = null, userIdOrInfo, userType }) {
+  async createPresignedShareUpload({
+    filename,
+    fileSize,
+    contentType,
+    path = null,
+    storage_config_id = null,
+    sha256 = null,
+    userIdOrInfo,
+    userType,
+  }) {
     if (!filename) throw new ValidationError("缺少 filename");
     await this.limit.check(fileSize);
 
@@ -143,7 +152,14 @@ export class FileShareService {
     if (!cfg) throw new ValidationError("未找到可用的存储配置，无法生成预签名URL");
 
     const store = new ObjectStore(this.db, this.encryptionSecret, this.repositoryFactory);
-    const presign = await store.presignUpload({ storage_config_id: cfg.id, directory: path, filename, fileSize, contentType });
+    const presign = await store.presignUpload({
+      storage_config_id: cfg.id,
+      directory: path,
+      filename,
+      fileSize,
+      contentType,
+      sha256,
+    });
     // 配额校验：考虑覆盖同路径时排除旧记录体积
     const fileRepo = this.repositoryFactory.getFileRepository();
     if (!cfg.storage_type) throw new ValidationError("存储配置缺少 storage_type");
@@ -158,11 +174,30 @@ export class FileShareService {
       provider_type: presign.provider_type,
       storage_config_id: presign.storage_config_id,
       headers: presign.headers || undefined,
+      sha256: presign.sha256 || (sha256 ? String(sha256) : undefined),
+      skipUpload: presign.skipUpload === true ? true : undefined,
     };
   }
 
   // 预签名提交
-  async commitPresignedShareUpload({ key, storage_config_id, filename, size, etag, slug, remark, password, expiresIn, maxViews, useProxy, originalFilename, userIdOrInfo, userType, request }) {
+  async commitPresignedShareUpload({
+    key,
+    storage_config_id,
+    filename,
+    size,
+    etag,
+    sha256 = null,
+    slug,
+    remark,
+    password,
+    expiresIn,
+    maxViews,
+    useProxy,
+    originalFilename,
+    userIdOrInfo,
+    userType,
+    request,
+  }) {
     await this.limit.check(Number(size));
     // 必须包含 key + storage_config_id
     const finalKey = key;
@@ -186,9 +221,17 @@ export class FileShareService {
 
     const { ObjectStore } = await import("../storage/object/ObjectStore.js");
     const store = new ObjectStore(this.db, this.encryptionSecret, this.repositoryFactory);
-    const commit = await store.commitUpload({ storage_config_id: storageConfig.id, key: finalKey, filename, size, etag });
     const { getEffectiveMimeType } = await import("../utils/fileUtils.js");
     const mimeType = getEffectiveMimeType(undefined, filename);
+    const commit = await store.commitUpload({
+      storage_config_id: storageConfig.id,
+      key: finalKey,
+      filename,
+      size,
+      etag,
+      sha256,
+      contentType: mimeType,
+    });
 
     // 根据命名策略决定是否覆盖更新记录
     const { shouldUseRandomSuffix } = await import("../utils/common.js");

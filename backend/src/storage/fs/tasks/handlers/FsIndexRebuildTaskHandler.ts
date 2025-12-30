@@ -4,6 +4,7 @@ import type { TaskHandler, InternalJob, ExecutionContext } from "../TaskHandler.
 import { ValidationError } from "../../../../http/errors.js";
 import { ensureRepositoryFactory } from "../../../../utils/repositories.js";
 import { FsSearchIndexStore } from "../../search/FsSearchIndexStore.js";
+import { iterateListDirectoryItems } from "../../utils/listDirectoryPaging.js";
 
 type FsIndexRebuildPayload = {
   mountIds?: string[];
@@ -284,16 +285,13 @@ export class FsIndexRebuildTaskHandler implements TaskHandler {
           seenDirs.add(dirPath);
           scannedDirs = seenDirs.size;
 
-          const listResult = await fileSystem.listDirectory(
+          for await (const item of iterateListDirectoryItems(
+            fileSystem,
             dirPath,
             job.userId,
             job.userType,
             { refresh },
-          );
-
-          const items = Array.isArray(listResult?.items) ? listResult.items : [];
-
-          for (const item of items) {
+          )) {
             const fsPath = String(item?.path || "");
             if (!fsPath) continue;
 

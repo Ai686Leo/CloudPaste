@@ -131,7 +131,7 @@ export class TelegramMultipartOperations {
       providerUploadId: null,
       providerUploadUrl: null,
       providerMeta: null,
-      status: "active",
+      status: "initiated",
       expiresAt: null,
     });
 
@@ -147,6 +147,11 @@ export class TelegramMultipartOperations {
       session: {
         uploadUrl: sessionUploadUrl,
         providerUploadUrl: null,
+      },
+      policy: {
+        refreshPolicy: "server_decides",
+        partsLedgerPolicy: "server_records",
+        retryPolicy: { maxAttempts: 3 },
       },
       mount_id: mount?.id ?? null,
       path: fsPath,
@@ -354,17 +359,22 @@ export class TelegramMultipartOperations {
             : 0;
 
       return {
-      key: (row.fs_path || "/").replace(/^\/+/, ""),
-      uploadId: row.id,
-      initiated: row.created_at,
-      fileName: row.file_name,
-      fileSize: row.file_size,
-      partSize: row.part_size,
-      strategy: row.strategy || "single_session",
-      storageType: row.storage_type,
-      sessionId: row.id,
-      bytesUploaded,
-    };
+        key: (row.fs_path || "/").replace(/^\/+/, ""),
+        uploadId: row.id,
+        initiated: row.created_at,
+        fileName: row.file_name,
+        fileSize: row.file_size,
+        partSize: row.part_size,
+        strategy: row.strategy || "single_session",
+        storageType: row.storage_type,
+        sessionId: row.id,
+        bytesUploaded,
+        policy: {
+          refreshPolicy: "server_decides",
+          partsLedgerPolicy: "server_records",
+          retryPolicy: { maxAttempts: 3 },
+        },
+      };
     });
 
     return { success: true, uploads };
@@ -375,7 +385,17 @@ export class TelegramMultipartOperations {
     driver._ensureInitialized();
     const { mount, db } = options || {};
     if (!db || !mount?.storage_config_id || !uploadId) {
-      return { success: true, uploadId: uploadId || null, parts: [], errors: [] };
+      return {
+        success: true,
+        uploadId: uploadId || null,
+        parts: [],
+        errors: [],
+        policy: {
+          refreshPolicy: "server_decides",
+          partsLedgerPolicy: "server_records",
+          retryPolicy: { maxAttempts: 3 },
+        },
+      };
     }
 
     const partsRepo = new UploadPartsRepository(db, null);
@@ -400,10 +420,20 @@ export class TelegramMultipartOperations {
         errorMessage: r.error_message || null,
       }));
 
-    return { success: true, uploadId: uploadId || null, parts, errors };
+    return {
+      success: true,
+      uploadId: uploadId || null,
+      parts,
+      errors,
+      policy: {
+        refreshPolicy: "server_decides",
+        partsLedgerPolicy: "server_records",
+        retryPolicy: { maxAttempts: 3 },
+      },
+    };
   }
 
-  async refreshMultipartUrls(_subPath, uploadId, _partNumbers, options = {}) {
+  async signMultipartParts(_subPath, uploadId, _partNumbers, options = {}) {
     const driver = this.driver;
     driver._ensureInitialized();
     const { db } = options || {};
@@ -412,6 +442,11 @@ export class TelegramMultipartOperations {
       session: {
         uploadUrl: `/api/fs/multipart/upload-chunk?upload_id=${encodeURIComponent(uploadId)}`,
         nextExpectedRanges: [],
+      },
+      policy: {
+        refreshPolicy: "server_decides",
+        partsLedgerPolicy: "server_records",
+        retryPolicy: { maxAttempts: 3 },
       },
     };
   }

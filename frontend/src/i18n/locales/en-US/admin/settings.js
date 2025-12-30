@@ -230,9 +230,25 @@ export default {
       hint: "Supports Markdown format, you can use links, bold text, etc. Leave empty to hide footer",
       placeholder: "© 2025 CloudPaste. All rights reserved.",
     },
+    frontendEntries: {
+      title: "Frontend Entry Toggles",
+      hint: "These toggles only affect the frontend entry points and the top navigation. When turned off, the entry will be hidden and visiting the URL will redirect to another available page.",
+      homeEditor: {
+        label: "Text Editor (/)",
+        hint: "When disabled, the Text Editor entry is hidden and visiting / will redirect.",
+      },
+      uploadPage: {
+        label: "Upload Page (/upload)",
+        hint: "When disabled, the Upload entry is hidden and visiting /upload will redirect.",
+      },
+      mountExplorer: {
+        label: "Mount Explorer (/mount-explorer)",
+        hint: "When disabled, the Mount entry is hidden and visiting mount pages will redirect.",
+      },
+    },
     announcement: {
-      enableLabel: "Enable Announcement Banner",
-      enableHint: "When enabled, the announcement banner will be displayed on the homepage",
+      enableLabel: "Enable Announcement Prompt",
+      enableHint: "When enabled and content is provided, an “Announcement” icon will appear at the top-right. New announcements show a red dot. Click it to view.",
       contentLabel: "Announcement Content",
       contentHint: "Supports Markdown format, you can use bold, italic, links, etc.",
       contentPlaceholder: "Please enter announcement content, Markdown format supported...",

@@ -77,6 +77,7 @@ export class OneDriveDriver {
       limit: 3,
       getUploadParameters: async (file) => {
         const meta = file?.meta || {};
+        const fileName = typeof meta?.name === "string" && meta.name ? meta.name : file.name;
         const merged = {
           ...basePayload,
           slug: meta.slug ?? basePayload.slug,
@@ -85,7 +86,7 @@ export class OneDriveDriver {
 
         const presign = await api.file.getUploadPresignedUrl({
           storage_config_id: merged.storage_config_id,
-          filename: meta.name || file.name,
+          filename: fileName,
           mimetype: file.type || "application/octet-stream",
           path: merged.path,
           size: file.size,
@@ -125,7 +126,7 @@ export class OneDriveDriver {
           uppy.setFileMeta(file.id, {
             key: data.key,
             storage_config_id: data.storage_config_id || merged.storage_config_id,
-            filename: data.filename || meta.name || file.name,
+            filename: typeof data?.filename === "string" && data.filename ? data.filename : fileName,
             path: merged.path,
             slug: merged.slug,
             password: basePayload.password || meta.password || null,
@@ -151,7 +152,12 @@ export class OneDriveDriver {
         const commitRes = await api.file.completeFileUpload({
           key: meta.key,
           storage_config_id: meta.storage_config_id,
-          filename: meta.name || file.name,
+          filename:
+            typeof meta?.filename === "string" && meta.filename
+              ? meta.filename
+              : typeof meta?.name === "string" && meta.name
+                ? meta.name
+                : file.name,
           size: file.size,
           etag: undefined,
           slug: meta.slug,

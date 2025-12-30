@@ -3,26 +3,7 @@
  * 提供S3特定的目录操作功能，如父目录时间更新、目录存在检查等
  */
 
-import { HeadObjectCommand, ListObjectsV2Command, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
-import { createS3Client } from "./s3Utils.js";
-
-/**
- * 统一的父目录时间更新工具函数
- * 根据S3配置和文件路径自动创建S3客户端并更新父目录时间
- * @param {Object} s3Config - S3配置对象
- * @param {string} filePath - 文件或目录路径
- * @param {string} encryptionSecret - 加密密钥
- * @returns {Promise<void>}
- */
-export async function updateParentDirectoriesModifiedTimeHelper(s3Config, filePath, encryptionSecret) {
-  try {
-    const s3Client = await createS3Client(s3Config, encryptionSecret);
-    const rootPrefix = s3Config.root_prefix ? (s3Config.root_prefix.endsWith("/") ? s3Config.root_prefix : s3Config.root_prefix + "/") : "";
-    await updateParentDirectoriesModifiedTime(s3Client, s3Config.bucket_name, filePath, rootPrefix);
-  } catch (error) {
-    console.warn(`更新父目录修改时间失败:`, error);
-  }
-}
+import { HeadObjectCommand, ListObjectsV2Command, PutObjectCommand } from "@aws-sdk/client-s3";
 
 /**
  * 更新目录及其所有父目录的修改时间
@@ -34,193 +15,128 @@ export async function updateParentDirectoriesModifiedTimeHelper(s3Config, filePa
  */
 export async function updateParentDirectoriesModifiedTime(s3Client, bucketName, filePath, rootPrefix = "", skipMissingDirectories = false) {
   try {
-    // 获取文件所在的目录路径
-    let currentPath = filePath;
+    const normalizePrefix = (value) => {
+      const raw = String(value || "").trim();
+      if (!raw) return "";
+      let p = raw.replace(/\\+/g, "/").replace(/\/+/g, "/");
+      p = p.replace(/^\/+/, "").replace(/\/+$/, "");
+      if (!p) return "";
+      return p.endsWith("/") ? p : `${p}/`;
+    };
 
-    // 如果是文件，获取其父目录
-    if (!filePath.endsWith("/")) {
-      const lastSlashIndex = filePath.lastIndexOf("/");
+    const normalizeKey = (value) => {
+      const raw = String(value || "").trim();
+      if (!raw) return "";
+      let k = raw.replace(/\\+/g, "/").replace(/\/+/g, "/");
+      k = k.replace(/^\/+/, "");
+      return k;
+    };
+
+    const prefix = normalizePrefix(rootPrefix);
+    const keyRaw = normalizeKey(filePath);
+    if (!keyRaw) return;
+
+    // 统一为“完整 S3 Key”（包含 root_prefix）
+    let fullKey = keyRaw;
+    if (prefix && !fullKey.startsWith(prefix)) {
+      fullKey = `${prefix}${fullKey}`.replace(/\/+/g, "/");
+    }
+
+    const touchDirectoryKey = async (dirKey) => {
+      const key = normalizeKey(dirKey);
+      if (!key || key === "/") return false;
+
+      // 检查目录是否存在（通过查找目录标记文件）
+      const headCommand = new HeadObjectCommand({
+        Bucket: bucketName,
+        Key: key,
+      });
+
+      let directoryExists = false;
+      try {
+        await s3Client.send(headCommand);
+        directoryExists = true;
+      } catch (error) {
+        if (error.$metadata?.httpStatusCode !== 404) {
+          throw error;
+        }
+      }
+
+      // 如果目录不存在且允许跳过缺失目录：直接跳过（用于删除/移动等场景，避免写放大）
+      if (!directoryExists && skipMissingDirectories) {
+        return false;
+      }
+
+      const putParams = {
+        Bucket: bucketName,
+        Key: key,
+        Body: "",
+        ContentType: "application/x-directory",
+        Metadata: {
+          "last-modified": new Date().toISOString(),
+        },
+      };
+
+      const putCommand = new PutObjectCommand(putParams);
+      await s3Client.send(putCommand);
+      return true;
+    };
+
+    // 获取文件所在的父目录 key（确保以 / 结尾）
+    let currentDirKey = fullKey;
+    if (!currentDirKey.endsWith("/")) {
+      const lastSlashIndex = currentDirKey.lastIndexOf("/");
       if (lastSlashIndex > 0) {
-        currentPath = filePath.substring(0, lastSlashIndex + 1);
+        currentDirKey = currentDirKey.substring(0, lastSlashIndex + 1);
       } else {
-        // 文件在根目录，无需更新父目录
+        // 文件位于根目录（或 root_prefix 直接就是根），只需要尝试更新 root_prefix
+        if (prefix) {
+          await touchDirectoryKey(prefix);
+        }
         return;
       }
     }
 
-    const updatedPaths = new Set();
+    const updated = new Set();
 
-    // 逐级向上更新父目录
-    while (currentPath && currentPath !== "/" && currentPath !== rootPrefix) {
-      // 避免重复更新同一路径
-      if (updatedPaths.has(currentPath)) {
-        break;
-      }
-
+    // 逐级向上更新父目录，直到 root_prefix（含）为止
+    while (currentDirKey && currentDirKey !== "/" && currentDirKey !== prefix) {
+      if (updated.has(currentDirKey)) break;
       try {
-        // 构建完整的S3键
-        const s3Key = rootPrefix + currentPath;
-
-        // 检查目录是否存在（通过查找目录标记文件）
-        const headCommand = new HeadObjectCommand({
-          Bucket: bucketName,
-          Key: s3Key,
-        });
-
-        let directoryExists = false;
-        try {
-          await s3Client.send(headCommand);
-          directoryExists = true;
-        } catch (error) {
-          if (error.$metadata?.httpStatusCode !== 404) {
-            throw error;
-          }
-        }
-
-        // 如果目录不存在且不跳过缺失目录，则创建目录标记
-        if (!directoryExists && !skipMissingDirectories) {
-          const putParams = {
-            Bucket: bucketName,
-            Key: s3Key,
-            Body: "",
-            ContentType: "application/x-directory",
-            Metadata: {
-              "last-modified": new Date().toISOString(),
-            },
-          };
-
-          const putCommand = new PutObjectCommand(putParams);
-          await s3Client.send(putCommand);
-
-          updatedPaths.add(currentPath);
-          console.log(`已更新目录修改时间: ${currentPath}`);
-        } else if (directoryExists) {
-          // 目录存在，更新其修改时间
-          const putParams = {
-            Bucket: bucketName,
-            Key: s3Key,
-            Body: "",
-            ContentType: "application/x-directory",
-            Metadata: {
-              "last-modified": new Date().toISOString(),
-            },
-          };
-
-          const putCommand = new PutObjectCommand(putParams);
-          await s3Client.send(putCommand);
-
-          updatedPaths.add(currentPath);
-          console.log(`已更新目录修改时间: ${currentPath}`);
+        const touched = await touchDirectoryKey(currentDirKey);
+        if (touched) {
+          updated.add(currentDirKey);
+          console.log(`已更新目录修改时间: ${currentDirKey}`);
+        } else if (skipMissingDirectories) {
+          console.log(`跳过不存在的目录: ${currentDirKey}`);
         }
       } catch (error) {
-        if (skipMissingDirectories && error.$metadata?.httpStatusCode === 404) {
-          console.log(`跳过不存在的目录: ${currentPath}`);
-        } else {
-          console.warn(`更新目录修改时间失败 ${currentPath}:`, error);
-        }
+        console.warn(`更新目录修改时间失败 ${currentDirKey}:`, error);
       }
 
-      // 移动到上一级目录
-      const lastSlashIndex = currentPath.lastIndexOf("/", currentPath.length - 2);
+      const lastSlashIndex = currentDirKey.lastIndexOf("/", currentDirKey.length - 2);
       if (lastSlashIndex > 0) {
-        currentPath = currentPath.substring(0, lastSlashIndex + 1);
+        currentDirKey = currentDirKey.substring(0, lastSlashIndex + 1);
       } else {
         break;
       }
     }
+
+    // 把 root_prefix 自己也更新一下（当作“挂载根目录”）
+    if (prefix && !updated.has(prefix)) {
+      try {
+        const touched = await touchDirectoryKey(prefix);
+        if (touched) {
+          console.log(`已更新目录修改时间: ${prefix}`);
+        } else if (skipMissingDirectories) {
+          console.log(`跳过不存在的目录: ${prefix}`);
+        }
+      } catch (error) {
+        console.warn(`更新目录修改时间失败 ${prefix}:`, error);
+      }
+    }
   } catch (error) {
     console.warn(`更新父目录修改时间失败:`, error);
-  }
-}
-
-/**
- * 检查S3目录是否存在
- * @param {S3Client} s3Client - S3客户端实例
- * @param {string} bucketName - 存储桶名称
- * @param {string} directoryPath - 目录路径
- * @param {string} rootPrefix - 根前缀
- * @returns {Promise<boolean>} 目录是否存在
- */
-export async function checkS3DirectoryExists(s3Client, bucketName, directoryPath, rootPrefix = "") {
-  try {
-    // 确保目录路径以斜杠结尾
-    const normalizedPath = directoryPath.endsWith("/") ? directoryPath : directoryPath + "/";
-    const s3Key = rootPrefix + normalizedPath;
-
-    const headCommand = new HeadObjectCommand({
-      Bucket: bucketName,
-      Key: s3Key,
-    });
-
-    await s3Client.send(headCommand);
-    return true;
-  } catch (error) {
-    if (error.$metadata?.httpStatusCode === 404) {
-      return false;
-    }
-    throw error;
-  }
-}
-
-/**
- * 创建S3目录标记
- * @param {S3Client} s3Client - S3客户端实例
- * @param {string} bucketName - 存储桶名称
- * @param {string} directoryPath - 目录路径
- * @param {string} rootPrefix - 根前缀
- * @returns {Promise<void>}
- */
-export async function createS3DirectoryMarker(s3Client, bucketName, directoryPath, rootPrefix = "") {
-  try {
-    // 确保目录路径以斜杠结尾
-    const normalizedPath = directoryPath.endsWith("/") ? directoryPath : directoryPath + "/";
-    const s3Key = rootPrefix + normalizedPath;
-
-    const putParams = {
-      Bucket: bucketName,
-      Key: s3Key,
-      Body: Buffer.from("", "utf-8"),
-      ContentType: "application/x-directory",
-      Metadata: {
-        "last-modified": new Date().toISOString(),
-        created: new Date().toISOString(),
-      },
-    };
-
-    const putCommand = new PutObjectCommand(putParams);
-    await s3Client.send(putCommand);
-
-    console.log(`已创建目录标记: ${directoryPath}`);
-  } catch (error) {
-    console.error(`创建目录标记失败 ${directoryPath}:`, error);
-    throw error;
-  }
-}
-
-/**
- * 删除S3目录标记
- * @param {S3Client} s3Client - S3客户端实例
- * @param {string} bucketName - 存储桶名称
- * @param {string} directoryPath - 目录路径
- * @param {string} rootPrefix - 根前缀
- * @returns {Promise<void>}
- */
-export async function deleteS3DirectoryMarker(s3Client, bucketName, directoryPath, rootPrefix = "") {
-  try {
-    // 确保目录路径以斜杠结尾
-    const normalizedPath = directoryPath.endsWith("/") ? directoryPath : directoryPath + "/";
-    const s3Key = rootPrefix + normalizedPath;
-
-    const deleteCommand = new DeleteObjectCommand({
-      Bucket: bucketName,
-      Key: s3Key,
-    });
-
-    await s3Client.send(deleteCommand);
-    console.log(`已删除目录标记: ${directoryPath}`);
-  } catch (error) {
-    console.warn(`删除目录标记失败 ${directoryPath}:`, error);
-    // 不抛出错误，因为目录标记可能不存在
   }
 }
 

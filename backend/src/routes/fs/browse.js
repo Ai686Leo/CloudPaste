@@ -92,10 +92,9 @@ const computeFolderSummaryByTraversalSingleflight = async (mountId, dirPath, fil
   return inflight;
 };
 
-// S3 专用：直接子目录摘要批量计算 singleflight
-// 注意：S3 的 computeDirectChildDirSummaries 输出结果依赖 childDirNameToFsPath（它决定“要算哪些子目录”）。
+// computeDirectChildDirSummaries 输出结果依赖 childDirNameToFsPath（它决定“要算哪些子目录”）。
 // 因此 key 里必须包含“子目录名集合”的 hash，避免不同请求之间复用错误结果。
-const inflightS3DirectChildDirSummaries = new Map();
+const inflightDirectChildDirSummaries = new Map();
 
 const hashChildDirNameSet = (childDirNameToFsPath) => {
   let hash = 0x811c9dc5;
@@ -114,11 +113,11 @@ const hashChildDirNameSet = (childDirNameToFsPath) => {
   return (hash >>> 0).toString(16);
 };
 
-const computeS3DirectChildDirSummariesSingleflight = async (
+const computeDirectChildDirSummariesSingleflight = async (
   mountId,
   relativeSubPath,
   childDirNameToFsPath,
-  s3DirectoryOps,
+  directoryOps,
   userIdOrInfo,
   userType,
   options = {}
@@ -132,21 +131,21 @@ const computeS3DirectChildDirSummariesSingleflight = async (
   // refresh=true 不能复用 refresh=false 的 inflight（可能是旧的）；refresh=false 可复用 refresh=true 的 inflight（更“新”）
   const refreshKey = `${baseKey}::refresh`;
   const normalKey = `${baseKey}::normal`;
-  const key = options?.refresh ? refreshKey : inflightS3DirectChildDirSummaries.has(refreshKey) ? refreshKey : normalKey;
+  const key = options?.refresh ? refreshKey : inflightDirectChildDirSummaries.has(refreshKey) ? refreshKey : normalKey;
 
-  let inflight = inflightS3DirectChildDirSummaries.get(key);
+  let inflight = inflightDirectChildDirSummaries.get(key);
   if (!inflight) {
     inflight = (async () => {
       try {
-        if (!s3DirectoryOps || typeof s3DirectoryOps.computeDirectChildDirSummaries !== "function") {
+        if (!directoryOps || typeof directoryOps.computeDirectChildDirSummaries !== "function") {
           return { results: new Map(), completed: false, visited: 0 };
         }
-        return await s3DirectoryOps.computeDirectChildDirSummaries(subKey, childDirNameToFsPath, options);
+        return await directoryOps.computeDirectChildDirSummaries(subKey, childDirNameToFsPath, options);
       } finally {
-        inflightS3DirectChildDirSummaries.delete(key);
+        inflightDirectChildDirSummaries.delete(key);
       }
     })();
-    inflightS3DirectChildDirSummaries.set(key, inflight);
+    inflightDirectChildDirSummaries.set(key, inflight);
   }
 
   return inflight;
@@ -282,93 +281,90 @@ const enrichDirectoryListWithFolderSummaries = async ({ db, fileSystem, result, 
 
   // 2) 可选计算（优先于索引）：允许递归遍历（或 S3 批量）计算
   if (computeEnabled) {
-    // S3 优化：一次扫描当前目录 prefix，批量产出“直接子目录”的摘要，避免 N 倍递归
-    const isS3Mount = mountStorageType.toUpperCase() === "S3";
-    if (isS3Mount) {
-      // 非 refresh 时先用“compute 缓存”填充，避免重复算；refresh 则跳过缓存，强制走本次计算
-      const childDirNameToPath = new Map();
-      for (const item of result.items) {
-        if (!item || !item.isDirectory || item.isVirtual) continue;
-        if (!isFolderSummaryMissing(item)) continue;
-        ensureFolderSummarySources(item);
+    // 如果 driver 提供 computeDirectChildDirSummaries，就优先“批量计算当前目录的直接子目录摘要”
+    // - S3 会用一次 ListObjects 扫描，避免 N 倍递归
+    // - HuggingFace Datasets 用官方 treesize，避免递归遍历
+    // 非 refresh 时先用“compute 缓存”填充，避免重复算；refresh 则跳过缓存，强制走本次计算
+    const childDirNameToPath = new Map();
+    for (const item of result.items) {
+      if (!item || !item.isDirectory || item.isVirtual) continue;
+      if (!isFolderSummaryMissing(item)) continue;
+      ensureFolderSummarySources(item);
 
-        if (!refresh) {
-          const cached = fsFolderSummaryCacheManager.get(mountId, item.path);
-          if (cached) {
-            const cachedSizeSource = normalizeSummarySource(cached.size_source);
-            const cachedModifiedSource = normalizeSummarySource(cached.modified_source);
-            if (!isValidSize(item.size) && isValidSize(cached.size) && cachedSizeSource === "compute") {
-              item.size = cached.size;
-              item.size_source = "compute";
-            }
-            if (!item.modified && cached.modified && cachedModifiedSource === "compute") {
-              item.modified = cached.modified;
-              item.modified_source = "compute";
-            }
+      if (!refresh) {
+        const cached = fsFolderSummaryCacheManager.get(mountId, item.path);
+        if (cached) {
+          const cachedSizeSource = normalizeSummarySource(cached.size_source);
+          const cachedModifiedSource = normalizeSummarySource(cached.modified_source);
+          if (!isValidSize(item.size) && isValidSize(cached.size) && cachedSizeSource === "compute") {
+            item.size = cached.size;
+            item.size_source = "compute";
           }
-        }
-
-        // 仍然缺失的，进入本次批量计算
-        if (isFolderSummaryMissing(item)) {
-          if (typeof item.name === "string" && item.name) {
-            childDirNameToPath.set(item.name, item.path);
+          if (!item.modified && cached.modified && cachedModifiedSource === "compute") {
+            item.modified = cached.modified;
+            item.modified_source = "compute";
           }
         }
       }
 
-      if (childDirNameToPath.size > 0) {
-        // 获取 driver（复用 MountManager 缓存的驱动实例，避免重复初始化）
-        const driver = await fileSystem.mountManager.getDriver(mountRow);
-        const s3DirectoryOps = driver?.directoryOps || null;
-        if (s3DirectoryOps && typeof s3DirectoryOps.computeDirectChildDirSummaries === "function") {
-          // 计算当前目录在挂载内的相对路径（/ 或 /a/b/）
-          const normalizedMountPath = normalizeFsPath(mountPath, true).replace(/\/+$/g, "") || "/";
-          const normalizedDirPath = normalizeFsPath(result.path || "/", true);
-          const relativeSubPath =
-            normalizedMountPath === "/"
-              ? normalizedDirPath
-              : normalizedDirPath.startsWith(normalizedMountPath)
-              ? normalizedDirPath.slice(normalizedMountPath.length) || "/"
-              : normalizedDirPath;
+      // 仍然缺失的，进入本次批量计算
+      if (isFolderSummaryMissing(item)) {
+        if (typeof item.name === "string" && item.name) {
+          childDirNameToPath.set(item.name, item.path);
+        }
+      }
+    }
 
-          const { results: computedMap } = await computeS3DirectChildDirSummariesSingleflight(
-            mountId,
-            relativeSubPath,
-            childDirNameToPath,
-            s3DirectoryOps,
-            userIdOrInfo,
-            userType,
-            { refresh }
-          );
+    if (childDirNameToPath.size > 0) {
+      // 获取 driver
+      const driver = await fileSystem.mountManager.getDriver(mountRow);
+      const directoryOps = driver?.directoryOps || null;
+      if (directoryOps && typeof directoryOps.computeDirectChildDirSummaries === "function") {
+        // 计算当前目录在挂载内的相对路径（/ 或 /a/b/）
+        const normalizedMountPath = normalizeFsPath(mountPath, true).replace(/\/+$/g, "") || "/";
+        const normalizedDirPath = normalizeFsPath(result.path || "/", true);
+        const relativeSubPath =
+          normalizedMountPath === "/"
+            ? normalizedDirPath
+            : normalizedDirPath.startsWith(normalizedMountPath)
+            ? normalizedDirPath.slice(normalizedMountPath.length) || "/"
+            : normalizedDirPath;
 
-          for (const item of result.items) {
-            if (!item || !item.isDirectory || item.isVirtual) continue;
-            if (!isFolderSummaryMissing(item)) continue;
-            const computed = computedMap.get(item.path);
-            if (!computed) continue;
+        const { results: computedMap } = await computeDirectChildDirSummariesSingleflight(
+          mountId,
+          relativeSubPath,
+          childDirNameToPath,
+          directoryOps,
+          userIdOrInfo,
+          userType,
+          { refresh }
+        );
 
-            const computedEntry = {
-              ...computed,
-              size_source: isValidSize(computed.size) ? "compute" : undefined,
-              modified_source: computed.modified ? "compute" : undefined,
-            };
-            if (folderSummaryCacheTtl > 0) {
-              fsFolderSummaryCacheManager.set(mountId, item.path, computedEntry, folderSummaryCacheTtl);
-            }
+        for (const item of result.items) {
+          if (!item || !item.isDirectory || item.isVirtual) continue;
+          if (!isFolderSummaryMissing(item)) continue;
+          const computed = computedMap.get(item.path);
+          if (!computed) continue;
 
-            if (!isValidSize(item.size) && isValidSize(computed.size)) {
-              item.size = computed.size;
-              item.size_source = "compute";
-            }
-            if (!item.modified && computed.modified) {
-              item.modified = computed.modified;
-              item.modified_source = "compute";
-            }
+          const computedEntry = {
+            ...computed,
+            size_source: isValidSize(computed.size) ? "compute" : undefined,
+            modified_source: computed.modified ? "compute" : undefined,
+          };
+          if (folderSummaryCacheTtl > 0) {
+            fsFolderSummaryCacheManager.set(mountId, item.path, computedEntry, folderSummaryCacheTtl);
+          }
+
+          if (!isValidSize(item.size) && isValidSize(computed.size)) {
+            item.size = computed.size;
+            item.size_source = "compute";
+          }
+          if (!item.modified && computed.modified) {
+            item.modified = computed.modified;
+            item.modified_source = "compute";
           }
         }
       }
-
-      // S3 分支完成：继续进入“索引兜底”（若仍缺失）
     }
 
     for (const item of result.items) {
@@ -525,6 +521,18 @@ export const registerBrowseRoutes = (router, helpers) => {
     const rawPath = c.req.query("path") || "/";
     const path = normalizeFsPath(rawPath, true);
     const refresh = getQueryBool(c, "refresh", false);
+    // 目录分页（可选）
+    // - cursor：不透明字符串，由后端/驱动定义（例如 HF tree 的 cursor）
+    // - limit：每页数量（正整数）
+    // - paged：是否启用分页模式（即使 cursor=null 也只返回一页）
+    const pagedRaw = c.req.query("paged");
+    const pagedProvided = pagedRaw !== undefined;
+    const paged = getQueryBool(c, "paged", false);
+    const cursorRaw = c.req.query("cursor");
+    const cursor = typeof cursorRaw === "string" && cursorRaw.trim() ? cursorRaw.trim() : null;
+    const limitRaw = c.req.query("limit");
+    const parsedLimit = limitRaw != null && limitRaw !== "" ? Number.parseInt(String(limitRaw), 10) : null;
+    const limit = parsedLimit != null && Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : null;
     // 调试用：输出缓存命中日志（默认关闭）
     // - 环境变量：DEBUG_DRIVER_CACHE=true/false
     // - 单次请求：debug_cache=true（query param）
@@ -592,7 +600,17 @@ export const registerBrowseRoutes = (router, helpers) => {
 
     const mountManager = new MountManager(db, encryptionSecret, repositoryFactory, { env: c.env });
     const fileSystem = new FileSystem(mountManager);
-    const result = await fileSystem.listDirectory(path, userIdOrInfo, userType, { refresh, cacheTrace });
+    // 目录分页默认策略：
+    // - 如果客户端显式传了 paged：按客户端的来
+    // - 如果客户端没传 paged：让 FS 层基于“驱动能力 + cursor/limit”自动决定是否按页返回
+    const result = await fileSystem.listDirectory(path, userIdOrInfo, userType, {
+      refresh,
+      cacheTrace,
+      ...(pagedProvided ? { paged } : {}),
+      autoPaged: !pagedProvided,
+      cursor,
+      limit,
+    });
 
     await enrichDirectoryListWithFolderSummaries({
       db,

@@ -3,12 +3,14 @@ import { ref, computed, onMounted, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useAdminMountService } from "@/modules/admin/services/mountService.js";
 import { useAdminStorageConfigService } from "@/modules/admin/services/storageConfigService.js";
+import { useAdminSystemService } from "@/modules/admin/services/systemService.js";
 import { api } from "@/api";
 import { IconClose, IconRefresh } from "@/components/icons";
 
 const { t } = useI18n();
 const { updateMount, createMount } = useAdminMountService();
 const { getStorageConfigs } = useAdminStorageConfigService();
+const { getGlobalSettings } = useAdminSystemService();
 
 const props = defineProps({
   darkMode: { type: Boolean, required: true },
@@ -27,6 +29,15 @@ const loading = ref(false);
 const submitting = ref(false);
 const formSubmitted = ref(false);
 const globalError = ref("");
+
+// === 全局代理签名提示（用于避免“全局强制 vs 挂载配置”理解混乱）===
+const globalProxySignAll = ref(false);
+const globalProxySignExpires = ref(0);
+const globalProxySignExpiresLabel = computed(() => {
+  const v = Number(globalProxySignExpires.value);
+  if (!v || Number.isNaN(v)) return t("admin.mount.form.proxySign.globalExpiresForever");
+  return t("admin.mount.form.proxySign.globalExpiresSeconds", { seconds: v });
+});
 
 // === 计算属性 ===
 const isEditMode = computed(() => !!props.mount);
@@ -395,13 +406,24 @@ const loadData = async () => {
   loading.value = true;
   try {
     // 并行加载Schema和存储配置
-    const [schemaResp, configsResp] = await Promise.all([
+    const [schemaResp, configsResp, globalSettings] = await Promise.all([
       api.mount.getMountSchema(),
       getStorageConfigs({ page: 1, limit: 100 }),
+      getGlobalSettings().catch(() => []),
     ]);
     
     schema.value = schemaResp?.data || schemaResp;
     storageConfigs.value = Array.isArray(configsResp?.items) ? configsResp.items : [];
+
+    // 读取全局代理签名设置（仅用于提示，不影响挂载编辑）
+    (Array.isArray(globalSettings) ? globalSettings : []).forEach((setting) => {
+      if (setting?.key === "proxy_sign_all") {
+        globalProxySignAll.value = setting.value === "true";
+      }
+      if (setting?.key === "proxy_sign_expires") {
+        globalProxySignExpires.value = parseInt(setting.value, 10) || 0;
+      }
+    });
     
     initFormData();
   } catch (err) {
@@ -465,19 +487,17 @@ watch([() => formData.value.storage_type, () => formData.value.storage_config_id
 
           <form @submit.prevent="submitForm" class="space-y-4">
             <!-- 动态渲染字段组 -->
-            <template v-for="group in fieldGroups" :key="group.id">
-              <div class="space-y-2">
+            <div v-for="group in fieldGroups" :key="group.id" class="space-y-2">
                 <h4 v-if="group.titleKey" class="text-sm font-medium border-b pb-1 mt-2" :class="darkMode ? 'text-gray-300 border-gray-600' : 'text-gray-700 border-gray-200'">
                   {{ group.title }}
                 </h4>
                 
                 <!-- 基于布局项动态渲染 -->
-                <template v-for="(layoutItem, idx) in group.layoutItems" :key="`${group.id}-${idx}`">
+                <div v-for="(layoutItem, idx) in group.layoutItems" :key="`${group.id}-${idx}`" class="contents">
                   
                   <!-- === 全宽字段 === -->
                   <template v-if="layoutItem.type === 'full'">
-                    <template v-for="field in [getFieldByName(layoutItem.field)].filter(f => f && shouldShowField(f) && !isCardChildField(f.name, schema?.layout?.groups))" :key="field.name">
-                      <div>
+                    <div v-for="field in [getFieldByName(layoutItem.field)].filter(f => f && shouldShowField(f) && !isCardChildField(f.name, schema?.layout?.groups))" :key="field.name">
                         <!-- 渲染单个字段（复用字段渲染组件） -->
                         <template v-if="field.type === 'string'">
                           <label :for="field.name" class="block text-sm font-medium mb-1" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">
@@ -527,15 +547,13 @@ watch([() => formData.value.storage_type, () => formData.value.storage_config_id
                             </div>
                           </div>
                         </template>
-                      </div>
-                    </template>
+                    </div>
                   </template>
 
                   <!-- === 双列布局 === -->
                   <div v-else-if="layoutItem.type === 'row'" class="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-4">
-                    <template v-for="fieldName in layoutItem.fields" :key="fieldName">
-                      <template v-for="field in [getFieldByName(fieldName)].filter(f => f && shouldShowField(f))" :key="field.name">
-                        <div>
+                    <div v-for="fieldName in layoutItem.fields" :key="fieldName" class="contents">
+                      <div v-for="field in [getFieldByName(fieldName)].filter(f => f && shouldShowField(f))" :key="field.name">
                           <label :for="field.name" class="block text-sm font-medium mb-1" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">{{ getFieldLabel(field) }}</label>
                           <div class="relative">
                             <input v-if="field.type === 'number'" :id="field.name" type="number" v-model="formData[field.name]" @input="handleFieldChange(field.name)" @blur="validateField(field.name)" :placeholder="getFieldPlaceholder(field)" :min="field.ui?.min" :max="field.ui?.max" class="block w-full px-3 py-1.5 sm:py-2 rounded-md text-sm transition-colors border" :class="[darkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300 text-gray-900 placeholder-gray-500', errors[field.name] ? 'border-red-500' : '']" />
@@ -544,9 +562,8 @@ watch([() => formData.value.storage_type, () => formData.value.storage_config_id
                           </div>
                           <p v-if="errors[field.name]" class="mt-1 text-sm text-red-500">{{ errors[field.name] }}</p>
                           <p v-if="shouldShowDescription(field)" class="mt-0.5 text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">{{ getFieldDescription(field) }}</p>
-                        </div>
-                      </template>
-                    </template>
+                      </div>
+                    </div>
                   </div>
 
                   <!-- === 卡片布局（代理签名配置） === -->
@@ -573,10 +590,19 @@ watch([() => formData.value.storage_type, () => formData.value.storage_config_id
                         {{ t(layoutItem.titleKey) }}
                       </h4>
 
+                      <!-- 全局签名强制提示 -->
+                      <p
+                        v-if="layoutItem.card === 'proxy_sign' && globalProxySignAll"
+                        class="text-xs mb-3"
+                        :class="darkMode ? 'text-red-400' : 'text-red-600'"
+                      >
+                        {{ t("admin.mount.form.proxySign.globalOverrideHint", { expires: globalProxySignExpiresLabel }) }}
+                      </p>
+
                       <!-- 卡片内字段 -->
                       <div class="space-y-3">
-                        <template v-for="cardFieldName in layoutItem.fields" :key="cardFieldName">
-                          <template v-for="cardField in [getFieldByName(cardFieldName)].filter(Boolean)" :key="cardField.name">
+                        <div v-for="cardFieldName in layoutItem.fields" :key="cardFieldName" class="contents">
+                          <div v-for="cardField in [getFieldByName(cardFieldName)].filter(Boolean)" :key="cardField.name">
                             <!-- enable_sign checkbox -->
                             <div v-if="cardField.type === 'boolean'" class="flex items-center">
                               <input
@@ -642,15 +668,14 @@ watch([() => formData.value.storage_type, () => formData.value.storage_config_id
                                 {{ getFieldDescription(cardField) }}
                               </p>
                             </div>
-                          </template>
-                        </template>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </Transition>
 
-                </template>
-              </div>
-            </template>
+                </div>
+            </div>
           </form>
         </template>
       </div>

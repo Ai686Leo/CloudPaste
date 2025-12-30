@@ -216,10 +216,22 @@ export function usePreviewRenderers(file, emit, darkMode) {
 
   // ===== 事件处理 =====
 
+  let lastContentLoadedKey = "";
+
+  const buildContentLoadedKey = () => {
+    const f = file.value;
+    const fp = f?.path || f?.id || f?.name || "";
+    const url = authenticatedPreviewUrl.value || previewUrl.value || "";
+    return `${fp}::${url}`;
+  };
+
   /**
    * 处理内容加载完成
    */
   const handleContentLoaded = () => {
+    const key = buildContentLoadedKey();
+    if (key && key === lastContentLoadedKey) return;
+    lastContentLoadedKey = key;
     console.log("内容加载完成");
     emit("loaded");
   };
@@ -337,6 +349,8 @@ export function usePreviewRenderers(file, emit, darkMode) {
   watch(
     () => file.value,
     async (newFile) => {
+      // 文件变更：允许下一次 loaded 重新触发
+      lastContentLoadedKey = "";
       // 重置基本状态
       loadError.value = false;
       revokeObjectUrl(authenticatedPreviewUrl.value);

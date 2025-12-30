@@ -13,6 +13,8 @@ import { GoogleDriveStorageDriver } from "../drivers/googledrive/GoogleDriveStor
 import { GithubReleasesStorageDriver } from "../drivers/github/GithubReleasesStorageDriver.js";
 import { GithubApiStorageDriver } from "../drivers/github/GithubApiStorageDriver.js";
 import { TelegramStorageDriver } from "../drivers/telegram/TelegramStorageDriver.js";
+import { HuggingFaceDatasetsStorageDriver } from "../drivers/huggingface-datasets/HuggingFaceDatasetsStorageDriver.js";
+import { huggingFaceDatasetsTestConnection } from "../drivers/huggingface-datasets/tester/HuggingFaceDatasetsTester.js";
 import { githubApiTestConnection } from "../drivers/github/tester/GithubApiTester.js";
 import { githubReleasesTestConnection } from "../drivers/github/tester/GithubReleasesTester.js";
 import { googleDriveTestConnection } from "../drivers/googledrive/tester/GoogleDriveTester.js";
@@ -164,6 +166,7 @@ export class StorageFactory {
     GITHUB_RELEASES: "GITHUB_RELEASES",
     GITHUB_API: "GITHUB_API",
     TELEGRAM: "TELEGRAM",
+    HUGGINGFACE_DATASETS: "HUGGINGFACE_DATASETS",
   };
 
   // 注册驱动
@@ -665,7 +668,7 @@ StorageFactory.registerDriver(StorageFactory.SUPPORTED_TYPES.S3, {
     CAPABILITIES.MULTIPART,
     CAPABILITIES.ATOMIC,
     CAPABILITIES.PROXY,
-    CAPABILITIES.SEARCH,
+    CAPABILITIES.PAGED_LIST,
   ],
   ui: {
     icon: "storage-s3",
@@ -685,6 +688,11 @@ StorageFactory.registerDriver(StorageFactory.SUPPORTED_TYPES.S3, {
       bucket_name: cfg?.bucket_name,
       region: cfg?.region,
       path_style: cfg?.path_style,
+      // S3 分片上传（前端直传）
+      // - multipart_part_size_mb：分片大小（MB），默认 5
+      // - multipart_concurrency：并发数（同时上传多少片），默认 3
+      multipart_part_size_mb: cfg?.multipart_part_size_mb,
+      multipart_concurrency: cfg?.multipart_concurrency,
     };
 
     if (withSecrets) {
@@ -781,6 +789,32 @@ StorageFactory.registerDriver(StorageFactory.SUPPORTED_TYPES.S3, {
         ui: { descriptionKey: "admin.storage.description.signature_expires_in" },
       },
       {
+        name: "multipart_part_size_mb",
+        type: "number",
+        required: false,
+        defaultValue: 5,
+        labelKey: "admin.storage.fields.s3.multipart_part_size_mb",
+        ui: {
+          descriptionKey: "admin.storage.description.s3.multipart_part_size_mb",
+          min: 5,
+          max: 5120,
+        },
+        validation: { min: 1 },
+      },
+      {
+        name: "multipart_concurrency",
+        type: "number",
+        required: false,
+        defaultValue: 3,
+        labelKey: "admin.storage.fields.s3.multipart_concurrency",
+        ui: {
+          descriptionKey: "admin.storage.description.s3.multipart_concurrency",
+          min: 1,
+          max: 10,
+        },
+        validation: { min: 1 },
+      },
+      {
         name: "custom_host",
         type: "string",
         required: false,
@@ -825,7 +859,7 @@ StorageFactory.registerDriver(StorageFactory.SUPPORTED_TYPES.S3, {
         {
           name: "advanced",
           titleKey: "admin.storage.groups.advanced",
-          fields: ["custom_host", "url_proxy", ["signature_expires_in", "path_style"]],
+          fields: ["custom_host", "url_proxy", ["signature_expires_in", "path_style"], ["multipart_part_size_mb", "multipart_concurrency"]],
         },
       ],
       summaryFields: ["bucket_name", "region", "default_folder", "path_style"],
@@ -847,7 +881,7 @@ StorageFactory.registerDriver(StorageFactory.SUPPORTED_TYPES.WEBDAV, {
   tester: webDavTestConnection,
   displayName: "WebDAV 存储",
   validate: (cfg) => StorageFactory._validateWebDavConfig(cfg),
-  capabilities: [CAPABILITIES.READER, CAPABILITIES.WRITER, CAPABILITIES.ATOMIC, CAPABILITIES.PROXY, CAPABILITIES.SEARCH],
+  capabilities: [CAPABILITIES.READER, CAPABILITIES.WRITER, CAPABILITIES.ATOMIC, CAPABILITIES.PROXY],
   ui: {
     icon: "storage-webdav",
     i18nKey: "admin.storage.type.webdav",
@@ -960,7 +994,7 @@ StorageFactory.registerDriver(StorageFactory.SUPPORTED_TYPES.LOCAL, {
   tester: localTestConnection,
   displayName: "本地文件系统",
   validate: (cfg) => StorageFactory._validateLocalConfig(cfg),
-  capabilities: [CAPABILITIES.READER, CAPABILITIES.WRITER, CAPABILITIES.ATOMIC, CAPABILITIES.SEARCH, CAPABILITIES.PROXY],
+  capabilities: [CAPABILITIES.READER, CAPABILITIES.WRITER, CAPABILITIES.ATOMIC, CAPABILITIES.PROXY],
   ui: {
     icon: "storage-local",
     i18nKey: "admin.storage.type.local",
@@ -1089,7 +1123,7 @@ StorageFactory.registerDriver(StorageFactory.SUPPORTED_TYPES.ONEDRIVE, {
   tester: oneDriveTestConnection,
   displayName: "OneDrive 存储",
   validate: (cfg) => StorageFactory._validateOneDriveConfig(cfg),
-  capabilities: [CAPABILITIES.READER, CAPABILITIES.WRITER, CAPABILITIES.ATOMIC, CAPABILITIES.PROXY, CAPABILITIES.SEARCH, CAPABILITIES.DIRECT_LINK],
+  capabilities: [CAPABILITIES.READER, CAPABILITIES.WRITER, CAPABILITIES.ATOMIC, CAPABILITIES.PROXY, CAPABILITIES.DIRECT_LINK, CAPABILITIES.PAGED_LIST],
   ui: {
     icon: "storage-onedrive",
     i18nKey: "admin.storage.type.onedrive",
@@ -1265,8 +1299,8 @@ StorageFactory.registerDriver(StorageFactory.SUPPORTED_TYPES.GOOGLE_DRIVE, {
     CAPABILITIES.WRITER,
     CAPABILITIES.ATOMIC,
     CAPABILITIES.PROXY,
-    CAPABILITIES.SEARCH,
     CAPABILITIES.MULTIPART,
+    CAPABILITIES.PAGED_LIST,
   ],
   ui: {
     icon: "storage-googledrive",
@@ -1900,6 +1934,235 @@ StorageFactory.registerDriver(StorageFactory.SUPPORTED_TYPES.TELEGRAM, {
         },
       ],
       summaryFields: ["target_chat_id", "default_folder", "part_size_mb", "upload_concurrency"],
+    },
+  },
+});
+
+// 注册 HuggingFace Datasets 驱动（Hub Datasets）
+StorageFactory.registerDriver(StorageFactory.SUPPORTED_TYPES.HUGGINGFACE_DATASETS, {
+  ctor: HuggingFaceDatasetsStorageDriver,
+  tester: huggingFaceDatasetsTestConnection,
+  displayName: "HuggingFace Datasets (Hub)",
+  validate: (cfg) => {
+    const errors = [];
+    const repo = cfg?.repo ? String(cfg.repo).trim() : "";
+    if (!repo) {
+      errors.push("HUGGINGFACE_DATASETS 配置缺少必填字段: repo（例如 Open-Orca/OpenOrca）");
+    } else if (!/^[^/\s]+\/[^/\s]+$/.test(repo.replace(/^datasets\//i, "").replace(/^https?:\/\/huggingface\.co\/datasets\//i, ""))) {
+      errors.push("repo 格式无效，应为 owner/name（例如 Open-Orca/OpenOrca）");
+    }
+
+    if (cfg?.endpoint_base) {
+      try {
+        const parsed = new URL(String(cfg.endpoint_base));
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+          errors.push("endpoint_base 必须以 http:// 或 https:// 开头");
+        }
+      } catch {
+        errors.push("endpoint_base 格式无效");
+      }
+    }
+
+    const revision = cfg?.revision ? String(cfg.revision).trim() : "";
+    if (revision && revision.includes(" ")) {
+      errors.push("revision 不能包含空格（建议填 main / tag / 40位commit sha）");
+    }
+
+    if (cfg?.hf_tree_limit != null && cfg?.hf_tree_limit !== "") {
+      const n = Number(cfg.hf_tree_limit);
+      if (!Number.isFinite(n) || n <= 0) {
+        errors.push("hf_tree_limit 必须是大于 0 的数字");
+      }
+    }
+
+    if (cfg?.hf_multipart_concurrency != null && cfg?.hf_multipart_concurrency !== "") {
+      const n = Number(cfg.hf_multipart_concurrency);
+      if (!Number.isFinite(n) || n <= 0) {
+        errors.push("hf_multipart_concurrency 必须是大于 0 的数字");
+      }
+    }
+
+    if (cfg?.default_folder) {
+      const folder = String(cfg.default_folder);
+      if (folder.includes("..")) {
+        errors.push("default_folder 不允许包含 .. 段");
+      }
+    }
+
+    return { valid: errors.length === 0, errors };
+  },
+  capabilities: [CAPABILITIES.READER, CAPABILITIES.WRITER, CAPABILITIES.ATOMIC, CAPABILITIES.MULTIPART, CAPABILITIES.DIRECT_LINK, CAPABILITIES.PROXY, CAPABILITIES.PAGED_LIST],
+  ui: {
+    icon: "storage-huggingface",
+    i18nKey: "admin.storage.type.huggingface_datasets",
+    badgeTheme: "huggingface",
+  },
+  configProjector(cfg, { withSecrets = false } = {}) {
+    const projected = {
+      repo: cfg?.repo,
+      revision: cfg?.revision,
+      endpoint_base: cfg?.endpoint_base,
+      default_folder: cfg?.default_folder,
+      hf_use_paths_info: cfg?.hf_use_paths_info,
+      hf_tree_limit: cfg?.hf_tree_limit,
+      hf_use_xet: cfg?.hf_use_xet,
+      hf_multipart_concurrency: cfg?.hf_multipart_concurrency,
+      hf_delete_lfs_on_remove: cfg?.hf_delete_lfs_on_remove,
+    };
+    if (withSecrets) {
+      projected.hf_token = cfg?.hf_token;
+    }
+    return projected;
+  },
+  configSchema: {
+    fields: [
+      {
+        name: "repo",
+        type: "string",
+        required: true,
+        labelKey: "admin.storage.fields.huggingface_datasets.repo",
+        ui: {
+          fullWidth: true,
+          placeholderKey: "admin.storage.placeholder.huggingface_datasets.repo",
+          descriptionKey: "admin.storage.description.huggingface_datasets.repo",
+        },
+      },
+      {
+        name: "revision",
+        type: "string",
+        required: false,
+        defaultValue: "main",
+        labelKey: "admin.storage.fields.huggingface_datasets.revision",
+        ui: {
+          fullWidth: true,
+          placeholderKey: "admin.storage.placeholder.huggingface_datasets.revision",
+          descriptionKey: "admin.storage.description.huggingface_datasets.revision",
+        },
+      },
+      {
+        name: "default_folder",
+        type: "string",
+        required: false,
+        labelKey: "admin.storage.fields.default_folder",
+        ui: {
+          fullWidth: true,
+          placeholderKey: "admin.storage.placeholder.default_folder",
+          emptyTextKey: "admin.storage.display.default_folder.root",
+        },
+      },
+      {
+        name: "hf_token",
+        type: "secret",
+        required: false,
+        labelKey: "admin.storage.fields.huggingface_datasets.hf_token",
+        ui: {
+          fullWidth: true,
+          placeholderKey: "admin.storage.placeholder.huggingface_datasets.hf_token",
+          descriptionKey: "admin.storage.description.huggingface_datasets.hf_token",
+        },
+      },
+      {
+        name: "endpoint_base",
+        type: "string",
+        required: false,
+        defaultValue: "https://huggingface.co",
+        labelKey: "admin.storage.fields.huggingface_datasets.endpoint_base",
+        validation: { rule: "url" },
+        ui: {
+          fullWidth: true,
+          placeholderKey: "admin.storage.placeholder.huggingface_datasets.endpoint_base",
+          descriptionKey: "admin.storage.description.huggingface_datasets.endpoint_base",
+        },
+      },
+      {
+        name: "url_proxy",
+        type: "string",
+        required: false,
+        labelKey: "admin.storage.fields.url_proxy",
+        validation: { rule: "url" },
+        ui: {
+          fullWidth: true,
+          placeholderKey: "admin.storage.placeholder.url_proxy",
+          descriptionKey: "admin.storage.description.url_proxy",
+        },
+      },
+      {
+        name: "hf_use_paths_info",
+        type: "boolean",
+        required: false,
+        defaultValue: true,
+        labelKey: "admin.storage.fields.huggingface_datasets.hf_use_paths_info",
+        ui: {
+          fullWidth: true,
+          descriptionKey: "admin.storage.description.huggingface_datasets.hf_use_paths_info",
+        },
+      },
+      {
+        name: "hf_tree_limit",
+        type: "number",
+        required: false,
+        defaultValue: 100,
+        labelKey: "admin.storage.fields.huggingface_datasets.hf_tree_limit",
+        ui: {
+          placeholderKey: "admin.storage.placeholder.huggingface_datasets.hf_tree_limit",
+          descriptionKey: "admin.storage.description.huggingface_datasets.hf_tree_limit",
+        },
+      },
+      {
+        name: "hf_multipart_concurrency",
+        type: "number",
+        required: false,
+        defaultValue: 3,
+        labelKey: "admin.storage.fields.huggingface_datasets.hf_multipart_concurrency",
+        ui: {
+          placeholderKey: "admin.storage.placeholder.huggingface_datasets.hf_multipart_concurrency",
+          descriptionKey: "admin.storage.description.huggingface_datasets.hf_multipart_concurrency",
+        },
+      },
+      {
+        name: "hf_use_xet",
+        type: "boolean",
+        required: false,
+        defaultValue: false,
+        labelKey: "admin.storage.fields.huggingface_datasets.hf_use_xet",
+        ui: {
+          fullWidth: true,
+          descriptionKey: "admin.storage.description.huggingface_datasets.hf_use_xet",
+        },
+      },
+      {
+        name: "hf_delete_lfs_on_remove",
+        type: "boolean",
+        required: false,
+        defaultValue: false,
+        labelKey: "admin.storage.fields.huggingface_datasets.hf_delete_lfs_on_remove",
+        ui: {
+          fullWidth: true,
+          descriptionKey: "admin.storage.description.huggingface_datasets.hf_delete_lfs_on_remove",
+        },
+      },
+    ],
+    layout: {
+      groups: [
+        {
+          name: "basic",
+          titleKey: "admin.storage.groups.basic",
+          fields: ["repo", ["revision", "default_folder"]],
+        },
+        {
+          name: "advanced",
+          titleKey: "admin.storage.groups.advanced",
+          fields: [
+            "hf_token",
+            "endpoint_base",
+            ["hf_use_paths_info", "hf_use_xet"],
+            ["hf_tree_limit", "hf_multipart_concurrency"],
+            "hf_delete_lfs_on_remove",
+            "url_proxy",
+          ],
+        },
+      ],
+      summaryFields: ["repo", "revision", "default_folder"],
     },
   },
 });

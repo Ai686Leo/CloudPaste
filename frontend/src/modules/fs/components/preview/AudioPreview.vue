@@ -65,7 +65,7 @@
           @error="handleError"
           @canplay="handleCanPlay"
           @ended="handleAudioEnded"
-          @leftswitch="handleListSwitch"
+          @listswitch="handleListSwitch"
         />
         <!-- 发送到全局播放器按钮 - 悬浮在播放器右上角 -->
         <button
@@ -161,6 +161,15 @@ const isLoadingPlaylist = ref(false);
 // 当前音频数据（响应式）
 const currentAudioData = ref(null);
 
+// ===== “按需获取直链”缓存（避免同一首反复打 /fs/file-link）=====
+const audioUrlCache = new Map();
+const audioUrlPending = new Map();
+
+// 用一个“很短的静音 wav”当占位 url：避免 APlayer 遇到空 url 就直接报错/自动跳歌
+// 说明：这不是最终播放内容，真正播放前会被我们替换成 /fs/file-link 返回的真实直链
+const PLACEHOLDER_AUDIO_URL =
+  "data:audio/wav;base64,UklGRuwAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YcgAAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgA==";
+
 // 当前文件名
 const currentFileName = computed(() => props.file?.name || t("mount.audioPreview.unknownAudio"));
 
@@ -240,6 +249,19 @@ const handlePause = (data) => {
 };
 
 const handleError = (error) => {
+  // “按需获取直链”场景：如果当前这首还没拿到 url，APlayer 可能会先抛一次错误，先忽略即可
+  try {
+    const ap = audioPlayerRef.value?.getInstance?.();
+    const idx = ap?.list?.index;
+    const current = typeof idx === "number" ? ap?.list?.audios?.[idx] : null;
+    if (current && (!current.url || current.url === "" || current.url === PLACEHOLDER_AUDIO_URL)) {
+      console.log("🎵 正在按需获取音频直链，先忽略一次播放错误");
+      return;
+    }
+  } catch {
+    // 忽略探测异常
+  }
+
   if (error?.target?.src?.includes(window.location.origin) && currentAudioData.value?.url) {
     console.log("🎵 忽略Service Worker相关的误报错误");
     return;
@@ -266,6 +288,117 @@ const handleListSwitch = (data) => {
     audioName = finalAudioList.value[audioIndex].name;
   }
   updatePageTitle(isPlaying.value, audioName);
+
+  // 切歌时再去拿这首歌的直链（而不是进入预览就把目录里所有音频都打一次 file-link）
+  if (typeof audioIndex === "number") {
+    const ap = audioPlayerRef.value?.getInstance?.();
+    const wasPlaying = !!ap?.audio && !ap.audio.paused;
+
+    // 关键：如果当前曲目还是“占位静音”，让 audio 自己 loop，避免它瞬间结束→APlayer 自动跳回上一首
+    try {
+      const currentUrl = ap?.list?.audios?.[audioIndex]?.url;
+      if (ap?.audio && currentUrl === PLACEHOLDER_AUDIO_URL) {
+        ap.audio.loop = true;
+      }
+    } catch {
+      // 忽略
+    }
+
+    void ensureAudioUrlReady(audioIndex, { playAfter: wasPlaying });
+  }
+};
+
+// 确保某一首歌有可播放的 url（没有就现取一次 /fs/file-link）
+const ensureAudioUrlReady = async (index, { playAfter = false } = {}) => {
+  const list = finalAudioList.value;
+  const item = list?.[index];
+  if (!item) return null;
+
+  const syncUrlAndMaybeResume = (url) => {
+    const ap = audioPlayerRef.value?.getInstance?.();
+    // 关键：要在替换 src 之前先记住“用户是不是正在播放”
+    const wasPlayingBeforeSwap = !!ap?.audio && !ap.audio.paused;
+
+    syncAPlayerAudioUrl(index, url);
+
+    const shouldResume = playAfter || wasPlayingBeforeSwap;
+    if (!shouldResume) return;
+    try { ap?.audio?.play?.(); } catch { /* 忽略 */ }
+  };
+
+  // 已有可用 url：直接返回
+  if (item.url && item.url !== PLACEHOLDER_AUDIO_URL) {
+    return item.url;
+  }
+
+  const filePath = item.originalFile?.path || props.file?.path;
+  if (!filePath) return null;
+
+  // 先查缓存
+  if (audioUrlCache.has(filePath)) {
+    const cachedUrl = audioUrlCache.get(filePath);
+    item.url = cachedUrl;
+    syncUrlAndMaybeResume(cachedUrl);
+    return cachedUrl;
+  }
+
+  // 同一路径的并发请求合并
+  if (audioUrlPending.has(filePath)) {
+    const pending = audioUrlPending.get(filePath);
+    const url = await pending;
+    if (url) {
+      item.url = url;
+      syncUrlAndMaybeResume(url);
+    }
+    return url;
+  }
+
+  const task = (async () => {
+    try {
+      // 预览用：forceDownload=false
+      const url = await fsService.getFileLink(filePath, null, false);
+      if (url) audioUrlCache.set(filePath, url);
+      return url;
+    } catch (error) {
+      console.error(`获取音频直链失败: ${filePath}`, error);
+      return null;
+    }
+  })();
+
+  audioUrlPending.set(filePath, task);
+  try {
+    const url = await task;
+    if (url) {
+      item.url = url;
+      syncUrlAndMaybeResume(url);
+    }
+    return url;
+  } finally {
+    audioUrlPending.delete(filePath);
+  }
+};
+
+// 把 url 同步进 APlayer 实例（避免因为 props 更新导致重建播放器）
+const syncAPlayerAudioUrl = (index, url) => {
+  const ap = audioPlayerRef.value?.getInstance?.();
+  if (!ap?.list?.audios || typeof index !== "number") return;
+
+  const audio = ap.list.audios[index];
+  if (audio) {
+    audio.url = url;
+  }
+
+  // 当前正好在播这一首：把 audio 标签的 src 也补上
+  if (ap.list.index === index && ap.audio) {
+    try {
+      ap.audio.src = url;
+      // 恢复 loop 语义：占位时强制 loop=true；真实音频则按 APlayer 配置（loop==='one'）决定
+      ap.audio.loop = url === PLACEHOLDER_AUDIO_URL ? true : ap.options?.loop === "one";
+      ap.audio.load?.();
+    } catch (e) {
+      console.warn("同步 audio.src 失败:", e);
+    }
+  }
 };
 
 // 获取当前目录下的音频文件列表
@@ -319,72 +452,34 @@ const generateAudioPlaylist = async (audioFileList) => {
   const playlist = [];
 
   for (const audioFile of audioFileList) {
-    if (audioFile.name === props.file?.name && currentAudioData.value) {
+    // 当前这首：优先复用父组件传下来的 audioUrl（已经拿过一次 file-link 了）
+    if (audioFile.path === props.file?.path && currentAudioData.value) {
       playlist.push(currentAudioData.value);
+      // 顺手把当前这首塞进缓存，避免后面又去拿一次
+      if (currentAudioData.value?.url) {
+        audioUrlCache.set(audioFile.path, currentAudioData.value.url);
+      }
       continue;
     }
 
-    try {
-      const presignedUrl = await generateS3PresignedUrl(audioFile);
-      if (presignedUrl) {
-        const audioItem = {
-          name: audioFile.name || "unknown",
-          artist: "unknown",
-          url: presignedUrl,
-          cover: generateDefaultCover(audioFile.name),
-          originalFile: audioFile,
-        };
-        playlist.push(audioItem);
-      }
-    } catch (error) {
-      console.error(`生成音频播放数据失败: ${audioFile.name}`, error);
-    }
+    // 其他同目录音频：只做“列表展示数据”，url 先空着，等用户切到这首时再按需获取
+    playlist.push({
+      name: audioFile.name || "unknown",
+      artist: "unknown",
+      url: PLACEHOLDER_AUDIO_URL,
+      cover: generateDefaultCover(audioFile.name),
+      originalFile: audioFile,
+    });
   }
 
-  const currentFileIndex = playlist.findIndex((audio) => audio.originalFile?.path === props.file.path);
+  // 把当前文件尽量放到列表第一首（用户体验更直观）
+  const currentFileIndex = playlist.findIndex((audio) => audio.originalFile?.path === props.file?.path);
   if (currentFileIndex > 0) {
     const currentFile = playlist.splice(currentFileIndex, 1)[0];
     playlist.unshift(currentFile);
   }
 
   audioPlaylist.value = playlist;
-
-  if (audioPlayerRef.value && playlist.length > 0) {
-    setTimeout(() => {
-      nextTick(() => {
-        const player = audioPlayerRef.value?.getInstance();
-        if (player && player.list && playlist.length > 0) {
-          try {
-            player.list.clear();
-            const validPlaylist = playlist.filter((audio) => audio?.url && audio?.name);
-            validPlaylist.forEach((audio) => {
-              try {
-                player.list.add(audio);
-              } catch (error) {
-                console.error(`添加音频失败: ${audio.name}`, error);
-              }
-            });
-            if (validPlaylist.length > 0) {
-              player.list.switch(0);
-            }
-          } catch (error) {
-            console.error("更新播放列表失败:", error);
-          }
-        }
-      });
-    }, 100);
-  }
-};
-
-// 生成 S3 预签名 URL
-const generateS3PresignedUrl = async (audioFile) => {
-  try {
-    const presignedUrl = await fsService.getFileLink(audioFile.path, null, false);
-    return presignedUrl;
-  } catch (error) {
-    console.error(`获取音频预签名URL失败: ${audioFile.name}`, error);
-  }
-  return null;
 };
 
 // 生成默认封面
@@ -432,6 +527,7 @@ const initializeCurrentAudio = async () => {
     url: null,
     cover: generateDefaultCover(props.file.name),
     contentType: props.file.contentType,
+    originalFile: props.file,
   };
 };
 

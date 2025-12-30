@@ -130,7 +130,7 @@ export async function createUploadSessionRecord(db, payload) {
     providerUploadId = null,
     providerUploadUrl = null,
     providerMeta = null,
-    status = "active",
+    status = "initiated",
     expiresAt = null,
     id: customId = null,
   } = payload;
@@ -359,6 +359,129 @@ export async function updateUploadSessionStatusByFingerprint(db, params) {
 }
 
 /**
+ * 按会话 ID 更新 upload_sessions（通用工具）
+ *
+ *
+ * @param {D1Database} db
+ * @param {Object} params
+ * @returns {Promise<{changes:number}>}
+ */
+export async function updateUploadSessionById(db, params) {
+  const {
+    id,
+    storageType = null,
+    expectedStatus = null,
+    status,
+    bytesUploaded,
+    uploadedParts,
+    nextExpectedRange,
+    errorCode,
+    errorMessage,
+    providerUploadUrl,
+    providerUploadId,
+    providerMeta,
+    partSize,
+    totalParts,
+    expiresAt,
+  } = params || {};
+
+  if (!db || !id) {
+    return { changes: 0 };
+  }
+
+  const sets = [];
+  const bindings = [];
+
+  if (status !== undefined) {
+    sets.push("status = ?");
+    bindings.push(status);
+  }
+  if (typeof bytesUploaded === "number" && Number.isFinite(bytesUploaded)) {
+    sets.push("bytes_uploaded = ?");
+    bindings.push(bytesUploaded);
+  }
+  if (typeof uploadedParts === "number" && Number.isFinite(uploadedParts)) {
+    sets.push("uploaded_parts = ?");
+    bindings.push(uploadedParts);
+  }
+  if (typeof nextExpectedRange === "string" || nextExpectedRange === null) {
+    sets.push("next_expected_range = ?");
+    bindings.push(nextExpectedRange);
+  }
+  if (errorCode !== undefined) {
+    sets.push("error_code = ?");
+    bindings.push(errorCode);
+  }
+  if (errorMessage !== undefined) {
+    sets.push("error_message = ?");
+    bindings.push(errorMessage);
+  }
+  if (providerUploadUrl !== undefined) {
+    sets.push("provider_upload_url = ?");
+    bindings.push(providerUploadUrl);
+  }
+  if (providerUploadId !== undefined) {
+    sets.push("provider_upload_id = ?");
+    bindings.push(providerUploadId);
+  }
+  if (providerMeta !== undefined) {
+    const finalMeta =
+      providerMeta && typeof providerMeta === "object"
+        ? JSON.stringify(providerMeta)
+        : providerMeta;
+    sets.push("provider_meta = ?");
+    bindings.push(finalMeta);
+  }
+  if (typeof partSize === "number" && Number.isFinite(partSize)) {
+    sets.push("part_size = ?");
+    bindings.push(partSize);
+  }
+  if (typeof totalParts === "number" && Number.isFinite(totalParts)) {
+    sets.push("total_parts = ?");
+    bindings.push(totalParts);
+  }
+  if (typeof expiresAt === "string" || expiresAt === null) {
+    sets.push("expires_at = ?");
+    bindings.push(expiresAt);
+  }
+
+  if (sets.length === 0) {
+    return { changes: 0 };
+  }
+
+  // 始终更新 updated_at
+  sets.push("updated_at = ?");
+  bindings.push(new Date().toISOString());
+
+  const whereParts = ["id = ?"];
+  const whereBindings = [String(id)];
+
+  if (storageType) {
+    whereParts.push("storage_type = ?");
+    whereBindings.push(String(storageType));
+  }
+  if (expectedStatus) {
+    whereParts.push("status = ?");
+    whereBindings.push(String(expectedStatus));
+  }
+
+  const sql = `
+    UPDATE ${DbTables.UPLOAD_SESSIONS}
+    SET ${sets.join(", ")}
+    WHERE ${whereParts.join(" AND ")}
+  `;
+
+  const result = await db
+    .prepare(sql)
+    .bind(...bindings, ...whereBindings)
+    .run();
+
+  return {
+    changes: result?.meta?.changes ?? result?.changes ?? 0,
+  };
+}
+
+/**
  * 列出指定用户/挂载/路径前缀下的活动上传会话
  *
  * @param {D1Database} db
@@ -376,12 +499,15 @@ export async function listActiveUploadSessions(db, params) {
   } = params;
 
   const userId = normalizeUploadSessionUserId(userIdOrInfo, userType);
+  const now = new Date().toISOString();
 
   // 基础条件：按存储类型、用户与状态过滤
+  // - 返回“仍可能继续”的会话：initiated/uploading
+  // - initiated 是否要在前端展示为“可恢复”
   const sqlParts = [
-    `SELECT * FROM ${DbTables.UPLOAD_SESSIONS} WHERE storage_type = ? AND user_id = ? AND status = ?`,
+    `SELECT * FROM ${DbTables.UPLOAD_SESSIONS} WHERE storage_type = ? AND user_id = ? AND status IN (?, ?)`,
   ];
-  const values = [storageType, userId, "active"];
+  const values = [storageType, userId, "initiated", "uploading"];
 
   // 可选挂载过滤
   if (mountId) {
@@ -406,6 +532,10 @@ export async function listActiveUploadSessions(db, params) {
     sqlParts.push("AND fs_path LIKE ? ESCAPE '\\'");
     values.push(likePrefix);
   }
+
+  // 过滤掉已过期的会话（如果 expires_at 有值）
+  sqlParts.push("AND (expires_at IS NULL OR expires_at > ?)");
+  values.push(now);
 
   // 排序与限制
   const safeLimit = Number.isFinite(limit) && limit > 0 ? limit : 100;

@@ -27,6 +27,10 @@ export interface FsDirectoryResponse {
   items: FsDirectoryItem[];
   isVirtual?: boolean;
   mount_id?: string | number;
+  dirEtag?: string;
+  // 目录分页（游标模式）：主要用于上游分页接口
+  hasMore?: boolean;
+  nextCursor?: string | null;
   total?: number;
   pagination?: PaginationInfo;
   meta?: FsResolvedMeta | null;

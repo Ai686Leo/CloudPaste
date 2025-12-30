@@ -55,14 +55,31 @@ export class S3Driver {
 
     // 后续如需在同一 Uppy 上切换策略，交由上层重新初始化 Uppy
     if (strategy === STORAGE_STRATEGIES.PRESIGNED_SINGLE || strategy === STORAGE_STRATEGIES.PRESIGNED_MULTIPART) {
-      const adapter = new StorageAdapter(path || "/", uppy);
+      const isMultipart = strategy === STORAGE_STRATEGIES.PRESIGNED_MULTIPART;
+      const MB = 1024 * 1024;
+      // 分片大小/并发数由存储配置控制
+      // - 默认分片大小 5MB
+      // - 默认并发 3
+      const partSizeMbRaw = Number(this.config?.multipart_part_size_mb);
+      const partSizeMb = Number.isFinite(partSizeMbRaw) && partSizeMbRaw > 0 ? Math.floor(partSizeMbRaw) : 5;
+      const partSizeBytes = Math.max(5 * MB, Math.min(partSizeMb * MB, 5 * 1024 * MB)); // 5MB ~ 5GB
+
+      const concurrencyRaw = Number(this.config?.multipart_concurrency);
+      const multipartConcurrency =
+        Number.isFinite(concurrencyRaw) && concurrencyRaw > 0 ? Math.max(1, Math.min(Math.floor(concurrencyRaw), 10)) : 3;
+
+      const adapter = new StorageAdapter(path || "/", uppy, {
+        // per_part_url 场景：后端可能会调整 partSize（例如 S3 的 10k parts 上限），需要预初始化来拿到真实 chunkSize
+        enableMultipartPreinit: isMultipart,
+        ...(isMultipart ? { partSize: partSizeBytes } : {}),
+      });
 
       // 多分片：提供完整 hooks；单请求：仅提供 getUploadParameters 并强制 shouldUseMultipart=false
-      const isMultipart = strategy === STORAGE_STRATEGIES.PRESIGNED_MULTIPART;
       const awsS3Opts = {
         id: "AwsS3",
-        limit: 3,
+        limit: isMultipart ? multipartConcurrency : 3,
         shouldUseMultipart: () => isMultipart,
+        getChunkSize: (data) => adapter.getChunkSizeForAwsS3(data),
       };
 
       if (isMultipart) {
@@ -190,6 +207,7 @@ export class S3Driver {
       getUploadParameters: async (file) => {
         // 合并 per-file meta 覆盖（例如 slug）
         const meta = file?.meta || {};
+        const fileName = typeof meta?.name === "string" && meta.name ? meta.name : file.name;
         const merged = {
           ...basePayload,
           slug: meta.slug ?? basePayload.slug,
@@ -198,7 +216,7 @@ export class S3Driver {
 
         const presign = await api.file.getUploadPresignedUrl({
           storage_config_id: merged.storage_config_id,
-          filename: meta.name || file.name,
+          filename: fileName,
           mimetype: file.type || "application/octet-stream",
           path: merged.path,
           size: file.size,
@@ -215,7 +233,7 @@ export class S3Driver {
           uppy.setFileMeta(file.id, {
             key: data.key,
             storage_config_id: data.storage_config_id || merged.storage_config_id,
-            filename: data.filename || meta.name || file.name,
+            filename: typeof data?.filename === "string" && data.filename ? data.filename : fileName,
             path: merged.path,
             slug: merged.slug,
             password: basePayload.password || meta.password || null,
@@ -241,7 +259,12 @@ export class S3Driver {
         const commitRes = await api.file.completeFileUpload({
           key: meta.key,
           storage_config_id: meta.storage_config_id,
-          filename: meta.name || file.name,
+          filename:
+            typeof meta?.filename === "string" && meta.filename
+              ? meta.filename
+              : typeof meta?.name === "string" && meta.name
+                ? meta.name
+                : file.name,
           size: file.size,
           etag: undefined, // ETag 可能因 CORS 不可用，后端兼容
           slug: meta.slug,
@@ -425,6 +448,7 @@ export class S3Driver {
       limit: 3,
       getUploadParameters: async (file) => {
         const meta = file?.meta || {};
+        const fileName = typeof meta?.name === "string" && meta.name ? meta.name : file.name;
         const merged = {
           ...basePayload,
           slug: meta.slug ?? basePayload.slug,
@@ -432,7 +456,7 @@ export class S3Driver {
         };
         const presign = await api.file.getUploadPresignedUrl({
           storage_config_id: merged.storage_config_id,
-          filename: meta.name || file.name,
+          filename: fileName,
           mimetype: file.type || "application/octet-stream",
           path: merged.path,
           size: file.size,
@@ -442,7 +466,8 @@ export class S3Driver {
         const uploadUrl = presignData.uploadUrl || presignData.upload_url;
         const resolvedKey = presignData.key;
         const resolvedStorageConfigId = presignData.storage_config_id || merged.storage_config_id;
-        const resolvedFilename = presignData.filename || meta.name || file.name;
+        const resolvedFilename =
+          typeof presignData?.filename === "string" && presignData.filename ? presignData.filename : fileName;
         if (!uploadUrl || !resolvedKey || !resolvedStorageConfigId) {
           throw new Error("URL上传预签名缺少必要的 key 或上传地址");
         }
@@ -471,7 +496,12 @@ export class S3Driver {
         const commitRes = await api.file.completeFileUpload({
           key: meta.key,
           storage_config_id: meta.storage_config_id,
-          filename: meta.name || file.name,
+          filename:
+            typeof meta?.filename === "string" && meta.filename
+              ? meta.filename
+              : typeof meta?.name === "string" && meta.name
+                ? meta.name
+                : file.name,
           size: file.size,
           etag: undefined,
           path: meta.path,

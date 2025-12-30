@@ -213,52 +213,11 @@ export class TelegramDriver {
 
       const adapter = new StorageAdapter(path || "/", uppy, { partSize });
 
-      // 续传时必须优先用 existingUpload.partSize（服务器会话的 partSize）。
-      // 做一个 Blob->fileId 的映射。
-      const BLOB_MAP_KEY = "__cloudpaste_blob_to_file_id_map";
-      const BLOB_MAP_BOUND_KEY = "__cloudpaste_blob_to_file_id_bound";
-
-      if (!uppy[BLOB_MAP_KEY]) {
-        uppy[BLOB_MAP_KEY] = new WeakMap();
-      }
-      if (!uppy[BLOB_MAP_BOUND_KEY]) {
-        uppy[BLOB_MAP_BOUND_KEY] = true;
-        uppy.on("file-added", (file) => {
-          try {
-            if (file?.data && typeof file.data === "object") {
-              uppy[BLOB_MAP_KEY].set(file.data, file.id);
-            }
-          } catch {}
-        });
-        uppy.on("file-removed", (file) => {
-          try {
-            if (file?.data && typeof file.data === "object") {
-              uppy[BLOB_MAP_KEY].delete(file.data);
-            }
-          } catch {}
-        });
-      }
-
-      const resolveResumePartSize = (blob) => {
-        try {
-          if (!blob || typeof blob !== "object") return null;
-          const fileId = uppy[BLOB_MAP_KEY].get(blob);
-          if (!fileId) return null;
-          const uppyFile = uppy.getFile?.(fileId);
-          const fromResume = uppyFile?.meta?.existingUpload?.partSize;
-          const n = Number(fromResume);
-          if (!Number.isFinite(n) || n <= 0) return null;
-          return Math.floor(n);
-        } catch {
-          return null;
-        }
-      };
-
       const awsS3Options = {
         id: "TelegramFsMultipart",
         limit: uploadConcurrency,
         shouldUseMultipart: () => true,
-        getChunkSize: (blob) => resolveResumePartSize(blob) || partSize,
+        getChunkSize: (data) => adapter.getChunkSizeForAwsS3(data),
         createMultipartUpload: adapter.createMultipartUpload.bind(adapter),
         signPart: adapter.signPart.bind(adapter),
         uploadPartBytes: adapter.uploadPartBytes.bind(adapter),

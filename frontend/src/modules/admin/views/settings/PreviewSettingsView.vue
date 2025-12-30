@@ -1,148 +1,223 @@
 <template>
   <div class="flex-1 flex flex-col overflow-y-auto">
-    <!-- 页面标题和说明 -->
-    <div class="mb-6">
-      <h1 class="text-2xl font-bold mb-2" :class="darkMode ? 'text-white' : 'text-gray-800'">{{ t("admin.preview.title") }}</h1>
-      <p class="text-base" :class="darkMode ? 'text-gray-300' : 'text-gray-600'">{{ t("admin.preview.description") }}</p>
+    <!-- 页面标题 -->
+    <div class="mb-8 flex items-start justify-between">
+      <div>
+        <h1 class="text-2xl font-bold mb-2" :class="darkMode ? 'text-white' : 'text-gray-900'">
+          {{ t("admin.preview.title") }}
+        </h1>
+        <p class="text-base" :class="darkMode ? 'text-gray-400' : 'text-gray-600'">
+          {{ t("admin.preview.description") }}
+        </p>
+      </div>
+      <button
+        type="button"
+        @click="handleResetToDefaults"
+        :disabled="isLoading"
+        class="flex-shrink-0 px-4 py-2 text-sm font-medium border rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+        :class="darkMode ? 'text-gray-300 bg-gray-700 border-gray-600 hover:bg-gray-600' : 'text-gray-700 bg-white border-gray-300 hover:bg-gray-50'"
+      >
+        {{ t("admin.preview.resetDefaults") }}
+      </button>
     </div>
 
-    <!-- 设置分组 -->
-    <div class="space-y-6">
-      <!-- 预览设置组 -->
-      <div class="setting-group bg-white dark:bg-gray-800 rounded-lg p-6 border border-gray-200 dark:border-gray-700 max-w-2xl">
-        <h2 class="text-lg font-medium mb-4 pb-2 border-b border-gray-200 dark:border-gray-700">{{ t("admin.preview.title") }}</h2>
-        <div class="space-y-4">
-          <form @submit="handleSaveSettings" class="space-y-6">
-            <!-- 文本文件类型设置 -->
-            <div class="setting-item">
-              <label class="block text-sm font-medium mb-2" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">
-                {{ t("admin.preview.textTypesLabel") }}
-              </label>
-              <textarea
-                v-model="settings.preview_text_types"
-                :placeholder="t('admin.preview.textTypesPlaceholder')"
-                rows="3"
-                class="block w-full rounded border shadow-sm px-3 py-2 text-sm"
-                :class="
-                  darkMode
-                    ? 'bg-gray-700 border-gray-600 text-white focus:ring-blue-500 focus:border-blue-500 placeholder-gray-400'
-                    : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500 focus:border-blue-500 placeholder-gray-500'
-                "
-              ></textarea>
-              <p class="mt-2 text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
+    <!-- 加载状态 -->
+    <div v-if="isLoading" class="flex items-center justify-center py-12">
+      <IconRefresh size="lg" class="animate-spin" :class="darkMode ? 'text-gray-400' : 'text-gray-500'" />
+    </div>
+
+    <!-- 设置内容 - 垂直布局 -->
+    <div v-else class="space-y-6 max-w-2xl">
+
+      <!-- ==================== 卡片1：文件类型配置 ==================== -->
+      <section
+        class="rounded-xl border transition-colors"
+        :class="darkMode ? 'bg-gray-800/50 border-gray-700' : 'bg-white border-gray-200'"
+      >
+        <!-- 卡片头部 -->
+        <div class="px-5 py-4 border-b" :class="darkMode ? 'border-gray-700' : 'border-gray-200'">
+          <div class="flex items-center gap-3">
+            <div
+              class="flex items-center justify-center w-9 h-9 rounded-lg"
+              :class="darkMode ? 'bg-blue-500/20' : 'bg-blue-50'"
+            >
+              <IconCollection size="sm" :class="darkMode ? 'text-blue-400' : 'text-blue-600'" />
+            </div>
+            <div>
+              <h2 class="text-base font-semibold" :class="darkMode ? 'text-white' : 'text-gray-900'">
+                {{ t("admin.preview.textTypes") }}
+              </h2>
+              <p class="text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
                 {{ t("admin.preview.textTypesHelp") }}
               </p>
             </div>
+          </div>
+        </div>
 
-            <!-- 图片文件类型设置 -->
-            <div class="setting-item">
-              <label class="block text-sm font-medium mb-2" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">
-                {{ t("admin.preview.imageTypesLabel") }}
-              </label>
-              <textarea
-                v-model="settings.preview_image_types"
-                :placeholder="t('admin.preview.imageTypesPlaceholder')"
-                rows="3"
-                class="block w-full rounded border shadow-sm px-3 py-2 text-sm"
-                :class="
-                  darkMode
-                    ? 'bg-gray-700 border-gray-600 text-white focus:ring-blue-500 focus:border-blue-500 placeholder-gray-400'
-                    : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500 focus:border-blue-500 placeholder-gray-500'
-                "
-              ></textarea>
-              <p class="mt-2 text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
-                {{ t("admin.preview.imageTypesHelp") }}
-              </p>
-            </div>
+        <!-- 卡片内容 -->
+        <div class="p-5 space-y-4">
+          <!-- 文本文件类型 -->
+          <div>
+            <label class="block text-sm font-medium mb-2" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">
+              {{ t("admin.preview.textTypesLabel") }}
+            </label>
+            <textarea
+              v-model="settings.preview_text_types"
+              :placeholder="t('admin.preview.textTypesPlaceholder')"
+              rows="2"
+              class="w-full px-3 py-2 border rounded-lg text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/40 resize-vertical"
+              :class="darkMode
+                ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
+                : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'"
+            ></textarea>
+            <p class="text-xs mt-1" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
+              {{ t("admin.preview.textTypesHelp") }}
+            </p>
+          </div>
 
-            <!-- 视频文件类型设置 -->
-            <div class="setting-item">
-              <label class="block text-sm font-medium mb-2" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">
-                {{ t("admin.preview.videoTypesLabel") }}
-              </label>
-              <textarea
-                v-model="settings.preview_video_types"
-                :placeholder="t('admin.preview.videoTypesPlaceholder')"
-                rows="3"
-                class="block w-full rounded border shadow-sm px-3 py-2 text-sm"
-                :class="
-                  darkMode
-                    ? 'bg-gray-700 border-gray-600 text-white focus:ring-blue-500 focus:border-blue-500 placeholder-gray-400'
-                    : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500 focus:border-blue-500 placeholder-gray-500'
-                "
-              ></textarea>
-              <p class="mt-2 text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
-                {{ t("admin.preview.videoTypesHelp") }}
-              </p>
-            </div>
+          <!-- 分隔线 -->
+          <div class="border-t" :class="darkMode ? 'border-gray-700' : 'border-gray-200'"></div>
 
-            <!-- 音频文件类型设置 -->
-            <div class="setting-item">
-              <label class="block text-sm font-medium mb-2" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">
-                {{ t("admin.preview.audioTypesLabel") }}
-              </label>
-              <textarea
-                v-model="settings.preview_audio_types"
-                :placeholder="t('admin.preview.audioTypesPlaceholder')"
-                rows="3"
-                class="block w-full rounded border shadow-sm px-3 py-2 text-sm"
-                :class="
-                  darkMode
-                    ? 'bg-gray-700 border-gray-600 text-white focus:ring-blue-500 focus:border-blue-500 placeholder-gray-400'
-                    : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500 focus:border-blue-500 placeholder-gray-500'
-                "
-              ></textarea>
-              <p class="mt-2 text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
-                {{ t("admin.preview.audioTypesHelp") }}
-              </p>
-            </div>
+          <!-- 图片文件类型 -->
+          <div>
+            <label class="block text-sm font-medium mb-2" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">
+              {{ t("admin.preview.imageTypesLabel") }}
+            </label>
+            <textarea
+              v-model="settings.preview_image_types"
+              :placeholder="t('admin.preview.imageTypesPlaceholder')"
+              rows="2"
+              class="w-full px-3 py-2 border rounded-lg text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/40 resize-vertical"
+              :class="darkMode
+                ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
+                : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'"
+            ></textarea>
+            <p class="text-xs mt-1" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
+              {{ t("admin.preview.imageTypesHelp") }}
+            </p>
+          </div>
 
-            <!-- 预览规则配置 -->
-            <div class="setting-item">
-              <div class="flex items-center justify-between gap-3">
-                <label class="block text-sm font-medium" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">
-                  {{ t("admin.preview.previewProvidersLabel") }}
-                </label>
-                <div class="inline-flex items-center rounded-md border text-xs overflow-hidden" :class="darkMode ? 'border-gray-600' : 'border-gray-300'">
-                  <button
-                    type="button"
-                    @click="handleSwitchProviderMode(providerModes.visual)"
-                    class="px-3 py-1"
-                    :class="
-                      providerMode === providerModes.visual
-                        ? darkMode
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-blue-600 text-white'
-                        : darkMode
-                          ? 'bg-gray-800 text-gray-300 hover:bg-gray-700'
-                          : 'bg-white text-gray-600 hover:bg-gray-100'
-                    "
-                  >
-                    {{ t("admin.preview.previewProvidersModeVisual") }}
-                  </button>
-                  <button
-                    type="button"
-                    @click="handleSwitchProviderMode(providerModes.json)"
-                    class="px-3 py-1 border-l"
-                    :class="
-                      providerMode === providerModes.json
-                        ? darkMode
-                          ? 'bg-blue-600 text-white border-gray-600'
-                          : 'bg-blue-600 text-white border-gray-300'
-                        : darkMode
-                          ? 'bg-gray-800 text-gray-300 hover:bg-gray-700 border-gray-600'
-                          : 'bg-white text-gray-600 hover:bg-gray-100 border-gray-300'
-                    "
-                  >
-                    {{ t("admin.preview.previewProvidersModeJson") }}
-                  </button>
-                </div>
+          <!-- 分隔线 -->
+          <div class="border-t" :class="darkMode ? 'border-gray-700' : 'border-gray-200'"></div>
+
+          <!-- 视频文件类型 -->
+          <div>
+            <label class="block text-sm font-medium mb-2" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">
+              {{ t("admin.preview.videoTypesLabel") }}
+            </label>
+            <textarea
+              v-model="settings.preview_video_types"
+              :placeholder="t('admin.preview.videoTypesPlaceholder')"
+              rows="2"
+              class="w-full px-3 py-2 border rounded-lg text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/40 resize-vertical"
+              :class="darkMode
+                ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
+                : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'"
+            ></textarea>
+            <p class="text-xs mt-1" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
+              {{ t("admin.preview.videoTypesHelp") }}
+            </p>
+          </div>
+
+          <!-- 分隔线 -->
+          <div class="border-t" :class="darkMode ? 'border-gray-700' : 'border-gray-200'"></div>
+
+          <!-- 音频文件类型 -->
+          <div>
+            <label class="block text-sm font-medium mb-2" :class="darkMode ? 'text-gray-200' : 'text-gray-700'">
+              {{ t("admin.preview.audioTypesLabel") }}
+            </label>
+            <textarea
+              v-model="settings.preview_audio_types"
+              :placeholder="t('admin.preview.audioTypesPlaceholder')"
+              rows="2"
+              class="w-full px-3 py-2 border rounded-lg text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/40 resize-vertical"
+              :class="darkMode
+                ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
+                : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'"
+            ></textarea>
+            <p class="text-xs mt-1" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
+              {{ t("admin.preview.audioTypesHelp") }}
+            </p>
+          </div>
+        </div>
+
+        <!-- 卡片底部：保存按钮 -->
+        <div class="px-5 py-4 border-t flex justify-end" :class="darkMode ? 'border-gray-700 bg-gray-800/30' : 'border-gray-100 bg-gray-50/50'">
+          <button
+            type="button"
+            @click="handleSaveFileTypes"
+            :disabled="isSavingFileTypes"
+            class="inline-flex items-center px-4 py-2 text-sm font-medium text-white rounded-lg transition-all focus:outline-none focus:ring-4 focus:ring-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+            :class="isSavingFileTypes ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800'"
+          >
+            <IconRefresh v-if="isSavingFileTypes" size="sm" class="animate-spin -ml-0.5 mr-2" />
+            {{ isSavingFileTypes ? t("admin.global.buttons.updating") : t("admin.global.buttons.updateSettings") }}
+          </button>
+        </div>
+      </section>
+
+      <!-- ==================== 卡片2：预览规则配置 ==================== -->
+      <section
+        class="rounded-xl border transition-colors"
+        :class="darkMode ? 'bg-gray-800/50 border-gray-700' : 'bg-white border-gray-200'"
+      >
+        <!-- 卡片头部 -->
+        <div class="px-5 py-4 border-b" :class="darkMode ? 'border-gray-700' : 'border-gray-200'">
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div class="flex items-center gap-3">
+              <div
+                class="flex items-center justify-center w-9 h-9 rounded-lg flex-shrink-0"
+                :class="darkMode ? 'bg-purple-500/20' : 'bg-purple-50'"
+              >
+                <IconAdjustments size="sm" :class="darkMode ? 'text-purple-400' : 'text-purple-600'" />
               </div>
-              <p class="mt-2 text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
-                {{ t("admin.preview.previewProvidersModeHelp") }}
-              </p>
+              <div class="min-w-0">
+                <h2 class="text-base font-semibold" :class="darkMode ? 'text-white' : 'text-gray-900'">
+                  {{ t("admin.preview.previewProvidersLabel") }}
+                </h2>
+                <p class="text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
+                  {{ t("admin.preview.previewProvidersHelp") }}
+                </p>
+              </div>
+            </div>
+            <!-- 模式切换器 -->
+            <div class="inline-flex items-center rounded-md border text-xs overflow-hidden flex-shrink-0 self-start sm:self-center" :class="darkMode ? 'border-gray-600' : 'border-gray-300'">
+              <button
+                type="button"
+                @click="handleSwitchProviderMode(providerModes.visual)"
+                class="px-3 py-1"
+                :class="
+                  providerMode === providerModes.visual
+                    ? 'bg-blue-600 text-white'
+                    : darkMode
+                      ? 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                      : 'bg-white text-gray-600 hover:bg-gray-100'
+                "
+              >
+                {{ t("admin.preview.previewProvidersModeVisual") }}
+              </button>
+              <button
+                type="button"
+                @click="handleSwitchProviderMode(providerModes.json)"
+                class="px-3 py-1 border-l"
+                :class="
+                  providerMode === providerModes.json
+                    ? 'bg-blue-600 text-white'
+                    : darkMode
+                      ? 'bg-gray-800 text-gray-300 hover:bg-gray-700 border-gray-600'
+                      : 'bg-white text-gray-600 hover:bg-gray-100 border-gray-300'
+                "
+              >
+                {{ t("admin.preview.previewProvidersModeJson") }}
+              </button>
+            </div>
+          </div>
+        </div>
 
-              <div v-if="providerMode === providerModes.visual" class="mt-4 space-y-4">
+        <!-- 卡片内容 -->
+        <div class="p-5">
+          <div v-if="providerMode === providerModes.visual" class="space-y-4">
                 <!-- 空状态：居中显示，带图标和添加按钮 -->
                 <div
                   v-if="!visualRules.length"
@@ -168,6 +243,23 @@
                   >
                     <IconPlus size="sm" class="mr-1" />
                     {{ t("admin.preview.addRule") }}
+                  </button>
+                </div>
+
+                <!-- 规则列表工具栏：有规则时显示 -->
+                <div v-if="visualRules.length" class="flex items-center justify-between">
+                  <span class="text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
+                    {{ visualRules.length }} {{ t("admin.preview.ruleTitle") }}
+                  </span>
+                  <button
+                    type="button"
+                    @click="toggleAllRulesCollapsed"
+                    class="inline-flex items-center px-2 py-1 text-xs rounded transition-colors"
+                    :class="darkMode ? 'text-gray-400 hover:text-gray-200 hover:bg-gray-700' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'"
+                  >
+                    <IconChevronDown v-if="isAllCollapsed" size="sm" class="mr-1" />
+                    <IconChevronUp v-else size="sm" class="mr-1" />
+                    {{ isAllCollapsed ? t("admin.preview.expandRule") : t("admin.preview.collapseRule") }}
                   </button>
                 </div>
 
@@ -446,57 +538,36 @@
                   <IconPlus size="sm" class="mr-1" />
                   {{ t("admin.preview.addRule") }}
                 </button>
-              </div>
+          </div>
 
-              <div v-else class="mt-4">
-                <textarea
-                  v-model="settings.preview_providers"
-                  :placeholder="t('admin.preview.previewProvidersPlaceholder')"
-                  rows="10"
-                  class="block w-full rounded border shadow-sm px-3 py-2 text-xs font-mono leading-snug"
-                  :class="
-                    darkMode
-                      ? 'bg-gray-700 border-gray-600 text-white focus:ring-blue-500 focus:border-blue-500 placeholder-gray-400'
-                      : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500 focus:border-blue-500 placeholder-gray-500'
-                  "
-                ></textarea>
-                <p class="mt-2 text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
-                  {{ t("admin.preview.previewProvidersHelp") }}
-                </p>
-              </div>
-            </div>
-
-            <!-- 操作按钮 -->
-            <div class="flex justify-between items-center pt-6">
-              <button
-                type="button"
-                @click="handleResetToDefaults"
-                :disabled="status.loading"
-                class="inline-flex items-center px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500/20 transition-colors"
-                :class="[
-                  status.loading ? 'opacity-50 cursor-not-allowed' : '',
-                  darkMode
-                    ? 'border-gray-600 text-gray-300 bg-gray-800 hover:bg-gray-700 hover:border-gray-500'
-                    : 'border-gray-300 text-gray-700 bg-white hover:bg-gray-50 hover:border-gray-400',
-                ]"
-              >
-                <IconRefresh size="sm" class="mr-2" aria-hidden="true" />
-                {{ t("admin.preview.resetDefaults") }}
-              </button>
-
-              <button
-                type="submit"
-                :disabled="status.loading"
-                class="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500/20 transition-colors"
-                :class="status.loading ? 'opacity-50 cursor-not-allowed' : ''"
-              >
-                <IconRefresh v-if="status.loading" size="sm" class="animate-spin -ml-1 mr-2 text-white inline" aria-hidden="true" />
-                {{ status.loading ? t("admin.global.buttons.updating") : t("admin.global.buttons.updateSettings") }}
-              </button>
-            </div>
-          </form>
+          <div v-else>
+            <textarea
+              v-model="settings.preview_providers"
+              :placeholder="t('admin.preview.previewProvidersPlaceholder')"
+              rows="10"
+              class="w-full px-3 py-2 border rounded-lg text-xs font-mono leading-snug transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/40 resize-vertical"
+              :class="darkMode
+                ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
+                : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'"
+            ></textarea>
+          </div>
         </div>
-      </div>
+
+        <!-- 卡片底部：保存按钮 -->
+        <div class="px-5 py-4 border-t flex justify-end" :class="darkMode ? 'border-gray-700 bg-gray-800/30' : 'border-gray-100 bg-gray-50/50'">
+          <button
+            type="button"
+            @click="handleSaveProviders"
+            :disabled="isSavingProviders"
+            class="inline-flex items-center px-4 py-2 text-sm font-medium text-white rounded-lg transition-all focus:outline-none focus:ring-4 focus:ring-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+            :class="isSavingProviders ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800'"
+          >
+            <IconRefresh v-if="isSavingProviders" size="sm" class="animate-spin -ml-0.5 mr-2" />
+            {{ isSavingProviders ? t("admin.global.buttons.updating") : t("admin.global.buttons.updateSettings") }}
+          </button>
+        </div>
+      </section>
+
     </div>
 
     <!-- 确认对话框 -->
@@ -511,7 +582,7 @@
 <script setup>
 import { ref, computed, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
-import { IconRefresh, IconCollection, IconPlus, IconChevronDown, IconChevronRight, IconChevronUp } from "@/components/icons";
+import { IconRefresh, IconCollection, IconAdjustments, IconPlus, IconChevronDown, IconChevronRight, IconChevronUp } from "@/components/icons";
 import { useAdminSystemService } from "@/modules/admin/services/systemService.js";
 import { useThemeMode } from "@/composables/core/useThemeMode.js";
 import { useGlobalMessage } from "@/composables/core/useGlobalMessage.js";
@@ -527,10 +598,12 @@ const { showSuccess, showError } = useGlobalMessage();
 // 确认对话框
 const { dialogState, confirm, handleConfirm, handleCancel } = useConfirmDialog();
 
-// 状态管理（仅用于控制加载状态）
-const status = ref({
-  loading: false,
-});
+// ============ 状态管理 ============
+
+// 加载状态
+const isLoading = ref(false);
+const isSavingFileTypes = ref(false);
+const isSavingProviders = ref(false);
 
 const providerModes = Object.freeze({
   visual: "visual",
@@ -547,6 +620,22 @@ const toggleRuleCollapsed = (uid) => {
   const key = String(uid || "");
   if (!key) return;
   collapsedRuleUids.value[key] = !collapsedRuleUids.value[key];
+};
+
+// 判断是否全部折叠
+const isAllCollapsed = computed(() => {
+  if (!visualRules.value.length) return false;
+  return visualRules.value.every((rule) => isRuleCollapsed(rule));
+});
+
+// 切换全部规则的折叠状态
+const toggleAllRulesCollapsed = () => {
+  const shouldCollapse = !isAllCollapsed.value;
+  visualRules.value.forEach((rule) => {
+    if (rule?.uid) {
+      collapsedRuleUids.value[rule.uid] = shouldCollapse;
+    }
+  });
 };
 
 const getRuleSummary = (rule) => {
@@ -837,7 +926,7 @@ const removeProvider = (ruleIndex, providerIndex) => {
 // 加载设置
 const loadSettings = async () => {
   try {
-    status.value.loading = true;
+    isLoading.value = true;
 
     // 使用分组API获取预览设置（分组ID = 2）
     const previewSettings = await getPreviewSettings();
@@ -857,17 +946,36 @@ const loadSettings = async () => {
     const message = err.message || "加载设置失败";
     showError(message);
   } finally {
-    status.value.loading = false;
+    isLoading.value = false;
   }
 };
 
-// 保存设置
-const handleSaveSettings = async (event) => {
-  event.preventDefault();
+// ============ 保存函数 ============
 
+// 保存文件类型设置
+const handleSaveFileTypes = async () => {
+  isSavingFileTypes.value = true;
+  try {
+    await updatePreviewSettings({
+      preview_text_types: settings.value.preview_text_types,
+      preview_image_types: settings.value.preview_image_types,
+      preview_video_types: settings.value.preview_video_types,
+      preview_audio_types: settings.value.preview_audio_types,
+    });
+    showSuccess(t("admin.preview.saveSuccess"));
+  } catch (err) {
+    console.error("保存文件类型设置失败:", err);
+    showError(err.message || t("admin.preview.loadError"));
+  } finally {
+    isSavingFileTypes.value = false;
+  }
+};
+
+// 保存预览规则设置
+const handleSaveProviders = async () => {
   try {
     if (providerMode.value === providerModes.visual) {
-      // 可视化模式下做“必填”校验：previewKey 不能为空，否则这条规则不会生效（后端会跳过），用户会以为“保存了但没用”。
+      // 可视化模式下做"必填"校验
       const hasMissingPreviewKey = visualRules.value.some((rule) => !String(rule.previewKey || "").trim());
       if (hasMissingPreviewKey) {
         showError(t("admin.preview.previewRuleMissingPreviewKey"));
@@ -928,30 +1036,23 @@ const handleSaveSettings = async (event) => {
         settings.value.preview_providers = JSON.stringify(parsed, null, 2);
       } catch (e) {
         console.error("预览规则配置 JSON 解析失败:", e);
-        const message = t("admin.preview.previewProvidersInvalidJson");
-        status.value.loading = false;
-        showError(message);
+        showError(t("admin.preview.previewProvidersInvalidJson"));
         return;
       }
     }
 
-    status.value.loading = true;
+    isSavingProviders.value = true;
 
     // 预览设置组，分组ID = 2
     await updatePreviewSettings({
-      preview_text_types: settings.value.preview_text_types,
-      preview_image_types: settings.value.preview_image_types,
-      preview_video_types: settings.value.preview_video_types,
-      preview_audio_types: settings.value.preview_audio_types,
       preview_providers: settings.value.preview_providers,
     });
     showSuccess(t("admin.preview.saveSuccess"));
   } catch (err) {
-    console.error("保存预览设置失败:", err);
-    const message = err.message || "保存设置失败";
-    showError(message);
+    console.error("保存预览规则设置失败:", err);
+    showError(err.message || t("admin.preview.loadError"));
   } finally {
-    status.value.loading = false;
+    isSavingProviders.value = false;
   }
 };
 

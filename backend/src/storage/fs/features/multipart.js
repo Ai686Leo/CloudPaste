@@ -2,7 +2,7 @@ import { DriverError } from "../../../http/errors.js";
 import { ApiStatus } from "../../../constants/index.js";
 import { CAPABILITIES } from "../../interfaces/capabilities/index.js";
 
-export async function initializeFrontendMultipartUpload(fs, path, fileName, fileSize, userIdOrInfo, userType, partSize, partCount) {
+export async function initializeFrontendMultipartUpload(fs, path, fileName, fileSize, userIdOrInfo, userType, partSize, partCount, extraOptions = {}) {
   const { driver, mount, subPath } = await fs.mountManager.getDriverByPath(path, userIdOrInfo, userType);
 
   if (!driver.hasCapability(CAPABILITIES.MULTIPART)) {
@@ -22,6 +22,7 @@ export async function initializeFrontendMultipartUpload(fs, path, fileName, file
     db: fs.mountManager.db,
     userIdOrInfo,
     userType,
+    ...(extraOptions && typeof extraOptions === "object" ? extraOptions : {}),
   });
 }
 
@@ -116,7 +117,7 @@ export async function listMultipartParts(fs, path, uploadId, fileName, userIdOrI
   });
 }
 
-export async function refreshMultipartUrls(fs, path, uploadId, partNumbers, userIdOrInfo, userType, options = {}) {
+export async function signMultipartParts(fs, path, uploadId, partNumbers, userIdOrInfo, userType, options = {}) {
   const { driver, mount, subPath } = await fs.mountManager.getDriverByPath(path, userIdOrInfo, userType);
 
   if (!driver.hasCapability(CAPABILITIES.MULTIPART)) {
@@ -127,7 +128,7 @@ export async function refreshMultipartUrls(fs, path, uploadId, partNumbers, user
     });
   }
 
-  return await driver.refreshMultipartUrls(subPath, uploadId, partNumbers, {
+  return await driver.signMultipartParts(subPath, uploadId, partNumbers, {
     mount,
     db: fs.mountManager.db,
     userIdOrInfo,
