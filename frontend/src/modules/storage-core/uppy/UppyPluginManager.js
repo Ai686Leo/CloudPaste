@@ -4,6 +4,9 @@
  */
 
 import { useLocalStorage } from "@vueuse/core";
+import { createLogger } from "@/utils/logger.js";
+
+const log = createLogger("UppyPluginManager");
 
 /**
  * 插件管理器类
@@ -42,7 +45,7 @@ export class UppyPluginManager {
         return { ...defaultState, ...stored };
       }
     } catch (e) {
-      console.warn("Failed to load plugin states:", e);
+      log.warn("Failed to load plugin states:", e);
     }
     // 默认状态：摄像头和URL导入开启，其他关闭
     return defaultState;
@@ -55,7 +58,7 @@ export class UppyPluginManager {
     try {
       if (this._storedPluginStates) this._storedPluginStates.value = { ...(this.pluginStates || {}) };
     } catch (e) {
-      console.warn("Failed to save plugin states:", e);
+      log.warn("Failed to save plugin states:", e);
     }
   }
 
@@ -320,7 +323,7 @@ export class UppyPluginManager {
         if (!PluginCtor) continue;
         this.uppy.use(PluginCtor, plugin.config || {});
       } catch (e) {
-        console.warn("[UppyPluginManager] 插件加载失败:", plugin?.key, e);
+        log.warn("[UppyPluginManager] 插件加载失败:", plugin?.key, e);
       }
     }
   }

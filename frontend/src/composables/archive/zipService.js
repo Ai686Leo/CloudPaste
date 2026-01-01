@@ -27,9 +27,11 @@ import {
 } from "@zip.js/zip.js";
 import { ARCHIVE_CONSTANTS, sharedFileBlobCache, getOrDownloadFileBlob } from "./archiveUtils.js";
 import { getZipJsDefaultConfig } from "@/utils/zipjsRuntimeUris.js";
+import { createLogger } from "@/utils/logger.js";
 
 // 全局配置标志
 let isZipJSConfigured = false;
+const log = createLogger("ZipService");
 
 /**
  * 初始化zip.js全局配置
@@ -42,7 +44,7 @@ function initializeZipJSConfig() {
   configure(config);
 
   isZipJSConfigured = true;
-  console.log(`zip.js 全局配置已初始化:
+  log.debug(`zip.js 全局配置已初始化:
     - chunkSize: ${Math.round((config.chunkSize || 0) / 1024)}KB
     - maxWorkers: ${config.maxWorkers}
     - useWebWorkers: enabled
@@ -73,7 +75,7 @@ function handleZipError(error) {
   }
 
   // 错误信息
-  console.warn("zip.js 错误:", errorMessage);
+  log.warn("zip.js 错误:", errorMessage);
   throw error;
 }
 
@@ -129,7 +131,7 @@ class ZIP64Detector {
         requiresZIP64: isZIP64,
       };
     } catch (error) {
-      console.warn("ZIP64检测失败:", error);
+      log.warn("ZIP64检测失败:", error);
       return {
         isZIP64: false,
         hasLargeFiles: false,
@@ -163,7 +165,7 @@ class ParallelExtractionManager {
   async extractEntriesInParallel(entries, progressCallback = null) {
     let completedCount = 0;
 
-    console.log(`开始并行解压 ${entries.length} 个文件，并发数: ${this.maxConcurrency}`);
+    log.debug(`开始并行解压 ${entries.length} 个文件，并发数: ${this.maxConcurrency}`);
 
     const extractPromises = entries.map(async (entry) => {
       await this.semaphore.acquire();
@@ -216,7 +218,7 @@ class ParallelExtractionManager {
     // 等待所有文件解压完成
     const extractedFiles = await Promise.all(extractPromises);
 
-    console.log(`并行解压完成！总计 ${extractedFiles.length} 个文件`);
+    log.debug(`并行解压完成！总计 ${extractedFiles.length} 个文件`);
     return extractedFiles;
   }
 }
@@ -287,9 +289,9 @@ class ZipService {
   async cleanup() {
     try {
       await terminateWorkers();
-      console.log("🧹 zip.js Workers已终止");
+      log.debug("zip.js Workers已终止");
     } catch (error) {
-      console.warn("清理zip.js资源时出错:", error);
+      log.warn("清理zip.js资源时出错:", error);
     }
   }
 
@@ -303,7 +305,7 @@ class ZipService {
    * @returns {Promise<Array>} 统一格式的文件列表
    */
   async extractArchive(fileBlobOrUrl, filename, fileUrl = "", progressCallback = null, password = null) {
-    console.log(`开始处理 ZIP 格式文件:`, filename);
+    log.debug(`开始处理 ZIP 格式文件:`, filename);
 
     // 第一步：检测文件是否加密
     let isEncrypted = false;
@@ -335,7 +337,7 @@ class ZipService {
       if (typeof fileBlobOrUrl === "string" && fileBlobOrUrl.startsWith("http")) {
         const cachedBlob = sharedFileBlobCache.get(fileBlobOrUrl);
         if (cachedBlob) {
-          console.log("使用缓存文件进行流式解压:", fileBlobOrUrl);
+          log.debug("使用缓存文件进行流式解压:", fileBlobOrUrl);
           return await this.extractWithZipReaderStream(cachedBlob, progressCallback);
         }
       }
@@ -352,7 +354,7 @@ class ZipService {
    */
   async rangeBasedEncryptionCheck(fileUrl, progressCallback = null) {
     try {
-      console.log("开始HttpRangeReader加密检测:", fileUrl);
+      log.debug("开始HttpRangeReader加密检测:", fileUrl);
       if (progressCallback) progressCallback(20, "Range检测");
 
       // 使用HttpRangeReader进行智能Range请求
@@ -385,10 +387,10 @@ class ZipService {
       // 关闭reader释放资源
       await zipReader.close();
 
-      console.log(`HttpRangeReader检测完成: ${hasEncrypted ? "发现加密" : "无加密"}, 检查了${checkCount}个条目`);
+      log.debug(`HttpRangeReader检测完成: ${hasEncrypted ? "发现加密" : "无加密"}, 检查了${checkCount}个条目`);
       return hasEncrypted;
     } catch (error) {
-      console.warn("⚠️ HttpRangeReader检测失败:", error.message);
+      log.warn("⚠️ HttpRangeReader检测失败:", error.message);
       // 重新抛出错误，让调用者决定如何处理
       throw error;
     }
@@ -404,7 +406,7 @@ class ZipService {
    */
   async lightweightEncryptionCheck(fileUrl, progressCallback = null) {
     try {
-      console.log("开始加密检测:", fileUrl);
+      log.debug("开始加密检测:", fileUrl);
       if (progressCallback) progressCallback(10, "开始检测");
 
       // 优先尝试HttpRangeReader方式（真正的部分下载）
@@ -415,15 +417,15 @@ class ZipService {
           progressCallback(100, hasEncrypted ? "发现加密" : "无加密");
         }
 
-        console.log(`HttpRangeReader检测成功: ${hasEncrypted ? "发现加密" : "无加密"}`);
+        log.debug(`HttpRangeReader检测成功: ${hasEncrypted ? "发现加密" : "无加密"}`);
         return hasEncrypted;
       } catch (rangeError) {
-        console.warn("⚠️ HttpRangeReader检测失败，降级到缓存下载检测:", rangeError.message);
+        log.warn("⚠️ HttpRangeReader检测失败，降级到缓存下载检测:", rangeError.message);
         if (progressCallback) progressCallback(30, "降级检测");
       }
 
       // 降级方案：下载完整文件并缓存，避免后续重复下载
-      console.log("降级使用缓存下载检测方式...");
+      log.debug("降级使用缓存下载检测方式...");
       if (progressCallback) progressCallback(40, "下载检测");
 
       // 使用getOrDownloadFileBlob确保文件被缓存
@@ -439,10 +441,10 @@ class ZipService {
         progressCallback(100, hasEncrypted ? "发现加密" : "无加密");
       }
 
-      console.log(`缓存下载检测完成: ${hasEncrypted ? "发现加密" : "无加密"}`);
+      log.debug(`缓存下载检测完成: ${hasEncrypted ? "发现加密" : "无加密"}`);
       return hasEncrypted;
     } catch (error) {
-      console.warn("⚠️ 加密检测失败:", error.message);
+      log.warn("⚠️ 加密检测失败:", error.message);
       // 统一使用标准化错误处理
       try {
         handleZipError(error);
@@ -464,7 +466,7 @@ class ZipService {
    */
   async quickEncryptionCheck(fileBlob) {
     try {
-      console.log("开始加密检测blob...");
+      log.debug("开始加密检测blob...");
       const zipReader = new ZipReader(new BlobReader(fileBlob));
       const entries = await zipReader.getEntries();
 
@@ -480,7 +482,7 @@ class ZipService {
       await zipReader.close();
       return false;
     } catch (error) {
-      console.warn("⚠️ 快速加密检测失败:", error.message);
+      log.warn("⚠️ 快速加密检测失败:", error.message);
       // 检测失败时保守处理：假设无加密
       return false;
     }
@@ -495,7 +497,7 @@ class ZipService {
    */
   async extractZipWithPassword(fileBlob, password, progressCallback = null) {
     try {
-      console.log("开始ZipReader进行密码解压...");
+      log.debug("开始ZipReader进行密码解压...");
       if (progressCallback) progressCallback(75, "解析中");
 
       // 使用ZipReader进行密码解压
@@ -516,14 +518,14 @@ class ZipService {
       // ZIP64支持检测
       const zip64Info = await this.zip64Detector.detectZIP64Support(zipReader);
       if (zip64Info.isZIP64) {
-        console.log(`ZIP64格式: ${zip64Info.totalEntries}个文件, 最大${zip64Info.largestFileSizeMB}MB (${zip64Info.largestFileName})`);
+        log.debug(`ZIP64格式: ${zip64Info.totalEntries}个文件, 最大${zip64Info.largestFileSizeMB}MB (${zip64Info.largestFileName})`);
       }
 
       // 智能选择解压策略
       const shouldUseParallel = this.shouldUseParallelExtraction(entries, zip64Info);
 
       if (shouldUseParallel) {
-        console.log("使用并行解压策略");
+        log.debug("使用并行解压策略");
         if (progressCallback) progressCallback(80, "并行解压中");
 
         // 过滤出非目录文件进行并行解压
@@ -558,12 +560,12 @@ class ZipService {
         await zipReader.close();
 
         if (progressCallback) progressCallback(100, "完成");
-        console.log(`并行解压完成，处理了 ${entries.length} 个条目`);
+        log.debug(`并行解压完成，处理了 ${entries.length} 个条目`);
         return result;
       }
 
       // 传统顺序解压
-      console.log("使用传统顺序解压策略");
+      log.debug("使用传统顺序解压策略");
       const result = [];
       let processedEntries = 0;
 
@@ -639,10 +641,10 @@ class ZipService {
 
       if (progressCallback) progressCallback(100, "完成");
 
-      console.log(`ZipReader 密码解压完成，处理了 ${entries.length} 个条目`);
+      log.debug(`ZipReader 密码解压完成，处理了 ${entries.length} 个条目`);
       return result;
     } catch (error) {
-      console.error("ZIP密码解压失败:", error);
+      log.error("ZIP密码解压失败:", error);
       // 统一使用标准化错误处理
       handleZipError(error);
     }
@@ -667,50 +669,50 @@ class ZipService {
 
     // 快速排除条件（不适合并行解压）
     if (totalFiles < 3) {
-      console.log(` 使用顺序解压: 文件数量少(${totalFiles}个)`);
+      log.debug(`使用顺序解压: 文件数量少(${totalFiles}个)`);
       return false;
     }
     if (hasVeryLargeFiles) {
-      console.log("使用顺序解压: 检测到超大文件(>50MB)");
+      log.debug("使用顺序解压: 检测到超大文件(>50MB)");
       return false;
     }
     if (totalUncompressedSize > 200 * 1024 * 1024) {
-      console.log(` 使用顺序解压: 总体积过大(${(totalUncompressedSize / 1024 / 1024).toFixed(0)}MB)`);
+      log.debug(`使用顺序解压: 总体积过大(${(totalUncompressedSize / 1024 / 1024).toFixed(0)}MB)`);
       return false;
     }
     if (cpuCores < 4) {
-      console.log(` 使用顺序解压: CPU核心不足(${cpuCores}核)`);
+      log.debug(`使用顺序解压: CPU核心不足(${cpuCores}核)`);
       return false;
     }
 
     // ZIP64特殊处理
     if (zip64Info.isZIP64) {
       if (zip64Info.hasLargeFiles && !zip64Info.hasManyEntries) {
-        console.log("ZIP64大文件格式 → 顺序解压");
+        log.debug("ZIP64大文件格式 → 顺序解压");
         return false;
       } else if (zip64Info.hasManyEntries && !zip64Info.hasLargeFiles) {
         if (totalFiles >= 10 && totalFiles <= 200 && cpuCores >= 4) {
-          console.log("ZIP64大量文件格式 → 并行解压");
+          log.debug("ZIP64大量文件格式 → 并行解压");
           return true;
         }
       } else if (zip64Info.hasLargeFiles && zip64Info.hasManyEntries) {
         if (cpuCores >= 8 && totalFiles <= 50) {
-          console.log("ZIP64复合格式 → 高性能并行解压");
+          log.debug("ZIP64复合格式 → 高性能并行解压");
           return true;
         }
-        console.log("ZIP64复合格式 → 顺序解压");
+        log.debug("ZIP64复合格式 → 顺序解压");
         return false;
       }
     }
 
     // 最终判断：文件数量与CPU核心数匹配
     if (totalFiles >= 4 && totalFiles <= 50) {
-      console.log(`使用并行解压: ${totalFiles}个文件，${cpuCores}核CPU`);
+      log.debug(`使用并行解压: ${totalFiles}个文件，${cpuCores}核CPU`);
       return true;
     }
 
     // 默认策略
-    console.log("使用默认顺序解压策略");
+    log.debug("使用默认顺序解压策略");
     return false;
   }
 
@@ -730,7 +732,7 @@ class ZipService {
       // 统一获取ReadableStream
       if (typeof fileBlobOrUrl === "string" && fileBlobOrUrl.startsWith("http")) {
         // 远程文件：fetch获取stream
-        console.log("ZipReaderStream 处理远程ZIP文件:", fileBlobOrUrl);
+        log.debug("ZipReaderStream 处理远程ZIP文件:", fileBlobOrUrl);
         isRemoteFile = true;
 
         const response = await fetch(fileBlobOrUrl);
@@ -742,15 +744,15 @@ class ZipService {
         totalSize = contentLength ? parseInt(contentLength, 10) : 0;
         readableStream = response.body;
 
-        console.log(`远程ZIP文件大小: ${totalSize ? (totalSize / 1024 / 1024).toFixed(2) + "MB" : "未知"}`);
+        log.debug(`远程ZIP文件大小: ${totalSize ? (totalSize / 1024 / 1024).toFixed(2) + "MB" : "未知"}`);
       } else {
         // 本地Blob：使用Blob.stream()转换为ReadableStream
-        console.log("ZipReaderStream 处理本地ZIP文件");
+        log.debug("ZipReaderStream 处理本地ZIP文件");
         const blob = fileBlobOrUrl;
         totalSize = blob.size;
         readableStream = blob.stream();
 
-        console.log(`本地ZIP文件大小: ${(totalSize / 1024 / 1024).toFixed(2)}MB`);
+        log.debug(`本地ZIP文件大小: ${(totalSize / 1024 / 1024).toFixed(2)}MB`);
       }
 
       // 创建进度监控的TransformStream（统一处理）
@@ -776,7 +778,7 @@ class ZipService {
       // 使用统一配置的 ZipReaderStream 流式处理（chunkSize由全局configure()控制）
       const zipReaderStream = new ZipReaderStream(createOptimalZipReaderConfig());
 
-      console.log("开始流式解析ZIP条目...");
+      log.debug("开始流式解析ZIP条目...");
 
       // ReadableStream → 进度监控 → ZIP解析（统一处理）
       for await (const entry of readableStream.pipeThrough(progressMonitorStream).pipeThrough(zipReaderStream)) {
@@ -822,10 +824,10 @@ class ZipService {
         progressCallback(100, "完成");
       }
 
-      console.log(`ZipReaderStream 流式解压完成: ${result.length}个文件 (${(loaded / 1024 / 1024).toFixed(1)}MB)`);
+      log.debug(`ZipReaderStream 流式解压完成: ${result.length}个文件 (${(loaded / 1024 / 1024).toFixed(1)}MB)`);
       return result;
     } catch (error) {
-      console.error("ZipReaderStream 流式解压失败:", error);
+      log.error("ZipReaderStream 流式解压失败:", error);
       throw error;
     }
   }
@@ -839,7 +841,7 @@ class ZipService {
     if (!fileUrl) return;
 
     this.fileBlobCache.delete(fileUrl);
-    console.log("已清除ZIP服务文件Blob缓存:", fileUrl);
+    log.debug("已清除ZIP服务文件Blob缓存:", fileUrl);
   }
 }
 

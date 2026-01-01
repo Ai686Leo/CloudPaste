@@ -2,6 +2,9 @@ import { ref, reactive, watch } from "vue";
 import { useLocalStorage, useTimeoutFn, useWindowSize } from "@vueuse/core";
 import { useGlobalMessage } from "@/composables/core/useGlobalMessage.js";
 import { formatCurrentTime } from "@/utils/timeUtils.js";
+import { createLogger } from "@/utils/logger.js";
+
+const log = createLogger("AdminBase");
 
 /**
  * 管理功能基础composable
@@ -121,7 +124,7 @@ export function useAdminBase(pageKey = "default", options = {}) {
     try {
       storedPageSizes.value = { ...(storedPageSizes.value || {}), [pageKey]: newLimit };
     } catch (error) {
-      console.warn("保存分页设置失败:", error);
+      log.warn("保存分页设置失败:", error);
     }
     pagination.limit = newLimit;
     resetPagination();
@@ -192,7 +195,7 @@ export function useAdminBase(pageKey = "default", options = {}) {
       const result = await asyncFn();
       return result;
     } catch (err) {
-      console.error("操作失败:", err);
+      log.error("操作失败:", err);
       if (showErrorOnCatch) {
         showError(err.message || "操作失败，请重试");
       }

@@ -5,6 +5,9 @@ import XHRUpload from "@uppy/xhr-upload";
 import { getFullApiUrl } from "@/api/config.js";
 import { buildAuthHeadersForRequest } from "@/modules/security/index.js";
 import { api } from "@/api";
+import { createLogger } from "@/utils/logger.js";
+
+const log = createLogger("S3Driver");
 
 export class S3Driver {
   constructor(config = {}) {
@@ -279,7 +282,7 @@ export class S3Driver {
         // 暴露 fileId 以便上层需要时可读取
         if (commitRes?.data) {
           const shareRecord = commitRes.data;
-          console.debug("[ShareUploader] commit result", shareRecord);
+          log.debug("[ShareUploader] commit result", shareRecord);
           try {
             uppy.setFileMeta(file.id, {
               fileId: shareRecord.id,
@@ -513,7 +516,7 @@ export class S3Driver {
         });
         if (commitRes?.data) {
           const shareRecord = commitRes.data;
-          console.debug("[UrlShareUploader] commit result", shareRecord);
+          log.debug("[UrlShareUploader] commit result", shareRecord);
           try {
             uppy.setFileMeta(file.id, {
               fileId: shareRecord.id,

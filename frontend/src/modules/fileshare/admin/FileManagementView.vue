@@ -9,10 +9,10 @@
         <button
           type="button"
           class="inline-flex items-center px-2 py-1 sm:px-3 sm:py-1.5 md:px-4 md:py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
-          @click.prevent="loadFiles"
-          :disabled="loading"
+          @click.prevent="refreshFiles"
+          :disabled="loading || searchLoading"
         >
-          <IconRefresh class="h-3 w-3 sm:h-4 sm:w-4 mr-1" :class="loading ? 'animate-spin' : ''" />
+          <IconRefresh class="h-3 w-3 sm:h-4 sm:w-4 mr-1" :class="loading || searchLoading ? 'animate-spin' : ''" />
           <span class="hidden xs:inline">刷新</span>
           <span class="xs:hidden">刷新</span>
         </button>
@@ -21,14 +21,14 @@
       <!-- 搜索框 -->
       <div class="w-full">
         <GlobalSearchBox
-          v-model="globalSearchValue"
+          v-model="searchQuery"
           placeholder="搜索文件（支持文件名、链接、备注）"
           :show-hint="true"
           search-hint="服务端搜索，支持模糊匹配"
           size="md"
           :debounce-ms="300"
           @search="handleGlobalSearch"
-          @clear="clearGlobalSearch"
+          @clear="clearSearch"
         />
       </div>
 
@@ -119,7 +119,7 @@
         :pagination="pagination"
         :page-size-options="pageSizeOptions"
         :search-mode="isSearchMode"
-        :search-term="globalSearchValue"
+        :search-term="searchQuery"
         mode="offset"
         @offset-changed="handleOffsetChangeWithSearch"
         @limit-changed="handlePageSizeChange"
@@ -152,12 +152,13 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from "vue";
+import { onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { useFileManagement } from "@/modules/fileshare/admin/useFileManagement.js";
 import { useThemeMode } from "@/composables/core/useThemeMode.js";
-import { useConfirmDialog } from "@/composables/core/useConfirmDialog.js";
+import { useConfirmDialog, createConfirmFn } from "@/composables/core/useConfirmDialog.js";
 import { IconClock, IconDelete, IconRefresh } from "@/components/icons";
+import { useDeleteSettingsStore } from "@/stores/deleteSettingsStore.js";
 
 // 导入子组件
 import FileTable from "@/modules/fileshare/admin/components/FileTable.vue";
@@ -192,15 +193,11 @@ const { t } = useI18n();
 const { dialogState, confirm, handleConfirm, handleCancel } = useConfirmDialog();
 
 // 创建适配确认函数，用于传递给 composable
-const confirmFn = async ({ title, message, confirmType }) => {
-  return await confirm({
-    title,
-    message,
-    confirmType,
-    confirmText: t("common.dialogs.deleteButton"),
-    darkMode: darkMode.value,
-  });
-};
+const confirmFn = createConfirmFn(confirm, {
+  t,
+  darkMode,
+  getConfirmText: () => t("common.dialogs.deleteButton"),
+});
 
 // 使用文件管理composable
 const {
@@ -218,12 +215,17 @@ const {
   showQRCodeModal,
   qrCodeDataURL,
   qrCodeSlug,
+  searchQuery,
+  isSearchMode,
+  searchLoading,
 
   // 方法
   loadFiles,
-  searchFiles,
-  handleOffsetChange,
-  changePageSize,
+  refreshFiles,
+  handleGlobalSearch,
+  clearSearch,
+  handleOffsetChangeWithSearch,
+  handlePageSizeChange,
   handleFileDelete,
   handleBatchDelete,
   openEditModal,
@@ -233,135 +235,14 @@ const {
   copyFileLink,
   copyPermanentLink,
   showError,
-  getFilePassword,
-  getOfficePreviewUrl,
   previewFileInNewWindow,
   downloadFileDirectly,
-  getPermanentDownloadUrl,
-  getPermanentViewUrl,
   toggleSelectItem,
   toggleSelectAll,
-  clearSelection,
 } = useFileManagement(props.userType, { confirmFn });
 
 // 需要在模板中使用的删除设置store
-import { useDeleteSettingsStore } from "@/stores/deleteSettingsStore.js";
 const deleteSettingsStore = useDeleteSettingsStore();
-
-// 全局搜索状态
-const globalSearchValue = ref("");
-
-// 搜索状态
-const isSearchMode = ref(false);
-const searchResults = ref([]);
-const searchLoading = ref(false);
-
-// 智能预加载缓存
-const preloadedData = ref([]);
-const preloadedPages = ref(new Set());
-const maxPreloadPages = 5; // 最多预加载5页数据
-
-// 搜索处理函数 - 使用服务端搜索
-const handleGlobalSearch = async (searchValue) => {
-  globalSearchValue.value = searchValue;
-
-  if (!searchValue || searchValue.trim().length < 2) {
-    // 清除搜索，立即回到正常分页模式
-    isSearchMode.value = false;
-    searchResults.value = [];
-    // 立即重新加载原始数据
-    await loadFiles();
-    console.log("搜索已清除，恢复到原始列表");
-    return;
-  }
-
-  try {
-    searchLoading.value = true;
-    isSearchMode.value = true;
-
-    // 重置分页到第一页进行搜索
-    const result = await searchFiles(searchValue.trim(), 0);
-
-    if (result && result.files) {
-      // 搜索模式下，直接更新主要的files状态和分页信息
-      files.value = result.files;
-      // 更新分页信息
-      if (result.pagination) {
-        pagination.total = result.pagination.total;
-        pagination.offset = result.pagination.offset || 0;
-        pagination.hasMore = result.pagination.hasMore !== undefined ? result.pagination.hasMore : pagination.offset + pagination.limit < pagination.total;
-      }
-      console.log(`文件搜索完成: "${searchValue}", 找到 ${result.pagination?.total || result.files.length} 个结果`);
-    } else {
-      files.value = [];
-      pagination.total = 0;
-      pagination.offset = 0;
-      pagination.hasMore = false;
-    }
-  } catch (error) {
-    console.error("文件搜索失败:", error);
-    files.value = [];
-    pagination.total = 0;
-    pagination.offset = 0;
-    pagination.hasMore = false;
-  } finally {
-    searchLoading.value = false;
-  }
-};
-
-const clearGlobalSearch = async () => {
-  globalSearchValue.value = "";
-  isSearchMode.value = false;
-  searchResults.value = [];
-
-  // 立即重新加载正常的文件列表
-  try {
-    await loadFiles();
-    console.log("清除文件搜索，已恢复到原始列表");
-  } catch (error) {
-    console.error("清除搜索后重新加载失败:", error);
-  }
-};
-
-// 处理分页变化（支持搜索模式）
-const handleOffsetChangeWithSearch = async (newOffset) => {
-  if (isSearchMode.value && globalSearchValue.value) {
-    // 搜索模式下的分页
-    try {
-      searchLoading.value = true;
-      const result = await searchFiles(globalSearchValue.value, newOffset);
-
-      if (result && result.files) {
-        files.value = result.files;
-        // 更新分页信息
-        if (result.pagination) {
-          pagination.total = result.pagination.total;
-          pagination.offset = result.pagination.offset || newOffset;
-          pagination.hasMore = result.pagination.hasMore !== undefined ? result.pagination.hasMore : pagination.offset + pagination.limit < pagination.total;
-        }
-      }
-    } catch (error) {
-      console.error("搜索分页失败:", error);
-    } finally {
-      searchLoading.value = false;
-    }
-  } else {
-    // 正常模式下的分页
-    handleOffsetChange(newOffset);
-  }
-};
-
-// 处理每页数量变化
-const handlePageSizeChange = (newPageSize) => {
-  changePageSize(newPageSize);
-  // 如果在搜索模式，重新搜索
-  if (isSearchMode.value && globalSearchValue.value) {
-    handleGlobalSearch(globalSearchValue.value);
-  } else {
-    // 否则重新加载文件列表
-    loadFiles();
-  }
-};
 
 // 组件挂载时加载文件列表
 onMounted(loadFiles);

@@ -1,7 +1,9 @@
 import Uppy from "@uppy/core";
 import { resolveDriverByConfigId } from "@/modules/storage-core/drivers/registry.js";
+import { createLogger } from "@/utils/logger.js";
 
 const DEFAULT_TYPE = "application/octet-stream";
+const log = createLogger("UploaderClient");
 
 const generateUploadId = () => {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -50,7 +52,7 @@ function attachLifecycle(uppy, callbacks = {}) {
     handlers.push(["complete", handler]);
   }
   if (callbacks.onShareRecord) {
-    console.debug("[UploaderClient] register share-record listener");
+    log.debug("register share-record listener");
     const handler = (payload) => callbacks.onShareRecord?.(payload);
     uppy.on("share-record", handler);
     handlers.push(["share-record", handler]);
@@ -102,7 +104,7 @@ function removeUploadPlugins(uppy) {
       try {
         uppy.removePlugin(uppy.getPlugin(pluginId));
       } catch (error) {
-        console.debug('[UploaderClient] 移除插件失败:', pluginId, error);
+        log.debug("移除插件失败:", pluginId, error);
       }
     }
   });
@@ -153,7 +155,7 @@ function createDriverSession({ payload = {}, storageConfigId, installPlugin, eve
     try {
       uppy.cancelAll?.();
     } catch (error) {
-      console.warn("UploaderClient: cancelAll 失败", error);
+      log.warn("UploaderClient: cancelAll 失败", error);
     }
   };
 

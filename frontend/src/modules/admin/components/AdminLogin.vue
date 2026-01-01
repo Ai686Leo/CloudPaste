@@ -3,6 +3,7 @@ import { ref, reactive } from "vue";
 import { useI18n } from "vue-i18n";
 import { ApiStatus } from "@/api/ApiStatus";
 import { useAuthStore } from "@/stores/authStore.js";
+import { createLogger } from "@/utils/logger.js";
 
 const props = defineProps({
   darkMode: {
@@ -13,6 +14,7 @@ const props = defineProps({
 
 const emit = defineEmits(["login-success"]);
 const { t } = useI18n();
+const log = createLogger("AdminLogin");
 
 // 使用认证Store
 const authStore = useAuthStore();
@@ -58,7 +60,7 @@ const handleLogin = async () => {
       type: "admin",
     });
   } catch (err) {
-    console.error("管理员登录失败:", err);
+    log.error("管理员登录失败:", err);
     // 优先使用HTTP状态码判断错误类型，更可靠
     if (err.status === ApiStatus.UNAUTHORIZED || err.response?.status === ApiStatus.UNAUTHORIZED || err.code === ApiStatus.UNAUTHORIZED) {
       // 401 Unauthorized - 用户名或密码错误
@@ -96,7 +98,7 @@ const handleApiKeyLogin = async () => {
       type: "apikey",
     });
   } catch (err) {
-    console.error("API密钥验证失败:", err);
+    log.error("API密钥验证失败:", err);
     // 优先使用HTTP状态码判断错误类型，更可靠
     if (err.status === ApiStatus.UNAUTHORIZED || err.response?.status === ApiStatus.UNAUTHORIZED || err.code === ApiStatus.UNAUTHORIZED) {
       // 401 Unauthorized - API密钥无效

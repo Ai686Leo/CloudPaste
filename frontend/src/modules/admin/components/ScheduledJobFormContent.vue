@@ -8,6 +8,7 @@ import cronstrue from "cronstrue/i18n";
 import DynamicFormField from "./DynamicFormField.vue";
 import SyncTaskConfigForm from "./SyncTaskConfigForm.vue";
 import { IconCheck, IconCheckCircle, IconInformationCircle, IconRefresh, IconTaskList } from "@/components/icons";
+import { createLogger } from "@/utils/logger.js";
 
 const props = defineProps({
   darkMode: {
@@ -35,6 +36,7 @@ const props = defineProps({
 const emit = defineEmits(["submit", "cancel"]);
 
 const { t, tm, locale } = useI18n();
+const log = createLogger("ScheduledJobFormContent");
 
 // 状态
 const loading = ref(false);
@@ -108,7 +110,7 @@ const getCronDescription = (cronExpression) => {
     const lang = locale.value === 'zh-CN' ? 'zh_CN' : 'en';
     return cronstrue.toString(cronExpression, { locale: lang });
   } catch (error) {
-    console.warn('解析 cron 表达式失败:', error);
+    log.warn("解析 cron 表达式失败:", error);
     return '无法解析 cron 表达式';
   }
 };

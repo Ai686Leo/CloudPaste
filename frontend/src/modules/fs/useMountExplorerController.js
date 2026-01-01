@@ -6,6 +6,7 @@ import { useFsService } from "@/modules/fs";
 import { useViewStateMachine } from "./composables/useViewStateMachine";
 import { ViewState } from "./constants/ViewState";
 import { normalizeFsPath, toDirApiPath } from "@/utils/fsPathUtils.js";
+import { createLogger } from "@/utils/logger.js";
 
 const HISTORY_LIMIT = 20;
 /** @type {Map<string, any>} */
@@ -148,6 +149,7 @@ export function useMountExplorerController() {
 
   const authStore = useAuthStore();
   const fsService = useFsService();
+  const log = createLogger("MountExplorerController");
 
   const stateMachine = useViewStateMachine();
 
@@ -602,7 +604,7 @@ export function useMountExplorerController() {
 
       // 防御：只允许 append 同一路径的分页结果
       if (String(more.path || "") !== String(data.path || "")) {
-        console.warn("分页目录结果路径不一致，已跳过 append:", { current: data.path, next: more.path });
+        log.warn("分页目录结果路径不一致，已跳过 append:", { current: data.path, next: more.path });
         return false;
       }
 
@@ -620,7 +622,7 @@ export function useMountExplorerController() {
       return true;
     } catch (e) {
       const msg = e?.message || "加载更多失败";
-      console.warn("loadMoreCurrentDirectory failed:", e);
+      log.warn("loadMoreCurrentDirectory failed:", e);
       error.value = msg;
       return false;
     } finally {

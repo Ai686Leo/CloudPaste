@@ -108,8 +108,10 @@ import { useEventListener, useWindowScroll } from "@vueuse/core";
 import VideoPlayer from "@/components/common/VideoPlayer.vue";
 import { useFsService } from "@/modules/fs";
 import LoadingIndicator from "@/components/common/LoadingIndicator.vue";
+import { createLogger } from "@/utils/logger.js";
 
 const { t } = useI18n();
+const log = createLogger("FsVideoPreview");
 const fsService = useFsService();
 const navigateToFile = inject("navigateToFile", null);
 const previewContainerRef = ref(null);
@@ -267,7 +269,7 @@ const goToVideoItem = (it) => {
     try {
       void navigateToFile(path);
       windowScrollY.value = 0;
-    } catch (e) { console.error(e); }
+    } catch (e) { log.error(e); }
   }
 };
 
@@ -525,7 +527,7 @@ const handleCanPlay = () => { emit("canplay"); emit("loaded"); };
 const handleTimeUpdate = (d) => { currentTime.value = d.currentTime; duration.value = d.duration; };
 const handleFullscreen = () => emit("fullscreen");
 const handleFullscreenExit = () => emit("fullscreenExit");
-const handlePlayerReady = (p) => console.log("Player Ready", p);
+const handlePlayerReady = () => {};
 
 </script>
 

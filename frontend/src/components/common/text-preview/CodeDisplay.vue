@@ -24,8 +24,10 @@ import { ref, computed, watch, watchEffect, nextTick } from "vue";
 import { useI18n } from "vue-i18n";
 import { useCodeHighlight } from "@/composables/text-preview/useCodeHighlight.js";
 import LoadingIndicator from "@/components/common/LoadingIndicator.vue";
+import { createLogger } from "@/utils/logger.js";
 
 const { t } = useI18n();
+const log = createLogger("CodeDisplay");
 
 // Props
 const props = defineProps({
@@ -97,7 +99,7 @@ const renderCode = async () => {
       throw new Error(result.error || "Code highlighting failed");
     }
   } catch (err) {
-    console.error("代码高亮渲染失败:", err);
+    log.error("代码高亮渲染失败:", err);
     error.value = err.message;
 
     // 降级显示原始代码

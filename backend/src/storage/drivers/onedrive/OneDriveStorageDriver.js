@@ -35,6 +35,7 @@ import {
 } from "../../../utils/uploadSessions.js";
 import { buildFileInfo } from "../../utils/FileInfoBuilder.js";
 import { createHttpStreamDescriptor } from "../../streaming/StreamDescriptorUtils.js";
+import { decryptIfNeeded } from "../../../utils/crypto.js";
 
 // 简单上传（Simple Upload）上限：4MB
 const SIMPLE_UPLOAD_MAX_BYTES = 4 * 1024 * 1024;
@@ -80,6 +81,13 @@ export class OneDriveStorageDriver extends BaseDriver {
    * - 验证配置有效性
    */
   async initialize() {
+    // secret 字段可能以 encrypted:* 存在（由存储配置 CRUD 统一加密写入）
+    const decryptedClientSecret = await decryptIfNeeded(this.clientSecret, this.encryptionSecret);
+    this.clientSecret = typeof decryptedClientSecret === "string" ? decryptedClientSecret : this.clientSecret;
+
+    const decryptedRefreshToken = await decryptIfNeeded(this.refreshToken, this.encryptionSecret);
+    this.refreshToken = typeof decryptedRefreshToken === "string" ? decryptedRefreshToken : this.refreshToken;
+
     // 创建认证管理器
     this.authManager = new OneDriveAuthManager({
       region: this.region,

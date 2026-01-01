@@ -240,8 +240,10 @@ import { listJobs, getJobStatus, cancelJob } from '@/api/services/fsService.js';
 import { formatRelativeTime } from '@/utils/timeUtils.js';
 import { formatFileSize } from '@/utils/fileUtils.js';
 import { IconCheckCircle, IconChevronDown, IconClose, IconExclamationSolid, IconExternalLink, IconRefresh, IconTaskList, IconXCircle } from '@/components/icons';
+import { createLogger } from '@/utils/logger.js';
 
 const { t } = useI18n();
+const log = createLogger('TaskListModal');
 const router = useRouter();
 
 const props = defineProps({
@@ -342,7 +344,7 @@ const loadTasks = async () => {
     const jobsList = response?.data?.jobs || response?.jobs || [];
     tasks.value = jobsList.map(transformTaskData);
   } catch (error) {
-    console.error('[TaskListModal] Failed to load tasks:', error);
+    log.error('[TaskListModal] Failed to load tasks:', error);
   } finally {
     isLoading.value = false;
   }
@@ -375,7 +377,7 @@ const pollRunningTasks = async () => {
         }
       }
     } catch (error) {
-      console.error(`[TaskListModal] Failed to poll task ${task.id}:`, error);
+      log.error(`[TaskListModal] Failed to poll task ${task.id}:`, error);
     }
   }
 
@@ -393,7 +395,7 @@ const handleCancelTask = async (jobId) => {
     await cancelJob(jobId);
     await loadTasks();
   } catch (error) {
-    console.error('[TaskListModal] Failed to cancel task:', error);
+    log.error('[TaskListModal] Failed to cancel task:', error);
   }
 };
 
@@ -470,7 +472,7 @@ watch(
           startPolling();
         }
       } catch (error) {
-        console.error('[TaskListModal] 加载任务失败:', error);
+        log.error('[TaskListModal] 加载任务失败:', error);
       }
     } else {
       stopPolling();

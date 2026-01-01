@@ -121,8 +121,10 @@ import PptxViewer from "./PptxViewer.vue";
 import { IconDocumentText } from "@/components/icons";
 import LoadingIndicator from "@/components/common/LoadingIndicator.vue";
 import PreviewProviderHeader from "@/components/common/preview/PreviewProviderHeader.vue";
+import { createLogger } from "@/utils/logger.js";
 
 const { t } = useI18n();
+const log = createLogger("OfficePreview");
 
 const props = defineProps({
   // Native 渲染内容 URL（同源）
@@ -295,7 +297,7 @@ const handleLoad = () => {
 };
 
 const handleError = (err) => {
-  console.error("Office 预览错误:", err);
+  log.error("Office 预览错误:", err);
   nativeErrorMessage.value = err?.message || String(err);
   emit("error", err);
 };

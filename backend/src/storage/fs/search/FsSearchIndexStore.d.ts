@@ -38,6 +38,8 @@ export class FsSearchIndexStore {
 
   clearMount(mountId: string): Promise<void>;
   clearDirtyByMount(mountId: string): Promise<void>;
+  deleteStateByMount(mountId: string): Promise<void>;
+  clearDerivedByMount(mountId: string, options?: { keepState?: boolean }): Promise<void>;
 
   listDirtyBatch(mountId: string, limit?: number): Promise<any[]>;
   deleteDirtyByKeys(keys: string[]): Promise<void>;

@@ -4,18 +4,23 @@ import { useLocalStorage } from "@vueuse/core";
 import { useAdminBase } from "@/composables/admin-management/useAdminBase.js";
 import { useStorageConfigsStore } from "@/stores/storageConfigsStore.js";
 import { useAdminStorageConfigService } from "@/modules/admin/services/storageConfigService.js";
+import { createLogger } from "@/utils/logger.js";
 
 /**
  * 存储配置管理 composable
  * 提供多存储配置的 CRUD、分页管理、测试等能力
  * @param {Object} options - 可选配置
- * @param {Function} options.confirmFn - 自定义确认函数，接收 {title, message, confirmType} 参数，返回 Promise<boolean>
+ * @param {Function} options.confirmFn - 确认对话框函数（必需），接收 {title, message, confirmType}，返回 Promise<boolean>
  */
 export function useStorageConfigManagement(options = {}) {
   const { confirmFn } = options;
+  if (!confirmFn) {
+    throw new Error("useStorageConfigManagement 必须传入 confirmFn（请在 View 里用 useConfirmDialog + createConfirmFn 创建）");
+  }
 
   // 国际化
   const { t } = useI18n();
+  const log = createLogger("StorageConfigManagement");
 
   // 继承基础功能，使用独立的页面标识符
   const base = useAdminBase("storage");
@@ -29,7 +34,7 @@ export function useStorageConfigManagement(options = {}) {
     try {
       await storageConfigsStore.refreshConfigs();
     } catch (error) {
-      console.warn("刷新全局存储配置缓存失败", error);
+      log.warn("刷新全局存储配置缓存失败", error);
     }
   };
 
@@ -99,7 +104,7 @@ export function useStorageConfigManagement(options = {}) {
       // 确保保存的值在分页选项范围内，否则使用默认值 4
       return pageSizeOptions.includes(savedSize) ? savedSize : 4;
     } catch (error) {
-      console.warn("解析存储配置分页设置失败:", error);
+      log.warn("解析存储配置分页设置失败:", error);
     }
     return 4;
   };
@@ -130,9 +135,8 @@ export function useStorageConfigManagement(options = {}) {
         storageConfigs.value = items;
         base.updatePagination({ total: filteredTotal.value }, "page");
         base.updateLastRefreshTime();
-        console.log(`存储配置列表加载完成，共 ${items.length} 条`);
       } catch (error) {
-        console.error("加载存储配置列表失败:", error);
+        log.error("加载存储配置列表失败:", error);
         storageConfigs.value = [];
         throw error;
       }
@@ -157,17 +161,11 @@ export function useStorageConfigManagement(options = {}) {
    * 删除存储配置
    */
   const handleDeleteConfig = async (configId) => {
-    // 使用传入的确认函数或默认的 window.confirm
-    let confirmed;
-    if (confirmFn) {
-      confirmed = await confirmFn({
-        title: t("common.dialogs.deleteTitle"),
-        message: t("common.dialogs.deleteItem", { name: t("admin.storage.item", "此存储配置") }),
-        confirmType: "danger",
-      });
-    } else {
-      confirmed = confirm(t("common.dialogs.deleteItem", { name: t("admin.storage.item", "此存储配置") }));
-    }
+    const confirmed = await confirmFn({
+      title: t("common.dialogs.deleteTitle"),
+      message: t("common.dialogs.deleteItem", { name: t("admin.storage.item", "此存储配置") }),
+      confirmType: "danger",
+    });
 
     if (!confirmed) {
       return;
@@ -180,7 +178,7 @@ export function useStorageConfigManagement(options = {}) {
         await loadStorageConfigs();
         await refreshSharedConfigs();
       } catch (err) {
-        console.error("删除存储配置失败:", err);
+        log.error("删除存储配置失败:", err);
         if (err.message && err.message.includes("有文件正在使用")) {
           base.showError(`无法删除此配置：${err.message}`);
         } else {
@@ -198,23 +196,12 @@ export function useStorageConfigManagement(options = {}) {
       // 使用 masked 模式重新加载配置，显示掩码占位符
       const maskedConfig = await getStorageConfigReveal(config.id, "masked");
       const finalConfig = maskedConfig?.data || maskedConfig || { ...config };
-      
-      // 调试日志：查看掩码字段
-      console.log("编辑配置 - 掩码数据:", {
-        id: finalConfig.id,
-        storage_type: finalConfig.storage_type,
-        access_key_id: finalConfig.access_key_id,
-        secret_access_key: finalConfig.secret_access_key,
-        password: finalConfig.password,
-        client_secret: finalConfig.client_secret,
-        refresh_token: finalConfig.refresh_token,
-      });
-      
+
       currentConfig.value = finalConfig;
       showEditForm.value = true;
       showAddForm.value = false;
     } catch (err) {
-      console.error("加载配置失败:", err);
+      log.error("加载配置失败:", err);
       // 降级：使用原始配置
       currentConfig.value = { ...config };
       showEditForm.value = true;
@@ -252,7 +239,7 @@ export function useStorageConfigManagement(options = {}) {
         await loadStorageConfigs();
         await refreshSharedConfigs();
       } catch (err) {
-        console.error("设置默认存储配置失败:", err);
+        log.error("设置默认存储配置失败:", err);
         base.showError(err.message || "无法设置为默认配置，请稍后再试");
       }
     });
@@ -267,19 +254,18 @@ export function useStorageConfigManagement(options = {}) {
       this.raw = result || {};
 
       // 处理嵌套的 result 结构
-      // 如果有 result 字段，优先使用 result 内容
-      let inner = this.raw;
+      const outer = this.raw && typeof this.raw === "object" && this.raw.data && typeof this.raw.data === "object" ? this.raw.data : this.raw;
+      let inner = outer;
       
-      // 检查是否有嵌套的 result 字段（S3/WebDAV 的情况）
-      if (this.raw.result && typeof this.raw.result === 'object') {
+      // 检查是否有嵌套的 result 字段
+      if (outer && outer.result && typeof outer.result === "object") {
         // LOCAL 测试：result 包含 pathExists/readPermission/writePermission
-        if (this.raw.result.pathExists || this.raw.result.readPermission || this.raw.result.writePermission) {
-          inner = this.raw.result;
+        if (outer.result.pathExists || outer.result.readPermission || outer.result.writePermission) {
+          inner = outer.result;
         }
-        // S3/WebDAV 测试：result 包含 read/write/cors/frontendSim/info
-        else if (this.raw.result.read || this.raw.result.write || this.raw.result.cors || 
-                 this.raw.result.frontendSim || this.raw.result.info) {
-          inner = this.raw.result;
+        // S3/WebDAV/其它通用测试：result 包含 read/write/cors/frontendSim/info
+        else if (outer.result.read || outer.result.write || outer.result.cors || outer.result.frontendSim || outer.result.info) {
+          inner = outer.result;
         }
       }
 
@@ -621,7 +607,7 @@ export function useStorageConfigManagement(options = {}) {
         partialSuccess: status.isPartialSuccess,
         message: processor.generateStatusMessage(),
         details: processor.generateDetailsMessage(),
-        result: result || {},
+        result: processor.result || {},
         loading: false,
       };
     } catch (err) {

@@ -7,8 +7,10 @@
 import { reactive, watch } from "vue";
 import { useEventListener, useMediaQuery, useOnline } from "@vueuse/core";
 import { showOfflineToast, hideOfflineToast } from "./offlineToast.js";
+import { createLogger } from "@/utils/logger.js";
 
 const OFFLINE_DB_VERSION = 6;
+const log = createLogger("PWA");
 
 // 获取应用版本号
 const getAppVersion = () => {
@@ -62,11 +64,11 @@ class OfflineStorage {
 
   // 执行数据库迁移策略
   performDatabaseMigration(db, oldVersion, newVersion) {
-    console.log(`[PWA] 执行数据库迁移: ${oldVersion} -> ${newVersion}`);
+    log.debug(`执行数据库迁移: ${oldVersion} -> ${newVersion}`);
 
     // 版本兼容性检查
     if (oldVersion > newVersion) {
-      console.warn(`[PWA] 数据库版本回退: ${oldVersion} -> ${newVersion}，可能存在兼容性问题`);
+      log.warn(`[PWA] 数据库版本回退: ${oldVersion} -> ${newVersion}，可能存在兼容性问题`);
     }
 
     // 创建基础数据结构（适用于新安装）
@@ -80,7 +82,7 @@ class OfflineStorage {
   createBaseObjectStores(db) {
     // 创建文本分享存储
     if (!db.objectStoreNames.contains("pastes")) {
-      console.log("[PWA] 创建 pastes ObjectStore");
+      log.debug("创建 pastes ObjectStore");
       const pasteStore = db.createObjectStore("pastes", { keyPath: "slug" });
       pasteStore.createIndex("created_at", "created_at", { unique: false });
       pasteStore.createIndex("cachedAt", "cachedAt", { unique: false });
@@ -88,7 +90,7 @@ class OfflineStorage {
 
     // 创建文件信息存储
     if (!db.objectStoreNames.contains("files")) {
-      console.log("[PWA] 创建 files ObjectStore");
+      log.debug("创建 files ObjectStore");
       const fileStore = db.createObjectStore("files", { keyPath: "slug" });
       fileStore.createIndex("created_at", "created_at", { unique: false });
       fileStore.createIndex("cachedAt", "cachedAt", { unique: false });
@@ -96,7 +98,7 @@ class OfflineStorage {
 
     // 创建目录结构存储
     if (!db.objectStoreNames.contains("directories")) {
-      console.log("[PWA] 创建 directories ObjectStore");
+      log.debug("创建 directories ObjectStore");
       const dirStore = db.createObjectStore("directories", { keyPath: "path" });
       dirStore.createIndex("lastModified", "lastModified", { unique: false });
       dirStore.createIndex("cachedAt", "cachedAt", { unique: false });
@@ -104,13 +106,13 @@ class OfflineStorage {
 
     // 创建用户设置存储
     if (!db.objectStoreNames.contains("settings")) {
-      console.log("[PWA] 创建 settings ObjectStore");
+      log.debug("创建 settings ObjectStore");
       db.createObjectStore("settings", { keyPath: "key" });
     }
 
     // 创建离线操作队列存储
     if (!db.objectStoreNames.contains("offlineQueue")) {
-      console.log("[PWA] 创建 offlineQueue ObjectStore");
+      log.debug("创建 offlineQueue ObjectStore");
       const queueStore = db.createObjectStore("offlineQueue", { keyPath: "id", autoIncrement: true });
       queueStore.createIndex("timestamp", "timestamp", { unique: false });
       queueStore.createIndex("type", "type", { unique: false });
@@ -118,7 +120,7 @@ class OfflineStorage {
 
     // 创建搜索历史存储
     if (!db.objectStoreNames.contains("searchHistory")) {
-      console.log("[PWA] 创建 searchHistory ObjectStore");
+      log.debug("创建 searchHistory ObjectStore");
       const searchStore = db.createObjectStore("searchHistory", { keyPath: "id", autoIncrement: true });
       searchStore.createIndex("query", "query", { unique: false });
       searchStore.createIndex("timestamp", "timestamp", { unique: false });
@@ -129,13 +131,13 @@ class OfflineStorage {
   executeVersionSpecificMigrations(db, oldVersion, newVersion) {
     // 基础版本5以下的迁移
     if (oldVersion < 5) {
-      console.log("[PWA] 执行基础版本迁移");
+      log.debug("执行基础版本迁移");
       // 这里可以添加数据迁移逻辑
     }
 
     // 版本685以上的新功能迁移（对应0.6.8版本）
     if (oldVersion < 685 && newVersion >= 685) {
-      console.log("[PWA] 执行0.6.8版本迁移");
+      log.debug("执行0.6.8版本迁移");
       // 可以添加新功能的数据结构变更
     }
 
@@ -148,9 +150,9 @@ class OfflineStorage {
     if ("storage" in navigator && "persist" in navigator.storage) {
       try {
         const persistent = await navigator.storage.persist();
-        console.log(`[PWA] 持久化存储: ${persistent ? "已启用" : "未启用"}`);
+        log.debug(`持久化存储: ${persistent ? "已启用" : "未启用"}`);
       } catch (error) {
-        console.warn("[PWA] 无法请求持久化存储:", error);
+        log.warn("[PWA] 无法请求持久化存储:", error);
       }
     }
 
@@ -163,7 +165,7 @@ class OfflineStorage {
         } catch (error) {
           // 当请求的版本号小于已存在版本时，IndexedDB 可能会同步抛出 VersionError
           if (useExplicitVersion && error && error.name === "VersionError") {
-            console.warn(
+            log.warn(
               "[PWA] 本地离线数据库版本高于当前代码要求，将跳过降级并使用现有版本继续工作"
             );
             return openDatabase(false);
@@ -176,7 +178,7 @@ class OfflineStorage {
         request.onerror = () => {
           const err = request.error;
           if (useExplicitVersion && err && err.name === "VersionError") {
-            console.warn(
+            log.warn(
               "[PWA] 本地离线数据库版本高于当前代码要求，将跳过降级并使用现有版本继续工作"
             );
             return openDatabase(false);
@@ -192,7 +194,7 @@ class OfflineStorage {
           try {
             if (!useExplicitVersion && typeof this.db.version === "number") {
               this.version = this.db.version;
-              console.log(`[PWA] 使用现有离线数据库版本: ${this.version}`);
+              log.debug(`使用现有离线数据库版本: ${this.version}`);
             }
           } catch {
             // 仅用于调试，不影响功能
@@ -207,12 +209,12 @@ class OfflineStorage {
             const oldVersion = event.oldVersion;
             const newVersion = event.newVersion;
 
-            console.log(`[PWA] 数据库升级: ${oldVersion} -> ${newVersion}`);
+            log.debug(`数据库升级: ${oldVersion} -> ${newVersion}`);
 
             // 🎯 执行数据库迁移策略
             this.performDatabaseMigration(db, oldVersion, newVersion);
 
-            console.log("[PWA] 数据库升级完成");
+            log.debug("数据库升级完成");
           };
         }
       };
@@ -380,7 +382,7 @@ class OfflineStorage {
         });
       };
     } catch (error) {
-      console.warn("清理过期设置缓存失败:", error);
+      log.warn("清理过期设置缓存失败:", error);
     }
   }
 
@@ -414,9 +416,9 @@ class OfflineStorage {
         });
       };
 
-      console.log("[PWA] 所有API缓存已清理");
+      log.debug("所有API缓存已清理");
     } catch (error) {
-      console.warn("清理API缓存失败:", error);
+      log.warn("清理API缓存失败:", error);
     }
   }
 
@@ -463,7 +465,7 @@ class OfflineStorage {
     if (!this.db) await this.init();
 
     const objectStores = Array.from(this.db.objectStoreNames);
-    console.log("[PWA] 数据库状态检查:", {
+    log.debug("数据库状态检查:", {
       name: this.db.name,
       version: this.db.version,
       objectStores: objectStores,
@@ -491,14 +493,14 @@ class PWAManager {
   }
 
   async init() {
-    console.log("[PWA] 初始化 PWA 管理器");
+    log.debug("初始化 PWA 管理器");
 
     // 1. 初始化离线存储
     try {
       await offlineStorage.init();
-      console.log("[PWA] 离线存储初始化成功");
+      log.debug("离线存储初始化成功");
     } catch (error) {
-      console.error("[PWA] 离线存储初始化失败:", error);
+      log.error("[PWA] 离线存储初始化失败:", error);
     }
 
     // 2. 监听网络状态
@@ -519,7 +521,7 @@ class PWAManager {
     // 7. 检查后台同步支持
     this.checkBackgroundSyncSupport();
 
-    console.log("[PWA] PWA 管理器初始化完成");
+    log.debug("PWA 管理器初始化完成");
     pwaState.ready = true;
   }
 
@@ -534,7 +536,7 @@ class PWAManager {
       const wasOffline = pwaState.isOffline;
       pwaState.isOffline = !isOnlineNow;
 
-      console.log(`[PWA] 网络状态: ${isOnlineNow ? "在线" : "离线"}`);
+      log.debug(`网络状态: ${isOnlineNow ? "在线" : "离线"}`);
 
       // 集成offlineToast显示用户友好的提示
       if (!isOnlineNow && !wasOffline) {
@@ -567,23 +569,23 @@ class PWAManager {
   // 同步离线数据 - 集成Background Sync API
   async syncOfflineData() {
     try {
-      console.log("[PWA] 开始同步离线数据");
+      log.debug("开始同步离线数据");
       pwaState.syncInProgress = true;
 
       // 🎯 优先使用Background Sync API进行可靠同步
       if (pwaState.backgroundSyncSupported && pwaState.registration) {
-        console.log("[PWA] 使用Background Sync API进行同步");
+        log.debug("使用Background Sync API进行同步");
         await this.triggerBackgroundSync();
       } else {
-        console.log("[PWA] 使用传统同步方式");
+        log.debug("使用传统同步方式");
         await this.fallbackSync();
       }
 
       pwaState.syncInProgress = false;
-      console.log("[PWA] 离线数据同步完成");
+      log.debug("离线数据同步完成");
     } catch (error) {
       pwaState.syncInProgress = false;
-      console.error("[PWA] 离线数据同步失败:", error);
+      log.error("[PWA] 离线数据同步失败:", error);
       showOfflineToast("数据同步失败，请稍后重试");
     }
   }
@@ -593,13 +595,13 @@ class PWAManager {
     try {
       // 注册后台同步事件
       await pwaState.registration.sync.register("sync-offline-queue");
-      console.log("[PWA] Background Sync 已注册，等待浏览器调度");
+      log.debug("Background Sync 已注册，等待浏览器调度");
 
       // 获取同步状态
       const syncStatus = await this.getBackgroundSyncStatus();
-      console.log("[PWA] 当前同步状态:", syncStatus);
+      log.debug("当前同步状态:", syncStatus);
     } catch (error) {
-      console.error("[PWA] Background Sync 注册失败，回退到传统同步:", error);
+      log.error("[PWA] Background Sync 注册失败，回退到传统同步:", error);
       await this.fallbackSync();
     }
   }
@@ -610,7 +612,7 @@ class PWAManager {
     const offlineQueue = await offlineStorage.getOfflineQueue();
 
     if (offlineQueue && offlineQueue.length > 0) {
-      console.log(`[PWA] 发现 ${offlineQueue.length} 个离线操作待同步`);
+      log.debug(`发现 ${offlineQueue.length} 个离线操作待同步`);
 
       let successCount = 0;
       let failureCount = 0;
@@ -626,10 +628,10 @@ class PWAManager {
             id: operation.id,
             timestamp: operation.timestamp,
           });
-          console.log(`[PWA] 离线操作同步成功: ${operation.type}`);
+          log.debug(`离线操作同步成功: ${operation.type}`);
         } catch (error) {
           failureCount++;
-          console.error(`[PWA] 离线操作同步失败: ${operation.type}`, error);
+          log.error(`[PWA] 离线操作同步失败: ${operation.type}`, error);
         }
       }
 
@@ -678,7 +680,7 @@ class PWAManager {
         return await post(endpoint, data);
 
       default:
-        console.warn(`[PWA] 未知的离线操作类型: ${type}`);
+        log.warn(`[PWA] 未知的离线操作类型: ${type}`);
         return null;
     }
   }
@@ -691,14 +693,14 @@ class PWAManager {
       e.preventDefault();
       pwaState.deferredPrompt = e;
       pwaState.isInstallable = true;
-      console.log("[PWA] 应用可安装");
+      log.debug("应用可安装");
     });
 
     useEventListener(window, "appinstalled", () => {
       pwaState.isInstalled = true;
       pwaState.isInstallable = false;
       pwaState.deferredPrompt = null;
-      console.log("[PWA] 应用已安装");
+      log.debug("应用已安装");
     });
   }
 
@@ -720,7 +722,7 @@ class PWAManager {
   // Service Worker 监听 - 统一使用vite-plugin-pwa标准事件
   setupServiceWorkerListeners() {
     if (!("serviceWorker" in navigator)) {
-      console.warn("[PWA] Service Worker 不受支持");
+      log.warn("[PWA] Service Worker 不受支持");
       return;
     }
 
@@ -739,24 +741,24 @@ class PWAManager {
     // 监听vite-plugin-pwa的标准更新事件
     useEventListener(window, "vite:pwa-update-available", () => {
       pwaState.isUpdateAvailable = true;
-      console.log("[PWA] 检测到应用更新（vite-plugin-pwa标准事件）");
+      log.debug("检测到应用更新（vite-plugin-pwa标准事件）");
       this.notifyUpdate();
     });
 
     // 监听vite-plugin-pwa的其他标准事件
     useEventListener(window, "vite:pwa-updated", () => {
       pwaState.needRefresh = true;
-      console.log("[PWA] 应用已更新，需要刷新");
+      log.debug("应用已更新，需要刷新");
     });
 
     useEventListener(window, "vite:pwa-offline-ready", () => {
-      console.log("[PWA] 应用已准备好离线使用");
+      log.debug("应用已准备好离线使用");
       pwaState.cacheStatus = "cached";
     });
 
     // 监听vite-plugin-pwa的错误事件
     useEventListener(window, "vite:pwa-error", (event) => {
-      console.error("[PWA] vite-plugin-pwa错误:", event.detail);
+      log.error("[PWA] vite-plugin-pwa错误:", event.detail);
       pwaState.updateError = event.detail?.message || "PWA更新错误";
     });
   }
@@ -771,7 +773,7 @@ class PWAManager {
       if (event.data && event.data.type === "SW_UPDATED") {
         // 这是来自自定义Service Worker的消息，vite-plugin-pwa可能未处理
         pwaState.isUpdateAvailable = true;
-        console.log("[PWA] 检测到应用更新（Service Worker消息）");
+        log.debug("检测到应用更新（Service Worker消息）");
         this.notifyUpdate();
       } else if (event.data && event.data.type === "PWA_SYNC_COMPLETED") {
         // 第2层：PWA Manager → 全局事件系统
@@ -784,7 +786,7 @@ class PWAManager {
     navigator.serviceWorker.ready
       .then((registration) => {
         pwaState.registration = registration;
-        console.log("[PWA] Service Worker 已注册");
+        log.debug("Service Worker 已注册");
 
         // 更新Service Worker状态
         if (registration.active) {
@@ -792,7 +794,7 @@ class PWAManager {
         }
       })
       .catch((error) => {
-        console.error("[PWA] Service Worker 注册失败:", error);
+        log.error("[PWA] Service Worker 注册失败:", error);
         pwaState.updateError = error.message;
       });
   }
@@ -813,7 +815,7 @@ class PWAManager {
   // 处理同步完成消息 - 分层事件通信架构的第2层
   handleSyncCompletedMessage(payload) {
     try {
-      console.log("[PWA] 收到Service Worker同步完成通知", payload);
+      log.debug("收到Service Worker同步完成通知", payload);
 
       // 更新PWA状态
       pwaState.syncInProgress = false;
@@ -845,7 +847,7 @@ class PWAManager {
         );
       }
 
-      console.log("[PWA] 已发送全局同步完成事件", eventDetail);
+      log.debug("已发送全局同步完成事件", eventDetail);
 
       // 显示用户友好的提示
       if (payload.successCount > 0) {
@@ -859,7 +861,7 @@ class PWAManager {
         this.refreshCurrentPageIfNeeded(payload.syncedOperations);
       }
     } catch (error) {
-      console.error("[PWA] 处理同步完成消息失败:", error);
+      log.error("[PWA] 处理同步完成消息失败:", error);
     }
   }
 
@@ -872,7 +874,7 @@ class PWAManager {
 
       // 获取当前页面路径
       const currentPath = window.location.pathname;
-      console.log("[PWA] 检查页面刷新需求", { currentPath, syncedOperations });
+      log.debug("检查页面刷新需求", { currentPath, syncedOperations });
 
       // 检查是否有文本分享相关的同步操作
       const hasTextOperations = syncedOperations.some(
@@ -881,7 +883,7 @@ class PWAManager {
 
       // 如果当前在文本管理页面且有文本相关操作，则刷新页面
       if (hasTextOperations && (currentPath.includes("/admin") || currentPath.includes("/management"))) {
-        console.log("[PWA] 检测到文本管理页面需要刷新数据");
+        log.debug("检测到文本管理页面需要刷新数据");
 
         // 使用温和的页面刷新方式
         setTimeout(() => {
@@ -892,7 +894,7 @@ class PWAManager {
       // 可以根据需要添加其他页面的刷新逻辑
       // 例如：文件管理页面、系统设置页面等
     } catch (error) {
-      console.error("[PWA] 页面刷新检查失败:", error);
+      log.error("[PWA] 页面刷新检查失败:", error);
     }
   }
 
@@ -909,15 +911,15 @@ class PWAManager {
       }
 
       keysToRemove.forEach((key) => localStorage.removeItem(key));
-      console.log(`[PWA] 已清理 ${keysToRemove.length} 个临时存储项`);
+      log.debug(`已清理 ${keysToRemove.length} 个临时存储项`);
     } catch (error) {
-      console.warn("[PWA] 清理应用缓存失败:", error);
+      log.warn("[PWA] 清理应用缓存失败:", error);
     }
   }
 
   async installApp() {
     if (!pwaState.deferredPrompt) {
-      console.warn("[PWA] 无法安装应用：没有安装提示");
+      log.warn("[PWA] 无法安装应用：没有安装提示");
       return false;
     }
 
@@ -926,15 +928,15 @@ class PWAManager {
       const { outcome } = await pwaState.deferredPrompt.userChoice;
 
       if (outcome === "accepted") {
-        console.log("[PWA] 用户接受安装");
+        log.debug("用户接受安装");
         pwaState.isInstallable = false;
         return true;
       } else {
-        console.log("[PWA] 用户拒绝安装");
+        log.debug("用户拒绝安装");
         return false;
       }
     } catch (error) {
-      console.error("[PWA] 安装失败:", error);
+      log.error("[PWA] 安装失败:", error);
       return false;
     } finally {
       pwaState.deferredPrompt = null;
@@ -946,26 +948,26 @@ class PWAManager {
     try {
       pwaState.isUpdating = true;
       pwaState.updateError = null;
-      console.log("[PWA] 开始应用更新...");
+      log.debug("开始应用更新...");
 
       // autoUpdate模式：直接刷新页面应用更新
       if (pwaState.needRefresh) {
-        console.log("[PWA] autoUpdate模式：刷新页面应用更新");
+        log.debug("autoUpdate模式：刷新页面应用更新");
         this.reloadApp();
         return true;
       }
 
       // 如果有等待中的Service Worker，发送skipWaiting消息
       if (pwaState.registration && pwaState.registration.waiting) {
-        console.log("[PWA] 发送skipWaiting消息");
+        log.debug("发送skipWaiting消息");
         pwaState.registration.waiting.postMessage({ type: "SKIP_WAITING" });
         return true;
       }
 
-      console.warn("[PWA] 没有可用的更新");
+      log.warn("[PWA] 没有可用的更新");
       return false;
     } catch (error) {
-      console.error("[PWA] 更新应用失败:", error);
+      log.error("[PWA] 更新应用失败:", error);
       pwaState.updateError = error.message;
       pwaState.isUpdating = false;
       return false;
@@ -975,45 +977,45 @@ class PWAManager {
   // 检查应用更新
   async checkForUpdate() {
     if (!pwaState.registration) {
-      console.warn("[PWA] Service Worker 未注册");
+      log.warn("[PWA] Service Worker 未注册");
       return false;
     }
 
     try {
-      console.log("[PWA] 检查应用更新...");
+      log.debug("检查应用更新...");
       await pwaState.registration.update();
       return true;
     } catch (error) {
-      console.error("[PWA] 检查更新失败:", error);
+      log.error("[PWA] 检查更新失败:", error);
       return false;
     }
   }
 
   // 强制刷新页面（更新后）
   reloadApp() {
-    console.log("[PWA] 重新加载应用以应用更新");
+    log.debug("重新加载应用以应用更新");
     window.location.reload();
   }
 
   // 初始化推送通知
   async initPushNotifications() {
     if (!("Notification" in window)) {
-      console.warn("[PWA] 浏览器不支持推送通知");
+      log.warn("[PWA] 浏览器不支持推送通知");
       return;
     }
 
     // 检查当前权限状态
     pwaState.notificationPermission = Notification.permission;
-    console.log(`[PWA] 通知权限状态: ${pwaState.notificationPermission}`);
+    log.debug(`通知权限状态: ${pwaState.notificationPermission}`);
 
     // 如果已授权，尝试获取推送订阅
     if (pwaState.notificationPermission === "granted" && pwaState.registration) {
       try {
         const subscription = await pwaState.registration.pushManager.getSubscription();
         pwaState.pushSubscription = subscription;
-        console.log("[PWA] 推送订阅状态:", subscription ? "已订阅" : "未订阅");
+        log.debug("推送订阅状态:", subscription ? "已订阅" : "未订阅");
       } catch (error) {
-        console.error("[PWA] 获取推送订阅失败:", error);
+        log.error("[PWA] 获取推送订阅失败:", error);
       }
     }
   }
@@ -1029,15 +1031,15 @@ class PWAManager {
       pwaState.notificationPermission = permission;
 
       if (permission === "granted") {
-        console.log("[PWA] 通知权限已授予");
+        log.debug("通知权限已授予");
         await this.initPushNotifications();
         return true;
       } else {
-        console.log("[PWA] 通知权限被拒绝");
+        log.debug("通知权限被拒绝");
         return false;
       }
     } catch (error) {
-      console.error("[PWA] 请求通知权限失败:", error);
+      log.error("[PWA] 请求通知权限失败:", error);
       throw error;
     }
   }
@@ -1046,26 +1048,26 @@ class PWAManager {
   checkBackgroundSyncSupport() {
     if ("serviceWorker" in navigator && "sync" in window.ServiceWorkerRegistration.prototype) {
       pwaState.backgroundSyncSupported = true;
-      console.log("[PWA] 后台同步功能受支持");
+      log.debug("后台同步功能受支持");
     } else {
       pwaState.backgroundSyncSupported = false;
-      console.log("[PWA] 后台同步功能不受支持");
+      log.debug("后台同步功能不受支持");
     }
   }
 
   // 注册后台同步
   async registerBackgroundSync(tag) {
     if (!pwaState.backgroundSyncSupported || !pwaState.registration) {
-      console.warn("[PWA] 后台同步不可用");
+      log.warn("[PWA] 后台同步不可用");
       return false;
     }
 
     try {
       await pwaState.registration.sync.register(tag);
-      console.log(`[PWA] 后台同步已注册: ${tag}`);
+      log.debug(`后台同步已注册: ${tag}`);
       return true;
     } catch (error) {
-      console.error("[PWA] 注册后台同步失败:", error);
+      log.error("[PWA] 注册后台同步失败:", error);
       return false;
     }
   }
@@ -1095,7 +1097,7 @@ class PWAManager {
   // 手动触发Background Sync
   async triggerManualSync(tag = "sync-offline-queue") {
     if (!pwaState.backgroundSyncSupported || !pwaState.registration) {
-      console.warn("[PWA] 后台同步不可用，使用传统同步");
+      log.warn("[PWA] 后台同步不可用，使用传统同步");
       await this.fallbackSync();
       return false;
     }
@@ -1129,14 +1131,14 @@ export const pwaUtils = {
   // 安装相关
   isInstallable: () => pwaState.isInstallable,
   isInstalled: () => pwaState.isInstalled,
-  install: () => console.warn("PWA安装功能需要在PWA管理器初始化后使用"),
+  install: () => log.warn("PWA安装功能需要在PWA管理器初始化后使用"),
 
   // 更新相关
   isUpdateAvailable: () => pwaState.isUpdateAvailable,
   needRefresh: () => pwaState.needRefresh,
   isUpdating: () => pwaState.isUpdating,
-  update: () => console.warn("PWA更新功能需要在PWA管理器初始化后使用"),
-  checkForUpdate: () => console.warn("PWA检查更新功能需要在PWA管理器初始化后使用"),
+  update: () => log.warn("PWA更新功能需要在PWA管理器初始化后使用"),
+  checkForUpdate: () => log.warn("PWA检查更新功能需要在PWA管理器初始化后使用"),
   reloadApp: () => window.location.reload(),
 
   // 版本信息
@@ -1152,15 +1154,15 @@ export const pwaUtils = {
 
   // 推送通知相关
   getNotificationPermission: () => pwaState.notificationPermission,
-  requestNotificationPermission: () => console.warn("PWA通知功能需要在PWA管理器初始化后使用"),
+  requestNotificationPermission: () => log.warn("PWA通知功能需要在PWA管理器初始化后使用"),
   getPushSubscription: () => pwaState.pushSubscription,
 
   // 后台同步相关
   isBackgroundSyncSupported: () => pwaState.backgroundSyncSupported,
   isSyncInProgress: () => pwaState.syncInProgress,
-  registerBackgroundSync: (tag) => console.warn("PWA后台同步功能需要在PWA管理器初始化后使用"),
-  getBackgroundSyncStatus: () => console.warn("PWA后台同步状态功能需要在PWA管理器初始化后使用"),
-  triggerManualSync: (tag) => console.warn("PWA手动同步功能需要在PWA管理器初始化后使用"),
+  registerBackgroundSync: (tag) => log.warn("PWA后台同步功能需要在PWA管理器初始化后使用"),
+  getBackgroundSyncStatus: () => log.warn("PWA后台同步状态功能需要在PWA管理器初始化后使用"),
+  triggerManualSync: (tag) => log.warn("PWA手动同步功能需要在PWA管理器初始化后使用"),
 
   // 离线存储工具
   storage: {
@@ -1197,13 +1199,13 @@ const bindManagerFunctions = () => {
   pwaUtils.registerBackgroundSync = (tag) => pwaManager.registerBackgroundSync(tag);
   pwaUtils.getBackgroundSyncStatus = () => pwaManager.getBackgroundSyncStatus();
   pwaUtils.triggerManualSync = (tag) => pwaManager.triggerManualSync(tag);
-  console.log("[PWA] 功能绑定完成");
+  log.debug("功能绑定完成");
 };
 
 pwaManager.readyPromise
   .then(bindManagerFunctions)
   .catch((error) => {
-    console.error("[PWA] 初始化失败，部分PWA功能不可用:", error);
+    log.error("[PWA] 初始化失败，部分PWA功能不可用:", error);
   });
 
 // 导出实例

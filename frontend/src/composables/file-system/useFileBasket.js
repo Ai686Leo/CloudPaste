@@ -13,6 +13,7 @@ import { api } from "@/api";
 import { formatNowForFilename } from "@/utils/timeUtils.js";
 import { usePathPassword } from "@/composables/usePathPassword.js";
 import { getZipJsDefaultConfig } from "@/utils/zipjsRuntimeUris.js";
+import { createLogger } from "@/utils/logger.js";
 
 // zip.js 全局 configure
 let isZipJsConfigured = false;
@@ -23,6 +24,7 @@ export function useFileBasket() {
   const authStore = useAuthStore();
   const taskManager = useTaskManager();
   const pathPassword = usePathPassword();
+  const log = createLogger("FileBasket");
 
   // ===== 全局清理状态跟踪 =====
 
@@ -52,7 +54,7 @@ export function useFileBasket() {
           writable.abort();
         }
       } catch (e) {
-        console.warn("中止 ZIP 写入流失败:", e?.message || e);
+        log.warn("中止 ZIP 写入流失败:", e?.message || e);
       }
     });
     globalActiveZipWritables.clear();
@@ -63,7 +65,7 @@ export function useFileBasket() {
     });
     globalEventListeners.clear();
 
-    console.log("文件篮composable已清理所有资源");
+    log.debug("文件篮composable已清理所有资源");
   };
 
   // ===== Store状态解构 =====
@@ -82,7 +84,7 @@ export function useFileBasket() {
       }
       return t("fileBasket.button.withCount", { count: collectionCount.value });
     } catch (error) {
-      console.warn("国际化函数调用失败，使用默认文本:", error);
+      log.warn("国际化函数调用失败，使用默认文本:", error);
       // 使用默认文本作为后备
       if (collectionCount.value === 0) {
         return "文件篮";
@@ -133,7 +135,7 @@ export function useFileBasket() {
         }),
       };
     } catch (error) {
-      console.error("添加文件到篮子失败:", error);
+      log.error("添加文件到篮子失败:", error);
       return {
         success: false,
         message: t("fileBasket.messages.addFailed"),
@@ -154,7 +156,7 @@ export function useFileBasket() {
         message: t("fileBasket.messages.removeSuccess"),
       };
     } catch (error) {
-      console.error("从篮子移除文件失败:", error);
+      log.error("从篮子移除文件失败:", error);
       return {
         success: false,
         message: t("fileBasket.messages.removeFailed"),
@@ -179,7 +181,7 @@ export function useFileBasket() {
         message: isInBasket ? t("fileBasket.messages.removeSuccess") : t("fileBasket.messages.addSuccess", { count: 1, total: collectionCount.value }),
       };
     } catch (error) {
-      console.error("切换文件篮状态失败:", error);
+      log.error("切换文件篮状态失败:", error);
       return {
         success: false,
         message: t("fileBasket.messages.toggleFailed"),
@@ -213,7 +215,7 @@ export function useFileBasket() {
         }),
       };
     } catch (error) {
-      console.error("批量添加文件到篮子失败:", error);
+      log.error("批量添加文件到篮子失败:", error);
       return {
         success: false,
         message: t("fileBasket.messages.batchAddFailed"),
@@ -258,7 +260,7 @@ export function useFileBasket() {
         message: t("fileBasket.messages.clearSuccess"),
       };
     } catch (error) {
-      console.error("清空文件篮失败:", error);
+      log.error("清空文件篮失败:", error);
       return {
         success: false,
         message: t("fileBasket.messages.clearFailed"),
@@ -366,7 +368,7 @@ export function useFileBasket() {
         message: t("fileBasket.messages.taskCreated", { taskName }),
       };
     } catch (error) {
-      console.error("创建打包任务失败:", error);
+      log.error("创建打包任务失败:", error);
       return {
         success: false,
         message: t("fileBasket.messages.taskCreateFailed"),
@@ -422,7 +424,7 @@ export function useFileBasket() {
       }
 
       // 创建 ZipWriter
-      console.log(`处理 ${files.length} 个文件`);
+      log.debug(`处理 ${files.length} 个文件`);
       const zipOutput = isFsAccessMode ? outputTarget.writable : new BlobWriter("application/zip");
       const zipWriter = new ZipWriter(zipOutput, {
         // 生成 >4GB 的 zip，需要显式开启 zip64
@@ -545,7 +547,7 @@ export function useFileBasket() {
 
           return { success: true, fileName: file.name };
         } catch (error) {
-          console.error(`添加文件 ${file.name} 失败:`, error);
+          log.error(`添加文件 ${file.name} 失败:`, error);
           failedFiles.push({ fileName: file.name, path: file.path, error: error.message });
 
           const failedFileState = fileStates.get(file.path);
@@ -599,7 +601,7 @@ export function useFileBasket() {
       // 打包完成后自动清空文件篮
       fileBasketStore.clearBasket();
     } catch (error) {
-      console.error("打包任务失败:", error);
+      log.error("打包任务失败:", error);
       taskManager.failTask(
         taskId,
         error?.message || String(error),
@@ -620,7 +622,7 @@ export function useFileBasket() {
             await outputTarget.writable.abort();
           }
         } catch (e) {
-          console.warn("中止 ZIP 写入失败:", e?.message || e);
+          log.warn("中止 ZIP 写入失败:", e?.message || e);
         }
       }
 
@@ -666,7 +668,7 @@ export function useFileBasket() {
 
       throw new Error(t("fileBasket.errors.noDownloadUrl"));
     } catch (error) {
-      console.error(`获取文件 ${file.name} 下载链接失败:`, error);
+      log.error(`获取文件 ${file.name} 下载链接失败:`, error);
       throw error;
     }
   };

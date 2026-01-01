@@ -36,8 +36,10 @@ import { copyToClipboard as clipboardCopy } from "@/utils/clipboard";
 import { formatNowForFilename } from "@/utils/timeUtils.js";
 import { saveAs } from "file-saver";
 import { IconCode, IconDocumentText, IconDownload } from "@/components/icons";
+import { createLogger } from "@/utils/logger.js";
 
 const { t } = useI18n();
+const log = createLogger("CopyFormatMenu");
 
 // Props
 const props = defineProps({
@@ -128,7 +130,7 @@ const exportWordDocument = async () => {
     saveAs(blob, fileName);
     emit("status-message", t("markdown.messages.wordExported"));
   } catch (error) {
-    console.error("导出Word文档时出错:", error);
+    log.error("导出Word文档时出错:", error);
     emit("status-message", t("markdown.messages.wordExportFailed"));
   } finally {
     emit("close");
@@ -138,7 +140,7 @@ const exportWordDocument = async () => {
 // 导出为PNG图片
 const exportAsPng = async () => {
   if (!props.editor || typeof props.editor.getValue !== "function") {
-    console.error("导出PNG失败：编辑器实例不存在");
+    log.error("导出PNG失败：编辑器实例不存在");
     emit("status-message", t("markdown.messages.editorNotReady"));
     return;
   }
@@ -168,7 +170,7 @@ const exportAsPng = async () => {
         emit("status-message", t("markdown.messages.pngExported"));
       },
       onError: (error) => {
-        console.error("导出PNG图片时出错:", error);
+        log.error("导出PNG图片时出错:", error);
 
         if (error instanceof Event && error.type === "error" && error.target instanceof HTMLImageElement) {
           emit("status-message", t("markdown.messages.corsImageError"));
@@ -194,7 +196,7 @@ const exportAsPng = async () => {
       }
     }
   } catch (error) {
-    console.error("导出PNG图片过程中发生错误:", error);
+    log.error("导出PNG图片过程中发生错误:", error);
 
     if (error instanceof Event && error.type === "error") {
       emit("status-message", t("markdown.messages.corsImageError"));
@@ -222,7 +224,7 @@ const copyToClipboard = async (text, successMessage) => {
       throw new Error(t("markdown.copyFailed"));
     }
   } catch (e) {
-    console.error("复制失败:", e);
+    log.error("复制失败:", e);
     emit("status-message", t("markdown.copyFailed"));
   }
 };

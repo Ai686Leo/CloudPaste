@@ -160,11 +160,13 @@ import { formatLocalDateTimeWithSeconds, formatNowForFilename } from "@/utils/ti
 import { useAdminBase } from "@/composables/admin-management/useAdminBase.js";
 import { useAdminBackupService } from "@/modules/admin/services/backupService.js";
 import { useThemeMode } from "@/composables/core/useThemeMode.js";
+import { createLogger } from "@/utils/logger.js";
 
 export default {
   name: "BackupView",
   setup() {
     const { t } = useI18n();
+    const log = createLogger("BackupView");
     const { showSuccess, showError } = useAdminBase();
     const { getModules, createBackup: createBackupRequest, restoreBackup: restoreBackupRequest, previewRestoreBackup: previewRestoreBackupRequest } = useAdminBackupService();
     const { isDarkMode: darkMode } = useThemeMode();
@@ -291,7 +293,7 @@ export default {
         availableModules.value = modules;
         addLog(t("admin.backup.logs.moduleInfoSuccess"), "SUCCESS");
       } catch (error) {
-        console.error("获取模块信息失败:", error);
+        log.error("获取模块信息失败:", error);
         addLog(t("admin.backup.errors.getModuleInfoFailed", { error: error.message }), "ERROR");
         showNotification(t("admin.backup.errors.getModuleInfoFailed", { error: error.message }), "error");
       }
@@ -347,7 +349,7 @@ export default {
 
         showNotification(t("admin.backup.success.backupCreated"), "success");
       } catch (error) {
-        console.error("创建备份失败:", error);
+        log.error("创建备份失败:", error);
         addLog(t("admin.backup.errors.backupFailed", { error: error.message }), "ERROR");
         showNotification(t("admin.backup.errors.backupFailed", { error: error.message }), "error");
       } finally {
@@ -397,7 +399,7 @@ export default {
         addLog(t("admin.backup.logs.downloadStarted"), "SUCCESS");
         showNotification(t("admin.backup.success.backupCreated"), "success");
       } catch (error) {
-        console.error("创建备份失败:", error);
+        log.error("创建备份失败:", error);
         addLog(t("admin.backup.errors.backupFailed", { error: error.message }), "ERROR");
         showNotification(t("admin.backup.errors.backupFailed", { error: error.message }), "error");
       } finally {
@@ -519,7 +521,7 @@ export default {
         }
         showNotification(t("admin.backup.success.dataRestored"), "success");
       } catch (error) {
-        console.error("恢复失败:", error);
+        log.error("恢复失败:", error);
         addLog(t("admin.backup.errors.restoreFailed", { error: error.message }), "ERROR");
         showNotification(t("admin.backup.errors.restoreFailed", { error: error.message }), "error");
       } finally {

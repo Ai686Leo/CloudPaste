@@ -13,7 +13,9 @@ export default {
       github_releases: "GitHub Releases",
       github_api: "GitHub API",
       telegram: "Telegram Bot API",
-      huggingface_datasets: "HuggingFace Datasets (Hub)",
+      discord: "Discord Bot API",
+      huggingface_datasets: "HuggingFace Datasets",
+      mirror: "Source Mirror",
     },
 
     // group titles
@@ -120,6 +122,14 @@ export default {
         verify_after_upload: "Verify after upload",
       },
 
+      // Discord specific
+      discord: {
+        bot_token: "Bot token",
+        channel_id: "Channel ID",
+        part_size_mb: "Chunk size (MB)",
+        upload_concurrency: "Upload concurrency",
+      },
+
       // HuggingFace Datasets specific
       huggingface_datasets: {
         repo: "Dataset repository (repo)",
@@ -131,6 +141,13 @@ export default {
         hf_multipart_concurrency: "Multipart concurrency",
         hf_use_xet: "Use Xet storage backend (disabled by default)",
         hf_delete_lfs_on_remove: "Also delete HuggingFace LFS objects on remove (careful)",
+      },
+
+      // MIRROR (mirror site)
+      mirror: {
+        preset: "Mirror preset",
+        endpoint_url: "Mirror base URL",
+        max_entries: "Max entries",
       },
     },
 
@@ -198,6 +215,13 @@ export default {
         upload_concurrency: "Default 2; higher is faster but easier to hit rate limits",
       },
 
+      discord: {
+        bot_token: "Paste Discord Bot Token",
+        channel_id: "Target channel's Channel ID",
+        part_size_mb: "Default 10; recommended 8~10 (Discord upload limit is max 10MB per upload, 25MB for Nitro users)",
+        upload_concurrency: "Default 1; increasing this speeds up uploads but may trigger Discord rate limits more easily",
+      },
+
       huggingface_datasets: {
         repo: "e.g., Open-Orca/OpenOrca (do not write the full URL)",
         revision: "e.g., main (branch name); tags/commits can also be used, but they are read-only",
@@ -206,10 +230,22 @@ export default {
         hf_tree_limit: "default 100; higher values return more data per request",
         hf_multipart_concurrency: "default 5; higher is faster but can be less stable",
       },
+
+      mirror: {
+        endpoint_url: "e.g., https://mirrors.tuna.tsinghua.edu.cn/",
+        max_entries: "e.g., 1000",
+      },
     },
 
     // enum options
     enum: {
+      mirror: {
+        preset: {
+          tuna: "Tsinghua",
+          ustc: "USTC",
+          aliyun: "Aliyun",
+        },
+      },
       telegram: {
         bot_api_mode: {
           official: "Official (api.telegram.org)",
@@ -307,6 +343,13 @@ export default {
           "When enabled, each chunk will be re-verified for size after successful upload, slightly slower but more stable (default is fine unless there are special circumstances)",
       },
 
+      discord: {
+        bot_token: "Used to call the Discord Bot API",
+        channel_id: "Files will be uploaded to this channel (the bot must be in this channel/server and have permissions to view/send messages/upload attachments)",
+        part_size_mb: "Chunk size for resumable uploads; recommended 8~10MB (Discord's single upload limit is max 10MB, 25MB for Nitro users)",
+        upload_concurrency: "Limit the number of concurrent requests sent to Discord under the same storage configuration to avoid 429 rate limits due to high concurrency",
+      },
+
       huggingface_datasets: {
         repo: "HuggingFace dataset repository ID (format: owner/name). This refers to a HuggingFace Datasets 'repository', not a local path.",
         revision: "Branch/version: Recommended to specify a branch name (e.g., main). If a tag or commit SHA is provided, read-only access is enforced.",
@@ -321,6 +364,13 @@ export default {
           "When enabled, write operations attempt to use Xet (new backend). However, some environments (e.g., Cloudflare Workers) may block runtime WebAssembly compilation, causing write failures. Disabled by default for stability.",
         hf_delete_lfs_on_remove:
           "When enabled: deleting a file in CloudPaste will also call HuggingFace to permanently delete the matching LFS object (so it disappears from HuggingFace “List LFS files”).\nWhen disabled: CloudPaste only deletes the repo file entry (a pointer), and the LFS blob may remain on HuggingFace—so uploading the exact same content again can become “instant upload/skip”.\nNote: If two files have completely identical content (same SHA), cleaning LFS may affect another file or the download of an older version.",
+      },
+
+      mirror: {
+        preset: "Automatically fetches mirror site directory page links according to the corresponding template rules.",
+        endpoint_url:
+          "Root address of the mirror directory (must start with http(s)://). It will be auto-filled after selecting a template, or you can manually change it to another mirror site address.",
+        max_entries: "Maximum number of entries returned per directory listing. Lower it for very large directories to avoid slowdowns/timeouts.",
       },
     },
 

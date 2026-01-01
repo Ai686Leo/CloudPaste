@@ -13,7 +13,9 @@ import { buildFileInfo } from "../../utils/FileInfoBuilder.js";
 import { createHttpStreamDescriptor } from "../../streaming/StreamDescriptorUtils.js";
 import { buildFullProxyUrl } from "../../../constants/proxy.js";
 import { getMimeTypeFromFilename } from "../../../utils/fileUtils.js";
+import { MasqueradeClient } from "../../../utils/httpMasquerade.js";
 import { Buffer } from "buffer";
+import { decryptIfNeeded } from "../../../utils/crypto.js";
 
 const DEFAULT_API_BASE = "https://api.github.com";
 // GitHub Contents API 本身不提供“最后修改时间”，目录列表阶段不额外请求 commits（避免 N 次请求导致限流）
@@ -61,9 +63,20 @@ export class GithubApiStorageDriver extends BaseDriver {
     this._lastWriteAtMs = 0;
     /** @type {Map<string, string>} */
     this._treeShaCache = new Map();
+
+    // 浏览器伪装客户端
+    this._masqueradeClient = new MasqueradeClient({
+      deviceCategory: "desktop",
+      rotateIP: false,
+      rotateUA: false,
+    });
   }
 
   async initialize() {
+    // token 可能以 encrypted:* 存在（由存储配置 CRUD 统一加密写入）
+    const decryptedToken = await decryptIfNeeded(this.token, this.encryptionSecret);
+    this.token = typeof decryptedToken === "string" ? decryptedToken.trim() : decryptedToken;
+
     const errors = [];
     if (!this.owner) errors.push("GitHub API 配置缺少必填字段: owner");
     if (!this.repo) errors.push("GitHub API 配置缺少必填字段: repo");
@@ -433,7 +446,7 @@ export class GithubApiStorageDriver extends BaseDriver {
 
   async uploadFile(fsPath, fileOrStream, options = {}) {
     this._ensureInitialized();
-    const { subPath = "/", filename, contentLength } = options;
+    const { subPath = "/", filename, contentLength, mount } = options;
 
     const normalizedSubPath = this._normalizeSubPath(subPath);
     const targetSubPath = this._resolveTargetSubPath(normalizedSubPath, fsPath, filename);
@@ -450,10 +463,16 @@ export class GithubApiStorageDriver extends BaseDriver {
       );
     });
 
-    const name = filename || this._basename(fsPath, false) || "upload.bin";
-    const base = String(fsPath || "/").replace(/\/+$/, "") || "/";
-    const finalFsPath = base === "/" ? `/${name}` : `${base}/${name}`;
-    return { success: true, storagePath: finalFsPath, message: "GITHUB_API_UPLOAD" };
+    // storagePath 语义对齐：
+    // - FS（mount 视图）：返回挂载路径（/mount/.../file）
+    // - storage-first（ObjectStore/分享上传/直传）：返回传入的 subPath（避免出现 file/file）
+    const storagePath = mount
+      ? this._buildMountPath(mount, targetSubPath)
+      : typeof subPath === "string" && subPath
+        ? subPath
+        : targetSubPath;
+
+    return { success: true, storagePath, message: "GITHUB_API_UPLOAD" };
   }
 
   async updateFile(fsPath, content, options = {}) {
@@ -1348,9 +1367,10 @@ export class GithubApiStorageDriver extends BaseDriver {
     return `${base}${pathname.startsWith("/") ? "" : "/"}${pathname}`;
   }
 
-  _buildHeaders(extra = {}) {
+  _buildHeaders(extra = {}, targetUrl = null) {
+    const browserHeaders = this._masqueradeClient.buildHeaders({}, targetUrl);
     const headers = {
-      "User-Agent": "CloudPaste-GithubApiStorageDriver",
+      ...browserHeaders,
       Accept: "application/vnd.github+json",
       "X-GitHub-Api-Version": "2022-11-28",
       ...extra,
@@ -1637,18 +1657,6 @@ export class GithubApiStorageDriver extends BaseDriver {
     // 后端 /api/fs/upload（流式与表单）默认将 path 作为“目标目录”，文件名通过 filename 传入
     // 因此只要带 filename，就一律按“目录 + 文件名”语义拼接
     if (name) {
-      // 兼容 ObjectStore/分享上传：此时 subPath 可能已经是完整文件路径（含文件名），并且也会传入 filename
-      // 如果此时再拼接，会导致出现 “file.png/file.png” 这种“文件名目录”。
-      const normalizedFull = this._normalizeFullFsPath(fsPath);
-      const normalizedName = String(name).replace(/^\/+/, "").replace(/\/+$/, "");
-      if (normalizedName) {
-        const fullSuffix = `/${normalizedName}`;
-        const spIsFull = sp !== "/" && sp.endsWith(fullSuffix);
-        const fsIsFull = normalizedFull !== "/" && normalizedFull.endsWith(fullSuffix);
-        if (spIsFull && (!fsPath || fsIsFull)) {
-          return sp;
-        }
-      }
       const base = sp === "/" ? "" : sp.replace(/\/+$/, "");
       return `${base}/${name}`.replace(/\/+/g, "/");
     }

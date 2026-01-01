@@ -140,9 +140,11 @@ import { formatDateTimeWithSeconds } from "@/utils/timeUtils.js";
 import { IconCheckbox, IconClock, IconCopy, IconDocument } from "@/components/icons";
 import { useEventListener } from "@vueuse/core";
 import { copyToClipboard } from "@/utils/clipboard";
+import { createLogger } from "@/utils/logger.js";
 
 // 国际化
 const { t } = useI18n();
+const log = createLogger("SelectUploadDialog");
 
 const props = defineProps({
   isOpen: {
@@ -327,7 +329,7 @@ const copyUploadId = async (uploadId) => {
       throw new Error("copy_failed");
     }
   } catch (error) {
-    console.error("复制失败:", error);
+    log.error("复制失败:", error);
   }
 };
 

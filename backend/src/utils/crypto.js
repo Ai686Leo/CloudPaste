@@ -172,28 +172,43 @@ export async function decryptIfNeeded(value, encryptionSecret) {
 export async function buildSecretView(cfg, encryptionSecret, options = { mode: "none" }) {
   const mode = options.mode || "none";
   const result = { ...cfg };
+
+  // 统一的 secret 字段集合
+  // - S3: access_key_id / secret_access_key
+  // - WebDAV: password
+  // - OneDrive/GoogleDrive: client_secret / refresh_token
+  // - Telegram: bot_token
+  // - GitHub: token
+  // - HuggingFace: hf_token
+  const SECRET_FIELDS = [
+    "access_key_id",
+    "secret_access_key",
+    "password",
+    "client_secret",
+    "refresh_token",
+    "bot_token",
+    "token",
+    "hf_token",
+  ];
+
   if (mode === "none") {
-    delete result.access_key_id;
-    delete result.secret_access_key;
-    delete result.password;
-    delete result.client_secret;
-    delete result.refresh_token;
+    for (const key of SECRET_FIELDS) {
+      delete result[key];
+    }
     return result;
   }
   if (mode === "masked") {
-    result.access_key_id = maskSecret(await decryptIfNeeded(cfg.access_key_id, encryptionSecret));
-    result.secret_access_key = maskSecret(await decryptIfNeeded(cfg.secret_access_key, encryptionSecret));
-    result.password = maskSecret(await decryptIfNeeded(cfg.password, encryptionSecret));
-    result.client_secret = maskSecret(await decryptIfNeeded(cfg.client_secret, encryptionSecret));
-    result.refresh_token = maskSecret(await decryptIfNeeded(cfg.refresh_token, encryptionSecret));
+    for (const key of SECRET_FIELDS) {
+      if (!Object.prototype.hasOwnProperty.call(cfg, key)) continue;
+      result[key] = maskSecret(await decryptIfNeeded(cfg[key], encryptionSecret));
+    }
     return result;
   }
   if (mode === "plain") {
-    result.access_key_id = await decryptIfNeeded(cfg.access_key_id, encryptionSecret);
-    result.secret_access_key = await decryptIfNeeded(cfg.secret_access_key, encryptionSecret);
-    result.password = await decryptIfNeeded(cfg.password, encryptionSecret);
-    result.client_secret = await decryptIfNeeded(cfg.client_secret, encryptionSecret);
-    result.refresh_token = await decryptIfNeeded(cfg.refresh_token, encryptionSecret);
+    for (const key of SECRET_FIELDS) {
+      if (!Object.prototype.hasOwnProperty.call(cfg, key)) continue;
+      result[key] = await decryptIfNeeded(cfg[key], encryptionSecret);
+    }
     return result;
   }
   return result;

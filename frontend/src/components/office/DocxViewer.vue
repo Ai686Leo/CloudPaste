@@ -20,6 +20,9 @@
 import { nextTick, onMounted, onUnmounted, ref } from "vue";
 import { fetchFileBinaryWithAuth } from "@/api/services/fileDownloadService.js";
 import LoadingIndicator from "@/components/common/LoadingIndicator.vue";
+import { createLogger } from "@/utils/logger.js";
+
+const log = createLogger("DocxViewer");
 
 const props = defineProps({
   contentUrl: { type: String, required: true },
@@ -82,7 +85,7 @@ onMounted(async () => {
     loading.value = false;
     emit("load");
   } catch (err) {
-    console.error("DOCX 本地预览失败:", err);
+    log.error("DOCX 本地预览失败:", err);
     loading.value = false;
     errorMessage.value = err?.message || String(err);
     emit("error", err);

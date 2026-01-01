@@ -5,6 +5,9 @@
  */
 
 import { API_BASE_URL, API_PREFIX } from "@/api/config.js";
+import { createLogger } from "@/utils/logger.js";
+
+const log = createLogger("StorageTools");
 
 /**
  * 把相对 API 路径补成绝对地址
@@ -65,10 +68,10 @@ export class SessionManager {
   setFilePaused(fileId, paused) {
     if (paused) {
       this.pausedFiles.add(fileId);
-      console.log(`[SessionManager] 文件已暂停: ${fileId}`);
+      log.debug(`文件已暂停: ${fileId}`);
     } else {
       this.pausedFiles.delete(fileId);
-      console.log(`[SessionManager] 文件已恢复: ${fileId}`);
+      log.debug(`文件已恢复: ${fileId}`);
     }
   }
 
@@ -89,7 +92,7 @@ export class SessionManager {
     }
 
     if (cleanedCount > 0) {
-      console.log(`[SessionManager] 清理了 ${cleanedCount} 个过期会话`);
+      log.debug(`清理了 ${cleanedCount} 个过期会话`);
     }
   }
 

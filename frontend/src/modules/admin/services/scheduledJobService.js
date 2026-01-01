@@ -1,4 +1,7 @@
 import { get, post, put, del } from "@/api/client";
+import { createLogger } from "@/utils/logger.js";
+
+const log = createLogger("ScheduledJobService");
 
 /**
  * @typedef {Object} ScheduledJob
@@ -88,7 +91,7 @@ export function useScheduledJobService() {
       const items = Array.isArray(resp) ? resp : (resp.items || []);
       return { items };
     } catch (error) {
-      console.error("[ScheduledJobService] 获取任务列表失败:", error);
+    log.error("[ScheduledJobService] 获取任务列表失败:", error);
       throw error;
     }
   };
@@ -115,7 +118,7 @@ export function useScheduledJobService() {
 
       return resp;
     } catch (error) {
-      console.error(`[ScheduledJobService] 获取任务详情失败 (${taskId}):`, error);
+    log.error(`[ScheduledJobService] 获取任务详情失败 (${taskId}):`, error);
       throw error;
     }
   };
@@ -142,7 +145,7 @@ export function useScheduledJobService() {
 
       return resp;
     } catch (error) {
-      console.error("[ScheduledJobService] 创建任务失败:", error);
+    log.error("[ScheduledJobService] 创建任务失败:", error);
       throw error;
     }
   };
@@ -170,7 +173,7 @@ export function useScheduledJobService() {
 
       return resp;
     } catch (error) {
-      console.error(`[ScheduledJobService] 更新任务失败 (${taskId}):`, error);
+    log.error(`[ScheduledJobService] 更新任务失败 (${taskId}):`, error);
       throw error;
     }
   };
@@ -192,7 +195,7 @@ export function useScheduledJobService() {
 
       return true;
     } catch (error) {
-      console.error(`[ScheduledJobService] 删除任务失败 (${taskId}):`, error);
+    log.error(`[ScheduledJobService] 删除任务失败 (${taskId}):`, error);
       throw error;
     }
   };
@@ -222,7 +225,7 @@ export function useScheduledJobService() {
       const items = Array.isArray(resp) ? resp : (resp.items || []);
       return { items };
     } catch (error) {
-      console.error(`[ScheduledJobService] 获取执行历史失败 (${taskId}):`, error);
+    log.error(`[ScheduledJobService] 获取执行历史失败 (${taskId}):`, error);
       throw error;
     }
   };
@@ -262,7 +265,7 @@ export function useScheduledJobService() {
       const items = Array.isArray(resp) ? resp : (resp.items || []);
       return { items };
     } catch (error) {
-      console.error("[ScheduledJobService] 获取handler类型列表失败:", error);
+    log.error("[ScheduledJobService] 获取handler类型列表失败:", error);
       throw error;
     }
   };
@@ -289,7 +292,7 @@ export function useScheduledJobService() {
 
       return resp;
     } catch (error) {
-      console.error(`[ScheduledJobService] 获取handler类型详情失败 (${taskId}):`, error);
+    log.error(`[ScheduledJobService] 获取handler类型详情失败 (${taskId}):`, error);
       throw error;
     }
   };
@@ -316,7 +319,7 @@ export function useScheduledJobService() {
 
       return resp;
     } catch (error) {
-      console.error(`[ScheduledJobService] 执行任务失败 (${taskId}):`, error);
+    log.error(`[ScheduledJobService] 执行任务失败 (${taskId}):`, error);
       throw error;
     }
   };
@@ -346,7 +349,7 @@ export function useScheduledJobService() {
       
       return resp;
     } catch (error) {
-      console.error('[ScheduledJobService] 获取按小时统计数据失败:', error);
+    log.error('[ScheduledJobService] 获取按小时统计数据失败:', error);
       throw error;
     }
   };
@@ -382,7 +385,7 @@ export function useScheduledJobService() {
 
       return resp;
     } catch (error) {
-      console.error("[ScheduledJobService] 获取触发器状态失败:", error);
+    log.error("[ScheduledJobService] 获取触发器状态失败:", error);
       throw error;
     }
   };

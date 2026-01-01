@@ -13,6 +13,7 @@ import { buildFileInfo, inferNameFromPath } from "../../utils/FileInfoBuilder.js
 import { buildFullProxyUrl } from "../../../constants/proxy.js";
 import { getMimeTypeFromFilename } from "../../../utils/fileUtils.js";
 import { createHttpStreamDescriptor } from "../../streaming/StreamDescriptorUtils.js";
+import { MasqueradeClient } from "../../../utils/httpMasquerade.js";
 import {
   DEFAULT_REVISION,
   GITKEEP_FILENAME,
@@ -54,6 +55,7 @@ import {
 } from "./hfUtils.js";
 import { fetchHfLfsUploadInstructions, completeHfLfsMultipartUpload, tryParseAmzExpiresSeconds } from "./hfMultipartOps.js";
 import { createUploadSessionRecord, findUploadSessionById, listActiveUploadSessions, updateUploadSessionById } from "../../../utils/uploadSessions.js";
+import { decryptIfNeeded } from "../../../utils/crypto.js";
 
 export class HuggingFaceDatasetsStorageDriver extends BaseDriver {
   /**
@@ -171,6 +173,13 @@ export class HuggingFaceDatasetsStorageDriver extends BaseDriver {
         return { results, completed, visited };
       },
     };
+
+    // 浏览器伪装客户端
+    this._masqueradeClient = new MasqueradeClient({
+      deviceCategory: "desktop",
+      rotateIP: false,
+      rotateUA: false,
+    });
   }
 
   async initialize() {
@@ -179,6 +188,13 @@ export class HuggingFaceDatasetsStorageDriver extends BaseDriver {
     }
     if (!this._repoParts?.namespace || !this._repoParts?.repo) {
       throw new ValidationError("repo 格式无效，应为 username/dataset");
+    }
+
+    // token 可能以 encrypted:* 存在（由存储配置 CRUD 统一加密写入）
+    const decryptedToken = await decryptIfNeeded(this._token, this.encryptionSecret);
+    this._token = typeof decryptedToken === "string" ? decryptedToken.trim() : decryptedToken;
+    if (typeof this._token === "string" && this._token.length === 0) {
+      this._token = null;
     }
 
     // 能力动态开关：
@@ -276,8 +292,10 @@ export class HuggingFaceDatasetsStorageDriver extends BaseDriver {
     throw new DriverError("HuggingFace 请求失败（重试耗尽）", { status: ApiStatus.BAD_GATEWAY });
   }
 
-  _buildAuthHeaders(extra = {}) {
-    return buildAuthHeaders(this._token, extra);
+  _buildAuthHeaders(extra = {}, targetUrl = null) {
+    const browserHeaders = this._masqueradeClient.buildHeaders({}, targetUrl);
+    const authHeaders = buildAuthHeaders(this._token, {});
+    return { ...browserHeaders, ...authHeaders, ...extra };
   }
 
   _buildTreeApiUrl(repoPath) {
@@ -689,9 +707,8 @@ export class HuggingFaceDatasetsStorageDriver extends BaseDriver {
     const guessedContentType = getMimeTypeFromFilename(safeName) || "application/octet-stream";
 
     const headers = this._buildAuthHeaders({
-      "User-Agent": "CloudPaste-Backend/1.0",
       Accept: "*/*",
-    });
+    }, url);
 
     return createHttpStreamDescriptor({
       contentType: guessedContentType,

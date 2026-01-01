@@ -7,6 +7,7 @@
 
 import { ref, reactive, computed, onMounted, onBeforeUnmount, watch, unref } from "vue";
 import { useEventListener, useIntersectionObserver } from "@vueuse/core";
+import { createLogger } from "@/utils/logger.js";
 
 /**
  * 错误类型定义
@@ -64,6 +65,7 @@ const isMobile = () => {
  * @param {Function} [options.onCanPlay] - 可播放回调
  */
 export function useLivePhoto(options = {}) {
+  const log = createLogger("LivePhoto");
   const readSources = () => ({
     photoSrc: unref(options.photoSrc) || "",
     videoSrc: unref(options.videoSrc) || "",
@@ -131,7 +133,7 @@ export function useLivePhoto(options = {}) {
       state.isWarmed = true;
     } catch (e) {
       // 预热失败不影响后续操作
-      console.warn("[LivePhoto] Video warm-up failed:", e.message);
+      log.warn("[LivePhoto] Video warm-up failed:", e.message);
     }
   };
 

@@ -104,8 +104,60 @@ const STORAGE_TYPE_BEHAVIOR_DEF = {
   TELEGRAM: {
     secretFields: ["bot_token"],
   },
+  DISCORD: {
+    secretFields: ["bot_token"],
+  },
   HUGGINGFACE_DATASETS: {
     secretFields: ["hf_token"],
+  },
+  MIRROR: {
+    /**
+     * 针对 preset 的默认值回填 endpoint_url
+     */
+    ensureDefaults(formData) {
+      const preset = formData.value.preset;
+      if (!preset) return;
+      const currentEndpoint = (formData.value.endpoint_url || "").trim();
+
+      const defaultsByPreset = {
+        tuna: "https://mirrors.tuna.tsinghua.edu.cn/",
+        ustc: "https://mirrors.ustc.edu.cn/",
+        aliyun: "https://mirrors.aliyun.com/",
+      };
+
+      const key = String(preset).trim().toLowerCase();
+      const nextDefault = defaultsByPreset[key] || "";
+      if (!nextDefault) return;
+
+      // 空值：直接回填
+      if (!currentEndpoint) {
+        formData.value.endpoint_url = nextDefault;
+        return;
+      }
+
+      // 如果当前值就是“某个模板的默认值”，认为是自动回填过的，允许随模板切换一起更新
+      const knownDefaults = new Set(Object.values(defaultsByPreset));
+      if (knownDefaults.has(currentEndpoint)) {
+        formData.value.endpoint_url = nextDefault;
+      }
+    },
+    /**
+     * endpoint_url 统一追加结尾斜杠
+     */
+    formatOnBlur(fieldName, formData) {
+      if (fieldName === "endpoint_url") {
+        const raw = formData.value.endpoint_url;
+        if (!raw) {
+          formData.value.endpoint_url = "";
+          return;
+        }
+        let value = String(raw).trim();
+        if (!value.endsWith("/")) {
+          value = `${value}/`;
+        }
+        formData.value.endpoint_url = value;
+      }
+    },
   },
 };
 
@@ -153,6 +205,11 @@ export function useAdminStorageTypeBehavior(options) {
       loaded: ref(false),
     },
     TELEGRAM: {
+      visible: ref(false),
+      revealing: ref(false),
+      loaded: ref(false),
+    },
+    DISCORD: {
       visible: ref(false),
       revealing: ref(false),
       loaded: ref(false),
@@ -227,6 +284,8 @@ export function useAdminStorageTypeBehavior(options) {
           } else if (type === "GITHUB_API") {
             formData.value.token = data.token || "";
           } else if (type === "TELEGRAM") {
+            formData.value.bot_token = data.bot_token || "";
+          } else if (type === "DISCORD") {
             formData.value.bot_token = data.bot_token || "";
           } else if (type === "HUGGINGFACE_DATASETS") {
             formData.value.hf_token = data.hf_token || "";

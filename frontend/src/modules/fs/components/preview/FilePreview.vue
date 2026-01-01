@@ -430,7 +430,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch, onMounted, onBeforeUnmount } from "vue";
+import { computed, ref, watch, onBeforeUnmount } from "vue";
 import { useI18n } from "vue-i18n";
 import { IconCollapse, IconDocument, IconDownload, IconError, IconExclamationSolid, IconEye, IconLink, IconRefresh, IconSave, IconDatabase, IconClock } from "@/components/icons";
 import LoadingIndicator from "@/components/common/LoadingIndicator.vue";
@@ -453,8 +453,10 @@ import PreviewChannelToolbar from "@/components/common/preview/PreviewChannelToo
 import { LivePhotoViewer } from "@/components/common/LivePhoto";
 import { detectLivePhoto, isLivePhotoImage } from "@/utils/livePhotoUtils.js";
 import ExternalPlayerDock from "./ExternalPlayerDock.vue";
+import { createLogger } from "@/utils/logger.js";
 
 const { t } = useI18n();
+const log = createLogger("FilePreview");
 const pathPassword = usePathPassword();
 const fsService = useFsService();
 
@@ -848,7 +850,7 @@ const dynamicMaxHeight = computed(() => {
 // 保存文件功能
 const handleSaveFile = async () => {
   if (!textPreviewRef.value || !textPreviewRef.value.getValue) {
-    console.error("无法获取编辑器内容");
+    log.error("无法获取编辑器内容");
     emit("show-message", {
       type: "error",
       message: t("mount.filePreview.cannotGetEditorContent"),
@@ -922,7 +924,7 @@ watch(
       livePhotoVideoUrl.value = url || "";
     } catch (error) {
       if (currentRequestId !== livePhotoVideoUrlRequestId) return;
-      console.error("[LivePhoto] 获取视频直链失败:", error);
+      log.error("[LivePhoto] 获取视频直链失败:", error);
       livePhotoVideoUrl.value = "";
     }
   },
@@ -931,7 +933,6 @@ watch(
 
 // 监听模式变化
 watch(textPreviewMode, (newMode) => {
-  console.log("模式切换到:", newMode);
   // 通过ref调用TextPreview组件的方法
   if (textPreviewRef.value) {
     textPreviewRef.value.switchMode(newMode);
@@ -940,7 +941,6 @@ watch(textPreviewMode, (newMode) => {
 
 // 监听编码变化
 watch(textEncoding, (newEncoding) => {
-  console.log("编码切换到:", newEncoding);
   // 通过ref调用TextPreview组件的方法
   if (textPreviewRef.value) {
     textPreviewRef.value.switchEncoding(newEncoding);
@@ -966,17 +966,11 @@ watch(
       if (!oldFile || (oldFile && newFile.name !== oldFile.name)) {
         userHasManuallyChanged.value = false;
         textPreviewMode.value = smartInitialMode.value;
-        console.log(`文件变化，智能设置预览模式: ${newFile.name} → ${smartInitialMode.value}`);
       }
     }
   },
   { immediate: true }
 );
-
-// 组件生命周期
-onMounted(() => {
-  console.log("FilePreview组件已挂载");
-});
 
 onBeforeUnmount(() => {
   void exitFullscreen();

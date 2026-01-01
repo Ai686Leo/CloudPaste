@@ -1,11 +1,13 @@
 import { reactive, readonly } from "vue";
 import { useDebounceFn, useLocalStorage } from "@vueuse/core";
+import { createLogger } from "@/utils/logger.js";
 
 // localStorage键名
 const STORAGE_KEY = "cloudpaste_tasks";
 
 // 配置项
 const MAX_TASK_AGE_DAYS = 7; // 保留任务的最大天数
+const log = createLogger("TaskManager");
 
 // 任务状态枚举
 export const TaskStatus = {
@@ -43,7 +45,7 @@ const saveTasksToStorage = () => {
   try {
     persistDebounced();
   } catch (error) {
-    console.error("保存任务到本地存储失败:", error);
+    log.error("保存任务到本地存储失败:", error);
   }
 };
 
@@ -80,11 +82,11 @@ const loadTasksFromStorage = () => {
         state.tasks = cleanedTasks;
         state.nextId = parsedData.nextId || 1;
 
-        console.log(`从本地存储加载了 ${cleanedTasks.length} 个任务`);
+        log.debug(`从本地存储加载了 ${cleanedTasks.length} 个任务`);
       }
     }
   } catch (error) {
-    console.error("从本地存储加载任务失败:", error);
+    log.error("从本地存储加载任务失败:", error);
   }
 };
 
@@ -226,7 +228,7 @@ const taskManager = {
 
       return stats;
     } catch (error) {
-      console.error("获取存储统计信息失败:", error);
+      log.error("获取存储统计信息失败:", error);
       return null;
     }
   },

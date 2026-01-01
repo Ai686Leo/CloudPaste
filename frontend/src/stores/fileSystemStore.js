@@ -8,6 +8,7 @@ import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import { useAuthStore } from "./authStore.js";
 import { useFsService } from "@/modules/fs";
+import { createLogger } from "@/utils/logger.js";
 
 /** @typedef {import("@/types/fs").FsDirectoryResponse} FsDirectoryResponse */
 /** @typedef {import("@/types/fs").FsDirectoryItem} FsDirectoryItem */
@@ -16,6 +17,7 @@ import { useFsService } from "@/modules/fs";
 export const useFileSystemStore = defineStore("fileSystem", () => {
   const fsService = useFsService();
   const authStore = useAuthStore();
+  const log = createLogger("FileSystemStore");
 
   // ===== 状态 =====
   const currentPath = ref("/");
@@ -64,7 +66,7 @@ export const useFileSystemStore = defineStore("fileSystem", () => {
 
     // 避免重复请求（同一路径且非强制刷新）
     if (!force && currentLoadingPath.value === normalizedPath) {
-      console.log(`目录 ${normalizedPath} 正在加载中，跳过重复请求`);
+      log.debug(`目录 ${normalizedPath} 正在加载中，跳过重复请求`);
       return;
     }
 
@@ -87,7 +89,7 @@ export const useFileSystemStore = defineStore("fileSystem", () => {
       
       // 如果请求被取消，data 为 null，不更新状态
       if (data === null) {
-        console.log("目录请求被取消，跳过状态更新:", normalizedPath);
+        log.debug("目录请求被取消，跳过状态更新:", normalizedPath);
         return;
       }
 
@@ -98,11 +100,11 @@ export const useFileSystemStore = defineStore("fileSystem", () => {
     } catch (err) {
       // 请求被取消时，静默处理，不显示错误
       if (/** @type {any} */ (err)?.name === "AbortError" || /** @type {any} */ (err)?.__aborted) {
-        console.log("目录请求被取消，静默处理:", normalizedPath);
+        log.debug("目录请求被取消，静默处理:", normalizedPath);
         return;
       }
 
-      console.error("加载目录失败:", err);
+      log.error("加载目录失败:", err);
       // 针对路径密码校验失败的场景，不将其视为"普通错误"，交给路径密码弹窗处理
       if (/** @type {any} */ (err)?.code === "FS_PATH_PASSWORD_REQUIRED") {
         directoryData.value = null;
@@ -138,7 +140,6 @@ export const useFileSystemStore = defineStore("fileSystem", () => {
     loading.value = false;
     error.value = null;
     currentLoadingPath.value = null;
-    // 取消所有进行中的请求
     fsService.cancelAllRequests();
   };
 

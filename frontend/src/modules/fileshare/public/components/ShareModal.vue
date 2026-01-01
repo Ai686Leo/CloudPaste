@@ -132,6 +132,7 @@ import { copyToClipboard } from "@/utils/clipboard";
 import { formatFileSize } from "@/utils/fileUtils";
 import { generateQRCode as createQRCodeImage } from "@/utils/qrcodeUtils.js";
 import { IconChevronDown, IconClose, IconCopy, IconDocumentText, IconFacebook, IconQQ, IconQrCode, IconShare, IconTelegram, IconTwitter, IconWeibo } from "@/components/icons";
+import { createLogger } from "@/utils/logger.js";
 
 // 社交平台配置常量
 const SOCIAL_PLATFORMS = [
@@ -204,6 +205,7 @@ export default {
   emits: ["close"],
   setup(props, { emit }) {
     const { t } = useI18n();
+    const log = createLogger("ShareModal");
 
     const showQRCode = ref(false);
     const qrCodeDataURL = ref("");
@@ -228,10 +230,9 @@ export default {
           setTimeout(() => {
             copySuccess.value = false;
           }, 2000);
-          console.log("Link copied successfully");
         }
       } catch (error) {
-        console.error("Failed to copy link:", error);
+        log.error("Failed to copy link:", error);
       }
     };
 
@@ -246,7 +247,7 @@ export default {
           });
         } catch (error) {
           if (error.name !== "AbortError") {
-            console.error("Native share failed:", error);
+            log.error("Native share failed:", error);
             // 回退到复制链接
             await copyLink();
           }
@@ -277,7 +278,7 @@ export default {
           qrCodeDataURL.value = await createQRCodeImage(window.location.href, { width: 128, margin: 1 });
           qrCodeError.value = false;
         } catch (error) {
-          console.error("Failed to generate QR code:", error);
+          log.error("Failed to generate QR code:", error);
           qrCodeError.value = true;
         }
       }

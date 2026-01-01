@@ -5,16 +5,18 @@ import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 import { useScheduledJobs } from "@/modules/admin/composables/useScheduledJobs";
 import { useThemeMode } from "@/composables/core/useThemeMode.js";
-import { useConfirmDialog } from "@/composables/core/useConfirmDialog.js";
+import { useConfirmDialog, createConfirmFn } from "@/composables/core/useConfirmDialog.js";
 import { formatDateTime, formatDateTimeWithSeconds } from "@/utils/timeUtils.js";
 import AdminTable from "@/components/common/AdminTable.vue";
 import ConfirmDialog from "@/components/common/dialogs/ConfirmDialog.vue";
 import ScheduledJobDetailModal from "@/modules/admin/components/ScheduledJobDetailModal.vue";
 import { IconArrowUp, IconCheckCircle, IconChevronDown, IconDelete, IconEye, IconFolderPlus, IconRefresh, IconRename, IconSearch, IconXCircle } from "@/components/icons";
+import { createLogger } from "@/utils/logger.js";
 
 const { t } = useI18n();
 const router = useRouter();
 const { isDarkMode: darkMode } = useThemeMode();
+const log = createLogger("ScheduledJobsView");
 
 // 全局时钟：用于实时更新相对时间显示（倒计时）
 const currentTick = ref(0);
@@ -57,15 +59,11 @@ onUnmounted(() => {
 // 确认对话框
 const { dialogState, confirm, handleConfirm, handleCancel } = useConfirmDialog();
 
-const confirmFn = async ({ title, message, confirmType }) => {
-  return await confirm({
-    title,
-    message,
-    confirmType,
-    confirmText: t("common.dialogs.deleteButton"),
-    darkMode: darkMode.value,
-  });
-};
+const confirmFn = createConfirmFn(confirm, {
+  t,
+  darkMode,
+  getConfirmText: () => t("common.dialogs.deleteButton"),
+});
 
 const {
   jobs, currentJob, jobRuns, loading, runsLoading, filteredJobs, enabledFilter,
@@ -186,7 +184,7 @@ const loadAnalytics = async () => {
     const data = await loadHourlyAnalytics(24);
     hourlyAnalytics.value = data;
   } catch (error) {
-    console.error('[热力图] 加载统计数据失败:', error);
+    log.error("[热力图] 加载统计数据失败:", error);
   }
 };
 

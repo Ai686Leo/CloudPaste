@@ -8,6 +8,9 @@ import { LRUCache } from "@/utils/lruCache.js";
 import { zipService } from "./zipService.js";
 import { libarchiveService } from "./libarchiveService.js";
 import { ARCHIVE_CONSTANTS, clearSharedFileBlobCache } from "./archiveUtils.js";
+import { createLogger } from "@/utils/logger.js";
+
+const log = createLogger("ArchiveService");
 
 /**
  * 压缩文件处理服务类
@@ -40,14 +43,14 @@ class ArchiveService {
    * @returns {Promise<Array>} 统一格式的文件列表
    */
   async extractArchive(fileBlobOrUrl, filename, fileUrl = "", progressCallback = null, password = null) {
-    console.log("开始解压文件:", filename);
+    log.debug("开始解压文件:", filename);
 
     // 缓存检查
     if (this.config.cacheEnabled && fileUrl) {
       const cacheKey = `${fileUrl}_${filename}`;
       const cached = this.extractCache.get(cacheKey);
       if (cached) {
-        console.log("使用缓存的解压结果:", filename);
+        log.debug("使用缓存的解压结果:", filename);
         if (progressCallback) progressCallback(100);
         return cached;
       }
@@ -75,7 +78,7 @@ class ArchiveService {
       this.extractCache.set(cacheKey, result);
     }
 
-    console.log(`解压完成，共 ${result.length} 个文件/目录`);
+    log.debug(`解压完成，共 ${result.length} 个文件/目录`);
     return result;
   }
 
@@ -93,7 +96,7 @@ class ArchiveService {
 
     const cacheKey = `${fileUrl}_${filename}`;
     this.extractCache.delete(cacheKey);
-    console.log("已清除解压缓存:", cacheKey);
+    log.debug("已清除解压缓存:", cacheKey);
   }
 
   /**
@@ -106,7 +109,7 @@ class ArchiveService {
     this.fileBlobCache.delete(fileUrl);
     // 清除共享的文件Blob缓存
     clearSharedFileBlobCache(fileUrl);
-    console.log("已清除文件Blob缓存:", fileUrl);
+    log.debug("已清除文件Blob缓存:", fileUrl);
   }
 
   // ===================================================================
@@ -122,7 +125,7 @@ class ArchiveService {
     try {
       return await entryWrapper.getContent();
     } catch (error) {
-      console.error("获取文件内容失败:", error);
+      log.error("获取文件内容失败:", error);
       throw new Error(`获取文件内容失败: ${error.message}`);
     }
   }

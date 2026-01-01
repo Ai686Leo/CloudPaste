@@ -66,6 +66,7 @@ export default {
     remarkPlaceholder: "为文件添加备注（可选）",
     customLink: "自定义链接",
     customLinkPlaceholder: "自定义文件访问链接（可选）",
+    multiFileSlugDisabled: "一次上传多个文件时，不支持自定义链接后缀（会自动生成）",
     passwordProtection: "密码保护",
     passwordPlaceholder: "设置访问密码（可选）",
     expireTime: "过期时间",

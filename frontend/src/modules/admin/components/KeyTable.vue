@@ -10,9 +10,11 @@ import ConfirmDialog from "@/components/common/dialogs/ConfirmDialog.vue";
 import { formatDateTime } from "@/utils/timeUtils.js";
 import { IconKey } from "@/components/icons";
 import LoadingIndicator from "@/components/common/LoadingIndicator.vue";
+import { createLogger } from "@/utils/logger.js";
 
 // i18n
 const { t } = useI18n();
+const log = createLogger("KeyTable");
 const { deleteApiKey } = useAdminApiKeyService();
 
 // 确认对话框
@@ -524,7 +526,7 @@ const toggleKeyStatus = async (key) => {
     emit("success", t(newStatus ? "admin.keyManagement.success.enabled" : "admin.keyManagement.success.disabled"));
     emit("refresh");
   } catch (e) {
-    console.error("切换API密钥状态失败:", e);
+    log.error("切换API密钥状态失败:", e);
     error.value = e.message || t("admin.keyManagement.error.updateFailed");
     emit("error", error.value);
   }
@@ -562,7 +564,7 @@ const handleDeleteKey = async (key) => {
     emit("success", t("admin.keyManagement.success.deleted"));
     emit("refresh");
   } catch (e) {
-    console.error("删除API密钥失败:", e);
+    log.error("删除API密钥失败:", e);
     error.value = e.message || t("admin.keyManagement.error.deleteFailed");
     emit("error", error.value);
   }
@@ -581,7 +583,7 @@ const copyKeyToClipboard = async (keyValue) => {
       throw new Error(t("admin.keyManagement.error.copyFailed"));
     }
   } catch (e) {
-    console.error("复制到剪贴板失败:", e);
+    log.error("复制到剪贴板失败:", e);
     error.value = t("admin.keyManagement.error.copyFailed");
     emit("error", error.value);
   }

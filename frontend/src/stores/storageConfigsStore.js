@@ -6,6 +6,9 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import { api } from "@/api";
+import { createLogger } from "@/utils/logger.js";
+
+const log = createLogger("StorageConfigsStore");
 
 const CACHE_TTL = 5 * 60 * 1000; // 5 分钟缓存
 const FETCH_LIMIT = 200; // 通常足够覆盖所有配置
@@ -225,7 +228,7 @@ export const useStorageConfigsStore = defineStore("storageConfigs", () => {
         return configs.value;
       })
       .catch((err) => {
-        console.error("加载存储配置失败", err);
+        log.error("加载存储配置失败", err);
         error.value = err;
         throw err;
       })

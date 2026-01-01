@@ -8,6 +8,9 @@
 import { ref, onMounted, onBeforeUnmount, watch, nextTick } from "vue";
 import APlayer from "aplayer";
 import "aplayer/dist/APlayer.min.css";
+import { createLogger } from "@/utils/logger.js";
+
+const log = createLogger("AudioPlayer");
 
 // Props 定义
 const props = defineProps({
@@ -141,7 +144,7 @@ const initAPlayer = () => {
     // 应用主题样式
     applyThemeStyles();
   } catch (error) {
-    console.error("APlayer 初始化失败:", error);
+    log.error("APlayer 初始化失败:", error);
     emit("error", error);
   }
 };
@@ -249,30 +252,30 @@ const bindEvents = () => {
 
   ap.on("error", (error) => {
     if (!error?.target) {
-      console.log("忽略一次无 target 的播放错误事件");
+      log.debug("忽略一次无 target 的播放错误事件");
       return;
     }
 
     // “按需获取直链”场景：如果当前曲目还没补上真实 url，audio 会先报一次 error（先静默）
     const currentUrl = ap?.list?.audios?.[ap.list.index]?.url;
     if (!currentUrl) {
-      console.log("正在按需获取音频直链，先忽略一次播放错误");
+      log.debug("正在按需获取音频直链，先忽略一次播放错误");
       return;
     }
 
     // 占位静音 audio（data:）本身不重要，报错也不影响最终播放，直接忽略减少噪音
     if (typeof currentUrl === "string" && currentUrl.startsWith("data:audio/")) {
-      console.log("忽略占位音频的播放错误");
+      log.debug("忽略占位音频的播放错误");
       return;
     }
 
     // 检查是否是Service Worker相关的误报错误
     if (error?.target?.src?.includes(window.location.origin) && ap?.list?.audios?.[ap.list.index]?.url?.startsWith("https://")) {
-      console.log("忽略Service Worker相关的误报错误，音频实际可以正常播放");
+      log.debug("忽略Service Worker相关的误报错误，音频实际可以正常播放");
       return; // 忽略Service Worker误报错误
     }
 
-    console.error("APlayer 播放错误:", error);
+    log.error("APlayer 播放错误:", error);
     emit("error", error);
   });
 

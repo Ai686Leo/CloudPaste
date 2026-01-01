@@ -8,12 +8,14 @@ import { ref, computed, onUnmounted } from "vue";
 import { archiveService } from "./archiveService.js";
 import { cleanupZipJS } from "./zipService.js";
 import { lookupMimeType, detectFileTypeFromFilename, FileType, getFileName } from "@/utils/fileTypes.js";
+import { createLogger } from "@/utils/logger.js";
 
 /**
  * 压缩文件预览 Composable
  * @returns {Object} 响应式状态和方法
  */
 export function useArchivePreview() {
+  const log = createLogger("ArchivePreview");
   // ===== 响应式状态 =====
 
   /** 是否正在解压 */
@@ -102,7 +104,7 @@ export function useArchivePreview() {
    */
   const extractArchive = async (fileUrl, fileName, password = null) => {
     if (isExtracting.value) {
-      console.warn("正在解压中，请勿重复操作");
+      log.warn("正在解压中，请勿重复操作");
       return;
     }
 
@@ -114,9 +116,9 @@ export function useArchivePreview() {
     currentStage.value = "下载";
 
     try {
-      console.log("开始处理压缩文件:", fileName);
+      log.debug("开始处理压缩文件:", fileName);
       if (password) {
-        console.log("使用提供的密码进行解压");
+        log.debug("使用提供的密码进行解压");
       }
 
       // 直接委托给archiveService，传递密码参数
@@ -142,13 +144,13 @@ export function useArchivePreview() {
       extractProgress.value = 100;
       currentStage.value = "完成";
 
-      console.log("压缩文件处理完成，文件数量:", processedEntries.length);
+      log.debug("压缩文件处理完成，文件数量:", processedEntries.length);
     } catch (error) {
-      console.error("解压失败:", error);
+      log.error("解压失败:", error);
 
       // 检查是否是加密检测错误，如果是则重新抛出让上层处理
       if (error.message && (error.message.includes("ENCRYPTED_ARCHIVE_DETECTED") || error.message.includes("INVALID_ARCHIVE_PASSWORD"))) {
-        console.log("检测到加密相关错误，重新抛出给上层处理");
+        log.debug("检测到加密相关错误，重新抛出给上层处理");
         // 重置状态但不设置错误信息，让上层组件处理
         extractProgress.value = 0;
         currentStage.value = "";
@@ -176,12 +178,12 @@ export function useArchivePreview() {
    */
   const previewFile = async (entry) => {
     if (entry.isDirectory) {
-      console.warn("无法预览目录:", entry.name);
+      log.warn("无法预览目录:", entry.name);
       return;
     }
 
     if (isPreviewing.value) {
-      console.warn("正在预览其他文件，请稍候");
+      log.warn("正在预览其他文件，请稍候");
       return;
     }
 
@@ -189,7 +191,7 @@ export function useArchivePreview() {
     currentPreviewFile.value = entry;
 
     try {
-      console.log("开始预览文件:", entry.name);
+      log.debug("开始预览文件:", entry.name);
 
       // 获取文件内容
       const arrayBuffer = await archiveService.getFileContent(entry.entry);
@@ -198,7 +200,7 @@ export function useArchivePreview() {
       const fileName = entry.name;
       const type = detectFileTypeFromFilename(fileName);
 
-      console.log(`预览文件: ${fileName}, 检测类型: ${type}`);
+      log.debug(`预览文件: ${fileName}, 检测类型: ${type}`);
 
       if (type === FileType.TEXT) {
         // 文本文件：创建HTML页面在新标签页显示
@@ -260,9 +262,9 @@ export function useArchivePreview() {
         URL.revokeObjectURL(url);
       }
 
-      console.log("文件预览成功:", entry.name);
+      log.debug("文件预览成功:", entry.name);
     } catch (error) {
-      console.error("预览文件失败:", error);
+      log.error("预览文件失败:", error);
       extractError.value = error.message || "预览失败";
     } finally {
       isPreviewing.value = false;
@@ -277,12 +279,12 @@ export function useArchivePreview() {
    */
   const downloadFile = async (entry) => {
     if (entry.isDirectory) {
-      console.warn("无法下载目录:", entry.name);
+      log.warn("无法下载目录:", entry.name);
       return;
     }
 
     try {
-      console.log("开始下载文件:", entry.name);
+      log.debug("开始下载文件:", entry.name);
 
       // 获取文件内容
       const fileData = await archiveService.getFileContent(entry.entry);
@@ -305,9 +307,9 @@ export function useArchivePreview() {
       // 释放 URL
       URL.revokeObjectURL(url);
 
-      console.log("文件下载成功:", entry.name);
+      log.debug("文件下载成功:", entry.name);
     } catch (error) {
-      console.error("下载文件失败:", error);
+      log.error("下载文件失败:", error);
       extractError.value = error.message || "下载失败";
     }
   };
@@ -329,7 +331,7 @@ export function useArchivePreview() {
     cachedFileName.value = "";
     cachedFileUrl.value = "";
 
-    console.log("压缩文件预览状态已重置");
+    log.debug("压缩文件预览状态已重置");
   };
 
   // ===== 工具函数 =====
@@ -357,7 +359,7 @@ export function useArchivePreview() {
     try {
       await cleanupZipJS();
     } catch (error) {
-      console.warn("清理zip.js资源时出错:", error);
+      log.warn("清理zip.js资源时出错:", error);
     }
   });
 

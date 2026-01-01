@@ -4,6 +4,9 @@
  */
 
 import { get, post, put } from "../client";
+import { createLogger } from "@/utils/logger.js";
+
+const log = createLogger("SystemService");
 
 /******************************************************************************
  * 仪表盘统计API
@@ -33,7 +36,7 @@ export async function getMaxUploadSize() {
     }
     return 100; // 默认值
   } catch (error) {
-    console.error("获取最大上传大小失败:", error);
+    log.error("获取最大上传大小失败:", error);
     return 100; // 出错时返回默认值
   }
 }

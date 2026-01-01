@@ -6,6 +6,7 @@ import api, { getEnvironmentInfo } from "./api";
 import i18n from "./i18n";
 import router from "./router";
 import MasonryWall from "@yeger/vue-masonry-wall";
+import { createLogger } from "@/utils/logger.js";
 
 // 导入vue3-context-menu
 import "@imengyu/vue3-context-menu/lib/vue3-context-menu.css";
@@ -19,6 +20,9 @@ import "notivue/animations.css";
 
 // 导入自定义指令
 import { contextMenuDirective } from "./components/common/contextMenu.js";
+
+const log = createLogger("Main");
+const pwaLog = createLogger("PWA");
 
 // 开发环境：清理旧的 Service Worker
 if (import.meta.env.DEV && "serviceWorker" in navigator) {
@@ -35,14 +39,14 @@ const pinia = createPinia();
 
 // 添加全局错误处理
 app.config.errorHandler = (err, instance, info) => {
-  console.error(`错误: ${err}`);
-  console.error(`信息: ${info}`);
+  log.error(`错误: ${err}`);
+  log.error(`信息: ${info}`);
 
   // 生产环境下可以考虑将错误发送到后端记录
   if (import.meta.env.PROD) {
     try {
       // 发送错误到控制台或后端API（如果有）
-      console.warn("[生产环境错误]", {
+      log.warn("[生产环境错误]", {
         message: err.message,
         stack: err.stack,
         info,
@@ -51,13 +55,13 @@ app.config.errorHandler = (err, instance, info) => {
       });
     } catch (e) {
       // 避免上报过程中出错
-      console.error("错误上报失败:", e);
+      log.error("错误上报失败:", e);
     }
   }
 
   // i18n特定错误处理
   if (err && err.message && (err.message.includes("i18n") || err.message.includes("vue-i18n") || err.message.includes("useI18n") || err.message.includes("translation"))) {
-    console.warn("检测到i18n相关错误:", err.message);
+    log.warn("检测到i18n相关错误:", err.message);
   }
 
   // 处理特定错误类型
@@ -65,19 +69,19 @@ app.config.errorHandler = (err, instance, info) => {
     // Vditor 编辑器相关错误
     if (err.message.includes("Cannot read properties of undefined")) {
       if (err.stack && err.stack.includes("Vditor")) {
-        console.warn("检测到Vditor编辑器属性访问错误，可能由于组件切换导致");
+        log.warn("检测到Vditor编辑器属性访问错误，可能由于组件切换导致");
       } else {
-        console.warn("检测到属性访问错误，可能是组件生命周期问题");
+        log.warn("检测到属性访问错误，可能是组件生命周期问题");
       }
     }
 
     // 处理其他特定错误类型
     if (err.message.includes("currentMode") && err.stack && err.stack.includes("setValue")) {
-      console.warn("编辑器值设置错误，可能是编辑器尚未完全初始化");
+      log.warn("编辑器值设置错误，可能是编辑器尚未完全初始化");
     }
 
     if (err.message.includes("element") && err.stack && err.stack.includes("destroy")) {
-      console.warn("编辑器销毁错误，可能是DOM已被清理");
+      log.warn("编辑器销毁错误，可能是DOM已被清理");
     }
   }
 };
@@ -137,7 +141,7 @@ app.config.globalProperties.$api = api;
 
 // 在开发环境中输出API配置信息
 if (import.meta.env.DEV) {
-  console.log("环境信息:", getEnvironmentInfo());
+  log.debug("环境信息:", getEnvironmentInfo());
 }
 
 const scheduleIdle = (fn) => {
@@ -158,8 +162,8 @@ scheduleIdle(async () => {
     app.config.globalProperties.$pwa = pwaUtils;
 
     if (pwaManager) {
-      console.log("[PWA] PWA管理器已初始化");
-      console.log("[PWA] 支持功能:", {
+      pwaLog.debug("PWA管理器已初始化");
+      pwaLog.debug("支持功能:", {
         安装: pwaUtils?.isInstallable?.(),
         离线存储: !!pwaUtils?.storage,
         版本: pwaUtils?.getVersion?.(),
@@ -167,7 +171,7 @@ scheduleIdle(async () => {
       });
     }
   } catch (e) {
-    console.warn("[PWA] 延迟加载失败（不影响页面使用）:", e);
+    pwaLog.warn("[PWA] 延迟加载失败（不影响页面使用）:", e);
   }
 });
 
@@ -187,8 +191,8 @@ const siteConfigStore = useSiteConfigStore();
 // 并行初始化两个Store
 Promise.all([authStore.initialize(), siteConfigStore.initialize()])
   .then(() => {
-    console.log("认证Store和站点配置Store初始化完成");
+    log.debug("认证Store和站点配置Store初始化完成");
   })
   .catch((error) => {
-    console.error("Store初始化失败:", error);
+    log.error("Store初始化失败:", error);
   });

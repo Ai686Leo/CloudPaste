@@ -5,8 +5,10 @@
 
 import { ref, computed, watch } from "vue";
 import { useLocalStorage, useWindowSize } from "@vueuse/core";
+import { createLogger } from "@/utils/logger.js";
 
 export function usePasteMasonryView() {
+  const log = createLogger("PasteMasonry");
   // ===== 设置持久化 =====
 
   const STORAGE_KEYS = {
@@ -82,7 +84,7 @@ export function usePasteMasonryView() {
     horizontalGap.remove?.();
     verticalGap.remove?.();
 
-    console.log("文本瀑布流设置已重置为默认值");
+    log.debug("文本瀑布流设置已重置为默认值");
   };
 
   // ===== 工具栏交互方法 =====
@@ -96,15 +98,15 @@ export function usePasteMasonryView() {
   // 监听设置变化（这里主要用于打印日志，持久化由 useLocalStorage 自动完成）
   const setupWatchers = () => {
     watch(columnCount, (newValue) => {
-      console.log(`文本瀑布流列数设置已保存: ${newValue}`);
+      log.debug(`文本瀑布流列数设置已保存: ${newValue}`);
     });
 
     watch(horizontalGap, (newValue) => {
-      console.log(`文本瀑布流水平间距设置已保存: ${newValue}px`);
+      log.debug(`文本瀑布流水平间距设置已保存: ${newValue}px`);
     });
 
     watch(verticalGap, (newValue) => {
-      console.log(`文本瀑布流垂直间距设置已保存: ${newValue}px`);
+      log.debug(`文本瀑布流垂直间距设置已保存: ${newValue}px`);
     });
   };
 

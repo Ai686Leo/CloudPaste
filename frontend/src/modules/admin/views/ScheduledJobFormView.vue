@@ -9,10 +9,12 @@ import { useScheduledJobs } from '@/modules/admin/composables/useScheduledJobs';
 import { useThemeMode } from '@/composables/core/useThemeMode.js';
 import ScheduledJobFormContent from '@/modules/admin/components/ScheduledJobFormContent.vue';
 import { IconBack, IconChevronRight, IconClock, IconInformationCircle, IconRefresh } from '@/components/icons';
+import { createLogger } from '@/utils/logger.js';
 
 const router = useRouter();
 const route = useRoute();
 const { t } = useI18n();
+const log = createLogger('ScheduledJobFormView');
 const { isDarkMode: darkMode } = useThemeMode();
 const { createJob, updateJob, loadHandlerTypes, handlerTypes, jobs, loadJobs } = useScheduledJobs();
 
@@ -43,7 +45,7 @@ onMounted(async () => {
         error.value = t("admin.scheduledJobs.errors.jobNotFound");
       }
     } catch (err) {
-      console.error('加载任务失败:', err);
+      log.error('加载任务失败:', err);
       error.value = err.message || t("admin.scheduledJobs.errors.loadFailed");
     } finally {
       loading.value = false;
@@ -67,7 +69,7 @@ const handleSubmit = async (formData) => {
     // 成功后直接跳转，无需延迟
     router.push({ name: 'AdminScheduledJobs' });
   } catch (err) {
-    console.error(isEdit.value ? '更新定时任务失败:' : '创建定时任务失败:', err);
+    log.error(isEdit.value ? '更新定时任务失败:' : '创建定时任务失败:', err);
     error.value = err.message || t(
       isEdit.value
         ? "admin.scheduledJobs.updateFailed"

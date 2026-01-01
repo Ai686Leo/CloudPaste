@@ -327,6 +327,40 @@ export class FsSearchIndexStore {
   }
 
   /**
+   * 删除指定 mount 的索引状态行
+   * @param {string} mountId
+   */
+  async deleteStateByMount(mountId) {
+    if (!mountId) return;
+    await this.db
+      .prepare(`DELETE FROM ${DbTables.FS_SEARCH_INDEX_STATE} WHERE mount_id = ?`)
+      .bind(mountId)
+      .run();
+  }
+
+  /**
+   * 清理某 mount 的“索引派生数据”（条目/dirty/state）
+   * - keepState=false：删除 state 行（mount 被删除/彻底移除时更合适）
+   * - keepState=true：保留 state 行，但标记为 not_ready（mount 还在，只是需要重建时更合适）
+   *
+   * @param {string} mountId
+   * @param {{ keepState?: boolean }} [options]
+   */
+  async clearDerivedByMount(mountId, options = {}) {
+    const id = mountId ? String(mountId).trim() : "";
+    if (!id) return;
+    const keepState = options?.keepState === true;
+
+    await this.clearMount(id);
+    await this.clearDirtyByMount(id);
+    if (keepState) {
+      await this.markNotReady(id);
+    } else {
+      await this.deleteStateByMount(id);
+    }
+  }
+
+  /**
    * 拉取指定 mount 的 dirty 记录（按时间升序）
    * @param {string} mountId
    * @param {number} limit

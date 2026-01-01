@@ -6,6 +6,9 @@
  */
 
 import { useSessionStorage } from "@vueuse/core";
+import { createLogger } from "@/utils/logger.js";
+
+const log = createLogger("FilePasswordUtils");
 
 export function getFilePassword(options = {}) {
   const file = options.file || {};
@@ -27,7 +30,7 @@ export function getFilePassword(options = {}) {
         return passwordParam;
       }
     } catch (error) {
-      console.warn("解析URL密码参数失败:", error);
+      log.warn("解析URL密码参数失败:", error);
     }
   }
 
@@ -36,7 +39,7 @@ export function getFilePassword(options = {}) {
       const stored = useSessionStorage(`file_password_${slug}`, "");
       return stored.value || null;
     } catch (error) {
-      console.warn("从会话存储获取密码失败:", error);
+      log.warn("从会话存储获取密码失败:", error);
     }
   }
 
@@ -54,6 +57,6 @@ export function setFilePassword(slug, password) {
     const stored = useSessionStorage(`file_password_${slug}`, "");
     stored.value = password || "";
   } catch (error) {
-    console.warn("写入会话存储密码失败:", error);
+    log.warn("写入会话存储密码失败:", error);
   }
 }

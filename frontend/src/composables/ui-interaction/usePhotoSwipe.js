@@ -10,8 +10,10 @@ import "photoswipe/style.css";
 import "@/styles/photoswipe-custom.css";
 import "@/components/common/LivePhoto/LivePhotoViewer.css";
 import { LIVE_PHOTO_BADGE_ICON_SVG } from "@/components/common/LivePhoto/livePhotoBadgeIconSvg.js";
+import { createLogger } from "@/utils/logger.js";
 
 export function usePhotoSwipe() {
+  const log = createLogger("PhotoSwipe");
   const lightbox = ref(null);
   const isInitialized = ref(false);
   const storedMuted = useSessionStorage("cloudpaste.lightbox.muted", true, { writeDefaults: false });
@@ -171,7 +173,7 @@ export function usePhotoSwipe() {
       lightbox.value.init();
       isInitialized.value = true;
     } catch (error) {
-      console.error("[PhotoSwipe] 初始化失败:", error);
+      log.error("[PhotoSwipe] 初始化失败:", error);
     }
   };
 

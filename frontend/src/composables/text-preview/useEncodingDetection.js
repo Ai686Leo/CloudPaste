@@ -12,8 +12,10 @@ import {
   getEncodingInfo,
   normalizeEncoding
 } from '@/utils/encodingDetector.js';
+import { createLogger } from '@/utils/logger.js';
 
 export function useEncodingDetection() {
+  const log = createLogger('EncodingDetection');
   // 状态
   const selectedEncoding = ref('utf-8');
   const detectionResult = ref(null);
@@ -70,7 +72,7 @@ export function useEncodingDetection() {
       return result;
       
     } catch (error) {
-      console.error('编码检测失败:', error);
+      log.error('编码检测失败:', error);
       detectionError.value = error.message;
       
       return {
@@ -97,7 +99,7 @@ export function useEncodingDetection() {
     if (isEncodingSupported(normalized)) {
       selectedEncoding.value = normalized;
     } else {
-      console.warn(`不支持的编码: ${encoding}，使用默认编码 utf-8`);
+      log.warn(`不支持的编码: ${encoding}，使用默认编码 utf-8`);
       selectedEncoding.value = 'utf-8';
     }
   };

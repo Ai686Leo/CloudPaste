@@ -4,8 +4,10 @@ import { useI18n } from "vue-i18n";
 import { useFsService } from "@/modules/fs";
 import { useAdminMountService } from "@/modules/admin/services/mountService.js";
 import { IconClose, IconFolder, IconRefresh } from "@/components/icons";
+import { createLogger } from "@/utils/logger.js";
 
 const { t } = useI18n();
+const log = createLogger("FsMetaForm");
 const fsService = useFsService();
 const { getMountsList } = useAdminMountService();
 
@@ -153,7 +155,7 @@ const handleSubmit = async () => {
 
     emit("save", submitData);
   } catch (err) {
-    console.error("表单提交失败:", err);
+    log.error("表单提交失败:", err);
     error.value = err.message || t("admin.fsMeta.form.errors.submitFailed");
     isLoading.value = false;
   }
@@ -205,7 +207,7 @@ const DirectoryItemVue = {
                 }));
             }
           } catch (err) {
-            console.error("加载目录失败:", err);
+            log.error("加载目录失败:", err);
           }
         }
         children.value = dirItems;
@@ -295,7 +297,7 @@ const loadMounts = async () => {
       isDirectory: true,
     }));
   } catch (error) {
-    console.error("加载挂载点列表失败:", error);
+    log.error("加载挂载点列表失败:", error);
     mountsList.value = [];
     rootDirectories.value = [];
   } finally {

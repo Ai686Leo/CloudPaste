@@ -5,6 +5,9 @@
 
 import { Archive } from "libarchive.js";
 import { sharedFileBlobCache, getOrDownloadFileBlob, isWebAssemblySupported, countTotalFiles, countExtractedFiles } from "./archiveUtils.js";
+import { createLogger } from "@/utils/logger.js";
+
+const log = createLogger("Libarchive");
 
 /**
  * libarchive文件处理服务类
@@ -34,7 +37,7 @@ class LibarchiveService {
    * @returns {Promise<Array>} 统一格式的文件列表
    */
   async extractArchive(fileBlobOrUrl, filename, fileUrl = "", progressCallback = null, password = null, archiveType) {
-    console.log(`开始处理 ${archiveType.name} 格式文件:`, filename);
+    log.debug(`开始处理 ${archiveType.name} 格式文件:`, filename);
 
     // libarchive格式：密码检测和分支逻辑
     let hasEncrypted = false;
@@ -55,7 +58,7 @@ class LibarchiveService {
     } else if (hasEncrypted && password) {
       // 加密文件需要密码：fileBlob应该已经在检测阶段准备好了
       if (!fileBlob) {
-        console.warn("密码解压时fileBlob为空，尝试重新获取");
+        log.warn("密码解压时fileBlob为空，尝试重新获取");
         if (typeof fileBlobOrUrl === "string" && fileBlobOrUrl.startsWith("http")) {
           fileBlob = await getOrDownloadFileBlob(fileBlobOrUrl, progressCallback, 60, 70, "重新下载");
         } else {
@@ -92,21 +95,21 @@ class LibarchiveService {
     try {
       // 检查 WebAssembly 支持
       if (!isWebAssemblySupported()) {
-        console.warn("当前浏览器不支持 WebAssembly，libarchive.js 功能将不可用");
+        log.warn("当前浏览器不支持 WebAssembly，libarchive.js 功能将不可用");
         return false;
       }
 
-      console.log("正在初始化 libarchive.js WebWorker:", this.config.workerUrl);
+      log.debug("正在初始化 libarchive.js WebWorker:", this.config.workerUrl);
 
       Archive.init({
         workerUrl: this.config.workerUrl,
       });
 
       this.libarchiveInitialized = true;
-      console.log("libarchive.js 初始化成功，WebWorker已配置");
+      log.debug("libarchive.js 初始化成功，WebWorker已配置");
       return true;
     } catch (error) {
-      console.warn("libarchive.js 初始化失败，将降级到仅支持 ZIP:", error);
+      log.warn("libarchive.js 初始化失败，将降级到仅支持 ZIP:", error);
       return false;
     }
   }
@@ -126,7 +129,7 @@ class LibarchiveService {
     }
 
     try {
-      console.log(`开始检测 ${archiveType.name} 文件是否加密...`);
+    log.debug(`开始检测 ${archiveType.name} 文件是否加密...`);
       if (progressCallback) progressCallback(55, "检测加密");
 
       // 使用官方API打开压缩文件
@@ -140,18 +143,18 @@ class LibarchiveService {
           progressCallback(60, hasEncrypted ? "发现加密" : "无加密");
         }
 
-        console.log(`${archiveType.name} 加密检测完成:`, hasEncrypted === true ? "有加密" : "无加密");
+        log.debug(`${archiveType.name} 加密检测完成:`, hasEncrypted === true ? "有加密" : "无加密");
         return hasEncrypted === true;
       } finally {
         // 关闭archive释放worker
         try {
           await archive.close();
         } catch (closeError) {
-          console.warn("关闭archive时出错:", closeError);
+          log.warn("关闭archive时出错:", closeError);
         }
       }
     } catch (error) {
-      console.warn(`⚠️ ${archiveType.name} 加密检测失败:`, error.message);
+      log.warn(`⚠️ ${archiveType.name} 加密检测失败:`, error.message);
       return false;
     }
   }
@@ -173,22 +176,22 @@ class LibarchiveService {
 
     let archive = null;
     try {
-      console.log(`开始libarchive密码解压 ${archiveType.name} 文件...`);
+      log.debug(`开始libarchive密码解压 ${archiveType.name} 文件...`);
       if (progressCallback) progressCallback(75, "解析中");
 
       // 打开压缩文件
       archive = await Archive.open(fileBlob);
       // 设置密码
       await archive.usePassword(password);
-      console.log(`${archiveType.name} 文件密码已设置`);
+      log.debug(`${archiveType.name} 文件密码已设置`);
 
       // 全量解压所有文件
       const extractedFiles = await archive.extractFiles((entry) => {
         if (progressCallback && entry.path) {
-          console.log(`正在解压: ${entry.path}`);
+          log.debug(`正在解压: ${entry.path}`);
         }
       });
-      console.log(`${archiveType.name} 全量解压完成`);
+      log.debug(`${archiveType.name} 全量解压完成`);
 
       const result = [];
       let processedFiles = 0;
@@ -258,10 +261,10 @@ class LibarchiveService {
 
       if (progressCallback) progressCallback(100, "完成");
 
-      console.log(`libarchive密码解压完成，处理了 ${result.length} 个项目`);
+      log.debug(`libarchive密码解压完成，处理了 ${result.length} 个项目`);
       return result;
     } catch (error) {
-      console.error(`libarchive密码解压 ${archiveType.name} 失败:`, error);
+      log.error(`libarchive密码解压 ${archiveType.name} 失败:`, error);
       throw new Error(`${archiveType.name} 密码解压失败: ${error.message}`);
     } finally {
       // 确保关闭archive释放worker
@@ -269,7 +272,7 @@ class LibarchiveService {
         try {
           await archive.close();
         } catch (closeError) {
-          console.warn("关闭archive时出错:", closeError);
+          log.warn("关闭archive时出错:", closeError);
         }
       }
     }
@@ -296,8 +299,8 @@ class LibarchiveService {
       // 获取文件列表（不解压内容，按需解压模式）
       const filesObject = await archive.getFilesObject();
 
-      console.log(`libarchive.js 获取 ${archiveType.name} 文件列表完成`);
-      console.log(`文件内容将按需解压，不占用大量内存`);
+      log.debug(`libarchive.js 获取 ${archiveType.name} 文件列表完成`);
+      log.debug(`文件内容将按需解压，不占用大量内存`);
 
       // 转换为统一格式（按需解压）
       const result = [];
@@ -321,12 +324,12 @@ class LibarchiveService {
                 type: "libarchive",
                 async getContent() {
                   // 按需解压：只有在需要时才解压单个文件
-                  console.log(`按需解压文件: ${fullPath}`);
+                  log.debug(`按需解压文件: ${fullPath}`);
                   try {
                     const file = await item.extract();
                     return await file.arrayBuffer();
                   } catch (error) {
-                    console.error(`解压文件 ${fullPath} 失败:`, error);
+                    log.error(`解压文件 ${fullPath} 失败:`, error);
                     throw new Error(`解压文件失败: ${error.message}`);
                   }
                 },
@@ -363,10 +366,10 @@ class LibarchiveService {
 
       processFiles(filesObject);
 
-      console.log(`libarchive按需解压准备完成，处理了 ${result.length} 个项目`);
+      log.debug(`libarchive按需解压准备完成，处理了 ${result.length} 个项目`);
       return result;
     } catch (error) {
-      console.error(`libarchive.js 解压 ${archiveType.name} 失败:`, error);
+      log.error(`libarchive.js 解压 ${archiveType.name} 失败:`, error);
       throw new Error(`${archiveType.name} 文件解压失败: ${error.message}`);
     }
   }
@@ -380,7 +383,7 @@ class LibarchiveService {
     if (!fileUrl) return;
 
     this.fileBlobCache.delete(fileUrl);
-    console.log("已清除libarchive服务文件Blob缓存:", fileUrl);
+    log.debug("已清除libarchive服务文件Blob缓存:", fileUrl);
   }
 }
 

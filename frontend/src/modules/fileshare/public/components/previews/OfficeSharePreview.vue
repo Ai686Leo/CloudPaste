@@ -45,8 +45,10 @@
 import { ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { OfficePreviewContainer } from "@/components/office";
+import { createLogger } from "@/utils/logger.js";
 
 const { t } = useI18n();
+const log = createLogger("OfficeSharePreview");
 
 defineProps({
   // DocumentApp providers 映射，例如 { native: 'native', microsoft: 'https://...', google: 'https://...' }
@@ -87,7 +89,7 @@ const handleLoad = () => {
 };
 
 const handleError = (err) => {
-  console.error("Office 预览错误:", err);
+  log.error("Office 预览错误:", err);
   localErrorMessage.value = err?.message || t("fileView.preview.office.error") || "预览加载失败";
   emit("error", err);
 };

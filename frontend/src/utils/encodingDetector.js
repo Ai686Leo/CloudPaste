@@ -5,6 +5,9 @@
 
 import chardet from "chardet";
 import { fetchFileBinaryWithAuth } from "@/api/services/fileDownloadService.js";
+import { createLogger } from "@/utils/logger.js";
+
+const log = createLogger("EncodingDetector");
 
 /**
  * 支持的编码格式列表
@@ -95,7 +98,7 @@ export async function detectEncodingFromUrl(url, options = {}) {
       error: null,
     };
   } catch (error) {
-    console.error("编码检测失败:", error);
+    log.error("编码检测失败:", error);
 
     return {
       success: false,

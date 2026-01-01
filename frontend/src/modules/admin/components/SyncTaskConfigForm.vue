@@ -351,6 +351,9 @@ import { ref, watch, onMounted } from 'vue'
 import PathTreeSelector from './PathTreeSelector.vue'
 import { IconArrowUp, IconCheckCircle, IconChevronRight, IconClose, IconCopy, IconFolder, IconFolderPlus, IconList } from '@/components/icons'
 import { copyToClipboard } from '@/utils/clipboard'
+import { createLogger } from '@/utils/logger.js'
+
+const log = createLogger('SyncTaskConfigForm')
 
 // ====== 目标路径辅助：从“文件路径/目录路径”推导出“目录路径” ======
 function deriveTargetFolder(targetPath) {
@@ -606,7 +609,7 @@ const copyPath = async (path) => {
   if (!path) return
   const success = await copyToClipboard(path)
   if (!success) {
-    console.error('复制路径失败:', path)
+    log.error('复制路径失败:', path)
   }
 }
 

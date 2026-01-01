@@ -98,6 +98,7 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from "vue";
 import { useI18n } from "vue-i18n";
 import { IconClose, IconFolder, IconRefresh, IconUpload } from "@/components/icons";
+import { createLogger } from "@/utils/logger.js";
 
 import Dashboard from "@uppy/dashboard";
 
@@ -152,18 +153,17 @@ const emit = defineEmits(["close", "upload-success", "upload-error"]);
 
 // 国际化
 const { locale, t } = useI18n();
+const log = createLogger("UppyUploadModal");
 
 // 使用Composables
 const { uppyInstance, initializeUppy, destroyUppy } = useUppyCore();
 const { fileCount } = useUppyEvents({
   uppy: uppyInstance,
   onFileAdded: (file) => {
-    console.log("[Uppy] 文件已添加:", file.name);
     ensureUploadIdForFile(file);
     errorMessage.value = "";
   },
   onFileRemoved: (file) => {
-    console.log("[Uppy] 文件已移除:", file.name);
   },
   onError: (error) => {
     // 捕获Uppy系统错误，统一展示到错误区域
@@ -176,7 +176,6 @@ useUppyPaste({
   uppy: uppyInstance,
   enabled: computed(() => props.isOpen),
   onPaste: (file) => {
-    console.log("[Uppy] 粘贴文件:", file.name);
   },
 });
 
@@ -185,6 +184,8 @@ const uppyContainerRef = ref(null);
 const uploadMethod = ref("presigned");
 const canUsePresigned = ref(true);
 const canUseMultipart = ref(true);
+const canUseStream = ref(true);
+const canUseForm = ref(true);
 const currentDriverType = ref(null);
 const errorMessage = ref("");
 const isUploading = ref(false);
@@ -212,7 +213,7 @@ const disposeFsAdapterHandle = () => {
     try {
       fsAdapterHandle.adapter.destroy();
     } catch (error) {
-      console.warn("[Uppy] 清理StorageAdapter失败", error);
+      log.warn("[Uppy] 清理StorageAdapter失败", error);
     }
   }
   fsAdapterHandle = null;
@@ -240,16 +241,26 @@ const enforceUploadMethodByDriver = (driver) => {
   const fsCaps = driver?.capabilities?.fs || {};
   const allowPresigned = fsCaps.presignedSingle === true;
   const allowMultipart = fsCaps.multipart === true;
+  const allowStream = fsCaps.backendStream !== false;
+  const allowForm = fsCaps.backendForm !== false;
   canUsePresigned.value = allowPresigned;
   canUseMultipart.value = allowMultipart;
+  canUseStream.value = allowStream;
+  canUseForm.value = allowForm;
   currentDriverType.value = driver?.config?.storage_type || driver?.type || null;
 
-  if (!allowPresigned && uploadMethod.value === "presigned") {
-    uploadMethod.value = allowMultipart ? "multipart" : "stream";
-  }
-  if (!allowMultipart && uploadMethod.value === "multipart") {
-    uploadMethod.value = allowPresigned ? "presigned" : "stream";
-  }
+  const pickFallback = () => {
+    if (allowMultipart) return "multipart";
+    if (allowPresigned) return "presigned";
+    if (allowStream) return "stream";
+    if (allowForm) return "form";
+    return "stream";
+  };
+
+  if (uploadMethod.value === "presigned" && !allowPresigned) uploadMethod.value = pickFallback();
+  if (uploadMethod.value === "multipart" && !allowMultipart) uploadMethod.value = pickFallback();
+  if (uploadMethod.value === "stream" && !allowStream) uploadMethod.value = pickFallback();
+  if (uploadMethod.value === "form" && !allowForm) uploadMethod.value = pickFallback();
 };
 
 const getMountRootFromPath = (path) => {
@@ -268,7 +279,7 @@ const ensureMountsLoaded = async () => {
     const mounts = await getMountsList();
     mountsCache.value = Array.isArray(mounts) ? mounts : [];
   } catch (error) {
-    console.error("[Uppy] 加载挂载列表失败", error);
+    log.error("[Uppy] 加载挂载列表失败", error);
   } finally {
     mountsLoading.value = false;
   }
@@ -338,12 +349,14 @@ const uploadModes = computed(() => {
       label: t("mount.uppy.streamUpload"),
       modeLabel: t("mount.uppy.streamMode"),
       tooltip: t("mount.uppy.streamModeTooltip"),
+      disabled: !canUseStream.value,
     },
     {
       value: "form",
       label: t("mount.uppy.formUpload"),
       modeLabel: t("mount.uppy.formMode"),
       tooltip: t("mount.uppy.formModeTooltip"),
+      disabled: !canUseForm.value,
     },
     {
       value: "multipart",
@@ -368,7 +381,15 @@ const {
 
 // 计算属性
 const canStartUpload = computed(() => {
-  return fileCount.value > 0 && !isUploading.value;
+  const hasFiles = fileCount.value > 0 && !isUploading.value;
+  if (!hasFiles) return false;
+
+  // 如果当前模式已被禁用，就不允许“开始上传”
+  if (uploadMethod.value === "presigned") return canUsePresigned.value === true;
+  if (uploadMethod.value === "multipart") return canUseMultipart.value === true;
+  if (uploadMethod.value === "stream") return canUseStream.value === true;
+  if (uploadMethod.value === "form") return canUseForm.value === true;
+  return false;
 });
 
 const enabledPluginsCount = computed(() => {
@@ -463,7 +484,7 @@ const configureUploadMethod = async () => {
       fsAdapterHandle = handle ? { ...handle, mode: handle.mode || driverStrategy.value } : null;
     }
   } catch (e) {
-    console.warn('[Uppy] configureUploadMethod 解析驱动失败', e);
+    log.warn('[Uppy] configureUploadMethod 解析驱动失败', e);
     disposeFsAdapterHandle();
   }
 };
@@ -485,7 +506,7 @@ const configureServerResumePlugin = () => {
       try {
         existing.setOptions(opts);
       } catch (e) {
-        console.warn('[Uppy] 更新 ServerResumePlugin 配置失败', e);
+        log.warn('[Uppy] 更新 ServerResumePlugin 配置失败', e);
       }
     } else {
       uppy.use(ServerResumePlugin, opts);
@@ -495,7 +516,7 @@ const configureServerResumePlugin = () => {
     try {
       uppy.removePlugin(existing);
     } catch (e) {
-      console.warn("[Uppy] 移除 ServerResumePlugin 失败（可忽略）", e);
+      log.warn("[Uppy] 移除 ServerResumePlugin 失败（可忽略）", e);
     }
   }
 };
@@ -525,7 +546,7 @@ const configureSha256PreprocessPlugin = () => {
       try {
         existing.setOptions(opts);
       } catch (e) {
-        console.warn("[Uppy] 更新 Sha256PreprocessPlugin 配置失败", e);
+        log.warn("[Uppy] 更新 Sha256PreprocessPlugin 配置失败", e);
       }
     } else {
       uppy.use(Sha256PreprocessPlugin, opts);
@@ -534,7 +555,7 @@ const configureSha256PreprocessPlugin = () => {
     try {
       uppy.removePlugin(existing);
     } catch (e) {
-      console.warn("[Uppy] 移除 Sha256PreprocessPlugin 失败（可忽略）", e);
+      log.warn("[Uppy] 移除 Sha256PreprocessPlugin 失败（可忽略）", e);
     }
   }
 };
@@ -597,7 +618,7 @@ const setupUppy = async () => {
 
     await pluginManager.addPluginsToUppy();
   } catch (error) {
-    console.error("[Uppy] 初始化失败:", error);
+    log.error("[Uppy] 初始化失败:", error);
     errorMessage.value = t("mount.uppy.initializationFailed", { message: error.message });
   }
 };
@@ -606,7 +627,6 @@ const setupUppy = async () => {
  * 处理上传完成事件
  */
 const handleUploadComplete = async (result) => {
-  console.log("[Uppy] 上传完成:", result);
   isUploading.value = false;
 
   if (result.successful.length > 0) {
@@ -681,7 +701,7 @@ const runFsCommitIfNeeded = async (result) => {
       });
     }
   } catch (e) {
-    console.warn("[Uppy] 生成 skipUpload 快照失败，将忽略该提示", e);
+    log.warn("[Uppy] 生成 skipUpload 快照失败，将忽略该提示", e);
   }
 
   try {
@@ -780,7 +800,7 @@ const startUpload = async () => {
       const driver = resolveDriverByConfigId(storageConfigId);
       enforceUploadMethodByDriver(driver);
     } catch (e) {
-      console.warn("[Uppy] startUpload 驱动解析失败", e);
+      log.warn("[Uppy] startUpload 驱动解析失败", e);
     }
 
     driverStrategy.value = strategyMap[uploadMethod.value] || STORAGE_STRATEGIES.BACKEND_STREAM;
@@ -821,7 +841,7 @@ const startUpload = async () => {
 
     await fsUploadSession.start();
   } catch (error) {
-    console.error("[Uppy] 上传失败", error);
+    log.error("[Uppy] 上传失败", error);
     errorMessage.value = normalizeFsUploadError(error);
     emit("upload-error", error);
     disposeFsSession();

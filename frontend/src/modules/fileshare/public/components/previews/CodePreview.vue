@@ -64,8 +64,10 @@ import LoadingIndicator from "@/components/common/LoadingIndicator.vue";
 import TextRenderer from "@/components/common/text-preview/TextRenderer.vue";
 import { useFetchText } from "@/composables/text-preview/useFetchText.js";
 import { useCodeHighlight } from "@/composables/text-preview/useCodeHighlight.js";
+import { createLogger } from "@/utils/logger.js";
 
 const { t } = useI18n();
+const log = createLogger("PublicCodePreview");
 
 const props = defineProps({
   contentUrl: {
@@ -134,14 +136,14 @@ const adaptedFileData = computed(() => {
 // 加载文本内容
 const loadTextContent = async () => {
   if (!adaptedFileData.value) {
-    console.warn("没有可用的文件数据");
+    log.warn("没有可用的文件数据");
     return;
   }
 
   try {
     const effectiveUrl = adaptedFileData.value.contentUrl;
     if (!effectiveUrl) {
-      console.warn("缺少可用的代码内容 URL");
+      log.warn("缺少可用的代码内容 URL");
       return;
     }
 
@@ -156,20 +158,13 @@ const loadTextContent = async () => {
       const filename = adaptedFileData.value.name || "";
       detectedLanguage.value = detectLanguageFromFilename(filename);
 
-      console.log("代码加载成功:", {
-        encoding: result.encoding,
-        textLength: result.text.length,
-        filename: filename,
-        language: detectedLanguage.value,
-      });
-
       emit("load", result);
     } else {
       urlError.value = result.error || "预览 URL 不可用";
       emit("error", result.error);
     }
   } catch (err) {
-    console.error("加载代码内容失败:", err);
+    log.error("加载代码内容失败:", err);
     urlError.value = err.message || "预览 URL 不可用";
     emit("error", err.message);
   }
@@ -184,16 +179,11 @@ const handleEncodingChange = async () => {
 
     if (result.success) {
       textContent.value = result.text;
-
-      console.log("编码切换成功:", {
-        encoding: currentEncoding.value,
-        textLength: result.text.length,
-      });
     } else {
-      console.error("编码切换失败:", result.error);
+      log.error("编码切换失败:", result.error);
     }
   } catch (err) {
-    console.error("编码切换失败:", err);
+    log.error("编码切换失败:", err);
   }
 };
 

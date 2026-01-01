@@ -139,6 +139,22 @@ export async function createUploadSessionRecord(db, payload) {
   const id = customId || `upl_${generateUUID()}`;
   const userId = normalizeUploadSessionUserId(userIdOrInfo, userType);
 
+  // D1 bind 只支持基础类型，这里把 providerMeta 统一落库为 JSON 字符串
+  let providerMetaText = null;
+  if (providerMeta !== null && providerMeta !== undefined) {
+    if (typeof providerMeta === "string") {
+      providerMetaText = providerMeta;
+    } else if (typeof providerMeta === "object") {
+      try {
+        providerMetaText = JSON.stringify(providerMeta);
+      } catch {
+        providerMetaText = null;
+      }
+    } else {
+      providerMetaText = String(providerMeta);
+    }
+  }
+
   // 自动补全 fingerprint（如果调用方未显式提供）
   let finalFingerprintAlgo = fingerprintAlgo;
   let finalFingerprintValue = fingerprintValue;
@@ -215,7 +231,7 @@ export async function createUploadSessionRecord(db, payload) {
       nextExpectedRange,
       providerUploadId,
       providerUploadUrl,
-      providerMeta,
+      providerMetaText,
       status,
       now,
       now,

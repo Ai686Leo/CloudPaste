@@ -7,7 +7,7 @@
     :selectable="true"
     :selected-items="selectedFiles"
     row-id-field="id"
-    empty-text="暂无文件数据"
+    :empty-text="$t('admin.fileshare.table.noData')"
     :loading="loading"
     @selection-change="handleSelectionChange"
   >

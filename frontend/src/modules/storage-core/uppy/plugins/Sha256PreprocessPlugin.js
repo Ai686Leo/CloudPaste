@@ -9,6 +9,9 @@
 
 import { BasePlugin } from "@uppy/core";
 import { sha256HexFromBlob } from "@/utils/sha256.js";
+import { createLogger } from "@/utils/logger.js";
+
+const log = createLogger("Sha256PreprocessPlugin");
 
 export default class Sha256PreprocessPlugin extends BasePlugin {
   static VERSION = "1.0.0";
@@ -39,12 +42,12 @@ export default class Sha256PreprocessPlugin extends BasePlugin {
 
   install() {
     this.uppy.addPreProcessor(this.prepareUpload);
-    console.log("[Sha256PreprocessPlugin] 插件已安装");
+    log.debug("插件已安装");
   }
 
   uninstall() {
     this.uppy.removePreProcessor(this.prepareUpload);
-    console.log("[Sha256PreprocessPlugin] 插件已卸载");
+    log.debug("插件已卸载");
   }
 
   async prepareUpload(fileIDs) {
@@ -98,7 +101,7 @@ export default class Sha256PreprocessPlugin extends BasePlugin {
 
         this.uppy.setFileMeta(fileID, { [metaKey]: sha256 });
       } catch (error) {
-        console.error("[Sha256PreprocessPlugin] sha256 计算失败:", error);
+        log.error("[Sha256PreprocessPlugin] sha256 计算失败:", error);
         throw error;
       } finally {
         this.uppy.emit("preprocess-complete", file);
@@ -108,4 +111,3 @@ export default class Sha256PreprocessPlugin extends BasePlugin {
     return Promise.all(promises);
   }
 }
-

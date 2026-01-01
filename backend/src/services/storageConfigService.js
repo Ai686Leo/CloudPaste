@@ -5,6 +5,8 @@ import { MountManager } from "../storage/managers/MountManager.js";
 import { ApiStatus } from "../constants/index.js";
 import { AppError, ValidationError, NotFoundError, DriverError } from "../http/errors.js";
 import { CAPABILITIES } from "../storage/interfaces/capabilities/index.js";
+import { invalidateFsCache } from "../cache/invalidation.js";
+import { FsSearchIndexStore } from "../storage/fs/search/FsSearchIndexStore.js";
 
 /**
  * 计算存储配置在 WebDAV 渠道下支持的策略列表
@@ -32,6 +34,81 @@ function computeWebDavSupportedPolicies(cfg) {
 
   // 去重
   return Array.from(new Set(policies));
+}
+
+/**
+ * 判断一个输入值是否像“掩码占位符”（例如 *****1234）
+ * - 这是为了防止编辑表单时把 masked 值写回数据库，覆盖真实密钥
+ * - 前端应该已做过滤，但后端必须兜底
+ * @param {any} value
+ * @returns {boolean}
+ */
+function isMaskedSecretPlaceholder(value) {
+  if (typeof value !== "string") return false;
+  const s = value.trim();
+  if (!s) return false;
+  // maskSecret 默认会生成很多个 * + 尾部少量可见字符
+  // 这里用一个“非常保守但够用”的判定：至少 3 个 * 开头
+  return /^\*{3,}.+$/.test(s);
+}
+
+function getTypeConfigSchema(storageType) {
+  if (!storageType) return null;
+  const meta = StorageFactory.getTypeMetadata(storageType);
+  return meta?.configSchema || null;
+}
+
+function getSecretFieldDefsFromSchema(schema) {
+  const fields = schema?.fields;
+  if (!Array.isArray(fields)) return [];
+  return fields.filter((f) => f && typeof f === "object" && f.type === "secret" && typeof f.name === "string" && f.name);
+}
+
+function shouldSkipSecretWrite(value, { allowEmpty = true } = {}) {
+  if (value === undefined || value === null) return true;
+  if (typeof value === "string") {
+    const s = value.trim();
+    if (allowEmpty && s.length === 0) return true;
+    if (isMaskedSecretPlaceholder(s)) return true;
+  }
+  return false;
+}
+
+async function encryptSecretsInConfigJson(storageType, configJson, encryptionSecret, { requireRequiredSecrets = false } = {}) {
+  const schema = getTypeConfigSchema(storageType);
+  const secretFields = getSecretFieldDefsFromSchema(schema);
+  if (!secretFields.length) return configJson;
+
+  for (const f of secretFields) {
+    const key = f.name;
+    const raw = configJson?.[key];
+
+    // required 校验（仅用于 create）
+    if (requireRequiredSecrets) {
+      const missing =
+        raw === undefined ||
+        raw === null ||
+        (typeof raw === "string" && raw.trim().length === 0) ||
+        isMaskedSecretPlaceholder(raw);
+      if (f.required === true && missing) {
+        throw new ValidationError(`缺少必填字段: ${key}`);
+      }
+    }
+
+    // 跳过空值（update 时应“保留原值”）
+    if (shouldSkipSecretWrite(raw, { allowEmpty: true })) {
+      continue;
+    }
+
+    // 明确拒绝 masked 占位符写入（无论 create/update）
+    if (isMaskedSecretPlaceholder(raw)) {
+      throw new ValidationError(`字段 ${key} 不能是掩码占位符，请重新填写`);
+    }
+
+    configJson[key] = await encryptValue(String(raw), encryptionSecret);
+  }
+
+  return configJson;
 }
 import { encryptValue, buildSecretView } from "../utils/crypto.js";
 import { generateStorageConfigId } from "../utils/common.js";
@@ -119,6 +196,9 @@ export async function createStorageConfig(db, configData, adminId, encryptionSec
     for (const f of requiredS3) {
       if (!configData[f]) throw new ValidationError(`缺少必填字段: ${f}`);
     }
+    if (isMaskedSecretPlaceholder(configData.access_key_id) || isMaskedSecretPlaceholder(configData.secret_access_key)) {
+      throw new ValidationError("S3 密钥字段疑似为掩码占位符（*****1234），请重新填写真实值");
+    }
     const encryptedAccessKey = await encryptValue(configData.access_key_id, encryptionSecret);
     const encryptedSecretKey = await encryptValue(configData.secret_access_key, encryptionSecret);
     configJson = {
@@ -138,6 +218,9 @@ export async function createStorageConfig(db, configData, adminId, encryptionSec
     const requiredWebDav = ["endpoint_url", "username", "password"];
     for (const f of requiredWebDav) {
       if (!configData[f]) throw new ValidationError(`缺少必填字段: ${f}`);
+    }
+    if (isMaskedSecretPlaceholder(configData.password)) {
+      throw new ValidationError("WebDAV 密码字段疑似为掩码占位符（*****1234），请重新填写真实值");
     }
 
     let endpoint_url = String(configData.endpoint_url).trim();
@@ -173,8 +256,9 @@ export async function createStorageConfig(db, configData, adminId, encryptionSec
       total_storage_bytes: totalStorageBytes,
     };
   } else {
-    const { name, storage_type, is_public, is_default, ...rest } = configData;
+    const { name, storage_type, is_public, is_default, remark, url_proxy, ...rest } = configData;
     configJson = rest || {};
+    await encryptSecretsInConfigJson(configData.storage_type, configJson, encryptionSecret, { requireRequiredSecrets: true });
   }
   const createData = {
     id,
@@ -203,6 +287,10 @@ export async function updateStorageConfig(db, id, updateData, adminId, encryptio
   const exists = await repo.findByIdAndAdminWithSecrets(id, adminId);
   if (!exists) throw new NotFoundError("存储配置不存在");
 
+  // 是否有“驱动私有配置”字段变化（比如 endpoint/bucket/token 等）
+  // - 仅改 name/remark/is_public/is_default/status 这种“展示/开关”字段，不需要清索引
+  // - 一旦改了驱动配置，旧索引可能对应的是“旧数据源/旧路径”，必须标记 not_ready 让你重建
+  let driverConfigChanged = false;
   const topPatch = {};
   if (updateData.name) topPatch.name = updateData.name;
   if (updateData.is_public !== undefined) topPatch.is_public = updateData.is_public ? 1 : 0;
@@ -215,17 +303,32 @@ export async function updateStorageConfig(db, id, updateData, adminId, encryptio
   if (exists?.__config_json__ && typeof exists.__config_json__ === "object") {
     cfg = { ...exists.__config_json__ };
   }
+
+  // 本类型 schema 中声明的 secret 字段集合
+  const schema = getTypeConfigSchema(exists.storage_type);
+  const secretFieldSet = new Set(getSecretFieldDefsFromSchema(schema).map((f) => f.name));
+
   // 合并驱动 JSON 字段
   const boolKeys = new Set(["path_style", "tls_insecure_skip_verify"]);
   for (const [k, v] of Object.entries(updateData)) {
     if (["name", "storage_type", "is_public", "is_default", "status", "remark", "url_proxy"].includes(k)) continue;
-    if (k === "access_key_id") {
-      cfg.access_key_id = await encryptValue(v, encryptionSecret);
-    } else if (k === "secret_access_key") {
-      cfg.secret_access_key = await encryptValue(v, encryptionSecret);
-    } else if (k === "password") {
-      cfg.password = await encryptValue(v, encryptionSecret);
-    } else if (k === "total_storage_bytes") {
+
+    // secret：空值/掩码占位符 -> 不提交（保留原值）；真实值 -> 加密写入
+    if (secretFieldSet.has(k)) {
+      if (shouldSkipSecretWrite(v, { allowEmpty: true })) {
+        continue;
+      }
+      // shouldSkipSecretWrite 已涵盖 masked，这里再次兜底
+      if (isMaskedSecretPlaceholder(v)) {
+        continue;
+      }
+      cfg[k] = await encryptValue(String(v), encryptionSecret);
+      driverConfigChanged = true;
+      continue;
+    }
+
+    driverConfigChanged = true;
+    if (k === "total_storage_bytes") {
       const val = parseInt(v, 10);
       cfg.total_storage_bytes = Number.isFinite(val) && val > 0 ? val : null;
     } else if (k === "signature_expires_in") {
@@ -264,6 +367,23 @@ export async function updateStorageConfig(db, id, updateData, adminId, encryptio
     const mountManager = new MountManager(db, encryptionSecret, factory);
     await mountManager.clearConfigCache(exists.storage_type, id);
   } catch {}
+
+  // 如果驱动配置变化：把依赖此存储配置的挂载点索引清掉 + 标记 not_ready
+  if (driverConfigChanged) {
+    try {
+      const mountRepo = factory.getMountRepository();
+      const mounts = await mountRepo.findByStorageConfig(id, exists.storage_type);
+      const store = new FsSearchIndexStore(db);
+      for (const m of mounts || []) {
+        const mountId = String(m?.id || "").trim();
+        if (!mountId) continue;
+        await store.clearDerivedByMount(mountId, { keepState: true });
+      }
+      invalidateFsCache({ storageConfigId: id, reason: "storage-config-update", bumpMountsVersion: true, db });
+    } catch (e) {
+      console.warn("updateStorageConfig: 清理相关挂载点索引失败（将继续返回更新成功）：", e);
+    }
+  }
 }
 
 export async function deleteStorageConfig(db, id, adminId, repositoryFactory = null) {
@@ -283,7 +403,25 @@ export async function deleteStorageConfig(db, id, adminId, repositoryFactory = n
     }
   }
 
+  // 删除存储配置前：先把依赖它的挂载点与索引派生数据清掉
+  // 否则会留下“挂载点指向不存在的存储配置”+ “索引残留”的脏数据
+  try {
+    const mountRepo = factory.getMountRepository();
+    const mounts = await mountRepo.findByStorageConfig(id, exists.storage_type);
+    const store = new FsSearchIndexStore(db);
+    for (const m of mounts || []) {
+      const mountId = String(m?.id || "").trim();
+      if (!mountId) continue;
+      await store.clearDerivedByMount(mountId, { keepState: false });
+      await mountRepo.deleteMount(mountId);
+      invalidateFsCache({ mountId, storageConfigId: id, reason: "mount-delete-by-storage-config", bumpMountsVersion: true, db });
+    }
+  } catch (error) {
+    console.warn("deleteStorageConfig: 清理挂载点/索引失败，将继续删除存储配置本身：", error);
+  }
+
   await repo.deleteConfig(id);
+  invalidateFsCache({ storageConfigId: id, reason: "storage-config-delete", bumpMountsVersion: true, db });
 }
 
 export async function setDefaultStorageConfig(db, id, adminId, repositoryFactory = null) {

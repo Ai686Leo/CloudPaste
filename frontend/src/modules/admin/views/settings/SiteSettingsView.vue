@@ -8,8 +8,10 @@ import { useThemeMode } from "@/composables/core/useThemeMode.js";
 import { useGlobalMessage } from "@/composables/core/useGlobalMessage.js";
 import { useConfirmDialog } from "@/composables/core/useConfirmDialog.js";
 import { IconHome, IconMegaphone, IconAdjustments, IconRefresh, IconGallery } from "@/components/icons";
+import { createLogger } from "@/utils/logger.js";
 
 const { t } = useI18n();
+const log = createLogger("SiteSettingsView");
 const { getSiteSettings, updateSiteSettings } = useAdminSystemService();
 const { isDarkMode: darkMode } = useThemeMode();
 const { showSuccess, showError } = useGlobalMessage();
@@ -80,7 +82,7 @@ onMounted(async () => {
       }
     });
   } catch (error) {
-    console.error("获取站点设置失败:", error);
+    log.error("获取站点设置失败:", error);
     showError(t("admin.site.messages.updateFailed"));
   } finally {
     isLoading.value = false;
@@ -101,7 +103,7 @@ const handleSaveBasic = async () => {
     showSuccess(t("admin.site.messages.updateSuccess"));
     await updateSiteConfigStore();
   } catch (error) {
-    console.error("更新基础站点信息失败:", error);
+    log.error("更新基础站点信息失败:", error);
     showError(error.message || t("admin.site.messages.updateFailed"));
   } finally {
     isSavingBasic.value = false;
@@ -119,7 +121,7 @@ const handleSaveAnnouncement = async () => {
     showSuccess(t("admin.site.messages.updateSuccess"));
     await updateSiteConfigStore();
   } catch (error) {
-    console.error("更新公告设置失败:", error);
+    log.error("更新公告设置失败:", error);
     showError(error.message || t("admin.site.messages.updateFailed"));
   } finally {
     isSavingAnnouncement.value = false;
@@ -140,7 +142,7 @@ const handleSaveAdvanced = async () => {
     showSuccess(t("admin.site.messages.updateSuccess"));
     await updateSiteConfigStore();
   } catch (error) {
-    console.error("更新高级设置失败:", error);
+    log.error("更新高级设置失败:", error);
     showError(error.message || t("admin.site.messages.updateFailed"));
   } finally {
     isSavingAdvanced.value = false;
@@ -159,7 +161,7 @@ const updateSiteConfigStore = async () => {
     siteConfigStore.updateCustomBody(siteSettings.value.site_custom_body);
     await siteConfigStore.refresh?.();
   } catch (storeError) {
-    console.warn("更新站点配置Store失败:", storeError);
+    log.warn("更新站点配置Store失败:", storeError);
   }
 };
 

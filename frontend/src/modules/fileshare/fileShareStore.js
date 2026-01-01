@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import { useFileshareService } from "@/modules/fileshare/fileshareService.js";
+import { createLogger } from "@/utils/logger.js";
 
 /** @typedef {import("@/types/fileshare").FileshareItem} FileshareItem */
 /** @typedef {import("@/types/api").PaginationInfo} PaginationInfo */
@@ -14,6 +15,7 @@ import { useFileshareService } from "@/modules/fileshare/fileshareService.js";
  */
 export const useFileShareStore = defineStore("fileShare", () => {
   const service = useFileshareService();
+  const log = createLogger("FileShareStore");
 
   /** @type {import("vue").Ref<FileshareItem[]>} */
   const items = ref([]);
@@ -85,7 +87,7 @@ export const useFileShareStore = defineStore("fileShare", () => {
 
       return { files, pagination: mergedPagination };
     } catch (e) {
-      console.error("加载文件分享列表失败:", e);
+      log.error("加载文件分享列表失败:", e);
       error.value = /** @type {any} */ (e)?.message || "加载文件分享列表失败";
       items.value = [];
       throw e;

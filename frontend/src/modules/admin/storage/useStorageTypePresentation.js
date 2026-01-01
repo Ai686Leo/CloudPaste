@@ -1,5 +1,8 @@
 import { ref, computed, onMounted } from "vue";
 import { api } from "@/api";
+import { createLogger } from "@/utils/logger.js";
+
+const log = createLogger("StorageTypePresentation");
 
 /**
  * Admin 存储类型展示/样式 helper
@@ -19,7 +22,7 @@ async function ensureLoadedInternal() {
     storageTypesMeta.value = Array.isArray(resp?.data) ? resp.data : Array.isArray(resp) ? resp : [];
     loaded = true;
   } catch (e) {
-    console.error("加载存储类型元数据失败(useStorageTypePresentation):", e);
+    log.error("加载存储类型元数据失败(useStorageTypePresentation):", e);
     storageTypesMeta.value = [];
   } finally {
     loading.value = false;
@@ -55,9 +58,17 @@ const BADGE_THEME_CLASS = {
     light: "bg-sky-100 text-sky-700",
     dark: "bg-sky-800 text-sky-100",
   },
+  discord: {
+    light: "bg-indigo-100 text-indigo-800",
+    dark: "bg-indigo-700 text-indigo-100",
+  },
   huggingface: {
     light: "bg-yellow-100 text-yellow-800",
     dark: "bg-yellow-700 text-yellow-100",
+  },
+  mirror: {
+    light: "bg-purple-100 text-purple-800",
+    dark: "bg-purple-700 text-purple-100",
   },
   default: {
     light: "bg-gray-100 text-gray-700",
@@ -85,8 +96,12 @@ function resolveBadgeTheme(type) {
       return "local";
     case "TELEGRAM":
       return "telegram";
+    case "DISCORD":
+      return "discord";
     case "HUGGINGFACE_DATASETS":
       return "huggingface";
+    case "MIRROR":
+      return "mirror";
     default:
       return "default";
   }

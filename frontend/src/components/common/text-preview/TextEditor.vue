@@ -36,8 +36,10 @@ import { useI18n } from "vue-i18n";
 import loader from "@monaco-editor/loader";
 import { formatLocalDateTimeWithSeconds } from "@/utils/timeUtils.js";
 import LoadingIndicator from "@/components/common/LoadingIndicator.vue";
+import { createLogger } from "@/utils/logger.js";
 
 const { t } = useI18n();
+const log = createLogger("TextEditor");
 
 // CDN 配置列表（按优先级排序）
 const CDN_LIST = [
@@ -147,7 +149,7 @@ const addEditorActions = (editor, monaco) => {
       const chars = content.length;
       const words = content.trim() ? content.trim().split(/\s+/).length : 0;
 
-      console.log("文本统计:", { lines, chars, words });
+      log.debug("文本统计:", { lines, chars, words });
     },
   });
 
@@ -226,7 +228,7 @@ const initMonacoEditor = async () => {
     const maxRetries = 5;
 
     while (!editorContainer.value && retryCount < maxRetries) {
-      console.log(`等待编辑器容器准备就绪... (${retryCount + 1}/${maxRetries})`);
+      log.debug(`等待编辑器容器准备就绪... (${retryCount + 1}/${maxRetries})`);
       await new Promise((resolve) => setTimeout(resolve, 50));
       retryCount++;
     }
@@ -235,16 +237,16 @@ const initMonacoEditor = async () => {
       throw new Error(`编辑器容器不存在 (重试${retryCount}次后仍然失败)`);
     }
 
-    console.log("编辑器容器准备就绪，开始初始化Monaco编辑器");
+    log.debug("编辑器容器准备就绪，开始初始化Monaco编辑器");
 
     // 加载Monaco编辑器（带CDN切换）
-    console.log("开始加载Monaco编辑器...");
+    log.debug("开始加载Monaco编辑器...");
 
     let lastError = null;
     for (let i = 0; i < CDN_LIST.length; i++) {
       try {
         const cdnUrl = CDN_LIST[i];
-        console.log(`尝试 CDN ${i + 1}/${CDN_LIST.length}: ${cdnUrl}`);
+        log.debug(`尝试 CDN ${i + 1}/${CDN_LIST.length}: ${cdnUrl}`);
 
         // 配置当前 CDN
         loader.config({
@@ -257,14 +259,14 @@ const initMonacoEditor = async () => {
         monaco = await loader.init();
 
         if (monaco && monaco.editor) {
-          console.log(`Monaco编辑器加载成功，使用 CDN: ${cdnUrl}`);
+          log.debug(`Monaco编辑器加载成功，使用 CDN: ${cdnUrl}`);
           break;
         } else {
           throw new Error("Monaco编辑器对象无效");
         }
       } catch (error) {
         lastError = error;
-        console.warn(`CDN ${i + 1} 加载失败:`, error.message);
+        log.warn(`CDN ${i + 1} 加载失败:`, error.message);
 
         if (i === CDN_LIST.length - 1) {
           throw new Error(`所有 CDN 都无法加载 Monaco Editor。最后错误: ${lastError?.message}`);
@@ -335,7 +337,7 @@ const initMonacoEditor = async () => {
 
           // 只在开发环境输出日志
           if (process.env.NODE_ENV === "development") {
-            console.log("Monaco编辑器内容变化:", value.length, "字符");
+            log.debug("Monaco编辑器内容变化:", value.length, "字符");
           }
         }
 
@@ -356,14 +358,14 @@ const initMonacoEditor = async () => {
     addEditorActions(monacoEditor, monaco);
 
     loading.value = false;
-    console.log("Monaco编辑器初始化成功", {
+    log.debug("Monaco编辑器初始化成功", {
       language: props.language,
       theme: props.darkMode ? "vs-dark" : "vs",
       readOnly: props.readOnly,
     });
   } catch (err) {
-    console.error("Monaco编辑器初始化失败:", err);
-    console.error("错误详情:", {
+    log.error("Monaco编辑器初始化失败:", err);
+    log.error("错误详情:", {
       containerExists: !!editorContainer.value,
       containerElement: editorContainer.value,
       props: {
@@ -486,7 +488,7 @@ onMounted(async () => {
     try {
       await initMonacoEditor();
     } catch (error) {
-      console.error("初始化编辑器时出错:", error);
+      log.error("初始化编辑器时出错:", error);
     }
   };
 

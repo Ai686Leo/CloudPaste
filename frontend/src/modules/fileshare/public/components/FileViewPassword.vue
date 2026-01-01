@@ -52,9 +52,11 @@ import { useI18n } from "vue-i18n";
 import { useFileshareService } from "@/modules/fileshare/fileshareService.js";
 import { ApiStatus } from "@/api/ApiStatus"; // 导入API状态码常量
 import { IconEye, IconEyeOff, IconRefresh } from "@/components/icons";
+import { createLogger } from "@/utils/logger.js";
 
 const { t } = useI18n();
 const fileshareService = useFileshareService();
+const log = createLogger("FileViewPassword");
 
 const props = defineProps({
   fileId: {
@@ -105,7 +107,7 @@ const verifyPassword = async () => {
       currentPassword: password.value, // 传递当前输入的密码，用于后续操作
     });
   } catch (err) {
-    console.error("验证密码时出错:", err);
+    log.error("验证密码时出错:", err);
     // 优先使用HTTP状态码判断错误类型，更可靠
     if (err.status === ApiStatus.UNAUTHORIZED || err.response?.status === ApiStatus.UNAUTHORIZED || err.code === ApiStatus.UNAUTHORIZED) {
       // 401 Unauthorized - 密码错误

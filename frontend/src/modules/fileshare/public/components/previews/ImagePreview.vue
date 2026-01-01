@@ -84,8 +84,10 @@ import { isLivePhotoImage } from "@/utils/livePhotoUtils.js";
 import { IconExclamation } from "@/components/icons";
 import { useProviderSelector } from "@/composables/file-preview/useProviderSelector.js";
 import PreviewProviderHeader from "@/components/common/preview/PreviewProviderHeader.vue";
+import { createLogger } from "@/utils/logger.js";
 
 const { t } = useI18n();
+const log = createLogger("ImagePreview");
 
 const props = defineProps({
   // 多源预览架构
@@ -200,7 +202,7 @@ const loadPreview = async () => {
       return;
     } catch (err) {
       if (controller.signal.aborted) return;
-      console.error("图片预览预解码失败:", err);
+      log.error("图片预览预解码失败:", err);
       loading.value = false;
       error.value = true;
       emit("error");

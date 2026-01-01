@@ -8,6 +8,8 @@
  * - 只做“读 API 的确认”
  */
 
+import { decryptIfNeeded } from "../../../../utils/crypto.js";
+
 function normalizeApiBaseUrl(url) {
   const raw = String(url || "").trim();
   const fallback = "https://api.telegram.org";
@@ -27,8 +29,9 @@ async function fetchJson(url) {
   return { resp, json, text };
 }
 
-export async function telegramTestConnection(config, _encryptionSecret, _requestOrigin = null) {
-  const botToken = config?.bot_token || config?.botToken;
+export async function telegramTestConnection(config, encryptionSecret, _requestOrigin = null) {
+  const botTokenEncrypted = config?.bot_token || config?.botToken;
+  const botToken = await decryptIfNeeded(botTokenEncrypted, encryptionSecret);
   const targetChatId = config?.target_chat_id || config?.targetChatId;
   const apiBaseUrl = normalizeApiBaseUrl(config?.api_base_url || config?.apiBaseUrl);
 

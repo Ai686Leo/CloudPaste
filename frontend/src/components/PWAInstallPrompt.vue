@@ -3,9 +3,11 @@ import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useIntervalFn, useLocalStorage } from "@vueuse/core";
 import { useI18n } from "vue-i18n";
 import { IconClose, IconComputerDesktop, IconExclamation, IconRefresh } from "@/components/icons";
+import { createLogger } from "@/utils/logger.js";
 
 // 国际化支持
 const { t } = useI18n();
+const log = createLogger("PWAInstallPrompt");
 
 const props = defineProps({
   darkMode: {
@@ -44,7 +46,7 @@ const installApp = async () => {
       showInstallPrompt.value = false;
     }
   } catch (error) {
-    console.error(t("pwa.errors.installFailed"), error);
+    log.error(t("pwa.errors.installFailed"), error);
   } finally {
     isInstalling.value = false;
   }
@@ -66,7 +68,7 @@ const updateApp = async () => {
       }, 1000);
     }
   } catch (error) {
-    console.error(t("pwa.errors.updateFailed"), error);
+    log.error(t("pwa.errors.updateFailed"), error);
   } finally {
     isUpdating.value = false;
   }
@@ -131,7 +133,7 @@ onMounted(() => {
         showUpdatePrompt.value = true;
       }
     } catch (e) {
-      console.warn("[PWA] pwaManager 延迟加载失败（不影响页面使用）:", e);
+    log.warn("[PWA] pwaManager 延迟加载失败（不影响页面使用）:", e);
       pwaUtilsRef.value = null;
     }
   });

@@ -1,10 +1,10 @@
 <script setup>
-import { onMounted, ref } from "vue";
+import { onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { usePasteManagement } from "@/modules/paste";
 import { useThemeMode } from "@/composables/core/useThemeMode.js";
 import { useCreatorBadge } from "@/composables/admin-management/useCreatorBadge.js";
-import { useConfirmDialog } from "@/composables/core/useConfirmDialog.js";
+import { useConfirmDialog, createConfirmFn } from "@/composables/core/useConfirmDialog.js";
 import { IconClock, IconDelete, IconRefresh } from "@/components/icons";
 
 // 导入子组件
@@ -34,15 +34,11 @@ const { formatCreator } = useCreatorBadge();
 const { dialogState, confirm, handleConfirm, handleCancel } = useConfirmDialog();
 
 // 创建适配确认函数，用于传递给 composable
-const confirmFn = async ({ title, message, confirmType }) => {
-  return await confirm({
-    title,
-    message,
-    confirmType,
-    confirmText: confirmType === "warning" ? t("common.dialogs.cleanupButton") : t("common.dialogs.deleteButton"),
-    darkMode: darkMode.value,
-  });
-};
+const confirmFn = createConfirmFn(confirm, {
+  t,
+  darkMode,
+  getConfirmText: ({ confirmType }) => (confirmType === "warning" ? t("common.dialogs.cleanupButton") : t("common.dialogs.deleteButton")),
+});
 
 // 使用文本管理composable
 const {
@@ -75,9 +71,15 @@ const {
 
   // 方法
   loadPastes,
-  searchPastes,
+  refreshPastes,
   handleOffsetChange,
-  changePageSize,
+  searchQuery,
+  isSearchMode,
+  searchLoading,
+  handleGlobalSearch,
+  clearSearch,
+  handleOffsetChangeWithSearch,
+  handlePageSizeChange,
   deletePaste,
   batchDeletePastes,
   clearExpiredPastes,
@@ -107,126 +109,8 @@ const viewModeOptions = [
   { value: "masonry", icon: "masonry", title: "瀑布流视图" },
 ];
 
-// 全局搜索状态
-const globalSearchValue = ref("");
-
-// 搜索状态
-const isSearchMode = ref(false);
-const searchResults = ref([]);
-const searchLoading = ref(false);
-
-
-
-// 搜索处理函数 - 使用服务端搜索
-const handleGlobalSearch = async (searchValue) => {
-  globalSearchValue.value = searchValue;
-
-  if (!searchValue || searchValue.trim().length < 2) {
-    // 清除搜索，立即回到正常分页模式
-    isSearchMode.value = false;
-    searchResults.value = [];
-    // 立即重新加载原始数据
-    await loadPastes();
-    console.log("搜索已清除，恢复到原始列表");
-    return;
-  }
-
-  try {
-    searchLoading.value = true;
-    isSearchMode.value = true;
-
-    // 重置分页到第一页进行搜索（offset模式，第一页是offset=0）
-    const result = await searchPastes(searchValue.trim(), 0);
-
-    if (result && result.results) {
-      // 搜索模式下，直接更新主要的pastes状态和分页信息
-      pastes.value = result.results;
-      // 更新分页信息 - 改为offset模式
-      if (result.pagination) {
-        pagination.total = result.pagination.total;
-        pagination.offset = result.pagination.offset || 0;
-        pagination.hasMore = result.pagination.hasMore !== undefined ? result.pagination.hasMore : pagination.offset + pagination.limit < pagination.total;
-      }
-      console.log(`文本搜索完成: "${searchValue}", 找到 ${result.pagination?.total || result.results.length} 个结果`);
-    } else {
-      pastes.value = [];
-      pagination.total = 0;
-      pagination.offset = 0;
-      pagination.hasMore = false;
-    }
-  } catch (error) {
-    console.error("文本搜索失败:", error);
-    pastes.value = [];
-    pagination.total = 0;
-    pagination.offset = 0;
-    pagination.hasMore = false;
-  } finally {
-    searchLoading.value = false;
-  }
-};
-
-const clearGlobalSearch = async () => {
-  globalSearchValue.value = "";
-  isSearchMode.value = false;
-  searchResults.value = [];
-
-  // 立即重新加载正常的文本列表
-  try {
-    await loadPastes();
-    console.log("清除文本搜索，已恢复到原始列表");
-  } catch (error) {
-    console.error("清除搜索后重新加载失败:", error);
-  }
-};
-
-// 处理分页变化（支持搜索模式）- 改为offset模式
-const handleOffsetChangeWithSearch = async (newOffset) => {
-  if (isSearchMode.value && globalSearchValue.value) {
-    // 搜索模式下的分页
-    try {
-      searchLoading.value = true;
-      const result = await searchPastes(globalSearchValue.value, newOffset);
-
-      if (result && result.results) {
-        pastes.value = result.results;
-        // 更新分页信息
-        if (result.pagination) {
-          pagination.total = result.pagination.total;
-          pagination.offset = result.pagination.offset || newOffset;
-          pagination.hasMore = result.pagination.hasMore !== undefined ? result.pagination.hasMore : pagination.offset + pagination.limit < pagination.total;
-        }
-      }
-    } catch (error) {
-      console.error("搜索分页失败:", error);
-    } finally {
-      searchLoading.value = false;
-    }
-  } else {
-    // 正常模式下的分页
-    handleOffsetChange(newOffset);
-  }
-};
-
-// 处理每页数量变化
-const handlePageSizeChange = (newPageSize) => {
-  changePageSize(newPageSize);
-  // 如果在搜索模式，重新搜索
-  if (isSearchMode.value && globalSearchValue.value) {
-    handleGlobalSearch(globalSearchValue.value);
-  } else {
-    // 否则重新加载文本列表
-    loadPastes();
-  }
-};
-
 // 组件挂载时加载数据
 onMounted(() => {
-  console.log("TextManagement组件挂载");
-  console.log("TextManagement权限状态检查", {
-    isAdmin: isAdmin.value,
-    isApiKeyUser: isApiKeyUser.value,
-  });
-
   // 加载分享列表
   loadPastes();
 });
@@ -261,12 +145,12 @@ onMounted(() => {
           <!-- 刷新按钮 - 在所有屏幕尺寸显示 -->
           <button
             class="inline-flex items-center px-2 py-1 sm:px-3 sm:py-1.5 md:px-4 md:py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
-            @click="loadPastes"
-            :disabled="loading"
+            @click="refreshPastes"
+            :disabled="loading || searchLoading"
           >
-            <IconRefresh class="h-3 w-3 sm:h-4 sm:w-4 mr-1" :class="loading ? 'animate-spin' : ''" />
-            <span class="hidden xs:inline">{{ loading ? "刷新中..." : "刷新" }}</span>
-            <span class="xs:hidden">{{ loading ? "..." : "刷" }}</span>
+            <IconRefresh class="h-3 w-3 sm:h-4 sm:w-4 mr-1" :class="loading || searchLoading ? 'animate-spin' : ''" />
+            <span class="hidden xs:inline">{{ loading || searchLoading ? "刷新中..." : "刷新" }}</span>
+            <span class="xs:hidden">{{ loading || searchLoading ? "..." : "刷" }}</span>
           </button>
         </div>
       </div>
@@ -274,14 +158,14 @@ onMounted(() => {
       <!-- 搜索框 -->
       <div class="w-full">
         <GlobalSearchBox
-          v-model="globalSearchValue"
+          v-model="searchQuery"
           placeholder="搜索文本分享（支持链接、备注、内容）"
           :show-hint="true"
           search-hint="服务端搜索，支持模糊匹配"
           size="md"
           :debounce-ms="300"
           @search="handleGlobalSearch"
-          @clear="clearGlobalSearch"
+          @clear="clearSearch"
         />
       </div>
 
@@ -422,7 +306,7 @@ onMounted(() => {
         :pagination="pagination"
         :page-size-options="pageSizeOptions"
         :search-mode="isSearchMode"
-        :search-term="globalSearchValue"
+        :search-term="searchQuery"
         mode="offset"
         @offset-changed="handleOffsetChangeWithSearch"
         @limit-changed="handlePageSizeChange"

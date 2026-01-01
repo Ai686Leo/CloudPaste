@@ -35,6 +35,9 @@
 import { onMounted, onUnmounted, ref, watch, nextTick, shallowRef } from "vue";
 import { fetchFileBinaryWithAuth } from "@/api/services/fileDownloadService.js";
 import LoadingIndicator from "@/components/common/LoadingIndicator.vue";
+import { createLogger } from "@/utils/logger.js";
+
+const log = createLogger("XlsxViewer");
 
 const props = defineProps({
   contentUrl: { type: String, required: true },
@@ -84,7 +87,7 @@ const handleRendered = () => {
 };
 
 const handleError = (err) => {
-  console.error("XLSX 本地预览失败:", err);
+  log.error("XLSX 本地预览失败:", err);
   errorMessage.value = "XLSX 本地预览失败";
   isRemounting.value = false;
   emit("error", err);
@@ -114,7 +117,7 @@ onMounted(async () => {
 
     loading.value = false;
   } catch (err) {
-    console.error("XLSX 本地预览加载失败:", err);
+    log.error("XLSX 本地预览加载失败:", err);
     loading.value = false;
     errorMessage.value = err?.message || String(err);
     emit("error", err);

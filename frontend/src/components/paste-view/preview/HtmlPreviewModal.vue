@@ -6,6 +6,9 @@ import { onKeyStroke, useTimeoutFn } from "@vueuse/core";
 import { IconClose, IconCollapse, IconExpand } from "@/components/icons";
 import LoadingIndicator from "@/components/common/LoadingIndicator.vue";
 import { copyToClipboard } from "@/utils/clipboard";
+import { createLogger } from "@/utils/logger.js";
+
+const log = createLogger("HtmlPreviewModal");
 
 // 定义组件接受的属性
 const props = defineProps({
@@ -158,7 +161,7 @@ const renderHtml = () => {
       renderState.value = "rendered";
     });
   } catch (error) {
-    console.error("渲染 HTML 时出错:", error);
+    log.error("渲染 HTML 时出错:", error);
     errorMessage.value = error.message || "渲染 HTML 时发生错误";
     renderState.value = "error";
   }
@@ -188,7 +191,7 @@ const copyHtml = async () => {
       }, 2000);
     }
   } catch (err) {
-    console.error("复制失败:", err);
+    log.error("复制失败:", err);
   }
 };
 

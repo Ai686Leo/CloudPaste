@@ -10,6 +10,9 @@
 
 import { UIPlugin } from '@uppy/core';
 import { h } from 'preact';
+import { createLogger } from '@/utils/logger.js';
+
+const log = createLogger('UrlImportPlugin');
 
 export default class UrlImportPlugin extends UIPlugin {
   constructor(uppy, opts) {
@@ -673,7 +676,7 @@ export default class UrlImportPlugin extends UIPlugin {
       try {
         this.activeXhr.abort();
       } catch (error) {
-        console.warn('[UrlImportPlugin] 取消下载失败', error);
+        log.warn('[UrlImportPlugin] 取消下载失败', error);
       }
       this.activeXhr = null;
     }

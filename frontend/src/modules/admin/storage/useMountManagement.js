@@ -7,14 +7,18 @@ import { formatDateTimeWithSeconds, formatDateTime } from "@/utils/timeUtils.js"
 import { useAdminMountService } from "@/modules/admin/services/mountService.js";
 import { useAdminApiKeyService } from "@/modules/admin/services/apiKeyService.js";
 import { useStorageTypePresentation } from "@/modules/admin/storage/useStorageTypePresentation.js";
+import { createLogger } from "@/utils/logger.js";
 
 /**
  * 挂载点管理专用composable
  * @param {Object} options - 可选配置
- * @param {Function} options.confirmFn - 自定义确认函数，接收 {title, message, confirmType} 参数，返回 Promise<boolean>
+ * @param {Function} options.confirmFn - 确认对话框函数（必需），接收 {title, message, confirmType}，返回 Promise<boolean>
  */
 export function useMountManagement(options = {}) {
   const { confirmFn } = options;
+  if (!confirmFn) {
+    throw new Error("useMountManagement 必须传入 confirmFn（请在 View 里用 useConfirmDialog + createConfirmFn 创建）");
+  }
 
   // 继承基础管理功能（含视图模式切换）
   const base = useAdminBase("mount", {
@@ -28,6 +32,7 @@ export function useMountManagement(options = {}) {
 
   // 国际化
   const { t } = useI18n();
+  const log = createLogger("MountManagement");
 
   // 使用认证Store
   const authStore = useAuthStore();
@@ -137,7 +142,7 @@ export function useMountManagement(options = {}) {
         await storageConfigsStore.loadConfigs();
       }
     } catch (err) {
-      console.error("加载存储配置列表错误:", err);
+      log.error("加载存储配置列表错误:", err);
     }
   };
 
@@ -172,7 +177,7 @@ export function useMountManagement(options = {}) {
         }
       }
     } catch (err) {
-      console.error("加载API密钥列表错误:", err);
+      log.error("加载API密钥列表错误:", err);
     }
   };
 
@@ -211,7 +216,7 @@ export function useMountManagement(options = {}) {
           await loadApiKeyNames();
         }
       } catch (err) {
-        console.error("加载挂载点列表错误:", err);
+        log.error("加载挂载点列表错误:", err);
         base.showError(err.message || t("admin.mount.error.loadFailed"));
         mounts.value = [];
       }
@@ -291,17 +296,11 @@ export function useMountManagement(options = {}) {
    * 删除挂载点
    */
   const confirmDelete = async (id) => {
-    // 使用传入的确认函数或默认的 window.confirm
-    let confirmed;
-    if (confirmFn) {
-      confirmed = await confirmFn({
-        title: t("common.dialogs.deleteTitle"),
-        message: t("common.dialogs.deleteItem", { name: t("admin.mount.item", "此挂载点") }),
-        confirmType: "danger",
-      });
-    } else {
-      confirmed = confirm(t("common.dialogs.deleteItem", { name: t("admin.mount.item", "此挂载点") }));
-    }
+    const confirmed = await confirmFn({
+      title: t("common.dialogs.deleteTitle"),
+      message: t("common.dialogs.deleteItem", { name: t("admin.mount.item", "此挂载点") }),
+      confirmType: "danger",
+    });
 
     if (!confirmed) {
       return;
@@ -316,7 +315,7 @@ export function useMountManagement(options = {}) {
         // 重新加载挂载点列表
         loadMounts();
       } catch (err) {
-        console.error("删除挂载点错误:", err);
+        log.error("删除挂载点错误:", err);
         base.showError(err.message || t("admin.mount.error.deleteFailed"));
       }
     });
@@ -348,7 +347,7 @@ export function useMountManagement(options = {}) {
         // 重新加载挂载点列表
         loadMounts();
       } catch (err) {
-        console.error(`${action}挂载点错误:`, err);
+        log.error(`${action}挂载点错误:`, err);
         base.showError(err.message || (mount.is_active ? t("admin.mount.error.disableFailed") : t("admin.mount.error.enableFailed")));
       }
     });

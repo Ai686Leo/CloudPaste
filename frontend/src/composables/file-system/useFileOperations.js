@@ -7,6 +7,7 @@ import { ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { copyToClipboard } from "@/utils/clipboard.js";
 import { useFsService } from "@/modules/fs";
+import { createLogger } from "@/utils/logger.js";
 
 /** @typedef {import("@/types/fs").FsDirectoryItem} FsDirectoryItem */
 
@@ -20,6 +21,7 @@ import { useFsService } from "@/modules/fs";
 export function useFileOperations() {
   const { t } = useI18n();
   const fsService = useFsService();
+  const log = createLogger("FileOperations");
 
   const loading = ref(false);
   const error = ref(/** @type {string | null} */ (null));
@@ -61,7 +63,7 @@ export function useFileOperations() {
 
       return { success: true, message: t("mount.messages.downloadStarted", { name: item.name }) };
     } catch (err) {
-      console.error("下载文件失败:", err);
+      log.error("下载文件失败:", err);
       error.value = /** @type {any} */ (err)?.message;
       return { success: false, message: t("mount.messages.downloadFailed", { name: item.name, message: error.value }) };
     } finally {
@@ -85,7 +87,7 @@ export function useFileOperations() {
       await fsService.renameItem(oldPath, newPath);
       return { success: true, message: t("mount.messages.renameSuccess") };
     } catch (err) {
-      console.error("重命名失败:", err);
+      log.error("重命名失败:", err);
       error.value = /** @type {any} */ (err)?.message;
       return { success: false, message: error.value || "重命名失败" };
     } finally {
@@ -111,7 +113,7 @@ export function useFileOperations() {
       await fsService.createDirectory(fullPath);
       return { success: true, message: t("mount.messages.createFolderSuccess") };
     } catch (err) {
-      console.error("创建文件夹失败:", err);
+      log.error("创建文件夹失败:", err);
       error.value = /** @type {any} */ (err)?.message;
       return { success: false, message: error.value || "创建文件夹失败" };
     } finally {
@@ -152,7 +154,7 @@ export function useFileOperations() {
         message: t("mount.messages.batchDeleteSuccess", { count: items.length }),
       };
     } catch (err) {
-      console.error("批量删除失败:", err);
+      log.error("批量删除失败:", err);
       error.value = /** @type {any} */ (err)?.message;
       return {
         success: false,
@@ -192,7 +194,7 @@ export function useFileOperations() {
         url,
       };
     } catch (err) {
-      console.error("获取文件直链失败:", err);
+      log.error("获取文件直链失败:", err);
       error.value = /** @type {any} */ (err)?.message;
       return {
         success: false,

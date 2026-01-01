@@ -80,6 +80,7 @@ import { useLocalStorage } from "@vueuse/core";
 import { useI18n } from "vue-i18n";
 import { loadVditor, VDITOR_ASSETS_BASE } from "@/utils/vditorLoader.js";
 import { IconCheck, IconClose, IconInformationCircle } from "@/components/icons";
+import { createLogger } from "@/utils/logger.js";
 
 const props = defineProps({
   content: {
@@ -104,6 +105,7 @@ const props = defineProps({
 });
 
 const { t } = useI18n();
+const log = createLogger("AnnouncementModal");
 const showModal = ref(false);
 const dontShowAgain = ref(false);
 const contentRef = ref(null);
@@ -202,7 +204,7 @@ const renderContent = async () => {
       },
     });
   } catch (error) {
-    console.error("Vditor 渲染失败:", error);
+    log.error("Vditor 渲染失败:", error);
     // 降级到简单渲染
     if (contentRef.value) {
       contentRef.value.innerHTML = `<div class="text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">${props.content}</div>`;

@@ -14,6 +14,7 @@ import { BaseDriver, CAPABILITIES } from "../../interfaces/capabilities/index.js
 import { buildFileInfo, inferNameFromPath } from "../../utils/FileInfoBuilder.js";
 import { buildFullProxyUrl } from "../../../constants/proxy.js";
 import { getEffectiveMimeType } from "../../../utils/fileUtils.js";
+import { decryptIfNeeded } from "../../../utils/crypto.js";
 import { VfsNodesRepository, VFS_ROOT_PARENT_ID } from "../../../repositories/VfsNodesRepository.js";
 import { TelegramMultipartOperations } from "./TelegramMultipartOperations.js";
 import { getCachedTelegramFileInfo, setCachedTelegramFileInfo } from "./TelegramFileInfoCache.js";
@@ -94,7 +95,8 @@ export class TelegramStorageDriver extends BaseDriver {
   }
 
   async initialize() {
-    const botToken = this.config?.bot_token || this.config?.botToken;
+    const botTokenEncrypted = this.config?.bot_token || this.config?.botToken;
+    const botToken = await decryptIfNeeded(botTokenEncrypted, this.encryptionSecret);
     const rawTargetChatId = this.config?.target_chat_id ?? this.config?.targetChatId;
     const apiBaseUrl = normalizeApiBaseUrl(this.config?.api_base_url || this.config?.apiBaseUrl);
     const partSizeMb = Number(this.config?.part_size_mb ?? 15);

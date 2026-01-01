@@ -35,6 +35,7 @@ import {
   listSharedWithMeDirectory,
   injectSharedWithMeEntry,
 } from "./GoogleDriveSharedView.js";
+import { decryptIfNeeded } from "../../../utils/crypto.js";
 
 
 export class GoogleDriveStorageDriver extends BaseDriver {
@@ -79,6 +80,13 @@ export class GoogleDriveStorageDriver extends BaseDriver {
    * - 验证 token 可用性
    */
   async initialize() {
+    // secret 字段可能以 encrypted:* 存在（由存储配置 CRUD 统一加密写入）
+    const decryptedClientSecret = await decryptIfNeeded(this.clientSecret, this.encryptionSecret);
+    this.clientSecret = typeof decryptedClientSecret === "string" ? decryptedClientSecret : this.clientSecret;
+
+    const decryptedRefreshToken = await decryptIfNeeded(this.refreshToken, this.encryptionSecret);
+    this.refreshToken = typeof decryptedRefreshToken === "string" ? decryptedRefreshToken : this.refreshToken;
+
     this.authManager = new GoogleDriveAuthManager({
       useOnlineApi: this.useOnlineApi,
       apiAddress: this.apiAddress,
@@ -163,7 +171,8 @@ export class GoogleDriveStorageDriver extends BaseDriver {
       };
     }
 
-    for (const segment of segmentsForNormal) {
+    for (let i = 0; i < segmentsForNormal.length; i++) {
+      const segment = segmentsForNormal[i];
       const q = `'${currentId}' in parents and name = '${segment.replace(/'/g, "\\'")}' and trashed = false`;
       const res = await this.apiClient.listFiles(currentId, { q, pageSize: 2 });
       const files = Array.isArray(res.files) ? res.files : [];
@@ -175,6 +184,16 @@ export class GoogleDriveStorageDriver extends BaseDriver {
       }
       lastItem = files[0];
       currentId = lastItem.id;
+
+      const isDirectory = lastItem.mimeType === "application/vnd.google-apps.folder";
+      const hasMoreSegments = i < segmentsForNormal.length - 1;
+
+      if (!isDirectory && hasMoreSegments) {
+        throw new DriverError(`目标父路径不是目录: ${effectivePath}`, {
+          status: 400,
+          code: "DRIVER_ERROR.GDRIVE.NOT_DIRECTORY",
+        });
+      }
     }
 
     const isDirectory = lastItem.mimeType === "application/vnd.google-apps.folder";
@@ -472,11 +491,24 @@ export class GoogleDriveStorageDriver extends BaseDriver {
       mimeType: contentType || "application/octet-stream",
     };
 
-    // 存储路径使用挂载视图路径 + 文件名，便于前端后续刷新
-    const storagePath =
-      typeof path === "string" && path.length > 0
-        ? (isDirectoryPath(path) ? `${path}${fileName}` : `${path}/${fileName}`)
-        : `/${fileName}`;
+    // storagePath 语义对齐：
+    // - FS（mount 视图）：返回挂载视图的最终路径（path + fileName）
+    // - storage-first（ObjectStore/分享上传/直传）：返回 subPath/key（已包含文件名）
+    const basePathRaw = mount
+      ? path
+      : typeof subPath === "string" && subPath.length > 0
+        ? subPath
+        : path;
+    const basePath = String(basePathRaw || "").replace(/[\\]+/g, "/").replace(/\/+/g, "/");
+    const safeFileName = String(fileName || "").trim() || "unnamed";
+
+    let storagePath = basePath;
+    if (!storagePath) {
+      storagePath = safeFileName;
+    } else if (isDirectoryPath(storagePath)) {
+      storagePath = `${storagePath}${safeFileName}`;
+    }
+    storagePath = storagePath.replace(/[\\]+/g, "/").replace(/\/+/g, "/");
 
     // 特殊处理：空文件（contentLength === 0）直接通过 metadata 创建
     if (typeof contentLength === "number" && Number.isFinite(contentLength) && contentLength === 0) {

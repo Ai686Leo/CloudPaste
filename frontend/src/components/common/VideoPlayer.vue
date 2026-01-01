@@ -7,6 +7,9 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount, watch, nextTick } from "vue";
 import Artplayer from "artplayer";
+import { createLogger } from "@/utils/logger.js";
+
+const log = createLogger("VideoPlayer");
 
 const getExtLower = (name) => {
   const n = String(name || "");
@@ -270,9 +273,9 @@ const initArtplayer = async () => {
         if (artplayerInstance.value.streamPlayer.destroy) {
           artplayerInstance.value.streamPlayer.destroy();
         }
-        console.log("🧹 流媒体播放器清理完成");
+        log.debug("流媒体播放器清理完成");
       } catch (error) {
-        console.warn("清理流媒体播放器时出错:", error);
+        log.warn("清理流媒体播放器时出错:", error);
       }
     }
 
@@ -392,7 +395,7 @@ const initArtplayer = async () => {
     if (artplayerInstance.value.video) {
       if (artplayerInstance.value.video.streamPlayer) {
         artplayerInstance.value.streamPlayer = artplayerInstance.value.video.streamPlayer;
-        console.log("流媒体播放器实例已转移到Artplayer实例");
+        log.debug("流媒体播放器实例已转移到Artplayer实例");
       }
     }
 
@@ -407,7 +410,7 @@ const initArtplayer = async () => {
 
     emit("ready", artplayerInstance.value);
   } catch (error) {
-    console.error("Artplayer 初始化失败:", error);
+    log.error("Artplayer 初始化失败:", error);
     emit("error", error);
   }
 };
@@ -450,11 +453,11 @@ const addStreamingSupport = async (options) => {
   const streamingFormat = detectStreamingFormat(videoUrl, contentType, fileName);
 
   if (!streamingFormat) {
-    console.log("非流媒体格式，使用默认播放器");
+    log.debug("非流媒体格式，使用默认播放器");
     return;
   }
 
-  console.log(`检测到${streamingFormat.toUpperCase()}格式，正在加载相应播放器...`);
+  log.debug(`检测到${streamingFormat.toUpperCase()}格式，正在加载相应播放器...`);
 
   try {
     // 初始化customType对象
@@ -466,7 +469,7 @@ const addStreamingSupport = async (options) => {
       await setupMpegTSPlayer(options, videoUrl, streamingFormat);
     }
   } catch (error) {
-    console.error(`加载${streamingFormat}播放器失败:`, error);
+    log.error(`加载${streamingFormat}播放器失败:`, error);
     emit("error", {
       type: `${streamingFormat}_load_error`,
       message: `加载${streamingFormat.toUpperCase()}播放器失败: ${error.message}`,
@@ -482,7 +485,7 @@ const setupHLSPlayer = async (options, videoUrl) => {
 
   // 检查浏览器支持
   if (!Hls.default.isSupported()) {
-    console.warn(" 当前浏览器不支持HLS播放");
+    log.warn(" 当前浏览器不支持HLS播放");
     emit("error", {
       type: "hls_not_supported",
       message: "当前浏览器不支持HLS播放，请使用Chrome、Firefox或Edge浏览器",
@@ -703,7 +706,7 @@ const setupHLSPlayer = async (options, videoUrl) => {
             break;
           default:
             errorMessage = `HLS播放错误: ${data.details || "未知错误"}`;
-            console.error("HLS致命错误，销毁播放器:", data.details);
+            log.error("HLS致命错误，销毁播放器:", data.details);
             hlsPlayer.destroy();
             break;
         }
@@ -741,7 +744,7 @@ const setupHLSPlayer = async (options, videoUrl) => {
       // 菜单：只在 HLS 时出现
       installHlsMenus(art, hlsPlayer);
     }
-    console.log("HLS播放器初始化完成");
+    log.debug("HLS播放器初始化完成");
   };
 
   // 设置URL类型为 m3u8
@@ -750,14 +753,14 @@ const setupHLSPlayer = async (options, videoUrl) => {
 
 // 设置 mpegts.js 播放器 (支持 FLV 和 MPEG-TS)
 const setupMpegTSPlayer = async (options, videoUrl, format) => {
-  console.log(`正在加载 mpegts.js 用于 ${format.toUpperCase()} 播放...`);
+  log.debug(`正在加载 mpegts.js 用于 ${format.toUpperCase()} 播放...`);
 
   // 动态导入 mpegts.js
   const mpegts = await import("mpegts.js");
 
   // 检查浏览器支持
   if (!mpegts.isSupported?.()) {
-    console.warn("当前浏览器不支持MPEG-TS/FLV播放");
+    log.warn("当前浏览器不支持MPEG-TS/FLV播放");
     emit("error", {
       type: `${format}_not_supported`,
       message: `当前浏览器不支持${format.toUpperCase()}播放，请使用Chrome、Firefox或Edge浏览器`,
@@ -765,11 +768,11 @@ const setupMpegTSPlayer = async (options, videoUrl, format) => {
     return;
   }
 
-  console.log(`mpegts.js加载成功，配置${format.toUpperCase()}播放器...`);
+  log.debug(`mpegts.js加载成功，配置${format.toUpperCase()}播放器...`);
 
   // 配置自定义类型
   options.customType[format] = function (video, url) {
-    console.log(`初始化${format.toUpperCase()}播放器，URL:`, url);
+    log.debug(`初始化${format.toUpperCase()}播放器，URL:`, url);
 
     const inferredTsType =
       format === "flv"
@@ -797,7 +800,7 @@ const setupMpegTSPlayer = async (options, videoUrl, format) => {
 
     // 播放器事件处理
     streamPlayer.on(mpegts.Events.ERROR, (errorType, errorDetail) => {
-      console.error(`${format.toUpperCase()}播放错误:`, errorType, errorDetail);
+      log.error(`${format.toUpperCase()}播放错误:`, errorType, errorDetail);
 
       let errorMessage = `${format.toUpperCase()}播放出现错误`;
       switch (errorType) {
@@ -823,15 +826,15 @@ const setupMpegTSPlayer = async (options, videoUrl, format) => {
     });
 
     streamPlayer.on(mpegts.Events.LOADING_COMPLETE, () => {
-      console.log(`${format.toUpperCase()}加载完成`);
+      log.debug(`${format.toUpperCase()}加载完成`);
     });
 
     streamPlayer.on(mpegts.Events.RECOVERED_EARLY_EOF, () => {
-      console.log(`${format.toUpperCase()}早期EOF恢复`);
+      log.debug(`${format.toUpperCase()}早期EOF恢复`);
     });
 
     streamPlayer.on(mpegts.Events.MEDIA_INFO, (mediaInfo) => {
-      console.log(`${format.toUpperCase()}媒体信息:`, mediaInfo);
+      log.debug(`${format.toUpperCase()}媒体信息:`, mediaInfo);
     });
 
     // 绑定到video元素并加载
@@ -841,13 +844,13 @@ const setupMpegTSPlayer = async (options, videoUrl, format) => {
     // 存储streamPlayer实例以便后续清理
     video.streamPlayer = streamPlayer;
 
-    console.log(`${format.toUpperCase()}播放器初始化完成`);
+    log.debug(`${format.toUpperCase()}播放器初始化完成`);
   };
 
   // 设置URL类型
   options.type = format;
 
-  console.log(` ${format.toUpperCase()}支持配置完成`);
+  log.debug(`${format.toUpperCase()}支持配置完成`);
 };
 
 // 绑定事件监听器
@@ -897,7 +900,7 @@ const bindEvents = () => {
   });
 
   art.on("error", (error) => {
-    console.error("Artplayer 播放错误:", error);
+    log.error("Artplayer 播放错误:", error);
     emit("error", error);
   });
 
@@ -1038,7 +1041,7 @@ const screenshot = async (filename) => {
       artplayerInstance.value.screenshot(filename || `video-screenshot-${Date.now()}`);
       return true;
     } catch (error) {
-      console.error("截图失败:", error);
+      log.error("截图失败:", error);
       return false;
     }
   }
@@ -1050,7 +1053,7 @@ const getScreenshotDataURL = async () => {
     try {
       return await artplayerInstance.value.getDataURL();
     } catch (error) {
-      console.error("获取截图 DataURL 失败:", error);
+      log.error("获取截图 DataURL 失败:", error);
       return null;
     }
   }
@@ -1062,7 +1065,7 @@ const getScreenshotBlobUrl = async () => {
     try {
       return await artplayerInstance.value.getBlobUrl();
     } catch (error) {
-      console.error("获取截图 BlobUrl 失败:", error);
+      log.error("获取截图 BlobUrl 失败:", error);
       return null;
     }
   }
@@ -1229,7 +1232,7 @@ onBeforeUnmount(() => {
     // 清理流媒体播放器实例
     if (artplayerInstance.value.streamPlayer) {
       try {
-        console.log("🧹 清理流媒体播放器实例...");
+        log.debug("清理流媒体播放器实例...");
         if (artplayerInstance.value.streamPlayer.pause) {
           artplayerInstance.value.streamPlayer.pause();
         }
@@ -1242,9 +1245,9 @@ onBeforeUnmount(() => {
         if (artplayerInstance.value.streamPlayer.destroy) {
           artplayerInstance.value.streamPlayer.destroy();
         }
-        console.log("🧹 流媒体播放器清理完成");
+        log.debug("流媒体播放器清理完成");
       } catch (error) {
-        console.warn("清理流媒体播放器时出错:", error);
+        log.warn("清理流媒体播放器时出错:", error);
       }
     }
 

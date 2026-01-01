@@ -32,6 +32,9 @@ import TextRenderer from "@/components/common/text-preview/TextRenderer.vue";
 import { useTextPreview } from "@/composables/text-preview/useTextPreview.js";
 import { usePathPassword } from "@/composables/usePathPassword.js";
 import LoadingIndicator from "@/components/common/LoadingIndicator.vue";
+import { createLogger } from "@/utils/logger.js";
+
+const log = createLogger("FsTextPreview");
 
 // Props 定义
 const props = defineProps({
@@ -114,7 +117,6 @@ const fileData = computed(() => currentFileData.value);
 
 const handleEncodingChange = async (newEncoding) => {
   currentEncoding.value = newEncoding;
-  console.log("文本编码切换:", newEncoding);
 
   // 使用统一的编码切换逻辑
   await changeEncoding(newEncoding, emit);
@@ -125,7 +127,6 @@ const handleContentChange = (newContent) => {
 };
 
 const handleSave = (content) => {
-  console.log("TextPreview 触发保存事件，交由父级组件处理实际保存逻辑");
   emit("save", {
     content,
     filename: currentFileData.value?.name,
@@ -136,7 +137,7 @@ const handleSave = (content) => {
 // 加载文本内容 - 使用统一逻辑
 const loadTextContent = async () => {
   if (!currentFileData.value) {
-    console.warn("没有可用的文件数据");
+    log.warn("没有可用的文件数据");
     return;
   }
 
@@ -150,11 +151,8 @@ const loadTextContent = async () => {
 // 初始化当前文件数据
 const initializeCurrentFile = async () => {
   if (!props.file) {
-    console.log("❌ 无法初始化当前文件：文件信息为空");
     return;
   }
-
-  console.log("📄 开始初始化当前文件:", props.file.name);
 
   const fsPath = props.file.path || props.currentPath || "/";
 
@@ -192,7 +190,6 @@ const initializeCurrentFile = async () => {
   const previewUrl = safeTextUrl || baseContentUrl;
 
   if (previewUrl) {
-    console.log("📄 使用文本URL:", previewUrl);
     currentFileData.value = {
       name: props.file.name || "unknown",
       filename: props.file.name || "unknown",
@@ -208,7 +205,7 @@ const initializeCurrentFile = async () => {
     // 加载文本内容
     await loadTextContent();
   } else {
-    console.error("❌ 没有可用的文本内容 URL");
+    log.error("❌ 没有可用的文本内容 URL");
   }
 };
 

@@ -1,4 +1,5 @@
 import { useI18n } from "vue-i18n";
+import { createLogger } from "@/utils/logger.js";
 
 /**
  * Share 上传领域服务
@@ -11,6 +12,7 @@ import { useI18n } from "vue-i18n";
  */
 export function useShareUploadDomain() {
   const { t } = useI18n();
+  const log = createLogger("ShareUploadDomain");
 
   const buildPayloadForFile = (formData, slugOverride = "") => ({
     storage_config_id: formData.storage_config_id,
@@ -52,7 +54,7 @@ export function useShareUploadDomain() {
         });
       }
     } catch (error) {
-      console.error("处理存储空间不足错误信息失败", error);
+      log.error("处理存储空间不足错误信息失败", error);
     }
 
     return errorMessage;

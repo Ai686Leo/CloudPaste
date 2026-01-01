@@ -99,8 +99,10 @@ import TextRenderer from "@/components/common/text-preview/TextRenderer.vue";
 import { useFetchText } from "@/composables/text-preview/useFetchText.js";
 import { useTextPreview } from "@/composables/text-preview/useTextPreview.js";
 import { getPreviewModeFromFilename } from "@/utils/textUtils.js";
+import { createLogger } from "@/utils/logger.js";
 
 const { t } = useI18n();
+const log = createLogger("TextPreview");
 
 const props = defineProps({
   contentUrl: {
@@ -203,7 +205,7 @@ const adaptedFileData = computed(() => {
 // 加载文本内容 - 使用统一逻辑
 const loadTextContent = async () => {
   if (!adaptedFileData.value) {
-    console.warn("没有可用的文件数据");
+    log.warn("没有可用的文件数据");
     return;
   }
 

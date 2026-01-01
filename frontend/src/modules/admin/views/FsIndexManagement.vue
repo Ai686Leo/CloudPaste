@@ -220,6 +220,7 @@ import { useThemeMode } from "@/composables/core/useThemeMode.js";
 import { useConfirmDialog } from "@/composables/core/useConfirmDialog";
 import { useStorageTypeIcon } from "@/composables/core/useStorageTypeIcon.js";
 import api from "@/api";
+import { createLogger } from "@/utils/logger.js";
 
 // 图标导入
 import {
@@ -253,6 +254,7 @@ import {
 } from "@/api/services/fsIndexService";
 
 const { t } = useI18n();
+const log = createLogger("FsIndexManagement");
 const { showSuccess, showError } = useGlobalMessage();
 const { isDarkMode: darkMode } = useThemeMode();
 const { dialogState, confirm, handleConfirm, handleCancel } = useConfirmDialog();
@@ -553,7 +555,7 @@ async function loadIndexStatus(options = {}) {
     const response = await api.admin.fsIndex.getIndexStatus();
     indexStatusData.value = response.data;
   } catch (error) {
-    console.error("Failed to load index status:", error);
+    log.error("Failed to load index status:", error);
     showError(t("admin.fsIndex.error.loadFailed"));
   } finally {
     if (!silent) isLoading.value = false;
@@ -584,7 +586,7 @@ async function handleRebuildAll() {
     showSuccess(t("admin.fsIndex.success.rebuildStarted"));
     await loadIndexStatus();
   } catch (error) {
-    console.error("Failed to rebuild index:", error);
+    log.error("Failed to rebuild index:", error);
     showError(t("admin.fsIndex.error.rebuildFailed"));
   }
 }
@@ -608,7 +610,7 @@ async function handleApplyDirtyAll() {
     showSuccess(t("admin.fsIndex.success.applyDirtyStarted"));
     await loadIndexStatus();
   } catch (error) {
-    console.error("Failed to apply dirty:", error);
+    log.error("Failed to apply dirty:", error);
     showError(t("admin.fsIndex.error.applyDirtyFailed"));
   }
 }
@@ -630,7 +632,7 @@ async function handleClearAll() {
     showSuccess(t("admin.fsIndex.success.cleared"));
     await loadIndexStatus();
   } catch (error) {
-    console.error("Failed to clear index:", error);
+    log.error("Failed to clear index:", error);
     showError(t("admin.fsIndex.error.clearFailed"));
   }
 }
@@ -652,7 +654,7 @@ async function handleRebuildMount(mountId) {
     showSuccess(t("admin.fsIndex.success.rebuildStarted"));
     await loadIndexStatus();
   } catch (error) {
-    console.error("Failed to rebuild mount:", error);
+    log.error("Failed to rebuild mount:", error);
     showError(t("admin.fsIndex.error.rebuildFailed"));
   }
 }
@@ -674,7 +676,7 @@ async function handleApplyDirtyMount(mountId) {
     showSuccess(t("admin.fsIndex.success.applyDirtyStarted"));
     await loadIndexStatus();
   } catch (error) {
-    console.error("Failed to apply dirty to mount:", error);
+    log.error("Failed to apply dirty to mount:", error);
     showError(t("admin.fsIndex.error.applyDirtyFailed"));
   }
 }
@@ -696,7 +698,7 @@ async function handleClearMount(mountId) {
     showSuccess(t("admin.fsIndex.success.cleared"));
     await loadIndexStatus();
   } catch (error) {
-    console.error("Failed to clear mount index:", error);
+    log.error("Failed to clear mount index:", error);
     showError(t("admin.fsIndex.error.clearFailed"));
   }
 }
@@ -718,7 +720,7 @@ async function handleStopJob(jobId) {
     showSuccess(t("admin.fsIndex.success.stopped"));
     await loadIndexStatus();
   } catch (error) {
-    console.error("Failed to stop job:", error);
+    log.error("Failed to stop job:", error);
     showError(t("admin.fsIndex.error.stopFailed"));
   }
 }

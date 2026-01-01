@@ -31,9 +31,10 @@ export class StorageConfigRepository extends BaseRepository {
           row,
         });
 
+        // 注意：row（表字段）优先级应高于 config_json（投影字段）
         const merged = {
-          ...row,
           ...(projected && typeof projected === "object" ? projected : {}),
+          ...row,
         };
 
         // 保留原始 config_json 对象（非枚举属性，避免对外暴露）

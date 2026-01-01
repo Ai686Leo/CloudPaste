@@ -136,9 +136,11 @@ import { useEventListener } from "@vueuse/core";
 import { useI18n } from "vue-i18n";
 import { pwaState, pwaUtils } from "./pwaManager.js";
 import { IconCheckCircle, IconDownload, IconExclamation, IconRefresh } from "@/components/icons";
+import { createLogger } from "@/utils/logger.js";
 
 // 国际化支持
 const { t } = useI18n();
+const log = createLogger("PWAStatus");
 
 // Props
 const props = defineProps({
@@ -274,7 +276,7 @@ const updateApp = async () => {
       }, 1000);
     }
   } catch (error) {
-    console.error("更新失败:", error);
+    log.error("更新失败:", error);
   }
 };
 
@@ -293,7 +295,7 @@ const requestNotification = async () => {
   try {
     await pwaUtils.requestNotificationPermission();
   } catch (error) {
-    console.error("请求通知权限失败:", error);
+    log.error("请求通知权限失败:", error);
   } finally {
     requestingNotification.value = false;
   }
@@ -301,7 +303,7 @@ const requestNotification = async () => {
 
 // 监听 PWA 更新事件（自动清理）
 useEventListener(window, "pwa-update-available", () => {
-  console.log("[PWA] 收到更新通知");
+  log.debug("收到更新通知");
 });
 </script>
 

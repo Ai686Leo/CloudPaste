@@ -40,11 +40,27 @@ export class ObjectStore {
 
   async _composeKeyWithStrategy(storageConfig, directory, filename) {
     // 统一约定：storage_config.default_folder 仅作为“文件上传页/分享上传”的默认目录前缀；
+    // 重要约定：directory 只能是“目录”，不要把文件名也塞进来。
+    // 否则会生成类似 a/file.txt/file.txt 的错误路径，后续下载会 404。
+    const normalizedDir = PathPolicy.normalizeFragment(directory);
+    const normalizedFilename = PathPolicy.normalizeFragment(filename);
+    if (normalizedDir && normalizedFilename) {
+      const segs = normalizedDir.split("/").filter(Boolean);
+      if (segs.length && segs[segs.length - 1] === normalizedFilename) {
+        throw new ValidationError(
+          `directory 参数只能填目录（不要包含文件名）。收到: directory="${directory}", filename="${filename}"`,
+        );
+      }
+    }
+
     const dir = PathPolicy.composeDirectory(storageConfig.default_folder, directory);
     let key = dir ? `${dir}/${filename}` : filename;
 
     // 命名策略：随机后缀模式时，如发生冲突，则为对象Key加短ID后缀（DB层冲突检测）
     try {
+      // 无 db 时无法读取系统设置
+      if (!this.db) return key;
+
       const useRandom = await shouldUseRandomSuffix(this.db).catch(() => false);
       if (useRandom) {
         const fileRepo = this.repositoryFactory.getFileRepository();
@@ -122,7 +138,6 @@ export class ObjectStore {
     const result = await driver.uploadFile(key, /** @type {any} */ (bodyStream), {
       subPath: key,
       db: this.db,
-      filename,
       contentType,
       contentLength: size,
       uploadId: uploadId || undefined,
@@ -175,7 +190,6 @@ export class ObjectStore {
     const result = await driver.uploadFile(key, file, {
       subPath: key,
       db: this.db,
-      filename,
       contentType: contentType || undefined,
       contentLength: size,
       uploadId: uploadId || undefined,

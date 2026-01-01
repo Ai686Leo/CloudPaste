@@ -11,8 +11,10 @@
  * - isDirectMode: () => boolean，用于判断当前是否启用直传模式
  */
 import { getUploadProgress } from "@/api/services/systemService.js";
+import { createLogger } from "@/utils/logger.js";
 
 export function useUppyBackendProgress(options) {
+  const log = createLogger("UppyBackendProgress");
   const { uppy, isDirectMode } = options;
 
   // 后端进度状态与轮询定时器
@@ -42,7 +44,7 @@ export function useUppyBackendProgress(options) {
         upload_id: uploadId,
       });
     } catch (error) {
-      console.warn("[useUppyBackendProgress] 设置 upload_id 失败", error);
+      log.warn("[useUppyBackendProgress] 设置 upload_id 失败", error);
     }
     return uploadId;
   };

@@ -236,6 +236,7 @@ import { getFileIcon } from "@/utils/fileTypeIcons.js";
 import { useArchivePreview } from "@/composables/archive/useArchivePreview.js";
 import ArchivePasswordInput from "./ArchivePasswordInput.vue";
 import { IconArchive, IconChevronLeft, IconChevronRight, IconDocument, IconDownload, IconEye, IconExclamationSolid, IconRefresh, IconXCircle } from "@/components/icons";
+import { createLogger } from "@/utils/logger.js";
 
 // Props
 const props = defineProps({
@@ -255,6 +256,7 @@ const props = defineProps({
 
 // Emits
 const emit = defineEmits(["download", "loaded", "error"]);
+const log = createLogger("ArchivePreview");
 
 // 使用压缩文件预览 composable
 const { isExtracting, extractError, archiveEntries, isExtracted, extractProgress, currentStage, totalSize, extractArchive, previewFile, downloadFile, resetState } =
@@ -408,7 +410,7 @@ const handleExtractArchive = async () => {
 
   // 检查预览URL是否有效
   if (!props.authenticatedPreviewUrl) {
-    console.error("预览URL无效，无法进行解压操作");
+    log.error("预览URL无效，无法进行解压操作");
     return;
   }
 
@@ -419,15 +421,6 @@ const handleExtractArchive = async () => {
 // 尝试解压的核心方法
 const attemptExtraction = async (password) => {
   try {
-    console.log("开始解压压缩文件:", props.file.name);
-    console.log("使用预览URL:", props.authenticatedPreviewUrl);
-
-    if (password) {
-      console.log("使用密码进行解压");
-    } else {
-      console.log("尝试流式检测解压");
-    }
-
     // 使用composable进行解压，传递密码
     await extractArchive(props.authenticatedPreviewUrl, props.file.name, password);
 
@@ -449,18 +442,16 @@ const attemptExtraction = async (password) => {
 
     emit("loaded");
   } catch (error) {
-    console.error("解压失败:", error);
+    log.error("解压失败:", error);
 
     // 检查是否是加密检测错误
     if (error.message && error.message.includes("ENCRYPTED_ARCHIVE_DETECTED")) {
       // 检测到加密文件，文件已预下载完成，显示密码输入界面
-      console.log("检测到加密文件，文件已预下载完成，显示密码输入界面");
       isPasswordRequired.value = true;
       passwordError.value = "";
       isValidatingPassword.value = false;
     } else if (error.message && error.message.includes("INVALID_ARCHIVE_PASSWORD")) {
       // 密码错误，重新显示密码输入界面
-      console.log("密码错误，重新显示密码输入界面");
       isPasswordRequired.value = true;
       passwordError.value = "密码错误，请重新输入";
       isValidatingPassword.value = false;
@@ -473,8 +464,6 @@ const attemptExtraction = async (password) => {
 
 // 密码处理方法
 const handlePasswordSubmit = async (inputPassword) => {
-  console.log("用户提交密码，开始验证...");
-
   // 隐藏密码输入界面，显示正常的解压进度界面
   resetPasswordState();
 
@@ -483,7 +472,6 @@ const handlePasswordSubmit = async (inputPassword) => {
 };
 
 const handlePasswordCancel = () => {
-  console.log("用户取消密码输入");
   resetPasswordState();
 };
 
@@ -495,8 +483,6 @@ const handleBackToInfo = () => {
 
   // 重置密码相关状态
   resetPasswordState();
-
-  console.log("已重置压缩文件预览状态，返回文件信息页面");
 };
 
 // 统一的行点击处理（避免移动端点击事件冲突）
@@ -507,7 +493,6 @@ const handleRowClick = (entry) => {
   } else {
     // 文件：选择高亮
     selectedEntry.value = entry;
-    console.log("选择文件:", entry.name);
   }
 };
 
@@ -520,7 +505,7 @@ const handlePreviewFile = async (entry) => {
       return;
     }
     if (validation.reason === "virtual") {
-      console.warn("无法预览虚拟节点:", entry.name);
+      log.warn("无法预览虚拟节点:", entry.name);
       return;
     }
   }
@@ -536,11 +521,11 @@ const handleDownloadFile = async (entry) => {
 
   if (!validation.valid) {
     if (validation.reason === "directory") {
-      console.warn("无法下载目录:", entry.name);
+      log.warn("无法下载目录:", entry.name);
       return;
     }
     if (validation.reason === "virtual") {
-      console.warn("无法下载虚拟节点:", entry.name);
+      log.warn("无法下载虚拟节点:", entry.name);
       return;
     }
   }
@@ -643,7 +628,6 @@ const getFileIconSvg = (entry) => {
 
 // 🧹 组件卸载时清理缓存
 onBeforeUnmount(() => {
-  console.log("🧹 ArchivePreview组件卸载，清理缓存");
   resetState(); // 清理所有缓存数据
 
   if (props.authenticatedPreviewUrl) {
@@ -651,11 +635,9 @@ onBeforeUnmount(() => {
 
     // 清理文件Blob缓存（原始压缩文件）
     archiveService.clearFileBlobCache(props.authenticatedPreviewUrl);
-    console.log("🧹 已清理文件Blob缓存");
 
     // 清理解压结果缓存
     archiveService.clearFileCache(props.authenticatedPreviewUrl, props.file.name);
-    console.log("🧹 已清理解压结果缓存");
   }
 });
 </script>

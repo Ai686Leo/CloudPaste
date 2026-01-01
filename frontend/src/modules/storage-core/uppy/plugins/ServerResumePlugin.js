@@ -7,6 +7,9 @@ import { BasePlugin } from "@uppy/core";
 import { resolveDriverByConfigId } from "@/modules/storage-core/drivers/registry.js";
 import { readClientLedgerParts } from "../storage-adapter/multipart/partsLedger.js";
 import { PathResolver } from "../storage-adapter/tools.js";
+import { createLogger } from "@/utils/logger.js";
+
+const log = createLogger("ServerResumePlugin");
 
 export default class ServerResumePlugin extends BasePlugin {
   static VERSION = "1.0.0";
@@ -57,13 +60,13 @@ export default class ServerResumePlugin extends BasePlugin {
     // PreProcessor钩子
     this.uppy.addPreProcessor(this.prepareUpload);
 
-    console.log("[ServerResumePlugin] 插件已安装");
+    log.debug("插件已安装");
   }
 
   uninstall() {
     this.uppy.removePreProcessor(this.prepareUpload);
 
-    console.log("[ServerResumePlugin] 插件已卸载");
+    log.debug("插件已卸载");
   }
 
   /**
@@ -76,14 +79,14 @@ export default class ServerResumePlugin extends BasePlugin {
       return Promise.resolve();
     }
 
-    console.log("[ServerResumePlugin] 开始检查断点续传...");
+    log.debug("开始检查断点续传...");
 
     const promises = fileIDs.map(async (fileID) => {
       const file = this.uppy.getFile(fileID);
 
       // 检查文件是否会使用分片上传
       if (!this.shouldUseMultipart(file)) {
-        console.log(`[ServerResumePlugin] 文件 ${file.name} 不使用分片上传，跳过断点续传检查`);
+        log.debug(`文件 ${file.name} 不使用分片上传，跳过断点续传检查`);
         this.uppy.emit("preprocess-complete", file);
         return;
       }
@@ -99,7 +102,7 @@ export default class ServerResumePlugin extends BasePlugin {
         const resumableUploads = await this.checkResumableUploads(file);
 
         if (resumableUploads.length > 0) {
-          console.log(`[ServerResumePlugin] 发现 ${resumableUploads.length} 个可恢复的上传`);
+          log.debug(`发现 ${resumableUploads.length} 个可恢复的上传`);
 
           const selectedUpload = await new Promise((resolve) => {
             this.showMultipleUploadsDialog(file, resumableUploads, resolve);
@@ -113,11 +116,11 @@ export default class ServerResumePlugin extends BasePlugin {
               serverResume: true,
             });
 
-            console.log(`[ServerResumePlugin] 文件 ${file.name} 已标记为可恢复`);
+            log.debug(`文件 ${file.name} 已标记为可恢复`);
           }
         }
       } catch (error) {
-        console.error(`[ServerResumePlugin] 检查可恢复上传失败:`, error);
+        log.error(`[ServerResumePlugin] 检查可恢复上传失败:`, error);
         // 不阻断正常上传流程
       }
 
@@ -193,7 +196,7 @@ export default class ServerResumePlugin extends BasePlugin {
       // 使用智能匹配算法找到最佳匹配
       return this.findBestMatches(rawUploads, file);
     } catch (error) {
-      console.error("[ServerResumePlugin] 检查可恢复上传失败:", error);
+      log.error("[ServerResumePlugin] 检查可恢复上传失败:", error);
       return [];
     }
   }
@@ -305,7 +308,7 @@ export default class ServerResumePlugin extends BasePlugin {
           let partErrors = [];
           if (partsResponse.success && partsResponse.data.parts) {
             uploadedParts = partsResponse.data.parts;
-            console.log(`[ServerResumePlugin] 上传 ${upload.uploadId.substring(0, 8)}... 有 ${uploadedParts.length} 个分片`);
+            log.debug(`上传 ${upload.uploadId.substring(0, 8)}... 有 ${uploadedParts.length} 个分片`);
           }
           if (partsResponse.success && Array.isArray(partsResponse.data?.errors)) {
             partErrors = partsResponse.data.errors;
@@ -322,7 +325,7 @@ export default class ServerResumePlugin extends BasePlugin {
               const localParts = await this.getLocalUploadedParts(upload.key);
               if (Array.isArray(localParts) && localParts.length > 0) {
                 uploadedParts = localParts;
-                console.log(`[ServerResumePlugin] client_keeps：从本地账本读取到 ${localParts.length} 个分片`);
+                log.debug(`client_keeps：从本地账本读取到 ${localParts.length} 个分片`);
               }
             }
           } catch {}
@@ -349,7 +352,7 @@ export default class ServerResumePlugin extends BasePlugin {
             bytesUploaded,
           };
         } catch (error) {
-          console.error(`[ServerResumePlugin] 获取上传 ${upload.uploadId} 的分片信息失败:`, error);
+          log.error(`[ServerResumePlugin] 获取上传 ${upload.uploadId} 的分片信息失败:`, error);
           return {
             ...upload,
             matchScore: this.calculateMatchScore(upload, options.file),

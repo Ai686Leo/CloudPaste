@@ -141,8 +141,10 @@ import { useConfirmDialog } from "@/composables/core/useConfirmDialog.js";
 import { formatFileSize } from "@/utils/fileUtils.js";
 import { getFileIcon } from "@/utils/fileTypeIcons.js";
 import ConfirmDialog from "@/components/common/dialogs/ConfirmDialog.vue";
+import { createLogger } from "@/utils/logger.js";
 
 const { t } = useI18n();
+const log = createLogger("FileBasketPanel");
 
 const props = defineProps({
   isOpen: {
@@ -262,7 +264,7 @@ const removeFile = (filePath) => {
       emit("show-message", { type: "error", message: result.message });
     }
   } catch (error) {
-    console.error("移除文件失败:", error);
+    log.error("移除文件失败:", error);
     emit("show-message", { type: "error", message: t("fileBasket.messages.removeFailed") });
   }
 };
@@ -284,7 +286,7 @@ const handlePackDownload = async () => {
       emit("show-message", { type: "error", message: result.message });
     }
   } catch (error) {
-    console.error("创建打包任务失败:", error);
+    log.error("创建打包任务失败:", error);
     emit("show-message", { type: "error", message: t("fileBasket.messages.taskCreateFailed") });
   } finally {
     isProcessing.value = false;
@@ -314,7 +316,7 @@ const handleClearBasket = async () => {
       emit("show-message", { type: "error", message: result.message });
     }
   } catch (error) {
-    console.error("清空文件篮失败:", error);
+    log.error("清空文件篮失败:", error);
     emit("show-message", { type: "error", message: t("fileBasket.messages.clearFailed") });
   }
 };
@@ -328,7 +330,5 @@ onUnmounted(() => {
 
   // 清理展开状态
   expandedDirectories.value.clear();
-
-  console.log("FileBasketPanel组件已卸载并清理");
 });
 </script>

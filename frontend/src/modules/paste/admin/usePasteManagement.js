@@ -5,6 +5,7 @@ import { copyToClipboard } from "@/utils/clipboard";
 import { useAuthStore } from "@/stores/authStore.js";
 import { useAdminBase } from "@/modules/admin";
 import { generateQRCode as createQRCodeImage } from "@/utils/qrcodeUtils.js";
+import { createLogger } from "@/utils/logger.js";
 
 /** @typedef {import("@/types/paste").Paste} Paste */
 /** @typedef {import("@/types/api").PaginationInfo} PaginationInfo */
@@ -13,13 +14,17 @@ import { generateQRCode as createQRCodeImage } from "@/utils/qrcodeUtils.js";
  * 文本管理 Admin composable
  * 基于 useAdminBase + usePasteService 统一管理 Admin 文本列表的加载、删除、搜索、预览、编辑等逻辑
  * @param {Object} options - 可选配置
- * @param {Function} options.confirmFn - 自定义确认函数，接收 {title, message, confirmType} 参数，返回 Promise<boolean>
+ * @param {Function} options.confirmFn - 确认对话框函数（必需），接收 {title, message, confirmType}，返回 Promise<boolean>
  */
 export function usePasteManagement(options = {}) {
   const { confirmFn } = options;
+  if (!confirmFn) {
+    throw new Error("usePasteManagement 必须传入 confirmFn（请在 View 里用 useConfirmDialog + createConfirmFn 创建）");
+  }
 
   // 国际化
   const { t } = useI18n();
+  const log = createLogger("PasteManagement");
 
   const base = useAdminBase('paste', {
     viewMode: {
@@ -28,6 +33,11 @@ export function usePasteManagement(options = {}) {
     },
   });
   const pasteService = usePasteService();
+
+  // ========== 搜索（服务端搜索） ==========
+  const searchQuery = ref("");
+  const isSearchMode = ref(false);
+  const searchLoading = ref(false);
 
   /** @type {import("vue").Ref<Paste[]>} */
   const pastes = ref([]);
@@ -65,7 +75,6 @@ export function usePasteManagement(options = {}) {
         pastes.value = items;
         base.updatePagination(pagination, "offset");
         base.updateLastRefreshTime();
-        console.log(`文本列表加载完成，共 ${pastes.value.length} 条`);
       } catch (err) {
         pastes.value = [];
         throw err;
@@ -92,17 +101,11 @@ export function usePasteManagement(options = {}) {
       return;
     }
 
-    // 使用传入的确认函数或默认的 window.confirm
-    let confirmed;
-    if (confirmFn) {
-      confirmed = await confirmFn({
-        title: t("common.dialogs.deleteTitle"),
-        message: t("common.dialogs.deleteItem", { name: t("paste.item", "该文本") }),
-        confirmType: "danger",
-      });
-    } else {
-      confirmed = confirm(t("common.dialogs.deleteItem", { name: t("paste.item", "该文本") }));
-    }
+    const confirmed = await confirmFn({
+      title: t("common.dialogs.deleteTitle"),
+      message: t("common.dialogs.deleteItem", { name: t("paste.item", "该文本") }),
+      confirmType: "danger",
+    });
 
     if (!confirmed) {
       return;
@@ -125,17 +128,11 @@ export function usePasteManagement(options = {}) {
       return;
     }
 
-    // 使用传入的确认函数或默认的 window.confirm
-    let confirmed;
-    if (confirmFn) {
-      confirmed = await confirmFn({
-        title: t("common.dialogs.deleteTitle"),
-        message: t("common.dialogs.deleteMultiple", { count: selectedCount }),
-        confirmType: "danger",
-      });
-    } else {
-      confirmed = confirm(t("common.dialogs.deleteMultiple", { count: selectedCount }));
-    }
+    const confirmed = await confirmFn({
+      title: t("common.dialogs.deleteTitle"),
+      message: t("common.dialogs.deleteMultiple", { count: selectedCount }),
+      confirmType: "danger",
+    });
 
     if (!confirmed) {
       return;
@@ -158,17 +155,11 @@ export function usePasteManagement(options = {}) {
       return;
     }
 
-    // 使用传入的确认函数或默认的 window.confirm
-    let confirmed;
-    if (confirmFn) {
-      confirmed = await confirmFn({
-        title: t("common.dialogs.cleanupTitle"),
-        message: t("common.dialogs.cleanupExpired"),
-        confirmType: "warning",
-      });
-    } else {
-      confirmed = confirm(t("common.dialogs.cleanupExpired"));
-    }
+    const confirmed = await confirmFn({
+      title: t("common.dialogs.cleanupTitle"),
+      message: t("common.dialogs.cleanupExpired"),
+      confirmType: "warning",
+    });
 
     if (!confirmed) {
       return;
@@ -192,7 +183,7 @@ export function usePasteManagement(options = {}) {
       previewPaste.value = detail;
       showPreview.value = true;
     } catch (err) {
-      console.error("获取文本详情失败:", err);
+      log.error("获取文本详情失败:", err);
       base.showError("获取文本详情失败");
     }
   };
@@ -212,7 +203,7 @@ export function usePasteManagement(options = {}) {
       editingPaste.value = detail;
       showEdit.value = true;
     } catch (err) {
-      console.error("获取文本详情失败:", err);
+      log.error("获取文本详情失败:", err);
       base.showError("获取文本详情失败");
     }
   };
@@ -259,7 +250,7 @@ export function usePasteManagement(options = {}) {
         base.showSuccess(successMessage);
         await loadPastes();
       } catch (err) {
-        console.error("更新文本失败:", err);
+        log.error("更新文本失败:", err);
         base.showError(err.message || "更新文本失败");
         throw err;
       }
@@ -314,7 +305,7 @@ export function usePasteManagement(options = {}) {
         base.showError("复制访问链接失败");
       }
     } catch (err) {
-      console.error("复制访问链接失败:", err);
+      log.error("复制访问链接失败:", err);
       base.showError("复制访问链接失败");
     }
   };
@@ -345,7 +336,7 @@ export function usePasteManagement(options = {}) {
         base.showError("复制 Raw 链接失败");
       }
     } catch (err) {
-      console.error("复制 Raw 链接失败:", err);
+      log.error("复制 Raw 链接失败:", err);
       base.showError("复制 Raw 链接失败");
     }
   };
@@ -386,7 +377,7 @@ export function usePasteManagement(options = {}) {
 
       base.showSuccess("内容已更新");
     } catch (err) {
-      console.error("更新文本内容失败:", err);
+      log.error("更新文本内容失败:", err);
       base.showError(err.message || "更新文本内容失败");
       throw err;
     }
@@ -421,7 +412,7 @@ export function usePasteManagement(options = {}) {
       qrCodeSlug.value = slug;
       showQRCodeModal.value = true;
     } catch (err) {
-      console.error("生成二维码失败:", err);
+      log.error("生成二维码失败:", err);
       base.showError("生成二维码失败");
     }
   };
@@ -477,6 +468,92 @@ export function usePasteManagement(options = {}) {
   };
 
   /**
+   * 处理全局搜索（服务端）
+   * - 规则：少于 2 个字视为“未搜索”
+   */
+  const handleGlobalSearch = async (value) => {
+    searchQuery.value = value;
+
+    if (!value || value.trim().length < 2) {
+      await clearSearch();
+      return;
+    }
+
+    try {
+      searchLoading.value = true;
+      isSearchMode.value = true;
+
+      base.resetPagination();
+      const result = await searchPastes(value.trim(), 0);
+      pastes.value = result.results || [];
+      base.updatePagination(result.pagination || { total: pastes.value.length, limit: base.pagination.limit, offset: 0 }, "offset");
+      base.updateLastRefreshTime();
+    } finally {
+      searchLoading.value = false;
+    }
+  };
+
+  /**
+   * 清除搜索，回到正常分页列表
+   */
+  const clearSearch = async () => {
+    searchQuery.value = "";
+    isSearchMode.value = false;
+    base.resetPagination();
+    await loadPastes();
+  };
+
+  /**
+   * 分页变化（支持搜索模式）
+   */
+  const handleOffsetChangeWithSearch = async (newOffset) => {
+    if (isSearchMode.value && searchQuery.value) {
+      try {
+        searchLoading.value = true;
+        const result = await searchPastes(searchQuery.value, newOffset);
+        pastes.value = result.results || [];
+        base.updatePagination(result.pagination || { total: pastes.value.length, limit: base.pagination.limit, offset: newOffset }, "offset");
+      } finally {
+        searchLoading.value = false;
+      }
+      return;
+    }
+
+    handleOffsetChange(newOffset);
+  };
+
+  /**
+   * 每页数量变化（支持搜索模式）
+   */
+  const handlePageSizeChange = async (newPageSize) => {
+    base.changePageSize(newPageSize);
+    if (isSearchMode.value && searchQuery.value) {
+      await handleGlobalSearch(searchQuery.value);
+      return;
+    }
+    await loadPastes();
+  };
+
+  /**
+   * 刷新当前列表（保持搜索/分页状态）
+   */
+  const refreshPastes = async () => {
+    if (isSearchMode.value && searchQuery.value) {
+      try {
+        searchLoading.value = true;
+        const result = await searchPastes(searchQuery.value, base.pagination.offset);
+        pastes.value = result.results || [];
+        base.updatePagination(result.pagination || { total: pastes.value.length, limit: base.pagination.limit, offset: base.pagination.offset }, "offset");
+        base.updateLastRefreshTime();
+      } finally {
+        searchLoading.value = false;
+      }
+      return;
+    }
+    await loadPastes();
+  };
+
+  /**
    * 切换文本可见性
    * @param {Paste} paste
    */
@@ -514,6 +591,11 @@ export function usePasteManagement(options = {}) {
     // 继承 admin base
     ...base,
 
+    // 搜索状态
+    searchQuery,
+    isSearchMode,
+    searchLoading,
+
     // 文本管理状态
     pastes,
     previewPaste,
@@ -533,8 +615,13 @@ export function usePasteManagement(options = {}) {
 
     // 操作
     loadPastes,
+    refreshPastes,
     searchPastes,
     handleOffsetChange,
+    handleGlobalSearch,
+    clearSearch,
+    handleOffsetChangeWithSearch,
+    handlePageSizeChange,
     deletePaste,
     batchDeletePastes,
     clearExpiredPastes,

@@ -7,10 +7,12 @@ import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import { useLocalStorage } from "@vueuse/core";
 import { api } from "@/api";
+import { createLogger } from "@/utils/logger.js";
 
 // 配置常量
 const STORAGE_KEY = "cloudpaste_site_config";
 const CACHE_TTL = 24 * 60 * 60 * 1000; // 24小时缓存时间
+const log = createLogger("SiteConfig");
 
 // ===== Favicon 工具函数 =====
 
@@ -71,9 +73,9 @@ const updatePageFavicon = (faviconUrl) => {
       faviconLink.type = "image/svg+xml";
     }
 
-    console.log("页面favicon已更新:", faviconLink.href);
+    log.debug("页面favicon已更新:", faviconLink.href);
   } catch (error) {
-    console.error("更新页面favicon失败:", error);
+    log.error("更新页面favicon失败:", error);
     // 失败时设置默认favicon
     try {
       let faviconLink = document.querySelector('link[rel="icon"]');
@@ -82,7 +84,7 @@ const updatePageFavicon = (faviconUrl) => {
         faviconLink.type = "image/svg+xml";
       }
     } catch (fallbackError) {
-      console.error("设置默认favicon也失败:", fallbackError);
+      log.error("设置默认favicon也失败:", fallbackError);
     }
   }
 };
@@ -189,11 +191,11 @@ export const useSiteConfigStore = defineStore("siteConfig", () => {
         if (config.announcementEnabled === undefined && config.announcementContent === undefined) {
           lastUpdated.value = null;
         }
-        console.log("从缓存加载站点配置:", config);
+        log.debug("从缓存加载站点配置:", config);
         return true;
       }
     } catch (error) {
-      console.warn("加载站点配置缓存失败:", error);
+      log.warn("加载站点配置缓存失败:", error);
       // 清除损坏的缓存
       storedConfig.remove?.();
     }
@@ -219,9 +221,9 @@ export const useSiteConfigStore = defineStore("siteConfig", () => {
         lastUpdated: lastUpdated.value,
       };
       storedConfig.value = config;
-      console.log("站点配置已保存到缓存:", config);
+      log.debug("站点配置已保存到缓存:", config);
     } catch (error) {
-      console.error("保存站点配置到缓存失败:", error);
+      log.error("保存站点配置到缓存失败:", error);
     }
   };
 
@@ -317,7 +319,7 @@ export const useSiteConfigStore = defineStore("siteConfig", () => {
         lastUpdated.value = Date.now();
         saveToStorage();
 
-        console.log("从API加载站点配置成功:", {
+        log.debug("从API加载站点配置成功:", {
           title: siteTitle.value,
           faviconUrl: siteFaviconUrl.value,
           announcementEnabled: siteAnnouncementEnabled.value,
@@ -334,7 +336,7 @@ export const useSiteConfigStore = defineStore("siteConfig", () => {
         throw new Error(response?.message || "获取站点配置失败");
       }
     } catch (error) {
-      console.error("从API获取站点配置失败:", error);
+      log.error("从API获取站点配置失败:", error);
       // API失败时保持当前值或使用默认值
       if (!siteTitle.value || siteTitle.value === "") {
         siteTitle.value = "CloudPaste";
@@ -351,11 +353,11 @@ export const useSiteConfigStore = defineStore("siteConfig", () => {
    */
   const initialize = async () => {
     if (isInitialized.value) {
-      console.log("站点配置已初始化，跳过重复初始化");
+      log.debug("站点配置已初始化，跳过重复初始化");
       return;
     }
 
-    console.log("初始化站点配置...");
+    log.debug("初始化站点配置...");
     isLoading.value = true;
 
     try {
@@ -364,10 +366,10 @@ export const useSiteConfigStore = defineStore("siteConfig", () => {
 
       // 2. 如果缓存有效，直接使用缓存
       if (cacheLoaded && isCacheValid.value) {
-        console.log("使用有效的缓存配置");
+        log.debug("使用有效的缓存配置");
       } else {
         // 3. 缓存无效或不存在，从API获取
-        console.log("缓存无效或不存在，从API获取站点配置");
+        log.debug("缓存无效或不存在，从API获取站点配置");
         await fetchFromAPI();
       }
 
@@ -376,7 +378,7 @@ export const useSiteConfigStore = defineStore("siteConfig", () => {
       injectCustomContent();
       isInitialized.value = true;
     } catch (error) {
-      console.error("初始化站点配置失败:", error);
+      log.error("初始化站点配置失败:", error);
       // 初始化失败时使用默认值
       siteTitle.value = "CloudPaste";
       isInitialized.value = true;
@@ -390,14 +392,14 @@ export const useSiteConfigStore = defineStore("siteConfig", () => {
    * 强制从API重新获取配置
    */
   const refresh = async () => {
-    console.log("刷新站点配置...");
+    log.debug("刷新站点配置...");
     isLoading.value = true;
 
     try {
       await fetchFromAPI();
-      console.log("站点配置刷新成功");
+      log.debug("站点配置刷新成功");
     } catch (error) {
-      console.error("刷新站点配置失败:", error);
+      log.error("刷新站点配置失败:", error);
       throw error;
     } finally {
       isLoading.value = false;
@@ -413,7 +415,7 @@ export const useSiteConfigStore = defineStore("siteConfig", () => {
       siteTitle.value = newTitle.trim() || "CloudPaste";
       lastUpdated.value = Date.now();
       saveToStorage();
-      console.log("站点标题已更新:", siteTitle.value);
+      log.debug("站点标题已更新:", siteTitle.value);
     }
   };
 
@@ -430,7 +432,7 @@ export const useSiteConfigStore = defineStore("siteConfig", () => {
       // 立即更新页面favicon
       updatePageFavicon(siteFaviconUrl.value);
 
-      console.log("站点图标已更新:", siteFaviconUrl.value);
+      log.debug("站点图标已更新:", siteFaviconUrl.value);
     }
   };
 
@@ -443,7 +445,7 @@ export const useSiteConfigStore = defineStore("siteConfig", () => {
       siteFooterMarkdown.value = newFooterMarkdown;
       lastUpdated.value = Date.now();
       saveToStorage();
-      console.log("页脚内容已更新:", siteFooterMarkdown.value);
+      log.debug("页脚内容已更新:", siteFooterMarkdown.value);
     }
   };
 
@@ -451,20 +453,57 @@ export const useSiteConfigStore = defineStore("siteConfig", () => {
    * 注入自定义头部内容到页面头部
    */
   const injectCustomHead = () => {
-    // 移除之前的自定义头部内容
-    const existingHead = document.getElementById("cloudpaste-custom-head");
-    if (existingHead) {
-      existingHead.remove();
-    }
+    // 清理旧的注入内容（兼容旧实现：#cloudpaste-custom-head）
+    document.querySelectorAll("[data-cloudpaste-custom-head='true']").forEach((node) => node.remove());
+    document.getElementById("cloudpaste-custom-head")?.remove();
 
-    // 注入新的自定义头部内容
-    if (siteCustomHead.value) {
-      const headContainer = document.createElement("div");
-      headContainer.id = "cloudpaste-custom-head";
-      headContainer.innerHTML = siteCustomHead.value;
-      document.head.appendChild(headContainer);
-      console.log("自定义头部内容已注入");
-    }
+    const raw = siteCustomHead.value || "";
+    if (!raw.trim()) return;
+
+    // 用 template 解析字符串为 DOM 节点
+    const template = document.createElement("template");
+    template.innerHTML = raw;
+
+    // 放到 head 的开头，且保持用户输入顺序
+    const anchor = document.head.firstChild;
+    const children = Array.from(template.content.children);
+
+    children.forEach((node, index) => {
+      try {
+        const tag = node.tagName?.toLowerCase?.() || "";
+
+        // script 需要“重新创建”才会执行
+        if (tag === "script") {
+          const newScript = document.createElement("script");
+          newScript.setAttribute("data-cloudpaste-custom-head", "true");
+
+          // 复制所有属性（src/async/defer/type/crossorigin 等）
+          Array.from(node.attributes || []).forEach((attr) => {
+            try {
+              newScript.setAttribute(attr.name, attr.value);
+            } catch (e) {
+              // 忽略单个属性复制失败
+            }
+          });
+
+          // 内联脚本内容
+          if (!newScript.src) {
+            newScript.textContent = node.textContent || "";
+          }
+
+          document.head.insertBefore(newScript, anchor);
+          return;
+        }
+
+        // 其它标签（style/link/meta 等）直接插入 head
+        node.setAttribute("data-cloudpaste-custom-head", "true");
+        document.head.insertBefore(node, anchor);
+      } catch (error) {
+        log.error(`自定义头部注入失败 (${index + 1}):`, error);
+      }
+    });
+
+    log.debug("自定义头部内容已注入");
   };
 
   // ===== DOM查询缓存和性能优化 =====
@@ -507,7 +546,7 @@ export const useSiteConfigStore = defineStore("siteConfig", () => {
       }
 
       // 兜底：重试多次仍找不到容器时，退回插入到 body，至少保证内容不丢
-      console.warn("未找到 .app-container，已退回把自定义 body 内容插入到 document.body");
+      log.warn("未找到 .app-container，已退回把自定义 body 内容插入到 document.body");
       pendingBodyInjectRetries = 0;
     } else {
       pendingBodyInjectRetries = 0;
@@ -542,11 +581,11 @@ export const useSiteConfigStore = defineStore("siteConfig", () => {
         document.head.appendChild(newScript);
         script.remove(); // 移除原脚本标签
       } catch (error) {
-        console.error(`脚本执行失败 (${index + 1}):`, error);
+        log.error(`脚本执行失败 (${index + 1}):`, error);
       }
     });
 
-    console.log("自定义body内容已注入并执行");
+    log.debug("自定义body内容已注入并执行");
   };
 
   /**
@@ -590,9 +629,9 @@ export const useSiteConfigStore = defineStore("siteConfig", () => {
    * 清理所有自定义DOM内容
    */
   const cleanupCustomContent = () => {
-    // 清理自定义头部内容
-    const existingHead = document.getElementById("cloudpaste-custom-head");
-    if (existingHead) existingHead.remove();
+    // 清理自定义头部内容（兼容旧实现：#cloudpaste-custom-head）
+    document.querySelectorAll("[data-cloudpaste-custom-head='true']").forEach((node) => node.remove());
+    document.getElementById("cloudpaste-custom-head")?.remove();
 
     // 清理自定义body内容
     const existingBody = document.getElementById("cloudpaste-custom-body");
@@ -630,7 +669,7 @@ export const useSiteConfigStore = defineStore("siteConfig", () => {
     // 清理所有自定义内容
     cleanupCustomContent();
 
-    console.log("站点配置已重置");
+    log.debug("站点配置已重置");
   };
 
   /**

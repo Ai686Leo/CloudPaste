@@ -4,6 +4,9 @@
  */
 
 import * as fsApi from "@/api/services/fsService.js";
+import { createLogger } from "@/utils/logger.js";
+
+const log = createLogger("MultipartCreate");
 
 /**
  * 创建分片上传
@@ -12,21 +15,19 @@ import * as fsApi from "@/api/services/fsService.js";
  */
 export async function createMultipartUpload(file) {
   try {
-    console.log(`[StorageAdapter] 创建分片上传: ${file.name}`);
+    log.debug(`创建分片上传: ${file.name}`);
 
     // 检查是否为ServerResume标记的可恢复上传
     if (file.meta.resumable && file.meta.existingUpload && file.meta.serverResume) {
       const existingUpload = file.meta.existingUpload;
-      console.log(
-        `[StorageAdapter] 尝试恢复现有上传: uploadId=${existingUpload.uploadId}, key=${existingUpload.key}`,
-      );
+      log.debug(`尝试恢复现有上传: uploadId=${existingUpload.uploadId}, key=${existingUpload.key}`);
 
       const existingStrategy = existingUpload.strategy || "per_part_url";
 
       try {
         // 1. 先验证uploadId有效性 - 使用完整的挂载点路径
         const fullPathForValidation = this.buildFullPathFromKey(existingUpload.key);
-        console.log(`[StorageAdapter] 验证uploadId有效性: ${fullPathForValidation}`);
+        log.debug(`验证uploadId有效性: ${fullPathForValidation}`);
         const listPartsResponse = await fsApi.listMultipartParts(
           fullPathForValidation,
           existingUpload.uploadId,
@@ -76,15 +77,13 @@ export async function createMultipartUpload(file) {
 
         const uploadedCount = Array.isArray(uploadedParts) ? uploadedParts.length : 0;
         const sourceLabel = ledgerPolicy === "client_keeps" ? "本地账本" : "服务器";
-        console.log(`[StorageAdapter]  ${sourceLabel}返回: 找到${uploadedCount}个已上传分片（按驱动语义解析）`);
+        log.debug(`${sourceLabel}返回: 找到${uploadedCount}个已上传分片（按驱动语义解析）`);
 
         // per_part_url 策略（S3 等）：保持原有的预签名URL刷新与本地缓存逻辑
         if (existingStrategy === "per_part_url") {
           // 恢复上传时，优先使用“原会话的 partSize”
           const fullPath = this.buildFullPathFromKey(existingUpload.key);
-          console.log(
-            `[StorageAdapter] 路径转换: StorageKey=${existingUpload.key} -> FullPath=${fullPath}`,
-          );
+          log.debug(`路径转换: StorageKey=${existingUpload.key} -> FullPath=${fullPath}`);
 
           // ===== per_part_url 恢复：按需/批量获取分片签名 URL =====
           // 由后端 policy 驱动。
@@ -196,9 +195,7 @@ export async function createMultipartUpload(file) {
             const partNums = standardParts
               .map((p) => p.PartNumber)
               .sort((a, b) => a - b);
-            console.log(
-              `[StorageAdapter] 服务器已上传分片: [${partNums.join(", ")}] (${progressPercent}%)`,
-            );
+            log.debug(`服务器已上传分片: [${partNums.join(", ")}] (${progressPercent}%)`);
           }
 
           this.uploadSessions.set(file.id, {
@@ -216,7 +213,7 @@ export async function createMultipartUpload(file) {
             resumed: true, // 标记为恢复的上传
           });
 
-          console.log("[StorageAdapter] per_part_url 模式断点续传恢复成功");
+          log.debug("per_part_url 模式断点续传恢复成功");
           return {
             uploadId: existingUpload.uploadId,
             key: existingUpload.key,
@@ -226,9 +223,7 @@ export async function createMultipartUpload(file) {
         // single_session 策略（OneDrive 等）：使用单一 uploadUrl + Content-Range
         if (existingStrategy === "single_session") {
           const fullPath = this.buildFullPathFromKey(existingUpload.key);
-          console.log(
-            `[StorageAdapter] single_session 恢复: StorageKey=${existingUpload.key} -> FullPath=${fullPath}`,
-          );
+          log.debug(`single_session 恢复: StorageKey=${existingUpload.key} -> FullPath=${fullPath}`);
 
           // 对于 single_session，后端的 signMultipartParts 返回最新的会话信息
           const refreshResponse = await fsApi.signMultipartParts(
@@ -296,9 +291,7 @@ export async function createMultipartUpload(file) {
             completedParts,
           });
 
-          console.log(
-            `[StorageAdapter] single_session 模式断点续传恢复成功，resumeOffset=${resumeOffset}，completedParts=${completedParts}`,
-          );
+          log.debug(`single_session 模式断点续传恢复成功，resumeOffset=${resumeOffset}，completedParts=${completedParts}`);
 
           return {
             uploadId: existingUpload.uploadId,
@@ -306,11 +299,11 @@ export async function createMultipartUpload(file) {
           };
         }
 
-        console.warn(
+        log.warn(
           `[StorageAdapter] 未知的 existingUpload.strategy=${existingStrategy}，将回退为全新上传`,
         );
       } catch (error) {
-        console.warn(`[StorageAdapter] 断点续传失败，创建新上传: ${error.message}`);
+        log.warn(`[StorageAdapter] 断点续传失败，创建新上传: ${error.message}`);
 
         // 清除失效的上传标记
         if (this.uppyInstance) {
@@ -415,7 +408,7 @@ export async function createMultipartUpload(file) {
         partsLedger.clearInMemory?.();
         partsLedger.clearPersistent?.();
       } catch {}
-      console.log(`[StorageAdapter] 新上传初始化完成，已重置分片账本: ${key}`);
+      log.debug(`新上传初始化完成，已重置分片账本: ${key}`);
 
       return {
         uploadId,
@@ -443,7 +436,7 @@ export async function createMultipartUpload(file) {
         resumeOffset: 0,
       });
 
-      console.log("[StorageAdapter] 新的 single_session 分片上传会话已创建（OneDrive/Graph 模式）");
+      log.debug("新的 single_session 分片上传会话已创建（OneDrive/Graph 模式）");
 
       return {
         uploadId,
@@ -453,8 +446,7 @@ export async function createMultipartUpload(file) {
 
     throw new Error(`不支持的分片上传策略: ${String(strategy)}`);
   } catch (error) {
-    console.error("[StorageAdapter] 创建分片上传失败:", error);
+    log.error("[StorageAdapter] 创建分片上传失败:", error);
     throw error;
   }
 }
-

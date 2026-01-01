@@ -6,6 +6,9 @@
 import { defineStore } from "pinia";
 import { ref, computed, shallowRef } from "vue";
 import { useLocalStorage } from "@vueuse/core";
+import { createLogger } from "@/utils/logger.js";
+
+const log = createLogger("GlobalPlayerStore");
 
 // localStorage 存储键
 const STORAGE_KEY = "cloudpaste-global-player";
@@ -422,7 +425,7 @@ export const useGlobalPlayerStore = defineStore("globalPlayer", () => {
       };
       storedState.value = state;
     } catch (e) {
-      console.warn("保存播放器状态失败:", e);
+      log.warn("保存播放器状态失败:", e);
     }
   };
 
@@ -435,7 +438,7 @@ export const useGlobalPlayerStore = defineStore("globalPlayer", () => {
       if (state.loopMode) loopMode.value = state.loopMode;
       if (state.orderMode) orderMode.value = state.orderMode;
     } catch (e) {
-      console.warn("加载播放器状态失败:", e);
+      log.warn("加载播放器状态失败:", e);
     }
   };
 
@@ -443,7 +446,7 @@ export const useGlobalPlayerStore = defineStore("globalPlayer", () => {
     try {
       storedState.remove?.();
     } catch (e) {
-      console.warn("清除播放器状态失败:", e);
+      log.warn("清除播放器状态失败:", e);
     }
   };
 

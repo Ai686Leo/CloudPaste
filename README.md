@@ -1,14 +1,14 @@
-# CloudPaste - Online Clipboard 📋
+# CloudPaste 📋
 
 <div align="center">
     <p>
     <a href="README_CN.md">中文</a> | <a href="README.md">English</a> |
-    <a href="https://www.readme-i18n.com/ling-drag0n/CloudPaste?lang=es">Español</a> | 
-    <a href="https://www.readme-i18n.com/ling-drag0n/CloudPaste?lang=fr">français</a> | 
-    <a href="https://www.readme-i18n.com/ling-drag0n/CloudPaste?lang=ja">日本語</a> 
+    <a href="https://www.readme-i18n.com/ling-drag0n/CloudPaste?lang=es">Español</a> |
+    <a href="https://www.readme-i18n.com/ling-drag0n/CloudPaste?lang=fr">français</a> |
+    <a href="https://www.readme-i18n.com/ling-drag0n/CloudPaste?lang=ja">日本語</a>
     </p>
     <img width="100" height="100" src="https://img.icons8.com/dusk/100/paste.png" alt="paste"/>
-    <h3>Cloudflare-based online clipboard and file sharing service with Markdown editing and file upload support</h3>
+    <h3>🌩️ Serverless file management and Markdown sharing tool, supports multiple storage aggregation, online preview of 30+ file formats, and WebDAV mounting</h3>
 </div>
 
 <div align="center">
@@ -61,7 +61,7 @@
 ### Multi-Storage Support
 
 - **S3 Compatible**: Cloudflare R2, Backblaze B2, AWS S3, Alibaba Cloud OSS, Tencent Cloud COS, MinIO, etc.
-- **Cloud Storage Integration**: WebDAV, OneDrive, Google Drive, Telegram, GitHub API/Releases (read-only), etc.
+- **Cloud Storage Integration**: WebDAV, OneDrive, Google Drive, Telegram, HuggingFace Database, GitHub API/Releases (read-only), etc.
 - **Local Storage**: Docker deployment supports local file system
 - **Smart Upload**: Frontend pre-signed direct upload + streaming upload + chunked resumable upload, with real-time progress display, minimizing CF limitations
 - **File Preview**: Direct preview support for 30+ formats (images, videos, audio, PDF, Office, code, e-books, etc.), others can be previewed through external IFrame embedding [KKFileview](https://github.com/kekingcn/kkFileView)

@@ -66,6 +66,7 @@ export default {
     remarkPlaceholder: "Add a remark for this file (optional)",
     customLink: "Custom Link",
     customLinkPlaceholder: "Custom file access link (optional)",
+    multiFileSlugDisabled: "Custom link suffix is disabled when uploading multiple files (auto-generated)",
     passwordProtection: "Password Protection",
     passwordPlaceholder: "Set access password (optional)",
     expireTime: "Expiry Time",

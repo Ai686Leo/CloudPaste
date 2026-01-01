@@ -5,6 +5,7 @@ import { shallowRef } from 'vue';
 import Uppy from '@uppy/core';
 import ChineseLocale from '@uppy/locales/lib/zh_CN';
 import EnglishLocale from '@uppy/locales/lib/en_US';
+import { createLogger } from '@/utils/logger.js';
 
 /**
  * 根据语言代码获取Uppy locale
@@ -18,6 +19,7 @@ const getUppyLocale = (locale) => {
  * @returns {Object} Uppy核心功能
  */
 export function useUppyCore() {
+  const log = createLogger('UppyCore');
   const uppyInstance = shallowRef(null);
 
   /**
@@ -104,7 +106,7 @@ export function useUppyCore() {
           meta: file.meta || {},
         });
       } catch (error) {
-        console.warn('[useUppyCore] 恢复文件失败', error);
+        log.warn('[useUppyCore] 恢复文件失败', error);
       }
     });
   };

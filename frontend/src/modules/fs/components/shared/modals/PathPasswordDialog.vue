@@ -26,8 +26,10 @@ import { ref, computed } from "vue";
 import { useI18n } from "vue-i18n";
 import InputDialog from "@/components/common/dialogs/InputDialog.vue";
 import { verifyFsMetaPassword } from "@/api/services/fsMetaService.js";
+import { createLogger } from "@/utils/logger.js";
 
 const { t } = useI18n();
+const log = createLogger("PathPasswordDialog");
 
 const props = defineProps({
   isOpen: {
@@ -87,7 +89,7 @@ const handleConfirm = async (password) => {
       });
     }
   } catch (error) {
-    console.error("密码验证失败:", error);
+    log.error("密码验证失败:", error);
 
     // 如果是 401 错误，说明密码错误
     if (error.status === 401) {

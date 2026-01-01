@@ -6,8 +6,10 @@ import { useAdminStorageConfigService } from "@/modules/admin/services/storageCo
 import { useAdminSystemService } from "@/modules/admin/services/systemService.js";
 import { api } from "@/api";
 import { IconClose, IconRefresh } from "@/components/icons";
+import { createLogger } from "@/utils/logger.js";
 
 const { t } = useI18n();
+const log = createLogger("MountForm");
 const { updateMount, createMount } = useAdminMountService();
 const { getStorageConfigs } = useAdminStorageConfigService();
 const { getGlobalSettings } = useAdminSystemService();
@@ -365,7 +367,7 @@ const submitForm = async () => {
 
     emit("save-success");
   } catch (err) {
-    console.error("保存挂载点错误:", err);
+    log.error("保存挂载点错误:", err);
     globalError.value = err.message || t("admin.mount.error.saveFailed");
   } finally {
     submitting.value = false;
@@ -427,7 +429,7 @@ const loadData = async () => {
     
     initFormData();
   } catch (err) {
-    console.error("加载数据错误:", err);
+    log.error("加载数据错误:", err);
     globalError.value = err?.message || t("admin.mount.error.loadFailed");
   } finally {
     loading.value = false;

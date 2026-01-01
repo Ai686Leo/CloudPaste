@@ -9,6 +9,7 @@ import { useAdminSystemService } from "@/modules/admin/services/systemService.js
 import { useDashboardService } from "@/modules/admin/services/dashboardService.js";
 import { useThemeMode } from "@/composables/core/useThemeMode.js";
 import { IconChartBar, IconChevronDown, IconCircleStack, IconClock, IconCloud, IconDelete, IconDocument, IconDocumentText, IconFolder, IconKey, IconLockClosed, IconRefresh, IconServerStack } from "@/components/icons";
+import { createLogger } from "@/utils/logger.js";
 
 // 注册Chart.js组件
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, Title, Tooltip, Legend);
@@ -24,6 +25,7 @@ const props = defineProps({
 
 const { isDarkMode: darkMode } = useThemeMode();
 const { t } = useI18n();
+const log = createLogger("DashboardView");
 const { getCacheStats, getVersionInfo, clearCache } = useAdminSystemService();
 const { getDashboardStats } = useDashboardService();
 
@@ -327,7 +329,7 @@ const fetchCacheStats = async () => {
       error: null,
     };
   } catch (err) {
-    console.warn("获取缓存统计失败:", err);
+    log.warn("获取缓存统计失败:", err);
     cacheStats.value.error = "获取缓存数据失败";
   }
 };
@@ -344,7 +346,7 @@ const fetchVersionInfo = async () => {
       error: null,
     };
   } catch (err) {
-    console.warn("获取版本信息失败:", err);
+    log.warn("获取版本信息失败:", err);
     versionInfo.value.error = "获取版本信息失败";
   }
 };
@@ -359,7 +361,6 @@ const clearAllCache = async () => {
 
     // 显示成功消息
     const clearedCount = typeof result?.clearedCount === "number" ? result.clearedCount : 0;
-    console.log(`缓存清理成功：${clearedCount} 项`);
 
     // 重新获取缓存统计
     await fetchCacheStats();
@@ -367,7 +368,7 @@ const clearAllCache = async () => {
     // 可以添加toast通知
     // toast.success(`缓存清理成功，共清理 ${clearedCount} 项`);
   } catch (err) {
-    console.error("清理缓存失败:", err);
+    log.error("清理缓存失败:", err);
     // toast.error("清理缓存失败：" + err.message);
   } finally {
     isClearingCache.value = false;
@@ -408,7 +409,7 @@ const fetchDashboardStats = async () => {
     // 重置选中的存储桶
     selectedStorageId.value = null;
   } catch (err) {
-    console.error("获取控制面板数据失败:", err);
+    log.error("获取控制面板数据失败:", err);
     error.value = t("admin.dashboard.fetchError");
   } finally {
     isLoading.value = false;

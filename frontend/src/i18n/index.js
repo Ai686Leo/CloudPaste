@@ -2,6 +2,9 @@ import { createI18n } from "vue-i18n";
 import { useLocalStorage } from "@vueuse/core";
 import zhCN from "./locales/zh-CN/index.js";
 import enUS from "./locales/en-US/index.js";
+import { createLogger } from "@/utils/logger.js";
+
+const log = createLogger("i18n");
 
 // 获取浏览器语言设置
 const getBrowserLanguage = () => {
@@ -42,7 +45,7 @@ const i18n = createI18n({
 // 调试辅助函数 - 仅在开发环境需要时使用
 export const debugI18n = () => {
   if (import.meta.env.DEV) {
-    console.log("当前i18n配置:", {
+    log.debug("当前i18n配置:", {
       当前语言: i18n.global.locale.value,
       回退语言: i18n.global.fallbackLocale.value,
       可用语言: Object.keys(i18n.global.messages.value),

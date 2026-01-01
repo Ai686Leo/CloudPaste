@@ -12,6 +12,7 @@
  */
 
 import { ValidationError } from "../../../../http/errors.js";
+import { decryptIfNeeded } from "../../../../utils/crypto.js";
 
 const API_BASE = "https://api.github.com";
 const DEFAULT_PER_PAGE = 1;
@@ -139,7 +140,9 @@ export async function githubReleasesTestConnection(config, encryptionSecret, req
     throw new ValidationError("GitHub Releases 配置缺少必填字段: repo_structure");
   }
 
-  const token = config?.token || null;
+  const tokenEncrypted = config?.token || null;
+  const tokenRaw = await decryptIfNeeded(tokenEncrypted, encryptionSecret);
+  const token = typeof tokenRaw === "string" ? tokenRaw.trim() : tokenRaw;
   const perPageRaw = config?.per_page;
   const perPage = Number.isFinite(Number(perPageRaw)) && Number(perPageRaw) > 0 ? Math.floor(Number(perPageRaw)) : DEFAULT_PER_PAGE;
 

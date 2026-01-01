@@ -137,6 +137,9 @@
 
 <script setup>
 import { reactive, ref, watch } from "vue";
+import { createLogger } from "@/utils/logger.js";
+
+const log = createLogger("FileEditModal");
 
 const props = defineProps({
   file: {
@@ -278,7 +281,7 @@ const saveChanges = () => {
     // 提交到父组件
     emit("save", updatedFile);
   } catch (err) {
-    console.error("处理表单数据出错:", err);
+    log.error("处理表单数据出错:", err);
     error.value = "数据处理错误，请检查输入";
   } finally {
     saving.value = false;

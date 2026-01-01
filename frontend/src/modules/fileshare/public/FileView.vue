@@ -71,10 +71,12 @@ import { useFileshareService } from "@/modules/fileshare/fileshareService.js";
 import { useFileShareStore } from "@/modules/fileshare/fileShareStore.js";
 import { useGlobalMessage } from "@/composables/core/useGlobalMessage.js";
 import { setFilePassword } from "@/utils/filePasswordUtils.js";
+import { createLogger } from "@/utils/logger.js";
 import { IconCheck, IconExclamation } from "@/components/icons";
 import LoadingIndicator from "@/components/common/LoadingIndicator.vue";
 
 const { t } = useI18n();
+const log = createLogger("FileView");
 const fileshareService = useFileshareService();
 const fileShareStore = useFileShareStore();
 const { showError, showSuccess } = useGlobalMessage();
@@ -133,16 +135,13 @@ const isAdmin = computed(() => authStore.isAdmin);
  * 当预签名URL过期时，可以调用此方法刷新获取新的URL
  */
 const refreshFileInfo = async () => {
-  console.log("重新加载文件信息");
-
   // 如果文件已通过密码验证，记录当前密码以便在刷新后使用
   if (fileInfo.value && fileInfo.value.passwordVerified && fileInfo.value.currentPassword) {
     try {
       // 确保当前密码被保存到会话存储
       setFilePassword(fileInfo.value.slug, fileInfo.value.currentPassword);
-      console.log("已保存当前密码到会话存储以便刷新");
     } catch (err) {
-      console.error("无法保存密码到会话存储:", err);
+      log.error("无法保存密码到会话存储:", err);
     }
   }
 
@@ -175,7 +174,7 @@ const loadFileInfo = async (force = false) => {
 
     requiresPassword.value = !!data.requires_password;
   } catch (err) {
-    console.error("加载文件信息失败:", err);
+    log.error("加载文件信息失败:", err);
     error.value = err.message || t("fileView.errors.loadFailed");
   } finally {
     loading.value = false;
@@ -201,7 +200,7 @@ const handlePasswordVerified = (data) => {
     try {
       setFilePassword(fileInfo.value.slug, data.currentPassword);
     } catch (err) {
-      console.error("无法保存密码到会话存储:", err);
+      log.error("无法保存密码到会话存储:", err);
     }
   }
 
@@ -240,7 +239,7 @@ const openEditModal = async () => {
     // 显示编辑模态框
     showEditModal.value = true;
   } catch (err) {
-    console.error("获取文件详情出错:", err);
+    log.error("获取文件详情出错:", err);
     showError(`${t("fileView.errors.getDetailsFailed")}: ${t("fileView.errors.getDetailsFailedMessage")}`);
     showEditModal.value = true;
   }
@@ -284,13 +283,13 @@ const saveFileChanges = async (updatedFile) => {
           hash: route.hash,
         });
       } catch (replaceError) {
-        console.warn("跳转新链接失败", replaceError);
+        log.warn("跳转新链接失败", replaceError);
       }
     }
     closeEditModal();
     showSuccess(t("fileView.actions.updateSuccess"));
   } catch (err) {
-    console.error("更新文件错误:", err);
+    log.error("更新文件错误:", err);
     const msg = err?.message || t("fileView.errors.unknown");
     showError(`${t("fileView.errors.updateFailed")}: ${msg}`);
   }

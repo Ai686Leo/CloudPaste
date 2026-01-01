@@ -6,8 +6,10 @@
 import { ref, computed, onUnmounted } from "vue";
 import { useEncodingDetection } from "./useEncodingDetection.js";
 import { SUPPORTED_ENCODINGS, decodeText, fetchAndDecodeText, isBinaryContent, cleanText, getTextStats } from "@/utils/textUtils.js";
+import { createLogger } from "@/utils/logger.js";
 
 export function useFetchText() {
+  const log = createLogger("FetchText");
   //异步操作取消机制
   let currentAbortController = null;
 
@@ -98,7 +100,7 @@ export function useFetchText() {
       }
 
       if (detectionResult.success) {
-        console.log("编码自动检测成功:", {
+        log.debug("编码自动检测成功:", {
           文件名: filename,
           检测编码: detectionResult.encoding,
           可信度: `${detectionResult.confidence}%`,
@@ -107,7 +109,7 @@ export function useFetchText() {
           文件大小: detectionResult.fullFileSize ? `${(detectionResult.fullFileSize / 1024).toFixed(1)}KB` : "未知",
         });
       } else {
-        console.warn(" 编码检测失败，使用默认编码 utf-8:", detectionResult.error);
+        log.warn(" 编码检测失败，使用默认编码 utf-8:", detectionResult.error);
       }
 
       // 如果编码检测已经返回了完整的原始数据，直接使用
@@ -162,7 +164,7 @@ export function useFetchText() {
     } catch (err) {
       // 如果是取消操作，不记录为错误
       if (err.name === "AbortError" || err.message === "操作已取消") {
-        console.log("文本获取操作已取消");
+        log.debug("文本获取操作已取消");
         return {
           success: false,
           text: "",
@@ -174,7 +176,7 @@ export function useFetchText() {
         };
       }
 
-      console.error("获取文本失败:", err);
+      log.error("获取文本失败:", err);
       error.value = err.message;
 
       return {
@@ -239,7 +241,7 @@ export function useFetchText() {
         throw new Error(decodeResult.error || "重新解码失败");
       }
     } catch (err) {
-      console.error("重新解码失败:", err);
+      log.error("重新解码失败:", err);
       error.value = err.message;
 
       return {
@@ -273,7 +275,7 @@ export function useFetchText() {
       selectEncoding(encoding);
       await decodeWithEncoding(encoding);
     } catch (err) {
-      console.error("编码检测失败:", err, "文件:", filename);
+      log.error("编码检测失败:", err, "文件:", filename);
       // 降级到UTF-8
       selectEncoding("utf-8");
       await decodeWithEncoding("utf-8");

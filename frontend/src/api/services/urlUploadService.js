@@ -7,6 +7,9 @@
 import { post } from "../client";
 import { getFullApiUrl } from "../config";
 import { completeFileUpload } from "./fileService";
+import { createLogger } from "@/utils/logger.js";
+
+const log = createLogger("UrlUpload");
 
 /**
  * 验证URL并获取文件元信息
@@ -59,7 +62,7 @@ function isCorsError(error) {
 export async function fetchUrlContent(options) {
   // 首先尝试直接获取URL内容
   try {
-    console.log(`尝试直接获取URL: ${options.url}`);
+    log.debug(`尝试直接获取URL: ${options.url}`);
     return await fetchFromUrl(options.url, options.onProgress, options.setXhr, "directDownload");
   } catch (error) {
     // 用户主动取消下载时，直接抛出错误，不尝试代理重试
@@ -67,11 +70,11 @@ export async function fetchUrlContent(options) {
       throw error;
     }
 
-    console.warn(`直接获取URL内容失败: ${error.message}`);
+    log.warn(`直接获取URL内容失败: ${error.message}`);
 
     // 检查是否是CORS错误或其他网络错误，如果是则尝试使用代理
     if (isCorsError(error) || error.message.includes("获取URL内容失败")) {
-      console.log(`检测到跨域问题，切换到代理模式获取URL: ${options.url}`);
+      log.debug(`检测到跨域问题，切换到代理模式获取URL: ${options.url}`);
       // 使用代理URL重试
       const proxyUrl = getProxyUrl(options.url);
       return await fetchFromUrl(proxyUrl, options.onProgress, options.setXhr, "proxyDownload");

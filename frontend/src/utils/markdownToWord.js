@@ -22,6 +22,9 @@ import {
   Math as MathElement,
   MathRun,
 } from "docx";
+import { createLogger } from "@/utils/logger.js";
+
+const log = createLogger("MarkdownToWord");
 
 /**
  * 将Markdown转换为Word文档并返回Blob对象
@@ -859,7 +862,7 @@ async function processImage(imageUrl, altText) {
       altText: altText,
     });
   } catch (error) {
-    console.error("处理图片时出错:", error);
+    log.error("处理图片时出错:", error);
     // 返回一个文本作为替代
     return new TextRun({
       text: `[无法加载图片: ${altText}]`,

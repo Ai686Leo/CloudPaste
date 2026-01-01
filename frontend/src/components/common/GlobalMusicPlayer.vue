@@ -53,11 +53,13 @@ import { useDraggable, useWindowSize } from "@vueuse/core";
 import { useGlobalPlayerStore } from "@/stores/globalPlayerStore.js";
 import { useThemeMode } from "@/composables/core/useThemeMode.js";
 import { useFsService } from "@/modules/fs";
+import { createLogger } from "@/utils/logger.js";
 
 const { t } = useI18n();
 
 // Store
 const store = useGlobalPlayerStore();
+const log = createLogger("GlobalMusicPlayer");
 const fsService = useFsService();
 
 // 主题
@@ -218,7 +220,7 @@ const syncAPlayerAudioUrl = (index, url) => {
       ap.audio.loop = url === PLACEHOLDER_AUDIO_URL ? true : ap.options?.loop === "one";
       ap.audio.load?.();
     } catch (e) {
-      console.warn("同步 audio.src 失败:", e);
+      log.warn("同步 audio.src 失败:", e);
     }
   }
 };
@@ -271,7 +273,7 @@ const ensureTrackUrlReady = async (index, { playAfter = false } = {}) => {
       if (url) audioUrlCache.set(filePath, url);
       return url;
     } catch (error) {
-      console.error(`获取音频直链失败: ${filePath}`, error);
+      log.error(`获取音频直链失败: ${filePath}`, error);
       return null;
     }
   })();
@@ -350,7 +352,7 @@ const initAPlayer = () => {
         playerRef.value?.focus();
       });
 
-      console.log("🎵 全局播放器 APlayer 初始化成功");
+      log.debug("全局播放器 APlayer 初始化成功");
 
       // 等 APlayer 列表 DOM 真正就绪后再 switch
       void (async () => {
@@ -378,7 +380,7 @@ const initAPlayer = () => {
       })();
     })
     .catch((error) => {
-      console.error("APlayer 初始化失败:", error);
+      log.error("APlayer 初始化失败:", error);
     });
 };
 
@@ -443,13 +445,13 @@ const bindAPlayerEvents = () => {
       const idx = ap?.list?.index;
       const current = typeof idx === "number" ? ap?.list?.audios?.[idx] : null;
       if (current && (!current.url || current.url === "" || current.url === PLACEHOLDER_AUDIO_URL)) {
-        console.log("🎵 正在按需获取音频直链，先忽略一次播放错误");
+        log.debug("正在按需获取音频直链，先忽略一次播放错误");
         return;
       }
     } catch {
       // 忽略探测异常
     }
-    console.error("APlayer 播放错误:", error);
+    log.error("APlayer 播放错误:", error);
   });
 };
 
@@ -461,7 +463,7 @@ const destroyAPlayer = () => {
     try {
       aplayerInstance.value.destroy();
     } catch (e) {
-      console.warn("销毁 APlayer 时出错:", e);
+      log.warn("销毁 APlayer 时出错:", e);
     }
     aplayerInstance.value = null;
     store.setAPlayerInstance(null);

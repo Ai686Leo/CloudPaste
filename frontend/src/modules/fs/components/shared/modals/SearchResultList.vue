@@ -146,6 +146,7 @@ import { copyToClipboard } from "@/utils/clipboard";
 import { getFileIcon as getFileIconUtil } from "@/utils/fileTypeIcons.js";
 import { formatFileSize } from "@/utils/fileUtils.js";
 import { formatDateTime } from "@/utils/timeUtils.js";
+import { createLogger } from "@/utils/logger.js";
 
 // 组件属性
 const props = defineProps({
@@ -192,6 +193,7 @@ const emit = defineEmits(["item-click", "load-more"]);
 
 // 组合式函数
 const { t } = useI18n();
+const log = createLogger("SearchResultList");
 
 // 复制状态管理 - 复用现有文件列表的模式
 const copiedPaths = reactive({});
@@ -252,10 +254,8 @@ const copyPath = async (item) => {
     setTimeout(() => {
       copiedPaths[item.s3_key] = false;
     }, 2000);
-
-    console.log("路径已复制:", item.path);
   } catch (error) {
-    console.error("复制路径失败:", error);
+    log.error("复制路径失败:", error);
   }
 };
 </script>

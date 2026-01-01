@@ -1,15 +1,19 @@
 <script setup>
 import { ref, computed, onMounted, nextTick } from "vue";
 import { onClickOutside } from "@vueuse/core";
+import { useI18n } from "vue-i18n";
 // 导入统一的时间处理工具
 import { formatDateTime, formatRelativeTime, isExpired as isExpiredUtil } from "@/utils/timeUtils.js";
 // 导入统一的文件工具
 import { getRemainingViews as getRemainingViewsUtil } from "@/utils/fileUtils.js";
 // 导入创建者徽章统一逻辑
 import { useCreatorBadge } from "@/composables/admin-management/useCreatorBadge.js";
+import { useGlobalMessage } from "@/composables/core/useGlobalMessage.js";
 import { IconArrowUp, IconCalendar, IconCopy, IconDelete, IconError, IconEye, IconEyeOff, IconGlobeAlt, IconLink, IconLockClosed, IconMenu, IconQrCode, IconRename, IconUser } from "@/components/icons";
 
 const { getCreatorText } = useCreatorBadge();
+const { t } = useI18n();
+const { showError } = useGlobalMessage();
 
 /**
  * Paste 瀑布流卡片组件
@@ -113,7 +117,7 @@ const startEditing = () => {
  */
 const saveContent = () => {
   if (editingContent.value.trim() === "") {
-    alert("内容不能为空");
+    showError(t("markdown.messages.contentEmpty"));
     return;
   }
 

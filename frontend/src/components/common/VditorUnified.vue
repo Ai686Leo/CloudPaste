@@ -14,7 +14,14 @@
     ></textarea>
 
     <!-- Markdown编辑器 (在Markdown模式下显示) -->
-    <div v-else id="vditor" class="w-full border rounded-lg" :class="darkMode ? 'border-gray-700' : 'border-gray-200'"></div>
+    <div v-else :id="vditorId" class="w-full border rounded-lg" :class="darkMode ? 'border-gray-700' : 'border-gray-200'"></div>
+
+    <!-- 确认对话框：用于“清空内容”等需要二次确认的操作 -->
+    <ConfirmDialog
+      v-bind="dialogState"
+      @confirm="handleConfirm"
+      @cancel="handleCancel"
+    />
   </div>
 </template>
 
@@ -23,11 +30,16 @@ import { ref, onMounted, onUnmounted, watch, nextTick } from "vue";
 import { useI18n } from "vue-i18n";
 import { useBreakpoints, breakpointsTailwind } from "@vueuse/core";
 import { loadVditor, VDITOR_ASSETS_BASE } from "@/utils/vditorLoader.js";
+import ConfirmDialog from "@/components/common/dialogs/ConfirmDialog.vue";
+import { useConfirmDialog } from "@/composables/core/useConfirmDialog.js";
+import { createLogger } from "@/utils/logger.js";
 
 // 国际化函数
 const { t } = useI18n();
 const breakpoints = useBreakpoints(breakpointsTailwind);
 const isMobileScreen = breakpoints.smaller("md"); // < 768px
+const { dialogState, confirm, handleConfirm, handleCancel } = useConfirmDialog();
+const log = createLogger("VditorUnified");
 
 // 优化的表情配置
 const getOptimizedEmojis = () => ({
@@ -94,8 +106,23 @@ const props = defineProps({
 // Emits
 const emit = defineEmits(["update:modelValue", "editor-ready", "content-change", "import-file", "clear-content", "show-copy-formats"]);
 
+const confirmClearContent = () => {
+  confirm({
+    title: t("common.dialogs.warningTitle"),
+    message: t("markdown.messages.confirmClearContent"),
+    confirmType: "warning",
+    darkMode: props.darkMode,
+  }).then((ok) => {
+    if (ok) emit("clear-content");
+  });
+};
+
 // 编辑器实例
 let editor = null;
+// 组件卸载标记
+let isUnmounted = false;
+// 每个组件实例一个唯一 id，避免多个 VditorUnified 同屏时 id 冲突
+const vditorId = `vditor-${Math.random().toString(16).slice(2)}-${Date.now()}`;
 
 // 纯文本内容
 const plainTextContent = ref("");
@@ -139,9 +166,7 @@ const getEditorConfig = () => {
       icon: '<svg viewBox="0 0 24 24" width="16" height="16" xmlns="http://www.w3.org/2000/svg"><path fill="currentColor" d="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z"></path></svg>',
       tip: t("markdown.toolbar.clearContent"),
       click() {
-        if (confirm(t("markdown.messages.confirmClearContent"))) {
-          emit("clear-content");
-        }
+        confirmClearContent();
       },
     },
     "|",
@@ -190,9 +215,7 @@ const getEditorConfig = () => {
       icon: '<svg viewBox="0 0 24 24" width="16" height="16" xmlns="http://www.w3.org/2000/svg"><path fill="currentColor" d="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z"></path></svg>',
       tip: t("markdown.toolbar.clearContent"),
       click() {
-        if (confirm(t("markdown.messages.confirmClearContent"))) {
-          emit("clear-content");
-        }
+        confirmClearContent();
       },
     },
     {
@@ -325,7 +348,7 @@ const getEditorConfig = () => {
           }
         }
       } catch (error) {
-        console.error("获取编辑器内容时出错:", error);
+        log.error("获取编辑器内容时出错:", error);
       }
     },
     customKeymap: {
@@ -338,9 +361,10 @@ const getEditorConfig = () => {
 
 // 初始化编辑器
 const initEditor = async () => {
-  const vditorContainer = document.getElementById("vditor");
+  if (isUnmounted) return;
+  const vditorContainer = document.getElementById(vditorId);
   if (!vditorContainer) {
-    console.error("找不到vditor容器元素，无法初始化编辑器");
+    log.error("找不到vditor容器元素，无法初始化编辑器");
     return;
   }
 
@@ -351,9 +375,10 @@ const initEditor = async () => {
     // 使用配置函数获取编辑器配置
     const config = getEditorConfig();
 
-    editor = new VditorConstructor("vditor", config);
+    if (isUnmounted) return;
+    editor = new VditorConstructor(vditorId, config);
   } catch (error) {
-    console.error("Vditor编辑器初始化失败:", error);
+    log.error("Vditor编辑器初始化失败:", error);
   }
 };
 
@@ -366,7 +391,7 @@ const safeSetValue = (content) => {
       try {
         editor.setValue(content);
       } catch (error) {
-        console.error("设置编辑器内容失败:", error);
+        log.error("设置编辑器内容失败:", error);
       }
     }
   }, 500);
@@ -387,7 +412,7 @@ const getValue = () => {
     try {
       return editor.getValue();
     } catch (error) {
-      console.error("获取编辑器内容时出错:", error);
+      log.error("获取编辑器内容时出错:", error);
       return "";
     }
   }
@@ -412,7 +437,7 @@ const getHTML = () => {
     try {
       return editor.getHTML();
     } catch (error) {
-      console.error("获取HTML内容时出错:", error);
+      log.error("获取HTML内容时出错:", error);
       return "";
     }
   }
@@ -457,7 +482,7 @@ watch(
           try {
             currentValue = editor.getValue();
           } catch (e) {
-            console.warn("获取编辑器内容失败，使用空内容:", e);
+            log.warn("获取编辑器内容失败，使用空内容:", e);
             currentValue = "";
           }
         }
@@ -475,7 +500,7 @@ watch(
           safeSetValue(currentValue);
         }
       } catch (error) {
-        console.error("切换主题时出错:", error);
+        log.error("切换主题时出错:", error);
       }
     }
   }
@@ -495,7 +520,7 @@ watch(
             editor.destroy();
           }
         } catch (e) {
-          console.error("销毁编辑器时出错:", e);
+          log.error("销毁编辑器时出错:", e);
         }
         editor = null;
       }
@@ -511,7 +536,7 @@ watch(
             safeSetValue(contentToSet);
           }
         } catch (error) {
-          console.error("初始化编辑器时出错:", error);
+          log.error("初始化编辑器时出错:", error);
         }
       };
 
@@ -532,6 +557,7 @@ onMounted(async () => {
     // 使用requestIdleCallback优化初始化时机
     const initializeEditor = async () => {
       try {
+        if (isUnmounted) return;
         await initEditor();
 
         // 设置初始内容
@@ -539,7 +565,7 @@ onMounted(async () => {
           safeSetValue(props.modelValue);
         }
       } catch (error) {
-        console.error("初始化编辑器时出错:", error);
+        log.error("初始化编辑器时出错:", error);
       }
     };
 
@@ -557,6 +583,7 @@ onMounted(async () => {
 
 // 组件卸载
 onUnmounted(() => {
+  isUnmounted = true;
   if (!props.isPlainTextMode && editor) {
     try {
       if (editor.destroy && editor.element) {
@@ -564,7 +591,7 @@ onUnmounted(() => {
       }
       editor = null;
     } catch (e) {
-      console.warn("销毁编辑器时发生错误:", e);
+      log.warn("销毁编辑器时发生错误:", e);
       editor = null;
     }
   }

@@ -7,6 +7,9 @@
 
 import * as fsApi from "@/api/services/fsService.js";
 import { resolveAbsoluteApiUrl } from "./tools.js";
+import { createLogger } from "@/utils/logger.js";
+
+const log = createLogger("MultipartTransfer");
 
 /**
  * 签名分片
@@ -21,7 +24,7 @@ export async function signPart(file, partData) {
       throw new Error("找不到上传会话信息");
     }
 
-    console.log(`[StorageAdapter] signPart被调用: 分片${partData.partNumber}`);
+    log.debug(`signPart被调用: 分片${partData.partNumber}`);
 
     // 不在signPart中处理已上传分片，断点续传由 listParts + uploadPartBytes 内部处理
 
@@ -181,7 +184,7 @@ export async function signPart(file, partData) {
           }
         }
       } catch (e) {
-        console.warn("[StorageAdapter] signPart 请求签名URL失败（可忽略）:", e?.message || e);
+        log.warn("[StorageAdapter] signPart 请求签名URL失败（可忽略）:", e?.message || e);
       }
     }
 
@@ -210,7 +213,7 @@ export async function signPart(file, partData) {
       key: session.key || null,
     };
   } catch (error) {
-    console.error("[StorageAdapter] 签名分片失败:", error);
+    log.error("[StorageAdapter] 签名分片失败:", error);
     throw error;
   }
 }
@@ -233,7 +236,7 @@ export async function uploadPartBytes({ signature, body, onComplete, size, onPro
       sigHeaders?.["X-CloudPaste-Skip-Upload"] === "1";
 
     if (shouldSkip) {
-      console.log("[StorageAdapter] skipUpload=true，跳过分片 PUT，直接进入 complete 阶段");
+      log.debug("skipUpload=true，跳过分片 PUT，直接进入 complete 阶段");
       // 单文件预签名：把“本次上传没有 ETag”记回会话，供 commit 阶段兜底使用
       try {
         const fileId = signature && typeof signature.fileId === "string" ? signature.fileId : null;
@@ -255,7 +258,7 @@ export async function uploadPartBytes({ signature, body, onComplete, size, onPro
       throw new Error("Cannot upload to an undefined URL");
     }
 
-    console.log(`[StorageAdapter] uploadPartBytes被调用: ${url}`);
+    log.debug(`uploadPartBytes被调用: ${url}`);
 
     const isSingleSession = signature && signature.strategy === "single_session";
     const signatureKey =
@@ -283,7 +286,7 @@ export async function uploadPartBytes({ signature, body, onComplete, size, onPro
     }
 
     if (partNumber != null) {
-      console.log(`[StorageAdapter] 🔄 处理分片${partNumber}上传...`);
+      log.debug(`处理分片${partNumber}上传...`);
     }
 
     // 兜底：如果 signature 没带 fileId，就尝试从 url 反查
@@ -306,9 +309,7 @@ export async function uploadPartBytes({ signature, body, onComplete, size, onPro
       if (partNumber != null && partsLedger?.hasPart?.(partNumber)) {
         const existingPart = partsLedger.getPart(partNumber);
         if (existingPart?.ETag) {
-          console.log(
-            `[StorageAdapter] ✅ 分片${partNumber}已存在（账本命中），跳过上传 (ETag: ${existingPart.ETag})`,
-          );
+          log.debug(`分片${partNumber}已存在（账本命中），跳过上传 (ETag: ${existingPart.ETag})`);
 
           return new Promise((resolve) => {
             setTimeout(() => {
@@ -335,9 +336,7 @@ export async function uploadPartBytes({ signature, body, onComplete, size, onPro
         partNumber != null &&
         partNumber <= session.completedParts
       ) {
-        console.log(
-          `[StorageAdapter] ✅ single_session 分片${partNumber}已完成，跳过上传（逻辑跳过，不发HTTP请求）`,
-        );
+        log.debug(`single_session 分片${partNumber}已完成，跳过上传（逻辑跳过，不发HTTP请求）`);
 
         // 模拟一个瞬间完成的上传过程，保持与实际上传一致的回调行为
         return new Promise((resolve) => {
@@ -360,7 +359,7 @@ export async function uploadPartBytes({ signature, body, onComplete, size, onPro
       // 检查文件是否被自定义暂停（同样仅在 per_part_url 模式下有效）
       const pauseFileId = fileId || this.getFileIdFromUrl(url);
       if (pauseFileId && this.isFilePaused(pauseFileId)) {
-        console.log(`[StorageAdapter] ⏸️ 分片${partNumber}被暂停，等待恢复...`);
+        log.debug(`分片${partNumber}被暂停，等待恢复...`);
 
         // 返回一个等待恢复的Promise
         return new Promise((resolve, reject) => {
@@ -371,7 +370,7 @@ export async function uploadPartBytes({ signature, body, onComplete, size, onPro
                 clearTimeout(resumeTimer);
                 resumeTimer = null;
               }
-              console.log(`[StorageAdapter] ▶️ 分片${partNumber}恢复上传`);
+              log.debug(`分片${partNumber}恢复上传`);
               this.uploadPartBytes({
                 signature,
                 body,
@@ -448,7 +447,7 @@ export async function uploadPartBytes({ signature, body, onComplete, size, onPro
 
           if (target.status < 200 || target.status >= 300) {
             try {
-              console.error("[StorageAdapter] uploadPartBytes HTTP error", {
+              log.error("[StorageAdapter] uploadPartBytes HTTP error", {
                 status: target.status,
                 statusText: target.statusText,
                 responseText: target.responseText,
@@ -501,9 +500,7 @@ export async function uploadPartBytes({ signature, body, onComplete, size, onPro
               });
             } catch {}
 
-            console.log(
-              `[StorageAdapter] 🚀 分片${partNumber}上传成功，已写入分片账本 (ETag: ${etag})`,
-            );
+            log.debug(`分片${partNumber}上传成功，已写入分片账本 (ETag: ${etag})`);
           }
 
           try { onComplete(etag); } catch {}
@@ -539,7 +536,7 @@ export async function uploadPartBytes({ signature, body, onComplete, size, onPro
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       try {
         if (attempt > 1) {
-          console.warn(
+          log.warn(
             `[StorageAdapter] ⚠️ 分片${partNumber ?? "?"}重试上传 attempt=${attempt}/${maxAttempts}`,
           );
         }
@@ -634,7 +631,7 @@ export async function uploadPartBytes({ signature, body, onComplete, size, onPro
           // 继续下一轮循环重试
           continue;
         } catch (signError) {
-          console.warn("[StorageAdapter] 重新签名失败，将抛出原始上传错误:", signError?.message || signError);
+          log.warn("[StorageAdapter] 重新签名失败，将抛出原始上传错误:", signError?.message || signError);
           const signMsg = String(signError?.message || "");
           if (signMsg.includes("重置上传会话") || signMsg.includes("重置") || signMsg.includes("重新开始上传")) {
             throw signError;
@@ -648,9 +645,9 @@ export async function uploadPartBytes({ signature, body, onComplete, size, onPro
     throw lastError || new Error("uploadPartBytes failed");
   } catch (error) {
     if (error?.name === "AbortError") {
-      console.warn("[StorageAdapter] uploadPartBytes已中断(AbortError):", error);
+      log.warn("[StorageAdapter] uploadPartBytes已中断(AbortError):", error);
     } else {
-      console.error("[StorageAdapter] uploadPartBytes失败:", error);
+      log.error("[StorageAdapter] uploadPartBytes失败:", error);
     }
     throw error;
   }

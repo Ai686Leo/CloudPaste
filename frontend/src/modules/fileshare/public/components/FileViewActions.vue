@@ -96,8 +96,10 @@ import { getFileErrorKey } from "@/api/services/fileGateway.js";
 import { useFileshareService } from "@/modules/fileshare/fileshareService.js";
 import { useGlobalMessage } from "@/composables/core/useGlobalMessage.js";
 import { IconCheck, IconDelete, IconDownload, IconEye, IconRename, IconShare } from "@/components/icons";
+import { createLogger } from "@/utils/logger.js";
 
 const { t } = useI18n();
+const log = createLogger("FileViewActions");
 
 const props = defineProps({
   fileInfo: {
@@ -169,7 +171,7 @@ const previewFile = async () => {
 
     window.open(previewUrl, "_blank");
   } catch (error) {
-    console.error("预览文件失败:", error);
+    log.error("预览文件失败:", error);
 
     let message = error.message || t("fileView.errors.unknown");
     if (error.status) {
@@ -189,8 +191,6 @@ const downloadFile = () => {
   if (!props.fileInfo) return;
 
   try {
-    console.log("开始下载文件:", props.fileInfo.filename);
-
     const downloadUrl = fileshareService.getPermanentDownloadUrl(props.fileInfo);
     if (!downloadUrl) {
       throw new Error(t("fileView.errors.serverError"));
@@ -207,7 +207,7 @@ const downloadFile = () => {
       document.body.removeChild(link);
     }, 100);
   } catch (error) {
-    console.error("下载文件失败:", error);
+    log.error("下载文件失败:", error);
     const fallbackUrl = fileshareService.getPermanentDownloadUrl(props.fileInfo);
     if (fallbackUrl) {
       window.open(fallbackUrl, "_blank");
@@ -264,7 +264,7 @@ const deleteFile = async () => {
       throw new Error(t("fileView.actions.noPermission"));
     }
   } catch (err) {
-    console.error("删除文件错误:", err);
+    log.error("删除文件错误:", err);
       showError(`${t("fileView.actions.deleteFailed")}: ${err.message || t("fileView.errors.unknown")}`);
   } finally {
     deleting.value = false;

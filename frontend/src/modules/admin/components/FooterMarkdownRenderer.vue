@@ -8,6 +8,9 @@
 <script setup>
 import { ref, watch, onMounted, onBeforeUnmount, nextTick } from "vue";
 import { ensureMermaidPatchedForVditor, loadVditor, mightContainMermaid, VDITOR_ASSETS_BASE } from "@/utils/vditorLoader.js";
+import { createLogger } from "@/utils/logger.js";
+
+const log = createLogger("FooterMarkdownRenderer");
 
 // Props
 const props = defineProps({
@@ -76,7 +79,7 @@ const renderContent = async () => {
       try {
         await ensureMermaidPatchedForVditor();
       } catch (e) {
-        console.warn("页脚 Mermaid 补丁加载失败（将继续正常渲染）:", e);
+        log.warn("页脚 Mermaid 补丁加载失败（将继续正常渲染）:", e);
       }
     }
 
@@ -135,7 +138,7 @@ const renderContent = async () => {
       },
     });
   } catch (error) {
-    console.error("页脚Markdown渲染失败:", error);
+    log.error("页脚Markdown渲染失败:", error);
     // 渲染失败时显示原始文本
     if (contentRef.value && !isDestroyed.value) {
       contentRef.value.textContent = props.content;

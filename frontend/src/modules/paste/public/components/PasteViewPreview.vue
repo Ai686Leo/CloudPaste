@@ -7,6 +7,9 @@ import { debugLog } from "./PasteViewUtils";
 import HtmlPreviewModal from "@/components/paste-view/preview/HtmlPreviewModal.vue"; // 引入HTML预览弹窗组件
 import { ensureMermaidPatchedForVditor, loadVditor, mightContainMermaid, VDITOR_ASSETS_BASE } from "@/utils/vditorLoader.js";
 import { IconChevronDown, IconEye, IconRefresh } from "@/components/icons";
+import { createLogger } from "@/utils/logger.js";
+
+const log = createLogger("PasteViewPreview");
 
 // 定义组件接收的属性
 const props = defineProps({
@@ -176,7 +179,7 @@ const renderContent = (content) => {
   }
 
   if (!content) {
-    console.warn("没有内容可渲染");
+    log.warn("没有内容可渲染");
     return;
   }
 
@@ -189,7 +192,7 @@ const renderContent = (content) => {
         debugLog(props.enableDebug, props.isDev, "预览元素已就绪，现在开始渲染");
         renderContentInternal(content);
       } else {
-        console.error("预览元素始终不可用，无法渲染内容");
+        log.error("预览元素始终不可用，无法渲染内容");
       }
     });
     return;
@@ -227,7 +230,7 @@ const renderContentInternal = async (content) => {
           try {
             await ensureMermaidPatchedForVditor();
           } catch (e) {
-            console.warn("[PasteViewPreview] Mermaid 补丁加载失败（将继续渲染）:", e);
+            log.warn("[PasteViewPreview] Mermaid 补丁加载失败（将继续渲染）:", e);
           }
         }
 
@@ -307,7 +310,7 @@ const renderContentInternal = async (content) => {
               const setupTaskListInteraction = () => {
                 // 添加非空检查，如果预览元素不存在则直接返回
                 if (!previewElement.value) {
-                  console.warn("setupTaskListInteraction: 预览元素不存在，跳过任务列表交互设置");
+                  log.warn("setupTaskListInteraction: 预览元素不存在，跳过任务列表交互设置");
                   return;
                 }
 
@@ -379,7 +382,7 @@ const renderContentInternal = async (content) => {
                 );
                 stopMutationObserver = stop;
               } else {
-                console.warn("无法设置MutationObserver：预览元素不存在");
+                log.warn("无法设置MutationObserver：预览元素不存在");
               }
 
               // 添加代码块折叠功能
@@ -397,7 +400,7 @@ const renderContentInternal = async (content) => {
             },
           });
         } catch (previewError) {
-          console.error("Vditor预览渲染失败:", previewError);
+          log.error("Vditor预览渲染失败:", previewError);
           // 降级到基本文本显示
           if (previewElement.value) {
             const safeContent = content.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
@@ -409,7 +412,7 @@ const renderContentInternal = async (content) => {
         }
       }, 100); // 增加延迟确保DOM稳定
     } catch (e) {
-      console.error("渲染 Markdown 内容时发生错误:", e);
+      log.error("渲染 Markdown 内容时发生错误:", e);
       // 回退到基本的文本显示
       if (previewElement.value) {
         // 内容转义，避免XSS风险

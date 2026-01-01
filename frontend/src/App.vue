@@ -15,8 +15,10 @@ import AnnouncementModal from "@/modules/admin/components/AnnouncementModal.vue"
 import { IconBell, IconClose, IconComputerDesktop, IconGithub, IconHamburger, IconMoon, IconSun } from "@/components/icons";
 import { Notivue, NotivueSwipe, Notification } from "notivue";
 import { cloudPasteLightTheme, cloudPasteDarkTheme } from "@/styles/notivueTheme";
+import { createLogger } from "@/utils/logger.js";
 
 const route = useRoute();
+const log = createLogger("App");
 
 // 使用认证Store和站点配置Store
 const authStore = useAuthStore();
@@ -127,7 +129,7 @@ const isDev = import.meta.env.DEV;
       showEnvSwitcher.value = hasAdminToken && hasEnvParam;
     }
 
-    console.log("应用初始化完成");
+    log.debug("应用初始化完成");
 
     useEventListener(window, "global-message", handleGlobalMessageEvent);
     useEventListener(window, "global-message-clear", handleGlobalMessageClearEvent);

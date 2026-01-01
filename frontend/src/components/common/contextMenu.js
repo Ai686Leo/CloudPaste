@@ -3,6 +3,10 @@
  * 统一处理移动端长按和桌面端右键菜单
  */
 
+import { createLogger } from "@/utils/logger.js";
+
+const log = createLogger("ContextMenu");
+
 /**
  * 检测设备类型（缓存结果避免重复计算）
  * @returns {boolean} 是否为移动设备
@@ -42,7 +46,7 @@ export const contextMenuDirective = {
 
       // 安全检查：确保touches存在且不为空
       if (!e.touches || e.touches.length === 0) {
-        console.warn("⚠️ TouchStart事件缺少touches数据");
+        log.warn("⚠️ TouchStart事件缺少touches数据");
         return;
       }
 
@@ -152,10 +156,10 @@ export const contextMenuDirective = {
         } else if (binding.value && typeof binding.value.handler === "function") {
           binding.value.handler({ x, y, isMobile });
         } else {
-          console.warn("⚠️ 上下文菜单指令：未找到有效的处理函数");
+          log.warn("⚠️ 上下文菜单指令：未找到有效的处理函数");
         }
       } catch (error) {
-        console.error("❌ 上下文菜单处理函数执行失败:", error);
+        log.error("❌ 上下文菜单处理函数执行失败:", error);
       }
     };
 

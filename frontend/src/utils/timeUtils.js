@@ -7,8 +7,10 @@
  */
 
 import { useLocalStorage } from "@vueuse/core";
+import { createLogger } from "@/utils/logger.js";
 
 const storedLanguage = useLocalStorage("language", "zh-CN");
+const log = createLogger("TimeUtils");
 
 // 获取当前语言设置
 const getCurrentLanguage = () => {
@@ -162,7 +164,7 @@ export const parseUTCDate = (utcDateString) => {
     const date = new Date(dateString);
     return isNaN(date.getTime()) ? null : date;
   } catch (error) {
-    console.error("解析 UTC 时间失败:", error, "输入:", utcDateString);
+    log.error("解析 UTC 时间失败:", error, "输入:", utcDateString);
     return null;
   }
 };
@@ -196,14 +198,14 @@ export const formatDateTime = (utcDateString, options = TIME_FORMAT_OPTIONS.FULL
 
   const date = parseUTCDate(utcDateString);
   if (!date) {
-    console.warn("时间解析失败:", utcDateString);
+    log.warn("时间解析失败:", utcDateString);
     return t("dateInvalid");
   }
 
   try {
     return new Intl.DateTimeFormat(locale, options).format(date);
   } catch (error) {
-    console.error("日期格式化错误:", error, "输入:", utcDateString);
+    log.error("日期格式化错误:", error, "输入:", utcDateString);
     return t("dateFormatError");
   }
 };
@@ -263,7 +265,7 @@ export const formatRelativeTime = (utcDateString, baseDate = new Date()) => {
       return isInFuture ? t("yearsLater", { count: years }) : t("yearsAgo", { count: years });
     }
   } catch (error) {
-    console.error("相对时间计算错误:", error);
+    log.error("相对时间计算错误:", error);
     return "";
   }
 };
@@ -295,7 +297,7 @@ export const formatExpiry = (expiryDateString) => {
 
     return `${formattedDate} (${relativeTime})`;
   } catch (error) {
-    console.error("过期时间格式化错误:", error);
+    log.error("过期时间格式化错误:", error);
     return t("dateFormatError");
   }
 };
@@ -360,7 +362,8 @@ export const formatLocalDateTimeWithSeconds = (date) => {
   try {
     return new Intl.DateTimeFormat(getUserLocale(), TIME_FORMAT_OPTIONS.FULL_DATETIME_WITH_SECONDS).format(parsed);
   } catch (error) {
-    console.error("日期格式化错误:", error, "输入:", date);    return t("dateFormatError");
+    log.error("日期格式化错误:", error, "输入:", date);
+    return t("dateFormatError");
   }
 };
 

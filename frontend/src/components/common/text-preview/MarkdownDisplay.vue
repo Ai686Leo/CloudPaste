@@ -26,8 +26,10 @@ import { ref, watch, onMounted, onBeforeUnmount, onActivated, onDeactivated, nex
 import { useI18n } from "vue-i18n";
 import LoadingIndicator from "@/components/common/LoadingIndicator.vue";
 import { ensureMermaidPatchedForVditor, loadVditor, mightContainMermaid, VDITOR_ASSETS_BASE } from "@/utils/vditorLoader.js";
+import { createLogger } from "@/utils/logger.js";
 
 const { t } = useI18n();
+const log = createLogger("MarkdownDisplay");
 
 // Props
 const props = defineProps({
@@ -82,7 +84,7 @@ const renderMarkdown = async () => {
 
     // 更严格的组件状态检查（包含版本检查）
     if (!shouldContinue(currentVersion) || !markdownContainer.value) {
-      console.warn("MarkdownDisplay组件已销毁/隐藏或DOM不存在，跳过渲染");
+      log.warn("MarkdownDisplay组件已销毁/隐藏或DOM不存在，跳过渲染");
       return;
     }
 
@@ -95,13 +97,13 @@ const renderMarkdown = async () => {
     try {
       VditorConstructor = await loadVditor();
     } catch (loadError) {
-      console.error("Vditor 加载失败:", loadError);
+      log.error("Vditor 加载失败:", loadError);
       throw new Error(`Vditor 加载失败: ${loadError.message}`);
     }
 
     // 再次检查组件状态（包含版本检查）
     if (!shouldContinue(currentVersion) || !markdownContainer.value) {
-      console.warn("MarkdownDisplay组件已销毁/隐藏，取消Vditor渲染");
+      log.warn("MarkdownDisplay组件已销毁/隐藏，取消Vditor渲染");
       return;
     }
 
@@ -115,12 +117,12 @@ const renderMarkdown = async () => {
       try {
         await ensureMermaidPatchedForVditor();
       } catch (patchError) {
-        console.warn("Mermaid 补丁加载失败（将继续正常渲染）:", patchError);
+        log.warn("Mermaid 补丁加载失败（将继续正常渲染）:", patchError);
       }
 
       // 异步等待后再做一次状态检查，避免组件已切走但仍继续渲染
       if (!shouldContinue(currentVersion) || !markdownContainer.value) {
-        console.warn("MarkdownDisplay组件已销毁/隐藏，跳过 Mermaid 补丁后的渲染");
+        log.warn("MarkdownDisplay组件已销毁/隐藏，跳过 Mermaid 补丁后的渲染");
         return;
       }
     }
@@ -161,12 +163,12 @@ const renderMarkdown = async () => {
         after: () => {
           // 检查组件是否已被销毁/隐藏，或者是否是过期的渲染操作
           if (!shouldContinue(currentVersion) || !markdownContainer.value) {
-            console.warn("MarkdownDisplay组件已销毁/隐藏或渲染已过期，跳过after回调");
+            log.warn("MarkdownDisplay组件已销毁/隐藏或渲染已过期，跳过after回调");
             return;
           }
 
           // 渲染完成后的回调
-          console.log("Markdown 内容渲染完成");
+          log.debug("Markdown 内容渲染完成");
 
           // 强制添加对应主题的类
           if (props.darkMode) {
@@ -184,13 +186,13 @@ const renderMarkdown = async () => {
         },
       });
     } catch (previewError) {
-      console.error("Vditor.preview 调用失败:", previewError);
+      log.error("Vditor.preview 调用失败:", previewError);
       throw new Error(`Markdown 渲染失败: ${previewError.message}`);
     }
 
-    console.log("Markdown 预览渲染成功");
+    log.debug("Markdown 预览渲染成功");
   } catch (err) {
-    console.error("Markdown 预览渲染失败:", err);
+    log.error("Markdown 预览渲染失败:", err);
     error.value = err.message || t("textPreview.markdownRenderFailed");
     loading.value = false;
     rendered.value = false;
@@ -251,7 +253,7 @@ onBeforeUnmount(() => {
   if (markdownContainer.value) {
     markdownContainer.value.innerHTML = "";
   }
-  console.log("MarkdownDisplay组件销毁");
+  log.debug("MarkdownDisplay组件销毁");
 });
 
 defineExpose({

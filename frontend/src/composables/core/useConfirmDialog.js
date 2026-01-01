@@ -1,38 +1,11 @@
 /**
  * 确认对话框 Composable
  *
- * 提供类似原生 confirm() 的 Promise API，但使用 ConfirmDialog 组件
- * 支持异步确认、加载状态、多种类型（primary/danger/warning）
- *
- * @example
- * // 基础用法
- * const { confirm, dialogState, handleConfirm, handleCancel } = useConfirmDialog();
- *
- * // 在模板中放置 ConfirmDialog
- * // <ConfirmDialog v-bind="dialogState" @confirm="handleConfirm" @cancel="handleCancel" />
- *
- * // 在代码中调用
- * const result = await confirm({
- *   title: '确认删除',
- *   message: '确定要删除此项吗？',
- *   confirmType: 'danger',
- * });
- * if (result) {
- *   // 用户点击了确认
- * }
- *
- * @example
- * // 带异步操作的确认（自动显示加载状态）
- * const result = await confirm({
- *   title: '删除文件',
- *   message: '确定删除？',
- *   confirmType: 'danger',
- *   onConfirm: async () => {
- *     await deleteFile(fileId); // 异步操作
- *   },
- * });
  */
 import { ref, reactive } from "vue";
+import { createLogger } from "@/utils/logger.js";
+
+const log = createLogger("ConfirmDialog");
 
 export function useConfirmDialog() {
   // 对话框状态
@@ -102,7 +75,7 @@ export function useConfirmDialog() {
         closeDialog(true);
       } catch (error) {
         // 发生错误时关闭对话框并返回 false
-        console.error("Confirm dialog callback error:", error);
+        log.error("Confirm dialog callback error:", error);
         closeDialog(false);
         throw error; // 重新抛出错误让调用者处理
       }
@@ -151,6 +124,43 @@ export function useConfirmDialog() {
     handleConfirm,
     handleCancel,
     setDarkMode,
+  };
+}
+
+/**
+ * “confirmFn 适配器”，用于给各类管理 composable
+ *
+ *
+ * @param {(options: any) => Promise<boolean>} confirm - useConfirmDialog() 返回的 confirm 方法
+ * @param {Object} [options]
+ * @param {any} [options.t] - i18n 的 t（可选）
+ * @param {any} [options.darkMode] - ref 或 boolean（可选）
+ * @param {(ctx: {confirmType?: string, title?: string, message?: string}) => string} [options.getConfirmText]
+ * @returns {(payload: {title: string, message?: string, confirmType?: 'primary'|'danger'|'warning', confirmText?: string}) => Promise<boolean>}
+ */
+export function createConfirmFn(confirm, { t, darkMode, getConfirmText } = {}) {
+  return async ({ title, message, confirmType, confirmText }) => {
+    const resolvedDarkMode = typeof darkMode === "object" && darkMode ? !!darkMode.value : !!darkMode;
+    const resolvedConfirmType = confirmType || "primary";
+
+    const resolvedConfirmText =
+      confirmText ||
+      (typeof getConfirmText === "function" ? getConfirmText({ confirmType: resolvedConfirmType, title, message }) : "") ||
+      (t && typeof t === "function"
+        ? resolvedConfirmType === "danger"
+          ? t("common.dialogs.deleteButton")
+          : t("common.dialogs.confirmButton")
+        : resolvedConfirmType === "danger"
+          ? "删除"
+          : "确认");
+
+    return await confirm({
+      title,
+      message,
+      confirmType: resolvedConfirmType,
+      confirmText: resolvedConfirmText,
+      darkMode: resolvedDarkMode,
+    });
   };
 }
 

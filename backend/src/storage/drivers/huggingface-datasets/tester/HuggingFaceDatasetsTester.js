@@ -7,6 +7,7 @@
  */
 
 import { ValidationError } from "../../../../http/errors.js";
+import { decryptIfNeeded } from "../../../../utils/crypto.js";
 import { normalizeBaseUrl, normalizeFolderPath, normalizeRepoId, splitRepoId } from "../hfUtils.js";
 import { buildAuthHeaders, buildRefsApiUrl, buildTreeApiUrlWithQuery, getRevisionKind } from "../hfHubApi.js";
 
@@ -25,7 +26,7 @@ async function fetchJson(url, token, init = {}) {
   return { resp, json, text };
 }
 
-export async function huggingFaceDatasetsTestConnection(config, _encryptionSecret, _requestOrigin = null) {
+export async function huggingFaceDatasetsTestConnection(config, encryptionSecret, _requestOrigin = null) {
   // endpoint_base 是可选的：
   // - 用户没填：前端希望显示“端点地址: 未设置”
   // - 真实请求仍然会走默认 https://huggingface.co
@@ -34,7 +35,9 @@ export async function huggingFaceDatasetsTestConnection(config, _encryptionSecre
   const repo = normalizeRepoId(config?.repo);
   const repoParts = splitRepoId(repo);
   const revision = String(config?.revision || "main").trim() || "main";
-  const token = String(config?.hf_token || "").trim() || null;
+  const tokenEncrypted = config?.hf_token;
+  const tokenRaw = await decryptIfNeeded(tokenEncrypted, encryptionSecret);
+  const token = typeof tokenRaw === "string" ? tokenRaw.trim() || null : null;
   const defaultFolder = normalizeFolderPath(config?.default_folder);
   const expand = config?.hf_use_paths_info === true;
   const limitRaw = config?.hf_tree_limit;

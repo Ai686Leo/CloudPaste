@@ -76,7 +76,6 @@ const handleSidebarToggle = (event) => {
 onMounted(async () => {
   // 如果需要重新验证，则进行验证
   if (authStore.needsRevalidation) {
-    console.log("AdminLayout: 需要重新验证认证状态");
     await authStore.validateAuth();
   }
 
@@ -87,7 +86,6 @@ onMounted(async () => {
 
 // 处理认证状态变化
 const handleAuthStateChange = (event) => {
-  console.log("AdminLayout: 认证状态变化", event.detail);
   // 由于使用了响应式的计算属性，UI会自动更新
 };
 
@@ -95,7 +93,6 @@ const emit = defineEmits(["logout"]);
 
 // 处理登出
 const handleLogout = async () => {
-  console.log("AdminLayout: 执行登出");
   await authStore.logout();
   // 登出后重定向到首页
   router.push({ name: "Home" });

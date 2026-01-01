@@ -9,6 +9,7 @@ import { useLocalStorage } from "@vueuse/core";
 import { api } from "@/api";
 import { Permission, PermissionChecker } from "@/constants/permissions.js";
 import { registerAuthBridge } from "./authBridge.js";
+import { createLogger } from "@/utils/logger.js";
 
 // 配置常量
 const REVALIDATION_INTERVAL = 5 * 60 * 1000; // 5分钟
@@ -20,6 +21,7 @@ const STORAGE_KEYS = {
 };
 
 export const useAuthStore = defineStore("auth", () => {
+  const log = createLogger("AuthStore");
   // ===== 状态定义 =====
 
   // 认证状态
@@ -193,7 +195,7 @@ export const useAuthStore = defineStore("auth", () => {
         return;
       }
     } catch (error) {
-      console.warn("加载管理员token失败:", error);
+      log.warn("加载管理员token失败:", error);
       storedAdminToken.value = null;
     }
 
@@ -208,7 +210,7 @@ export const useAuthStore = defineStore("auth", () => {
         try {
           apiKeyPermissions.value = convertPermissionsToBitFlag(storedApiKeyPermissions.value);
         } catch (permError) {
-          console.warn("加载API密钥权限失败:", permError);
+          log.warn("加载API密钥权限失败:", permError);
           storedApiKeyPermissions.value = 0;
         }
 
@@ -223,12 +225,12 @@ export const useAuthStore = defineStore("auth", () => {
             };
           }
         } catch (infoError) {
-          console.warn("加载API密钥信息失败:", infoError);
+          log.warn("加载API密钥信息失败:", infoError);
           storedApiKeyInfo.value = null;
         }
       }
     } catch (error) {
-      console.warn("加载API密钥失败:", error);
+      log.warn("加载API密钥失败:", error);
       storedApiKey.value = null;
     }
   };
@@ -268,7 +270,7 @@ export const useAuthStore = defineStore("auth", () => {
         storedApiKeyInfo.value = apiKeyInfo.value || null;
       }
     } catch (error) {
-      console.error("保存认证状态到localStorage失败:", error);
+      log.error("保存认证状态到localStorage失败:", error);
     }
   };
 
@@ -292,7 +294,7 @@ export const useAuthStore = defineStore("auth", () => {
       return;
     }
 
-    console.log("初始化认证状态...");
+    log.debug("初始化认证状态...");
     loadFromStorage();
 
     // 管理员会话：启动时校验一次 token
@@ -357,7 +359,7 @@ export const useAuthStore = defineStore("auth", () => {
       await logout();
       return false;
     } catch (error) {
-      console.error("认证验证失败:", error);
+      log.error("认证验证失败:", error);
       await logout();
       return false;
     } finally {
@@ -401,12 +403,12 @@ export const useAuthStore = defineStore("auth", () => {
           })
         );
       } catch (eventError) {
-        console.warn("触发认证状态变化事件失败:", eventError);
+        log.warn("触发认证状态变化事件失败:", eventError);
       }
 
       return { success: true, data: { token } };
     } catch (error) {
-      console.error("管理员登录失败:", error);
+      log.error("管理员登录失败:", error);
       throw error;
     } finally {
       isLoading.value = false;
@@ -467,12 +469,12 @@ export const useAuthStore = defineStore("auth", () => {
           })
         );
       } catch (eventError) {
-        console.warn("触发认证状态变化事件失败:", eventError);
+        log.warn("触发认证状态变化事件失败:", eventError);
       }
 
       return { success: true, data: response.data };
     } catch (error) {
-      console.error("API密钥登录失败:", error);
+      log.error("API密钥登录失败:", error);
       // 恢复原始状态
       await logout();
       throw error;
@@ -541,7 +543,7 @@ export const useAuthStore = defineStore("auth", () => {
 
       return { success: true, data: response.data };
     } catch (error) {
-      console.error("游客登录失败:", error);
+      log.error("游客登录失败:", error);
       await logout();
       throw error;
     } finally {
@@ -564,7 +566,7 @@ export const useAuthStore = defineStore("auth", () => {
     try {
       await guestLogin();
     } catch (error) {
-      console.warn("自动游客登录失败，将保持匿名状态:", error);
+      log.warn("自动游客登录失败，将保持匿名状态:", error);
     }
   };
 
@@ -578,7 +580,7 @@ export const useAuthStore = defineStore("auth", () => {
         try {
           await api.admin.logout();
         } catch (error) {
-          console.warn("管理员登出API调用失败:", error);
+          log.warn("管理员登出API调用失败:", error);
         }
       }
 
@@ -608,10 +610,10 @@ export const useAuthStore = defineStore("auth", () => {
           }
         }
       } catch (eventError) {
-        console.warn("触发登出事件失败:", eventError);
+        log.warn("触发登出事件失败:", eventError);
       }
     } catch (error) {
-      console.error("登出过程中出错:", error);
+      log.error("登出过程中出错:", error);
     }
   };
 

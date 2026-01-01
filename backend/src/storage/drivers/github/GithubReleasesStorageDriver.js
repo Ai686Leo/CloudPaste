@@ -20,6 +20,8 @@ import { buildFileInfo } from "../../utils/FileInfoBuilder.js";
 import { createHttpStreamDescriptor, createWebStreamDescriptor } from "../../streaming/StreamDescriptorUtils.js";
 import { buildFullProxyUrl } from "../../../constants/proxy.js";
 import { getMimeTypeFromFilename } from "../../../utils/fileUtils.js";
+import { MasqueradeClient } from "../../../utils/httpMasquerade.js";
+import { decryptIfNeeded } from "../../../utils/crypto.js";
 
 const RELEASE_NOTES_FILENAME = "RELEASE_NOTES.md";
 
@@ -76,6 +78,13 @@ export class GithubReleasesStorageDriver extends BaseDriver {
     this._repoMetaCache = new Map();
 
     this.apiBase = "https://api.github.com";
+
+    // 浏览器伪装客户端
+    this._masqueradeClient = new MasqueradeClient({
+      deviceCategory: "desktop",
+      rotateIP: false,
+      rotateUA: false,
+    });
   }
 
   /**
@@ -96,6 +105,10 @@ export class GithubReleasesStorageDriver extends BaseDriver {
    * - 解析 repo_structure 为内部的 repos 映射表；
    */
   async initialize() {
+    // token 可能以 encrypted:* 存在（由存储配置 CRUD 统一加密写入）
+    const decryptedToken = await decryptIfNeeded(this.token, this.encryptionSecret);
+    this.token = typeof decryptedToken === "string" ? decryptedToken.trim() : decryptedToken;
+
     this._parseRepoStructure();
     this.initialized = true;
   }
@@ -360,13 +373,16 @@ export class GithubReleasesStorageDriver extends BaseDriver {
 
   /**
    * 构建 GitHub API 请求头
+   * @param {Object} extra - 额外的请求头
+   * @param {string} targetUrl - 目标 URL，用于生成 Referer
    * @returns {Record<string,string>}
    */
-  _buildHeaders(extra = {}) {
+  _buildHeaders(extra = {}, targetUrl = null) {
+    const browserHeaders = this._masqueradeClient.buildHeaders({}, targetUrl);
     const headers = {
+      ...browserHeaders,
       Accept: "application/vnd.github+json",
       "X-GitHub-Api-Version": "2022-11-28",
-      "User-Agent": "CloudPaste-GithubReleasesStorageDriver",
     };
     if (this.token && typeof this.token === "string" && this.token.trim().length > 0) {
       headers.Authorization = `Bearer ${this.token.trim()}`;

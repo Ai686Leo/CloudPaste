@@ -588,9 +588,11 @@ import { useThemeMode } from "@/composables/core/useThemeMode.js";
 import { useGlobalMessage } from "@/composables/core/useGlobalMessage.js";
 import { useConfirmDialog } from "@/composables/core/useConfirmDialog.js";
 import ConfirmDialog from "@/components/common/dialogs/ConfirmDialog.vue";
+import { createLogger } from "@/utils/logger.js";
 
 // 使用i18n
 const { t } = useI18n();
+const log = createLogger("PreviewSettingsView");
 const { getPreviewSettings, updatePreviewSettings } = useAdminSystemService();
 const { isDarkMode: darkMode } = useThemeMode();
 const { showSuccess, showError } = useGlobalMessage();
@@ -822,7 +824,7 @@ const syncVisualRulesFromJson = (rawValue) => {
     collapsedRuleUids.value = {};
     return true;
   } catch (error) {
-    console.error("预览规则配置 JSON 解析失败:", error);
+    log.error("预览规则配置 JSON 解析失败:", error);
     return false;
   }
 };
@@ -942,7 +944,7 @@ const loadSettings = async () => {
       providerMode.value = providerModes.json;
     }
   } catch (err) {
-    console.error("加载预览设置失败:", err);
+    log.error("加载预览设置失败:", err);
     const message = err.message || "加载设置失败";
     showError(message);
   } finally {
@@ -964,7 +966,7 @@ const handleSaveFileTypes = async () => {
     });
     showSuccess(t("admin.preview.saveSuccess"));
   } catch (err) {
-    console.error("保存文件类型设置失败:", err);
+    log.error("保存文件类型设置失败:", err);
     showError(err.message || t("admin.preview.loadError"));
   } finally {
     isSavingFileTypes.value = false;
@@ -1035,7 +1037,7 @@ const handleSaveProviders = async () => {
         }
         settings.value.preview_providers = JSON.stringify(parsed, null, 2);
       } catch (e) {
-        console.error("预览规则配置 JSON 解析失败:", e);
+        log.error("预览规则配置 JSON 解析失败:", e);
         showError(t("admin.preview.previewProvidersInvalidJson"));
         return;
       }
@@ -1049,7 +1051,7 @@ const handleSaveProviders = async () => {
     });
     showSuccess(t("admin.preview.saveSuccess"));
   } catch (err) {
-    console.error("保存预览规则设置失败:", err);
+    log.error("保存预览规则设置失败:", err);
     showError(err.message || t("admin.preview.loadError"));
   } finally {
     isSavingProviders.value = false;

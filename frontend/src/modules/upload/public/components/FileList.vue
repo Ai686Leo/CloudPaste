@@ -336,6 +336,7 @@ import { getFileIcon } from "@/utils/fileTypeIcons.js";
 import { generateQRCode as createQRCodeImage } from "@/utils/qrcodeUtils.js";
 import { useFileshareService } from "@/modules/fileshare/fileshareService.js";
 import { IconCheckbox, IconClose, IconCopy, IconDelete, IconDownload, IconError, IconExternalLink, IconFolderPlus, IconLink, IconQrCode, IconRefresh } from "@/components/icons";
+import { createLogger } from "@/utils/logger.js";
 
 const props = defineProps({
   darkMode: {
@@ -359,6 +360,7 @@ const props = defineProps({
 const emit = defineEmits(["refresh"]);
 
 const { t } = useI18n();
+const log = createLogger("UploadFileList");
 const deleteSettingsStore = useDeleteSettingsStore();
 const fileshareService = useFileshareService();
 
@@ -467,7 +469,7 @@ const deleteFile = async () => {
 
     emit("refresh");
   } catch (error) {
-    console.error("删除文件失败:", error);
+    log.error("删除文件失败:", error);
     showMessage("error", t("file.messages.deleteFailed") + ": " + (error.message || t("file.messages.unknownError")));
   } finally {
     isDeleting.value = false;
@@ -485,7 +487,7 @@ const copyFileUrl = async (file) => {
       throw new Error(t("file.messages.copyFailed"));
     }
   } catch (error) {
-    console.error("复制链接失败:", error);
+    log.error("复制链接失败:", error);
     showMessage("error", t("file.messages.copyFailed"));
   }
 };
@@ -529,7 +531,7 @@ const copyPermanentLink = async (file) => {
       throw new Error(t("file.messages.copyFailed"));
     }
   } catch (error) {
-    console.error(t("file.copyPermanentLinkFailed") + ":", error);
+    log.error(t("file.copyPermanentLinkFailed") + ":", error);
     showMessage("error", `${t("file.copyPermanentLinkFailed")}: ${error.message || t("file.messages.unknownError")}`);
   }
 };
@@ -556,7 +558,7 @@ const generateQRCode = async (url) => {
   try {
     qrCodeUrl.value = await createQRCodeImage(url, { darkMode: props.darkMode });
   } catch (error) {
-    console.error("生成二维码失败:", error);
+    log.error("生成二维码失败:", error);
   }
 };
 
@@ -583,11 +585,6 @@ watch(
   (newFiles) => {
     if (message.value) {
       startMessageTimer();
-    }
-
-    if (newFiles && newFiles.length > 0) {
-      console.log("文件列表已更新:", newFiles);
-      console.log("第一个文件的密码状态:", newFiles[0].has_password);
     }
   }
 );

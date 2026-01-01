@@ -5,6 +5,9 @@
 
 import { useGlobalPlayerStore } from "@/stores/globalPlayerStore.js";
 import { storeToRefs } from "pinia";
+import { createLogger } from "@/utils/logger.js";
+
+const log = createLogger("GlobalPlayer");
 
 export function useGlobalPlayer() {
   const store = useGlobalPlayerStore();
@@ -35,7 +38,7 @@ export function useGlobalPlayer() {
    */
   const playAudio = (audioList, startIndex = 0) => {
     if (!audioList || audioList.length === 0) {
-      console.warn("playAudio: 音频列表为空");
+      log.warn("playAudio: 音频列表为空");
       return;
     }
     store.setPlaylist(audioList, startIndex);
@@ -48,7 +51,7 @@ export function useGlobalPlayer() {
    */
   const playSingleAudio = (audio) => {
     if (!audio || !audio.url) {
-      console.warn("playSingleAudio: 音频对象无效");
+      log.warn("playSingleAudio: 音频对象无效");
       return;
     }
     playAudio([audio], 0);

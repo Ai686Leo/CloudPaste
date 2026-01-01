@@ -1,14 +1,14 @@
-# CloudPaste - 在线剪贴板 📋
+# CloudPaste 📋
 
 <div align="center">
     <p>
     <a href="README_CN.md">中文</a> | <a href="README.md">English</a> |
-    <a href="https://www.readme-i18n.com/ling-drag0n/CloudPaste?lang=es">Español</a> | 
-    <a href="https://www.readme-i18n.com/ling-drag0n/CloudPaste?lang=fr">français</a> | 
-    <a href="https://www.readme-i18n.com/ling-drag0n/CloudPaste?lang=ja">日本語</a> 
+    <a href="https://www.readme-i18n.com/ling-drag0n/CloudPaste?lang=es">Español</a> |
+    <a href="https://www.readme-i18n.com/ling-drag0n/CloudPaste?lang=fr">français</a> |
+    <a href="https://www.readme-i18n.com/ling-drag0n/CloudPaste?lang=ja">日本語</a>
     </p>
     <img width="100" height="100" src="https://img.icons8.com/dusk/100/paste.png" alt="paste"/>
-    <h3>基于 Cloudflare 的在线剪贴板和文件分享服务，支持 Markdown 编辑和文件上传</h3>
+    <h3>🌩️ Serverless 文件管理与 Markdown 分享工具，支持多种存储聚合、30+文件格式在线预览 与 WebDAV挂载</h3>
 </div>
 
 <div align="center">
@@ -61,7 +61,7 @@
 ### 多存储支持
 
 - **S3 兼容**：Cloudflare R2、Backblaze B2、AWS S3、阿里云 OSS、腾讯云 COS、MinIO 等
-- **网盘集成**：WebDAV、OneDrive、Google Drive、Telegram、GitHub API/Releases（只读）等等
+- **网盘集成**：WebDAV、OneDrive、Google Drive、Telegram、HuggingFace Database、GitHub API/Releases（只读）等等
 - **本地存储**：Docker 部署支持本地文件系统
 - **智能上传**：前端预签名直传 + 流式上传 +分片断点续传，进度实时显示，最大限度摆脱cf限制
 - **文件预览**：支持30+种格式直接预览（图片、视频、音频、PDF、Office、代码、电子书等），其余可通过外部IFrame嵌入[KKFileview](https://github.com/kekingcn/kkFileView)预览

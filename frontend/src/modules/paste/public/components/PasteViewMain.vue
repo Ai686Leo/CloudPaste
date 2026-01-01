@@ -16,6 +16,9 @@ import { ApiStatus } from "@/api/ApiStatus";
 import { copyToClipboard } from "@/utils/clipboard";
 import { useAuthStore } from "@/stores/authStore.js";
 import { IconExclamation, IconEye, IconEyeOff, IconRefresh, IconUser } from "@/components/icons";
+import { createLogger } from "@/utils/logger.js";
+
+const log = createLogger("PasteViewMain");
 
 // 定义环境变量
 const isDev = import.meta.env.DEV;
@@ -130,7 +133,7 @@ const checkCreatorStatus = () => {
         isCreator.value = false;
       }
     } catch (e) {
-      console.error("检查创建者状态失败:", e);
+      log.error("检查创建者状态失败:", e);
       isCreator.value = false;
     }
   } else {
@@ -204,14 +207,13 @@ const loadPaste = async (password = null) => {
 
     // 如果需要重新验证认证状态，则进行验证
     if (authStore.needsRevalidation) {
-      console.log("PasteViewMain: 需要重新验证认证状态");
       await authStore.validateAuth();
     }
 
     // 由于文本加载完成，此时可以正确检查创建者状态
     checkCreatorStatus();
   } catch (err) {
-    console.error("获取文本分享失败:", err);
+    log.error("获取文本分享失败:", err);
     // 优先使用HTTP状态码判断错误类型，更可靠
     if (err.status === ApiStatus.UNAUTHORIZED || err.response?.status === ApiStatus.UNAUTHORIZED || err.code === ApiStatus.UNAUTHORIZED) {
       // 401 Unauthorized - 密码错误
@@ -418,7 +420,7 @@ const saveEdit = async (updateData) => {
           hash: currentHash,
         });
       } catch (replaceError) {
-        console.warn("重定向到新链接失败", replaceError);
+        log.warn("重定向到新链接失败", replaceError);
       }
     }
 
@@ -435,7 +437,7 @@ const saveEdit = async (updateData) => {
       });
     }
   } catch (err) {
-    console.error("保存内容失败:", err);
+    log.error("保存内容失败:", err);
     error.value = err.message || "保存失败，请重试";
   } finally {
     loading.value = false;
@@ -492,7 +494,7 @@ const copyContentToClipboard = async () => {
       throw new Error("复制失败");
     }
   } catch (e) {
-    console.error("复制失败:", e);
+    log.error("复制失败:", e);
     error.value = "复制失败，请手动选择内容复制";
   }
 };
@@ -520,7 +522,7 @@ const copyRawLink = async () => {
       throw new Error("复制失败");
     }
   } catch (e) {
-    console.error("复制失败:", e);
+    log.error("复制失败:", e);
     error.value = "复制失败，请手动复制原始链接";
   }
 };

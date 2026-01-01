@@ -6,6 +6,7 @@ import { ValidationError, ConflictError, NotFoundError, AuthorizationError } fro
 import { generateUUID } from "../utils/common.js";
 import { MountRepository, StorageConfigRepository } from "../repositories/index.js";
 import { invalidateFsCache } from "../cache/invalidation.js";
+import { FsSearchIndexStore } from "../storage/fs/search/FsSearchIndexStore.js";
 
 const emitMountCacheInvalidation = ({ mountId, storageConfigId = null, reason, db = null }) => {
   if (!mountId && !storageConfigId) {
@@ -205,6 +206,19 @@ class MountService {
     await this.mountRepository.updateMount(mountId, updateData);
 
     const updatedMount = await this.mountRepository.findById(mountId);
+
+    // 如果“挂载实际指向的内容”发生变化，旧索引就一定不可信了：
+    // - 改 mount_path：索引里存的是旧路径前缀，会导致搜索结果路径错乱
+    // - 改 storage_config_id / storage_type：等于换了一个“数据源”，必须清掉旧索引
+    const shouldResetIndex =
+      (updateData.mount_path && updateData.mount_path !== existingMount.mount_path) ||
+      (updateData.storage_config_id && updateData.storage_config_id !== existingMount.storage_config_id) ||
+      (updateData.storage_type && updateData.storage_type !== existingMount.storage_type);
+    if (shouldResetIndex) {
+      const store = new FsSearchIndexStore(this.db);
+      await store.clearDerivedByMount(mountId, { keepState: true });
+    }
+
     emitMountCacheInvalidation({ mountId, storageConfigId: updatedMount?.storage_config_id || null, reason: "mount-update", db: this.db });
 
     // 返回更新后的挂载点信息
@@ -231,7 +245,12 @@ class MountService {
       throw new AuthorizationError("没有权限删除此挂载点");
     }
 
-    // 删除挂载点
+    // 先清理索引派生数据，再删挂载点（避免删成功但索引残留）
+    // - entries/dirty/state 都属于派生数据，不影响真实文件数据
+    const store = new FsSearchIndexStore(this.db);
+    await store.clearDerivedByMount(mountId, { keepState: false });
+
+    // 删除挂载点（真实业务数据）
     const result = await this.mountRepository.deleteMount(mountId);
 
     emitMountCacheInvalidation({ mountId, storageConfigId: existingMount.storage_config_id || null, reason: "mount-delete", db: this.db });

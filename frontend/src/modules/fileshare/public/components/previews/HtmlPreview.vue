@@ -82,8 +82,10 @@ import { ref, computed, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import LoadingIndicator from "@/components/common/LoadingIndicator.vue";
 import { useFetchText } from "@/composables/text-preview/useFetchText.js";
+import { createLogger } from "@/utils/logger.js";
 
 const { t } = useI18n();
+const log = createLogger("PublicHtmlPreview");
 
 const props = defineProps({
   contentUrl: {
@@ -132,7 +134,7 @@ const fetchHtmlContent = async () => {
 
     const effectiveUrl = fileData.contentUrl;
     if (!effectiveUrl) {
-      console.warn("缺少可用的 HTML 预览 URL");
+      log.warn("缺少可用的 HTML 预览 URL");
       return;
     }
 
@@ -141,17 +143,12 @@ const fetchHtmlContent = async () => {
     if (result.success) {
       htmlContent.value = result.text;
       currentEncoding.value = result.encoding || "utf-8";
-
-      console.log("HTML源码加载成功:", {
-        encoding: result.encoding,
-        textLength: result.text.length,
-      });
     } else {
       htmlContent.value = `${t("fileView.preview.html.error")}：${result.error}`;
       emit("error", result.error);
     }
   } catch (err) {
-    console.error("获取HTML内容失败:", err);
+    log.error("获取HTML内容失败:", err);
     htmlContent.value = t("fileView.preview.html.error");
     emit("error", err);
   } finally {
@@ -189,16 +186,11 @@ const handleEncodingChange = async () => {
 
     if (result.success) {
       htmlContent.value = result.text;
-
-      console.log("HTML编码切换成功:", {
-        encoding: currentEncoding.value,
-        textLength: result.text.length,
-      });
     } else {
-      console.error("HTML编码切换失败:", result.error);
+      log.error("HTML编码切换失败:", result.error);
     }
   } catch (err) {
-    console.error("HTML编码切换失败:", err);
+    log.error("HTML编码切换失败:", err);
   } finally {
     textLoading.value = false;
   }

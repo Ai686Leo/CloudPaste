@@ -8,6 +8,7 @@ import { useEventListener } from "@vueuse/core";
 import { formatDateTime } from "@/utils/timeUtils.js";
 import { formatFileSize as formatFileSizeUtil, FileType, getExtension, isArchiveFile } from "@/utils/fileTypes.js";
 import { decodeImagePreviewUrlToPngObjectUrl, revokeObjectUrl, shouldAttemptDecodeImagePreview } from "@/utils/imageDecode.js";
+import { createLogger } from "@/utils/logger.js";
 
 const EBOOK_EXTS = new Set(["epub", "mobi", "azw3", "azw", "fb2", "cbz"]);
 const EBOOK_MIMES = new Set([
@@ -20,6 +21,7 @@ const EBOOK_MIMES = new Set([
 ]);
 
 export function usePreviewRenderers(file, emit, darkMode) {
+  const log = createLogger("Preview");
   // ===== 状态管理 =====
 
   // 基本状态
@@ -90,7 +92,7 @@ export function usePreviewRenderers(file, emit, darkMode) {
   const fetchAuthenticatedUrl = async () => {
     const url = previewUrl.value;
     if (!url) {
-      console.warn("预览URL为空，无法获取认证预览URL");
+      log.warn("预览URL为空，无法获取认证预览URL");
       return;
     }
     revokeObjectUrl(authenticatedPreviewUrl.value);
@@ -133,10 +135,10 @@ export function usePreviewRenderers(file, emit, darkMode) {
           .then(() => {
             isFullscreenState.value = true;
             if (onEnter) onEnter();
-            console.log("进入全屏模式");
+            log.debug("进入全屏模式");
           })
           .catch((error) => {
-            console.error("进入全屏失败:", error);
+            log.error("进入全屏失败:", error);
             // 降级处理：使用CSS全屏效果
             isFullscreenState.value = true;
             if (onEnter) onEnter();
@@ -154,10 +156,10 @@ export function usePreviewRenderers(file, emit, darkMode) {
           .then(() => {
             isFullscreenState.value = false;
             if (onExit) onExit();
-            console.log("退出全屏模式");
+            log.debug("退出全屏模式");
           })
           .catch((error) => {
-            console.error("退出全屏失败:", error);
+            log.error("退出全屏失败:", error);
             isFullscreenState.value = false;
             if (onExit) onExit();
           });
@@ -177,11 +179,11 @@ export function usePreviewRenderers(file, emit, darkMode) {
       isOfficeFullscreen,
       () => {
         // 进入全屏时的回调
-        console.log("Office预览进入全屏");
+        log.debug("Office预览进入全屏");
       },
       () => {
         // 退出全屏时的回调
-        console.log("Office预览退出全屏");
+        log.debug("Office预览退出全屏");
       }
     );
   };
@@ -195,7 +197,7 @@ export function usePreviewRenderers(file, emit, darkMode) {
     // 如果不在全屏状态，重置全屏标志
     if (!document.fullscreenElement) {
       isOfficeFullscreen.value = false;
-      console.log("全屏状态已重置");
+      log.debug("全屏状态已重置");
     }
   };
 
@@ -206,7 +208,7 @@ export function usePreviewRenderers(file, emit, darkMode) {
     // 浏览器原生全屏API会自动处理Esc键退出全屏
     // 这里可以添加其他键盘快捷键处理逻辑
     if (e.key === "Escape") {
-      console.log("检测到Esc键，全屏状态将由浏览器处理");
+      log.debug("检测到Esc键，全屏状态将由浏览器处理");
     }
   };
   
@@ -232,7 +234,7 @@ export function usePreviewRenderers(file, emit, darkMode) {
     const key = buildContentLoadedKey();
     if (key && key === lastContentLoadedKey) return;
     lastContentLoadedKey = key;
-    console.log("内容加载完成");
+    log.debug("内容加载完成");
     emit("loaded");
   };
 
@@ -240,7 +242,7 @@ export function usePreviewRenderers(file, emit, darkMode) {
    * 处理内容加载错误
    */
   const handleContentError = async (error) => {
-    console.error("内容加载错误:", error);
+    log.error("内容加载错误:", error);
 
     const currentFile = file.value;
     const currentUrl = authenticatedPreviewUrl.value || "";
@@ -257,15 +259,15 @@ export function usePreviewRenderers(file, emit, darkMode) {
     ) {
       hasTriedImageDecodeFallback.value = true;
       try {
-        console.info("图片解码回退开始:", { filename, mimetype, url: currentUrl });
+        log.debug("图片解码回退开始:", { filename, mimetype, url: currentUrl });
         const { objectUrl } = await decodeImagePreviewUrlToPngObjectUrl({ url: currentUrl, filename, mimetype });
         revokeObjectUrl(authenticatedPreviewUrl.value);
         authenticatedPreviewUrl.value = objectUrl;
         loadError.value = false;
-        console.info("图片解码回退成功:", { filename, objectUrl });
+        log.debug("图片解码回退成功:", { filename, objectUrl });
         return;
       } catch (decodeError) {
-        console.error("图片解码回退失败:", decodeError);
+        log.error("图片解码回退失败:", decodeError);
         // 继续走通用错误处理
       }
     }
@@ -299,7 +301,7 @@ export function usePreviewRenderers(file, emit, darkMode) {
   const initializePreview = async () => {
     // 文本/代码/Markdown/HTML预览已移除
     // 图片、视频、音频、PDF、Office预览由模板中的条件渲染处理
-    console.log("预览初始化完成");
+    log.debug("预览初始化完成");
   };
 
   /**
@@ -319,7 +321,7 @@ export function usePreviewRenderers(file, emit, darkMode) {
     isOfficeFullscreen.value = false;
     clearPreviewLoadTimeout();
 
-    console.log("文件预览渲染器已重置，准备预览新文件:", newFile?.name || "无文件");
+    log.debug("文件预览渲染器已重置，准备预览新文件:", newFile?.name || "无文件");
   };
 
   /**
@@ -328,7 +330,7 @@ export function usePreviewRenderers(file, emit, darkMode) {
   const reinitializePreviewOnThemeChange = async () => {
     // 文本/代码/Markdown/HTML预览已移除
     // 图片、视频、音频、PDF、Office预览不需要主题重新初始化
-    console.log("主题变化预览重新初始化完成");
+    log.debug("主题变化预览重新初始化完成");
   };
 
   // ===== 监听器 =====
@@ -374,8 +376,8 @@ export function usePreviewRenderers(file, emit, darkMode) {
       // 只有当文件存在时才初始化预览
       if (newFile) {
         // 添加详细的文件类型判断日志
-        console.group(`📁 文件预览类型分析: ${newFile.name}`);
-        console.log("🔍 文件信息:", {
+        log.debug(`文件预览类型分析: ${newFile.name}`);
+        log.debug("文件信息:", {
           name: newFile.name,
           mimetype: newFile.mimetype,
           size: newFile.size,
@@ -384,7 +386,7 @@ export function usePreviewRenderers(file, emit, darkMode) {
 
         // 获取文件类型信息
         const typeInfo = fileTypeInfo.value;
-        console.log("🎯 文件类型检测结果:", typeInfo);
+        log.debug("文件类型检测结果:", typeInfo);
 
         // 显示保留的类型判断结果
         const typeChecks = {
@@ -396,12 +398,11 @@ export function usePreviewRenderers(file, emit, darkMode) {
           isOffice: isOfficeFile.value,
           isText: isTextFile.value,
         };
-        console.log("📋 类型判断结果:", typeChecks);
+        log.debug("类型判断结果:", typeChecks);
 
         // 显示最终选择的预览类型
         const selectedType = Object.entries(typeChecks).find(([, value]) => value)?.[0] || "unknown";
-        console.log(`✅ 最终预览类型: ${selectedType}`);
-        console.groupEnd();
+        log.debug(`最终预览类型: ${selectedType}`);
 
         if (typeChecks.isImage) {
           const filename = newFile?.name || "";
@@ -416,7 +417,7 @@ export function usePreviewRenderers(file, emit, darkMode) {
             hasTriedImageDecodeFallback.value = true;
 
             try {
-              console.info("图片预解码开始:", { filename, mimetype, url });
+              log.debug("图片预解码开始:", { filename, mimetype, url });
               const decoded = await decodeImagePreviewUrlToPngObjectUrl({
                 url,
                 filename,
@@ -426,14 +427,15 @@ export function usePreviewRenderers(file, emit, darkMode) {
 
               if (controller.signal.aborted) return;
               if (file.value?.name !== expectedFileName) return;
+              
+              log.debug("图片预解码成功:", { filename, objectUrl: decoded.objectUrl });
 
               revokeObjectUrl(authenticatedPreviewUrl.value);
               authenticatedPreviewUrl.value = decoded.objectUrl;
               loadError.value = false;
-              console.info("图片预解码成功:", { filename, objectUrl: decoded.objectUrl });
             } catch (decodeError) {
               if (controller.signal.aborted) return;
-              console.error("图片预解码失败:", decodeError);
+              log.error("图片预解码失败:", decodeError);
               loadError.value = true;
               emit("error", decodeError);
             } finally {
@@ -476,7 +478,7 @@ export function usePreviewRenderers(file, emit, darkMode) {
    * 组件挂载时的初始化
    */
   onMounted(() => {
-    console.log("文件预览组件已挂载");
+    log.debug("文件预览组件已挂载");
   });
 
   /**
@@ -497,7 +499,7 @@ export function usePreviewRenderers(file, emit, darkMode) {
       previewTimeoutId.value = null;
     }
 
-    console.log("文件预览组件已卸载");
+    log.debug("文件预览组件已卸载");
   });
 
   // ===== 扩展功能将在上层集成 =====

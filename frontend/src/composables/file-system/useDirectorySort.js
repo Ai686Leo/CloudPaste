@@ -7,8 +7,10 @@
 
 import { computed } from "vue";
 import { useExplorerSettings } from "@/composables/useExplorerSettings";
+import { createLogger } from "@/utils/logger.js";
 
 export function useDirectorySort() {
+  const log = createLogger("DirectorySort");
   // 获取全局设置
   const explorerSettings = useExplorerSettings();
 
@@ -57,7 +59,7 @@ export function useDirectorySort() {
    */
   const initializeSortState = () => {
     // 排序状态已由 useExplorerSettings.loadSettings() 自动加载
-    console.log("排序状态已初始化:", {
+    log.debug("排序状态已初始化:", {
       field: sortField.value,
       order: sortOrder.value,
       foldersFirst: foldersFirst.value,
@@ -81,7 +83,7 @@ export function useDirectorySort() {
    */
   const handleSort = (field) => {
     if (!["name", "size", "modified", "type"].includes(field)) {
-      console.warn("无效的排序字段:", field);
+      log.warn("无效的排序字段:", field);
       return;
     }
 
@@ -102,12 +104,12 @@ export function useDirectorySort() {
    */
   const setSortState = (field, order) => {
     if (!["name", "size", "modified", "type"].includes(field)) {
-      console.warn("无效的排序字段:", field);
+      log.warn("无效的排序字段:", field);
       return;
     }
 
     if (!["asc", "desc"].includes(order)) {
-      console.warn("无效的排序顺序:", order);
+      log.warn("无效的排序顺序:", order);
       return;
     }
 

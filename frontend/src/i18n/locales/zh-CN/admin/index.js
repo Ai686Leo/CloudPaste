@@ -9,6 +9,8 @@ import fsIndex from "./fsIndex.js";
 import tasks from "./tasks.js";
 import storage from "./storage.js";
 import scheduledJobs from "./scheduledJobs.js";
+import paste from "./paste.js";
+import fileshare from "./fileshare.js";
 
 export default {
   ...common,
@@ -22,4 +24,6 @@ export default {
   ...tasks,
   ...storage,
   ...scheduledJobs,
+  ...paste,
+  ...fileshare,
 };

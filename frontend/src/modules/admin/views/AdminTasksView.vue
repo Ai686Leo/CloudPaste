@@ -299,6 +299,7 @@
 import { ref, computed, watch, onMounted, onUnmounted, h } from 'vue'
 import { useIntervalFn } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
+import { createLogger } from '@/utils/logger.js'
 import { listJobs, getJobStatus, cancelJob, deleteJob, batchCopyItems, listJobTypes } from '@/api/services/fsService'
 import { useThemeMode } from '@/composables/core/useThemeMode.js'
 import { useConfirmDialog } from '@/composables/core/useConfirmDialog.js'
@@ -330,6 +331,7 @@ import { useAdminBase } from '@/composables/admin-management/useAdminBase.js'
 // Composables
 const { isDarkMode: darkMode } = useThemeMode()
 const { t, locale } = useI18n()
+const log = createLogger('AdminTasksView')
 const { dialogState, confirm, handleConfirm, handleCancel } = useConfirmDialog()
 const { getCreatorBadgeInfo } = useCreatorBadge()
 
@@ -668,7 +670,7 @@ const fetchJobTypes = async () => {
     const types = response?.data?.types || response?.types || []
     jobTypes.value = Array.isArray(types) ? types : []
   } catch (error) {
-    console.error('[AdminTasksView] 获取任务类型失败:', error)
+    log.error('[AdminTasksView] 获取任务类型失败:', error)
   }
 }
 
@@ -721,7 +723,7 @@ const fetchTasks = async () => {
       pagination.hasMore = pagination.offset + pagination.limit < retryTotal
     }
   } catch (error) {
-    console.error('Failed to fetch tasks:', error)
+    log.error('Failed to fetch tasks:', error)
   } finally {
     loading.value = false
   }
@@ -818,7 +820,7 @@ const handleDeleteTask = async (task) => {
       await deleteJob(task.jobId)
       await fetchTasks()
     } catch (error) {
-      console.error('Failed to delete task:', error)
+      log.error('Failed to delete task:', error)
     }
   }
 }
@@ -839,7 +841,7 @@ const handleCancelTask = async (task) => {
       await cancelJob(task.jobId)
       await fetchTasks()
     } catch (error) {
-      console.error('[AdminTasksView] 取消任务失败:', error)
+      log.error('[AdminTasksView] 取消任务失败:', error)
     }
   }
 }
@@ -866,10 +868,10 @@ const handleBatchDelete = async () => {
       selectedTasks.value = failedIds
       await fetchTasks()
       if (failedIds.length > 0) {
-        console.error('[AdminTasksView] 部分任务删除失败:', failedIds)
+        log.error('[AdminTasksView] 部分任务删除失败:', failedIds)
       }
     } catch (error) {
-      console.error('Failed to batch delete tasks:', error)
+      log.error('Failed to batch delete tasks:', error)
     }
   }
 }
@@ -898,10 +900,10 @@ const handleBatchCancel = async () => {
       selectedTasks.value = failedIds
       await fetchTasks()
       if (failedIds.length > 0) {
-        console.error('[AdminTasksView] 部分任务取消失败:', failedIds)
+        log.error('[AdminTasksView] 部分任务取消失败:', failedIds)
       }
     } catch (error) {
-      console.error('[AdminTasksView] 批量取消任务失败:', error)
+      log.error('[AdminTasksView] 批量取消任务失败:', error)
     }
   }
 }
@@ -923,14 +925,14 @@ const handleRetryAllFailed = async ({ task, items }) => {
     const copyItems = normalizeCopyItems(failedItems)
 
     if (copyItems.length === 0) {
-      console.warn('[AdminTasksView] 没有可重试的失败项')
+      log.warn('[AdminTasksView] 没有可重试的失败项')
       return
     }
 
     await batchCopyItems(copyItems, task?.payload?.options || {})
     await fetchTasks()
   } catch (error) {
-    console.error('[AdminTasksView] 重试全部失败项失败:', error)
+    log.error('[AdminTasksView] 重试全部失败项失败:', error)
   }
 }
 
@@ -938,14 +940,14 @@ const handleRetryFile = async ({ task, item }) => {
   try {
     const copyItems = normalizeCopyItems([item])
     if (copyItems.length === 0) {
-      console.warn('[AdminTasksView] 失败项缺少路径，无法重试')
+      log.warn('[AdminTasksView] 失败项缺少路径，无法重试')
       return
     }
 
     await batchCopyItems(copyItems, task?.payload?.options || {})
     await fetchTasks()
   } catch (error) {
-    console.error('[AdminTasksView] 重试单个失败项失败:', error)
+    log.error('[AdminTasksView] 重试单个失败项失败:', error)
   }
 }
 

@@ -1,5 +1,5 @@
 /**
- * 存储驱动工厂（注册表版）
+ * 存储驱动工厂
  * - 通过 registerDriver(type, meta) 注册驱动与tester
  * - createDriver 基于注册信息实例化
  * - validate/test 均可按驱动自定义实现
@@ -14,11 +14,15 @@ import { GithubReleasesStorageDriver } from "../drivers/github/GithubReleasesSto
 import { GithubApiStorageDriver } from "../drivers/github/GithubApiStorageDriver.js";
 import { TelegramStorageDriver } from "../drivers/telegram/TelegramStorageDriver.js";
 import { HuggingFaceDatasetsStorageDriver } from "../drivers/huggingface-datasets/HuggingFaceDatasetsStorageDriver.js";
+import { MirrorStorageDriver } from "../drivers/mirror/MirrorStorageDriver.js";
+import { DiscordStorageDriver } from "../drivers/discord/DiscordStorageDriver.js";
 import { huggingFaceDatasetsTestConnection } from "../drivers/huggingface-datasets/tester/HuggingFaceDatasetsTester.js";
 import { githubApiTestConnection } from "../drivers/github/tester/GithubApiTester.js";
 import { githubReleasesTestConnection } from "../drivers/github/tester/GithubReleasesTester.js";
 import { googleDriveTestConnection } from "../drivers/googledrive/tester/GoogleDriveTester.js";
 import { telegramTestConnection } from "../drivers/telegram/tester/TelegramTester.js";
+import { mirrorTestConnection } from "../drivers/mirror/tester/MirrorTester.js";
+import { discordTestConnection } from "../drivers/discord/tester/DiscordTester.js";
 import {
   CAPABILITIES,
   REQUIRED_METHODS_BY_CAPABILITY,
@@ -166,7 +170,9 @@ export class StorageFactory {
     GITHUB_RELEASES: "GITHUB_RELEASES",
     GITHUB_API: "GITHUB_API",
     TELEGRAM: "TELEGRAM",
+    DISCORD: "DISCORD",
     HUGGINGFACE_DATASETS: "HUGGINGFACE_DATASETS",
+    MIRROR: "MIRROR",
   };
 
   // 注册驱动
@@ -1938,11 +1944,156 @@ StorageFactory.registerDriver(StorageFactory.SUPPORTED_TYPES.TELEGRAM, {
   },
 });
 
+// 注册 Discord 驱动（Bot API：先完成“存储配置 + 测试连接”接入，能力在后续任务逐步补齐）
+StorageFactory.registerDriver(StorageFactory.SUPPORTED_TYPES.DISCORD, {
+  ctor: DiscordStorageDriver,
+  tester: discordTestConnection,
+  displayName: "Discord Bot API",
+  validate: (cfg) => {
+    const errors = [];
+    if (!cfg?.bot_token) errors.push("DISCORD 配置缺少必填字段: bot_token");
+    if (!cfg?.channel_id) errors.push("DISCORD 配置缺少必填字段: channel_id");
+    if (cfg?.channel_id && !/^\d+$/.test(String(cfg.channel_id).trim())) {
+      errors.push("DISCORD 配置字段 channel_id 必须是纯数字字符串（Snowflake）");
+    }
+    const partSizeMb = cfg?.part_size_mb != null && cfg?.part_size_mb !== "" ? Number(cfg.part_size_mb) : null;
+    if (partSizeMb != null && (!Number.isFinite(partSizeMb) || partSizeMb <= 0)) {
+      errors.push("part_size_mb 必须是大于 0 的数字");
+    }
+    const concurrency = cfg?.upload_concurrency != null && cfg?.upload_concurrency !== "" ? Number(cfg.upload_concurrency) : null;
+    if (concurrency != null && (!Number.isFinite(concurrency) || concurrency <= 0)) {
+      errors.push("upload_concurrency 必须是大于 0 的数字");
+    }
+    if (cfg?.default_folder) {
+      const folder = String(cfg.default_folder);
+      if (folder.includes("..")) {
+        errors.push("default_folder 不允许包含 .. 段");
+      }
+    }
+    if (cfg?.url_proxy) {
+      try {
+        const parsed = new URL(String(cfg.url_proxy));
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+          errors.push("url_proxy 必须以 http:// 或 https:// 开头");
+        }
+      } catch {
+        errors.push("url_proxy 格式无效");
+      }
+    }
+    return { valid: errors.length === 0, errors };
+  },
+  capabilities: [CAPABILITIES.READER, CAPABILITIES.WRITER, CAPABILITIES.ATOMIC, CAPABILITIES.PROXY, CAPABILITIES.MULTIPART],
+  ui: {
+    icon: "storage-discord",
+    i18nKey: "admin.storage.type.discord",
+    badgeTheme: "discord",
+  },
+  configProjector(cfg, { withSecrets = false } = {}) {
+    const projected = {
+      channel_id: cfg?.channel_id,
+      part_size_mb: cfg?.part_size_mb,
+      upload_concurrency: cfg?.upload_concurrency,
+      default_folder: cfg?.default_folder,
+      url_proxy: cfg?.url_proxy,
+    };
+    if (withSecrets) {
+      projected.bot_token = cfg?.bot_token;
+    }
+    return projected;
+  },
+  configSchema: {
+    fields: [
+      {
+        name: "bot_token",
+        type: "secret",
+        required: true,
+        labelKey: "admin.storage.fields.discord.bot_token",
+        ui: {
+          fullWidth: true,
+          placeholderKey: "admin.storage.placeholder.discord.bot_token",
+          descriptionKey: "admin.storage.description.discord.bot_token",
+        },
+      },
+      {
+        name: "channel_id",
+        type: "string",
+        required: true,
+        labelKey: "admin.storage.fields.discord.channel_id",
+        ui: {
+          fullWidth: true,
+          placeholderKey: "admin.storage.placeholder.discord.channel_id",
+          descriptionKey: "admin.storage.description.discord.channel_id",
+        },
+      },
+      {
+        name: "part_size_mb",
+        type: "number",
+        required: false,
+        defaultValue: 10,
+        labelKey: "admin.storage.fields.discord.part_size_mb",
+        ui: {
+          placeholderKey: "admin.storage.placeholder.discord.part_size_mb",
+          descriptionKey: "admin.storage.description.discord.part_size_mb",
+        },
+      },
+      {
+        name: "upload_concurrency",
+        type: "number",
+        required: false,
+        defaultValue: 1,
+        labelKey: "admin.storage.fields.discord.upload_concurrency",
+        ui: {
+          placeholderKey: "admin.storage.placeholder.discord.upload_concurrency",
+          descriptionKey: "admin.storage.description.discord.upload_concurrency",
+        },
+      },
+      {
+        name: "url_proxy",
+        type: "string",
+        required: false,
+        labelKey: "admin.storage.fields.url_proxy",
+        validation: { rule: "url" },
+        ui: {
+          fullWidth: true,
+          placeholderKey: "admin.storage.placeholder.url_proxy",
+          descriptionKey: "admin.storage.description.url_proxy",
+        },
+      },
+      {
+        name: "default_folder",
+        type: "string",
+        required: false,
+        labelKey: "admin.storage.fields.default_folder",
+        ui: {
+          fullWidth: true,
+          placeholderKey: "admin.storage.placeholder.default_folder",
+          emptyTextKey: "admin.storage.display.default_folder.root",
+        },
+      },
+    ],
+    layout: {
+      groups: [
+        {
+          name: "basic",
+          titleKey: "admin.storage.groups.basic",
+          fields: ["bot_token", "channel_id", "default_folder"],
+        },
+        {
+          name: "advanced",
+          titleKey: "admin.storage.groups.advanced",
+          fields: [["part_size_mb", "upload_concurrency"], "url_proxy"],
+        },
+      ],
+      summaryFields: ["channel_id", "default_folder", "part_size_mb", "upload_concurrency"],
+    },
+  },
+});
+
 // 注册 HuggingFace Datasets 驱动（Hub Datasets）
 StorageFactory.registerDriver(StorageFactory.SUPPORTED_TYPES.HUGGINGFACE_DATASETS, {
   ctor: HuggingFaceDatasetsStorageDriver,
   tester: huggingFaceDatasetsTestConnection,
-  displayName: "HuggingFace Datasets (Hub)",
+  displayName: "HuggingFace Datasets",
   validate: (cfg) => {
     const errors = [];
     const repo = cfg?.repo ? String(cfg.repo).trim() : "";
@@ -2163,6 +2314,116 @@ StorageFactory.registerDriver(StorageFactory.SUPPORTED_TYPES.HUGGINGFACE_DATASET
         },
       ],
       summaryFields: ["repo", "revision", "default_folder"],
+    },
+  },
+});
+
+// 注册 MIRROR 驱动（HTTP 镜像站目录解析，只读）
+StorageFactory.registerDriver(StorageFactory.SUPPORTED_TYPES.MIRROR, {
+  ctor: MirrorStorageDriver,
+  tester: mirrorTestConnection,
+  displayName: "Source Mirror",
+  validate: (cfg) => {
+    const errors = [];
+    const endpoint = cfg?.endpoint_url ? String(cfg.endpoint_url).trim() : "";
+    const preset = cfg?.preset ? String(cfg.preset).trim().toLowerCase() : "";
+
+    if (!endpoint) {
+      errors.push("MIRROR 配置缺少必填字段: endpoint_url");
+    } else {
+      try {
+        const parsed = new URL(endpoint);
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+          errors.push("endpoint_url 必须以 http:// 或 https:// 开头");
+        }
+      } catch {
+        errors.push("endpoint_url 格式无效");
+      }
+    }
+
+    if (!preset) {
+      errors.push("MIRROR 配置缺少必填字段: preset");
+    } else if (!["tuna", "ustc", "aliyun"].includes(preset)) {
+      errors.push("preset 不合法：仅支持 tuna/ustc/aliyun");
+    }
+
+    return { valid: errors.length === 0, errors };
+  },
+  capabilities: [CAPABILITIES.READER, CAPABILITIES.DIRECT_LINK, CAPABILITIES.PROXY],
+  ui: {
+    icon: "storage-mirror",
+    i18nKey: "admin.storage.type.mirror",
+    badgeTheme: "mirror",
+  },
+  configSchema: {
+    fields: [
+      {
+        name: "preset",
+        type: "enum",
+        required: true,
+        defaultValue: "tuna",
+        labelKey: "admin.storage.fields.mirror.preset",
+        enumValues: [
+          { value: "tuna", labelKey: "admin.storage.enum.mirror.preset.tuna" },
+          { value: "ustc", labelKey: "admin.storage.enum.mirror.preset.ustc" },
+          { value: "aliyun", labelKey: "admin.storage.enum.mirror.preset.aliyun" },
+        ],
+        ui: {
+          fullWidth: true,
+          descriptionKey: "admin.storage.description.mirror.preset",
+        },
+      },
+      {
+        name: "endpoint_url",
+        type: "string",
+        required: true,
+        labelKey: "admin.storage.fields.mirror.endpoint_url",
+        validation: { rule: "url" },
+        ui: {
+          fullWidth: true,
+          placeholderKey: "admin.storage.placeholder.mirror.endpoint_url",
+          descriptionKey: "admin.storage.description.mirror.endpoint_url",
+        },
+      },
+      {
+        name: "max_entries",
+        type: "number",
+        required: false,
+        defaultValue: 1000,
+        labelKey: "admin.storage.fields.mirror.max_entries",
+        ui: {
+          fullWidth: true,
+          placeholderKey: "admin.storage.placeholder.mirror.max_entries",
+          descriptionKey: "admin.storage.description.mirror.max_entries",
+        },
+      },
+      {
+        name: "url_proxy",
+        type: "string",
+        required: false,
+        labelKey: "admin.storage.fields.url_proxy",
+        validation: { rule: "url" },
+        ui: {
+          fullWidth: true,
+          placeholderKey: "admin.storage.placeholder.url_proxy",
+          descriptionKey: "admin.storage.description.url_proxy",
+        },
+      },
+    ],
+    layout: {
+      groups: [
+        {
+          name: "basic",
+          titleKey: "admin.storage.groups.basic",
+          fields: ["preset", "endpoint_url"],
+        },
+        {
+          name: "advanced",
+          titleKey: "admin.storage.groups.advanced",
+          fields: ["max_entries", "url_proxy"],
+        },
+      ],
+      summaryFields: ["preset", "endpoint_url"],
     },
   },
 });

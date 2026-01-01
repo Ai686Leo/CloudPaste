@@ -13,7 +13,9 @@ export default {
       github_releases: "GitHub Releases",
       github_api: "GitHub API",
       telegram: "Telegram Bot API",
+      discord: "Discord Bot API",
       huggingface_datasets: "HuggingFace Datasets",
+      mirror: "Source Mirror",
     },
 
     // 分组标题
@@ -123,6 +125,14 @@ export default {
         verify_after_upload: "上传后校验",
       },
 
+      // Discord 特有字段
+      discord: {
+        bot_token: "Bot Token",
+        channel_id: "频道 ID（Channel ID）",
+        part_size_mb: "分片大小（MB）",
+        upload_concurrency: "上传并发",
+      },
+
       // HuggingFace Datasets 特有字段
       huggingface_datasets: {
         repo: "数据集仓库（repo）",
@@ -134,6 +144,13 @@ export default {
         hf_multipart_concurrency: "分片上传并发数",
         hf_use_xet: "使用 Xet 存储后端（默认关闭）",
         hf_delete_lfs_on_remove: "删除文件时，同时清理 HuggingFace LFS 大文件（谨慎）",
+      },
+
+      // MIRROR（镜像站）
+      mirror: {
+        preset: "镜像模板",
+        endpoint_url: "镜像站地址",
+        max_entries: "最大条目数",
       },
     },
 
@@ -203,6 +220,13 @@ export default {
         upload_concurrency: "默认 2；调大更快但更容易被限流",
       },
 
+      discord: {
+        bot_token: "粘贴 Discord Bot Token",
+        channel_id: "目标频道的 Channel ID",
+        part_size_mb: "默认 10；建议 8~10（Discord 单次上传限制最大10MB，Nitro用户最大25MB）",
+        upload_concurrency: "默认 1；调大更快但更容易触发 Discord 限速",
+      },
+
       huggingface_datasets: {
         repo: "例如：Open-Orca/OpenOrca（不要写成完整 URL）",
         revision: "例如：main（分支名）；也可以填 tag/commit，但那样只能读不能写",
@@ -211,10 +235,22 @@ export default {
         hf_tree_limit: "默认 100；数值越大单次返回越多",
         hf_multipart_concurrency: "默认 5；数值越大越快，但更吃网络/更容易失败",
       },
+
+      mirror: {
+        endpoint_url: "例如：https://mirrors.tuna.tsinghua.edu.cn/",
+        max_entries: "例如：1000",
+      },
     },
 
     // 枚举选项
     enum: {
+      mirror: {
+        preset: {
+          tuna: "Tsinghua",
+          ustc: "USTC",
+          aliyun: "Aliyun",
+        },
+      },
       telegram: {
         bot_api_mode: {
           official: "官方（api.telegram.org）",
@@ -310,6 +346,13 @@ export default {
         verify_after_upload: "开启后每片上传成功会再次校验大小，速度稍慢但更稳(无特殊情况默认即可)",
       },
 
+      discord: {
+        bot_token: "用于调用 Discord Bot API",
+        channel_id: "文件会被上传到这个频道（bot 必须在该频道/服务器里，并有查看/发消息/上传附件权限）",
+        part_size_mb: "挂载页断点续传的分片大小；建议 8~10MB（Discord 单次上传限制最大10MB，Nitro用户最大25MB）",
+        upload_concurrency: "限制同一存储配置同时向 Discord 发请求的数量，避免并发过高导致 429 限速",
+      },
+
       huggingface_datasets: {
         repo: "HuggingFace 数据集仓库 ID（形如 owner/name）。这是 HuggingFace Datasets 的“仓库”，不是本地路径。",
         revision: "分支/版本：建议填分支名（如 main）。如果填 tag 或 commit sha，只能读不能写。",
@@ -321,6 +364,12 @@ export default {
         hf_use_xet: "开启后，写入会尝试走 Xet（新后端）。但某些运行环境（例如 Cloudflare Workers）可能禁止运行时编译 WebAssembly，导致写入报错。默认关闭更稳。",
         hf_delete_lfs_on_remove:
           "开启后：你在 CloudPaste 删除文件时，会额外请求 HuggingFace，把对应的 LFS 大文件也一起“永久删除”（从 HuggingFace 的 “List LFS files” 里也消失）。\n不开启：只会删掉仓库里的文件记录（类似“指针”），LFS 大文件可能仍然留在 HF，所以你再次上传“完全相同内容”的文件时，可能会出现“秒传/跳过上传”。\n注意：如果两个文件内容完全一样（同一个 SHA），清理 LFS 可能会影响另一个文件或旧版本下载。\n",
+      },
+
+      mirror: {
+        preset: "自动按照对应模板规则去抓镜像站目录页链接。",
+        endpoint_url: "镜像目录根地址（必须以 http(s):// 开头）。选了模板后会自动回填，也可以手动改成别的镜像站地址。",
+        max_entries: "单次列目录最多返回多少个条目。目录特别大时建议调小，避免卡顿或超时。",
       },
     },
 

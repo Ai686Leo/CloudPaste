@@ -6,7 +6,10 @@
  *
  */
 
+import { createLogger } from "@/utils/logger.js";
+
 const DEFAULT_MAX_WEBCRYPTO_SIZE = 10_000_000;
+const log = createLogger("sha256");
 
 /**
  * ArrayBuffer -> hex
@@ -107,22 +110,22 @@ export async function sha256HexFromBlob(blob, options = {}) {
 
   // 1) 小文件直接 WebCrypto
   if (blob.size < maxWebCryptoSize) {
-    console.log(`[sha256] WebCrypto(全量) size=${blob.size} < ${maxWebCryptoSize}`);
+    log.debug(`WebCrypto(全量) size=${blob.size} < ${maxWebCryptoSize}`);
     return sha256HexViaWebCrypto(blob);
   }
 
   // 2) 大文件优先 Worker
   if (useWebWorker) {
     try {
-      console.log(`[sha256] Worker+hash-wasm(流式分块) size=${blob.size} >= ${maxWebCryptoSize}`);
+      log.debug(`Worker+hash-wasm(流式分块) size=${blob.size} >= ${maxWebCryptoSize}`);
       return await sha256HexViaWorker(blob, { onProgress: options.onProgress });
     } catch (err) {
       // Worker/wasm/CSP 失败时兜底到 WebCrypto
-      console.warn("[sha256] Worker 计算失败，将回退到 WebCrypto：", err);
+      log.warn("[sha256] Worker 计算失败，将回退到 WebCrypto：", err);
     }
   }
 
   // 3) 兜底：WebCrypto
-  console.log(`[sha256] fallback WebCrypto(全量) size=${blob.size}`);
+  log.debug(`fallback WebCrypto(全量) size=${blob.size}`);
   return sha256HexViaWebCrypto(blob);
 }

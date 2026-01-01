@@ -33,6 +33,7 @@ import { computed, onMounted } from "vue";
 import { useEventListener } from "@vueuse/core";
 import { useAuthStore } from "@/stores/authStore.js";
 import { IconExclamation, IconInformationCircle } from "@/components/icons";
+import { createLogger } from "@/utils/logger.js";
 
 // Props
 const props = defineProps({
@@ -59,6 +60,7 @@ const emit = defineEmits(["permission-change", "navigate-to-admin"]);
 
 // 使用认证Store
 const authStore = useAuthStore();
+const log = createLogger("PermissionManager");
 
 // 从Store获取权限状态的计算属性
 const isAdmin = computed(() => authStore.isAdmin);
@@ -87,15 +89,15 @@ const isApiKeyUserWithoutPermission = computed(() => {
 
 // 检查用户权限状态（简化版，主要用于触发事件）
 const checkPermissionStatus = async () => {
-  console.log("PermissionManager: 检查用户权限状态...");
+  log.debug("检查用户权限状态...");
 
   // 如果需要重新验证，则进行验证
   if (authStore.needsRevalidation) {
-    console.log("PermissionManager: 需要重新验证认证状态");
+    log.debug("需要重新验证认证状态");
     await authStore.validateAuth();
   }
 
-  console.log("PermissionManager: 用户权限:", hasPermission.value ? "有权限" : "无权限");
+  log.debug("用户权限:", hasPermission.value ? "有权限" : "无权限");
   emit("permission-change", hasPermission.value);
 };
 
@@ -107,7 +109,7 @@ const navigateToAdmin = () => {
 
 // 事件处理函数
 const handleAuthStateChange = async (e) => {
-  console.log("PermissionManager: 接收到认证状态变化事件:", e.detail);
+  log.debug("接收到认证状态变化事件:", e.detail);
   emit("permission-change", hasPermission.value);
 };
 

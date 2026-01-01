@@ -13,6 +13,7 @@
 
 import { GoogleDriveAuthManager } from "../GoogleDriveAuthManager.js";
 import { GoogleDriveApiClient } from "../GoogleDriveApiClient.js";
+import { decryptIfNeeded } from "../../../../utils/crypto.js";
 
 /**
  * @param {Object} config 存储配置
@@ -21,6 +22,12 @@ import { GoogleDriveApiClient } from "../GoogleDriveApiClient.js";
  */
 export async function googleDriveTestConnection(config, encryptionSecret, requestOrigin = null) {
   const rootId = config.root_id || "root";
+
+  // secret 字段可能以 encrypted:* 存在（由存储配置 CRUD 统一加密写入）
+  const clientSecretRaw = await decryptIfNeeded(config.client_secret, encryptionSecret);
+  const refreshTokenRaw = await decryptIfNeeded(config.refresh_token, encryptionSecret);
+  const clientSecret = typeof clientSecretRaw === "string" ? clientSecretRaw : config.client_secret;
+  const refreshToken = typeof refreshTokenRaw === "string" ? refreshTokenRaw : config.refresh_token;
 
   /** @type {{ read: any, write: any, info: any }} */
   const result = {
@@ -53,8 +60,8 @@ export async function googleDriveTestConnection(config, encryptionSecret, reques
     useOnlineApi: !!config.use_online_api,
     apiAddress: config.api_address,
     clientId: config.client_id,
-    clientSecret: config.client_secret,
-    refreshToken: config.refresh_token,
+    clientSecret,
+    refreshToken,
     rootId,
     disableDiskUsage: !config.enable_disk_usage,
     logger: console,

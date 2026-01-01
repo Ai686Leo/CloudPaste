@@ -7,7 +7,7 @@ import CommonPagination from "@/components/common/CommonPagination.vue";
 import ConfirmDialog from "@/components/common/dialogs/ConfirmDialog.vue";
 import { formatDateTimeWithSeconds } from "@/utils/timeUtils.js";
 import { useThemeMode } from "@/composables/core/useThemeMode.js";
-import { useConfirmDialog } from "@/composables/core/useConfirmDialog.js";
+import { useConfirmDialog, createConfirmFn } from "@/composables/core/useConfirmDialog.js";
 import { useStorageTypePresentation } from "@/modules/admin/storage/useStorageTypePresentation.js";
 import { useStorageTypeIcon } from "@/composables/core/useStorageTypeIcon.js";
 import { IconArchive, IconCalendar, IconCheck, IconCheckCircle, IconChevronRight, IconClose, IconCloud, IconDelete, IconError, IconFolderPlus, IconLink, IconRefresh, IconRename, IconXCircle } from "@/components/icons";
@@ -21,15 +21,11 @@ const { t } = useI18n();
 const { dialogState, confirm, handleConfirm, handleCancel } = useConfirmDialog();
 
 // 创建适配确认函数，用于传递给 composable
-const confirmFn = async ({ title, message, confirmType }) => {
-  return await confirm({
-    title,
-    message,
-    confirmType,
-    confirmText: t("common.dialogs.deleteButton"),
-    darkMode: darkMode.value,
-  });
-};
+const confirmFn = createConfirmFn(confirm, {
+  t,
+  darkMode,
+  getConfirmText: () => t("common.dialogs.deleteButton"),
+});
 
 const {
   // 状态

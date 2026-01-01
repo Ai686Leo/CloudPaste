@@ -6,8 +6,10 @@
 import { defineStore } from "pinia";
 import { ref, computed, nextTick } from "vue";
 import { useLocalStorage } from "@vueuse/core";
+import { createLogger } from "@/utils/logger.js";
 
 export const useFileBasketStore = defineStore("fileBasket", () => {
+  const log = createLogger("FileBasketStore");
   // ===== 状态管理 =====
 
   // 收集的文件列表 - 确保初始化为空数组
@@ -79,7 +81,7 @@ export const useFileBasketStore = defineStore("fileBasket", () => {
     collectedFiles.value.forEach((file) => {
       // 确保file对象存在且有必要的属性
       if (!file || typeof file !== "object" || !file.path) {
-        console.warn("发现无效的文件对象，跳过:", file);
+        log.warn("发现无效的文件对象，跳过:", file);
         return;
       }
 
@@ -120,7 +122,7 @@ export const useFileBasketStore = defineStore("fileBasket", () => {
     fileArray.forEach((file) => {
       // 验证文件对象的有效性
       if (!file || typeof file !== "object" || !file.path || !file.name) {
-        console.warn("尝试添加无效的文件对象，跳过:", file);
+        log.warn("尝试添加无效的文件对象，跳过:", file);
         return;
       }
 
@@ -264,7 +266,7 @@ export const useFileBasketStore = defineStore("fileBasket", () => {
       };
       storedBasketData.value = data;
     } catch (error) {
-      console.error("保存文件篮状态失败:", error);
+      log.error("保存文件篮状态失败:", error);
     }
   };
 
@@ -283,7 +285,7 @@ export const useFileBasketStore = defineStore("fileBasket", () => {
           const hoursDiff = (now - savedTime) / (1000 * 60 * 60);
 
           if (hoursDiff > AUTO_CLEANUP_HOURS) {
-            console.log("文件篮数据已过期，自动清理");
+            log.debug("文件篮数据已过期，自动清理");
             clearBasket();
             return;
           }
@@ -296,7 +298,7 @@ export const useFileBasketStore = defineStore("fileBasket", () => {
           data.collectedFiles.forEach((file) => {
             // 严格验证文件对象的完整性
             if (!file || typeof file !== "object" || !file.path || !file.name || typeof file.path !== "string" || typeof file.name !== "string") {
-              console.warn("从localStorage加载时发现无效文件对象，已过滤:", file);
+              log.warn("从localStorage加载时发现无效文件对象，已过滤:", file);
               return;
             }
 
@@ -334,7 +336,7 @@ export const useFileBasketStore = defineStore("fileBasket", () => {
         lastCollectionTime.value = null;
       }
     } catch (error) {
-      console.error("加载文件篮状态失败，清理localStorage:", error);
+      log.error("加载文件篮状态失败，清理localStorage:", error);
       // 清理损坏的存储数据
       storedBasketData.remove?.();
       collectedFiles.value = [];
@@ -374,9 +376,9 @@ export const useFileBasketStore = defineStore("fileBasket", () => {
   const forceCleanStorage = () => {
     try {
       storedBasketData.remove?.();
-      console.log("已强制清理文件篮localStorage数据");
+      log.debug("已强制清理文件篮localStorage数据");
     } catch (error) {
-      console.error("强制清理localStorage失败:", error);
+      log.error("强制清理localStorage失败:", error);
     }
   };
 

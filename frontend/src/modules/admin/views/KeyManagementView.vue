@@ -11,6 +11,7 @@ import { useConfirmDialog } from "@/composables/core/useConfirmDialog.js";
 import { useThemeMode } from "@/composables/core/useThemeMode.js";
 import { useAdminBase } from "@/composables/admin-management/useAdminBase.js";
 import { IconClock, IconDelete, IconKey, IconRefresh } from "@/components/icons";
+import { createLogger } from "@/utils/logger.js";
 
 // 导入子组件
 import KeyForm from "@/modules/admin/components/KeyForm.vue";
@@ -18,6 +19,7 @@ import KeyTable from "@/modules/admin/components/KeyTable.vue";
 
 // 使用i18n
 const { t } = useI18n();
+const log = createLogger("KeyManagementView");
 const { getAllApiKeys, deleteApiKey } = useAdminApiKeyService();
 const { getMountsList } = useAdminMountService();
 const { showSuccess, showError } = useGlobalMessage();
@@ -82,7 +84,7 @@ const loadApiKeys = async () => {
     // 更新最后刷新时间
     updateLastRefreshTime();
   } catch (e) {
-    console.error("加载API密钥失败:", e);
+    log.error("加载API密钥失败:", e);
     showError(e.message || t("admin.keyManagement.error.loadFailed"));
   } finally {
     isLoading.value = false;
@@ -96,7 +98,7 @@ const loadMounts = async () => {
     // 只保留激活状态的挂载点
     availableMounts.value = (Array.isArray(mounts) ? mounts : []).filter((mount) => mount.is_active);
   } catch (error) {
-    console.error("加载挂载点列表失败:", error);
+    log.error("加载挂载点列表失败:", error);
     availableMounts.value = [];
   }
 };
@@ -204,7 +206,7 @@ const deleteSelectedKeys = async () => {
     // 显示成功消息
     showSuccess(t("admin.keyManagement.success.bulkDeleted", { count: selectedCount }));
   } catch (e) {
-    console.error("批量删除密钥失败:", e);
+    log.error("批量删除密钥失败:", e);
     showError(t("admin.keyManagement.error.bulkDeleteFailed"));
   } finally {
     isLoading.value = false;

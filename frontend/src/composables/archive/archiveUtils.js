@@ -4,6 +4,9 @@
  */
 
 import { LRUCache } from "@/utils/lruCache.js";
+import { createLogger } from "@/utils/logger.js";
+
+const log = createLogger("ArchiveUtils");
 
 // ===================================================================
 // 统一常量定义
@@ -59,7 +62,7 @@ export async function getOrDownloadFileBlob(fileUrl, progressCallback = null, st
   const cachedBlob = sharedFileBlobCache.get(cacheKey);
 
   if (cachedBlob) {
-    console.log("使用缓存文件:", fileUrl);
+    log.debug("使用缓存文件:", fileUrl);
     if (progressCallback) progressCallback(endProgress, "使用缓存文件");
     return cachedBlob;
   }
@@ -67,7 +70,7 @@ export async function getOrDownloadFileBlob(fileUrl, progressCallback = null, st
   // 下载并缓存
   const fileBlob = await downloadFileWithProgress(fileUrl, progressCallback, startProgress, endProgress, stage);
   sharedFileBlobCache.set(cacheKey, fileBlob, ARCHIVE_CONSTANTS.CACHE.TTL);
-  console.log("文件已下载并缓存:", fileUrl);
+  log.debug("文件已下载并缓存:", fileUrl);
   return fileBlob;
 }
 
@@ -125,7 +128,7 @@ export function clearSharedFileBlobCache(fileUrl) {
   if (!fileUrl) return;
 
   sharedFileBlobCache.delete(fileUrl);
-  console.log("已清除共享文件Blob缓存:", fileUrl);
+  log.debug("已清除共享文件Blob缓存:", fileUrl);
 }
 
 /**

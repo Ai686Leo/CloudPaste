@@ -9,13 +9,14 @@
 
 import { OneDriveAuthManager } from "../auth/OneDriveAuthManager.js";
 import { OneDriveGraphClient } from "../client/OneDriveGraphClient.js";
+import { decryptIfNeeded } from "../../../../utils/crypto.js";
 
 /**
  * 测试 OneDrive 存储配置连接
  * @param {Object} config 存储配置
  * @returns {Promise<{success: boolean, message: string, result: { read: Object, write: Object, info: Object }}>}
  */
-export async function oneDriveTestConnection(config) {
+export async function oneDriveTestConnection(config, encryptionSecret, _requestOrigin = null) {
   const startTime = Date.now();
 
   try {
@@ -52,9 +53,15 @@ export async function oneDriveTestConnection(config) {
       },
     };
 
+    // secret 字段可能以 encrypted:* 存在（由存储配置 CRUD 统一加密写入）
+    const clientSecretRaw = await decryptIfNeeded(config.client_secret, encryptionSecret);
+    const refreshTokenRaw = await decryptIfNeeded(config.refresh_token, encryptionSecret);
+    const clientSecret = typeof clientSecretRaw === "string" ? clientSecretRaw : config.client_secret;
+    const refreshToken = typeof refreshTokenRaw === "string" ? refreshTokenRaw : config.refresh_token;
+
     // 1. 验证必填配置（保持与 OneDriveAuthManager / StorageFactory._validateOneDriveConfig 一致）
     // 至少需要 refresh_token 或 token_renew_endpoint 之一
-    if (!config.refresh_token && !config.token_renew_endpoint) {
+    if (!refreshToken && !config.token_renew_endpoint) {
       return {
         success: false,
         message: "配置缺少 refresh_token 或 token_renew_endpoint",
@@ -75,8 +82,8 @@ export async function oneDriveTestConnection(config) {
     const authManager = new OneDriveAuthManager({
       region,
       clientId: config.client_id,
-      clientSecret: config.client_secret,
-      refreshToken: config.refresh_token,
+      clientSecret,
+      refreshToken,
       tokenRenewEndpoint: config.token_renew_endpoint,
       redirectUri: config.redirect_uri,
       useOnlineApi: config.use_online_api,

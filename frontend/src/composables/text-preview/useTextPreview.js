@@ -5,6 +5,7 @@
 import { ref } from "vue";
 import { useFetchText } from "./useFetchText.js";
 import { useCodeHighlight } from "./useCodeHighlight.js";
+import { createLogger } from "@/utils/logger.js";
 
 /**
  * 文本预览公共逻辑
@@ -14,6 +15,7 @@ import { useCodeHighlight } from "./useCodeHighlight.js";
  * @returns {Object} 文本预览相关的状态和方法
  */
 export function useTextPreview(options = {}) {
+  const log = createLogger("TextPreview");
   const {
     checkCancelled = false,
     emitEncodingChange = false,
@@ -40,7 +42,7 @@ export function useTextPreview(options = {}) {
     // 解析/预览严格依赖同源内容 URL（contentUrl），不再退回外部预览/下载入口
     const effectiveUrl = fileData?.contentUrl;
     if (!effectiveUrl) {
-      console.error("文件数据缺少 contentUrl，无法进行文本加载:", fileData);
+      log.error("文件数据缺少 contentUrl，无法进行文本加载:", fileData);
       return { success: false, error: "缺少可用的内容预览 URL（contentUrl）" };
     }
 
@@ -60,7 +62,7 @@ export function useTextPreview(options = {}) {
         const filename = fileData.name || "";
         detectedLanguage.value = detectLanguageFromFilename(filename);
 
-        console.log("文本加载成功:", {
+        log.debug("文本加载成功:", {
           encoding: result.encoding,
           textLength: result.text.length,
           filename: filename,
@@ -76,7 +78,7 @@ export function useTextPreview(options = {}) {
         return { success: false, error: result.error };
       }
     } catch (err) {
-      console.error("加载文本内容失败:", err);
+      log.error("加载文本内容失败:", err);
       error.value = err.message;
       emitFn?.("error", err.message);
       return { success: false, error: err.message };
@@ -102,7 +104,7 @@ export function useTextPreview(options = {}) {
         textContent.value = result.text;
         currentEncoding.value = encoding;
 
-        console.log("编码切换成功:", {
+        log.debug("编码切换成功:", {
           encoding: encoding,
           textLength: result.text.length,
         });
@@ -114,13 +116,13 @@ export function useTextPreview(options = {}) {
         
         return { success: true };
       } else {
-        console.error("编码切换失败:", result.error);
+        log.error("编码切换失败:", result.error);
         error.value = result.error;
         emitFn?.("error", result.error);
         return { success: false, error: result.error };
       }
     } catch (err) {
-      console.error("编码切换失败:", err);
+      log.error("编码切换失败:", err);
       error.value = err.message;
       emitFn?.("error", err.message);
       return { success: false, error: err.message };

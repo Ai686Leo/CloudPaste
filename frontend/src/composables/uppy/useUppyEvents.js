@@ -2,6 +2,7 @@
  * useUppyEvents - Uppy事件监听Composable
  */
 import { ref, watch } from 'vue';
+import { createLogger } from "@/utils/logger.js";
 
 /**
  * Uppy事件监听Composable
@@ -18,6 +19,7 @@ import { ref, watch } from 'vue';
 export function useUppyEvents(options) {
   const fileCount = ref(0);
   let eventHandlers = {};
+  const log = createLogger("useUppyEvents");
 
   /**
    * 设置事件监听器
@@ -59,7 +61,7 @@ export function useUppyEvents(options) {
       // 关键修复：当用户在Dashboard中编辑文件元数据后，将meta.name同步到file.name
       // 这样XHRUpload等插件才能使用编辑后的文件名
       if (file?.meta?.name && file.meta.name !== file.name) {
-        console.log('[useUppyEvents] 同步编辑后的文件名:', file.name, '->', file.meta.name);
+        log.debug('同步编辑后的文件名:', file.name, '->', file.meta.name);
         uppy.setFileState(file.id, { name: file.meta.name });
       }
       options.onFileEditComplete?.(file);

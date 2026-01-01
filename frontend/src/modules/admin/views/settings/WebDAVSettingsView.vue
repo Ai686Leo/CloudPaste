@@ -6,8 +6,10 @@ import { useAdminSystemService } from "@/modules/admin/services/systemService.js
 import { useThemeMode } from "@/composables/core/useThemeMode.js";
 import { useGlobalMessage } from "@/composables/core/useGlobalMessage.js";
 import { IconRefresh, IconCloud, IconInformationCircle, IconCopy, IconKey, IconUser, IconCheck } from "@/components/icons";
+import { createLogger } from "@/utils/logger.js";
 
 const { t } = useI18n();
+const log = createLogger("WebDAVSettingsView");
 const { getWebdavSettings, updateWebdavSettings } = useAdminSystemService();
 const { isDarkMode: darkMode } = useThemeMode();
 const { showSuccess, showError } = useGlobalMessage();
@@ -48,7 +50,7 @@ onMounted(async () => {
       }
     });
   } catch (error) {
-    console.error("获取 WebDAV 设置失败:", error);
+    log.error("获取 WebDAV 设置失败:", error);
     showError(t("admin.webdav.messages.updateFailed"));
   } finally {
     isLoading.value = false;
@@ -65,7 +67,7 @@ const handleSave = async () => {
     });
     showSuccess(t("admin.webdav.messages.updateSuccess"));
   } catch (error) {
-    console.error("更新 WebDAV 设置失败:", error);
+    log.error("更新 WebDAV 设置失败:", error);
     showError(error.message || t("admin.webdav.messages.updateFailed"));
   } finally {
     isSaving.value = false;
@@ -81,7 +83,7 @@ const copyWebdavUrl = async () => {
       isCopied.value = false;
     }, 2000);
   } catch (error) {
-    console.error("复制失败:", error);
+    log.error("复制失败:", error);
     showError(t("fileView.actions.copyFailed"));
   }
 };

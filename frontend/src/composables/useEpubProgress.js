@@ -18,10 +18,12 @@
 
 import { ref, computed, onBeforeUnmount } from "vue";
 import { useDebounceFn, useLocalStorage } from "@vueuse/core";
+import { createLogger } from "@/utils/logger.js";
 
 const STORAGE_KEY = "cloudpaste-epub-progress";
 const MAX_BOOKS = 30; // 最多保存 30 本书的进度
 const SAVE_DEBOUNCE_MS = 1000; // 保存防抖时间
+const log = createLogger("EpubProgress");
 
 // 全量进度存储
 const storedAllProgress = useLocalStorage(STORAGE_KEY, {});
@@ -33,7 +35,7 @@ function loadAllProgress() {
   try {
     return storedAllProgress.value || {};
   } catch (e) {
-    console.warn("[EpubProgress] 加载进度数据失败:", e);
+    log.warn("[EpubProgress] 加载进度数据失败:", e);
     return {};
   }
 }
@@ -53,7 +55,7 @@ function saveAllProgress(data) {
     storedAllProgress.value = data;
     return true;
   } catch (e) {
-    console.warn("[EpubProgress] 保存进度数据失败:", e);
+    log.warn("[EpubProgress] 保存进度数据失败:", e);
     return false;
   }
 }

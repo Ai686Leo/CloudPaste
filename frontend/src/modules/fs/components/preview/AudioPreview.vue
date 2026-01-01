@@ -102,8 +102,10 @@ import { FileType } from "@/utils/fileTypes.js";
 import { useFsService } from "@/modules/fs";
 import LoadingIndicator from "@/components/common/LoadingIndicator.vue";
 import { useGlobalPlayer } from "@/composables/useGlobalPlayer.js";
+import { createLogger } from "@/utils/logger.js";
 
 const { t } = useI18n();
+const log = createLogger("AudioPreview");
 const fsService = useFsService();
 
 // 全局播放器
@@ -202,7 +204,7 @@ const restoreOriginalTitle = () => {
 // 发送到全局播放器
 const sendToGlobalPlayer = () => {
   if (finalAudioList.value.length === 0) {
-    console.warn("没有可播放的音频");
+    log.warn("没有可播放的音频");
     return;
   }
 
@@ -224,8 +226,6 @@ const sendToGlobalPlayer = () => {
       player.pause();
     }
   }
-
-  console.log("🎵 音频已发送到全局播放器");
 };
 
 // 返回本地预览模式
@@ -255,7 +255,6 @@ const handleError = (error) => {
     const idx = ap?.list?.index;
     const current = typeof idx === "number" ? ap?.list?.audios?.[idx] : null;
     if (current && (!current.url || current.url === "" || current.url === PLACEHOLDER_AUDIO_URL)) {
-      console.log("🎵 正在按需获取音频直链，先忽略一次播放错误");
       return;
     }
   } catch {
@@ -263,7 +262,6 @@ const handleError = (error) => {
   }
 
   if (error?.target?.src?.includes(window.location.origin) && currentAudioData.value?.url) {
-    console.log("🎵 忽略Service Worker相关的误报错误");
     return;
   }
   isPlaying.value = false;
@@ -276,7 +274,8 @@ const handleCanPlay = () => {
 };
 
 const handleAudioEnded = () => {
-  console.log("音频播放结束");
+  isPlaying.value = false;
+  updatePageTitle(false);
 };
 
 const handleListSwitch = (data) => {
@@ -360,7 +359,7 @@ const ensureAudioUrlReady = async (index, { playAfter = false } = {}) => {
       if (url) audioUrlCache.set(filePath, url);
       return url;
     } catch (error) {
-      console.error(`获取音频直链失败: ${filePath}`, error);
+      log.error(`获取音频直链失败: ${filePath}`, error);
       return null;
     }
   })();
@@ -396,21 +395,18 @@ const syncAPlayerAudioUrl = (index, url) => {
       ap.audio.loop = url === PLACEHOLDER_AUDIO_URL ? true : ap.options?.loop === "one";
       ap.audio.load?.();
     } catch (e) {
-      console.warn("同步 audio.src 失败:", e);
+      log.warn("同步 audio.src 失败:", e);
     }
   }
 };
 
 // 获取当前目录下的音频文件列表
 const loadAudioPlaylist = async () => {
-  console.log("🎵 开始加载音频播放列表...");
-
   if (!props.currentPath || isLoadingPlaylist.value) {
     return;
   }
 
   if (audioPlaylist.value.length > 0) {
-    console.log("✅ 播放列表已存在，跳过重复加载");
     return;
   }
 
@@ -441,7 +437,7 @@ const loadAudioPlaylist = async () => {
       await generateAudioPlaylist(audioFileList);
     }
   } catch (error) {
-    console.error("❌ 加载音频播放列表失败:", error);
+    log.error("❌ 加载音频播放列表失败:", error);
   } finally {
     isLoadingPlaylist.value = false;
   }
@@ -520,7 +516,7 @@ const initializeCurrentAudio = async () => {
     return;
   }
 
-  console.warn("⚠️ audioUrl为空");
+  log.warn("⚠️ audioUrl为空");
   currentAudioData.value = {
     name: props.file.name || "unknown",
     artist: "unknown",
@@ -605,7 +601,6 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   restoreOriginalTitle();
-  console.log("🧹 音频预览组件已卸载");
 });
 </script>
 

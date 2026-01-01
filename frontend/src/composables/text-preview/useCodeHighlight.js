@@ -5,8 +5,10 @@
 
 import { ref, computed } from "vue";
 import { VDITOR_ASSETS_BASE } from "@/utils/vditorLoader.js";
+import { createLogger } from "@/utils/logger.js";
 
 export function useCodeHighlight() {
+  const log = createLogger("CodeHighlight");
   // 状态
   const isHighlightLoaded = ref(false);
   const highlightInstance = ref(null);
@@ -97,14 +99,14 @@ export function useCodeHighlight() {
 
       // 检查是否已经加载了 highlight.js（通过 Vditor）
       if (window.hljs) {
-        console.log("使用已加载的 highlight.js 实例");
+        log.debug("使用已加载的 highlight.js 实例");
         highlightInstance.value = window.hljs;
         isHighlightLoaded.value = true;
         return highlightInstance.value;
       }
 
       // 如果没有加载，则通过 Vditor 的方式加载
-      console.log("通过 Vditor 方式加载 highlight.js");
+      log.debug("通过 Vditor 方式加载 highlight.js");
 
       // 加载 highlight.js 主文件
       await loadScript(`${VDITOR_ASSETS_BASE}/dist/js/highlight.js/highlight.min.js`);
@@ -118,11 +120,11 @@ export function useCodeHighlight() {
       highlightInstance.value = window.hljs;
       isHighlightLoaded.value = true;
 
-      console.log("highlight.js 加载成功，支持语言:", window.hljs.listLanguages());
+      log.debug("highlight.js 加载成功，支持语言:", window.hljs.listLanguages());
 
       return highlightInstance.value;
     } catch (error) {
-      console.error("加载 highlight.js 失败:", error);
+      log.error("加载 highlight.js 失败:", error);
       loadingError.value = error.message;
       throw error;
     }
@@ -201,7 +203,7 @@ export function useCodeHighlight() {
         try {
           result = hljs.highlight(code, { language: language.toLowerCase() });
         } catch (err) {
-          console.warn(`指定语言 ${language} 高亮失败，尝试自动检测:`, err);
+          log.warn(`指定语言 ${language} 高亮失败，尝试自动检测:`, err);
           result = hljs.highlightAuto(code);
         }
       } else {
@@ -217,7 +219,7 @@ export function useCodeHighlight() {
         error: null,
       };
     } catch (error) {
-      console.error("代码高亮失败:", error);
+      log.error("代码高亮失败:", error);
 
       return {
         success: false,
@@ -365,20 +367,20 @@ export function useCodeHighlight() {
       for (const path of possiblePaths) {
         try {
           await loadStylesheet(path, "hljs-theme");
-          console.log(`成功加载主题: ${theme} from ${path}`);
+          log.debug(`成功加载主题: ${theme} from ${path}`);
           loaded = true;
           break;
         } catch (err) {
-          console.warn(`无法从 ${path} 加载主题 ${theme}:`, err.message);
+          log.warn(`无法从 ${path} 加载主题 ${theme}:`, err.message);
         }
       }
 
       if (!loaded) {
-        console.warn(`所有路径都无法加载主题 ${theme}，使用默认样式`);
+        log.warn(`所有路径都无法加载主题 ${theme}，使用默认样式`);
         // 不抛出错误，允许使用默认样式
       }
     } catch (error) {
-      console.error("加载主题失败:", error);
+      log.error("加载主题失败:", error);
       // 不抛出错误，允许使用默认样式
     }
   };

@@ -5,8 +5,10 @@ import { useAdminSystemService } from "@/modules/admin/services/systemService.js
 import { useThemeMode } from "@/composables/core/useThemeMode.js";
 import { useGlobalMessage } from "@/composables/core/useGlobalMessage.js";
 import { IconRefresh, IconUpload, IconShieldCheck } from "@/components/icons";
+import { createLogger } from "@/utils/logger.js";
 
 const { t } = useI18n();
+const log = createLogger("GlobalSettingsView");
 const { getGlobalSettings, updateGlobalSettings } = useAdminSystemService();
 const { isDarkMode: darkMode } = useThemeMode();
 const { showSuccess, showError } = useGlobalMessage();
@@ -69,7 +71,7 @@ onMounted(async () => {
       }
     });
   } catch (error) {
-    console.error("获取全局设置失败:", error);
+    log.error("获取全局设置失败:", error);
     showError(t("admin.global.messages.updateFailed"));
   } finally {
     isLoading.value = false;
@@ -110,7 +112,7 @@ const handleSaveUpload = async () => {
 
     showSuccess(t("admin.global.messages.updateSuccess"));
   } catch (error) {
-    console.error("更新上传设置失败:", error);
+    log.error("更新上传设置失败:", error);
     showError(error.message || t("admin.global.messages.updateFailed"));
   } finally {
     isSavingUpload.value = false;
@@ -128,7 +130,7 @@ const handleSaveSign = async () => {
 
     showSuccess(t("admin.global.messages.updateSuccess"));
   } catch (error) {
-    console.error("更新签名设置失败:", error);
+    log.error("更新签名设置失败:", error);
     showError(error.message || t("admin.global.messages.updateFailed"));
   } finally {
     isSavingSign.value = false;

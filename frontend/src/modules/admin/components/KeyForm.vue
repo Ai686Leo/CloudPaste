@@ -8,6 +8,7 @@ import { useAdminApiKeyService } from "@/modules/admin/services/apiKeyService.js
 import { useAdminMountService } from "@/modules/admin/services/mountService.js";
 import { useAdminStorageConfigService } from "@/modules/admin/services/storageConfigService.js";
 import { IconClose, IconFolder, IconHome, IconRefresh } from "@/components/icons";
+import { createLogger } from "@/utils/logger.js";
 
 // 目录缓存对象，用于存储已加载的目录内容
 const directoryCache = shallowRef(new Map());
@@ -16,6 +17,7 @@ const fsService = useFsService();
 const { getAllApiKeys, updateApiKey, createApiKey, getApiKeyStorageAcl, updateApiKeyStorageAcl } = useAdminApiKeyService();
 const { getMountsList } = useAdminMountService();
 const { getStorageConfigs } = useAdminStorageConfigService();
+const log = createLogger("KeyForm");
 
 // 创建目录项组件，用于递归展示目录树
 const DirectoryItemVue = {
@@ -90,7 +92,7 @@ const DirectoryItemVue = {
                 });
               }
             } catch (err) {
-              console.error("加载目录失败:", err);
+              log.error("加载目录失败:", err);
             }
           }
 
@@ -100,7 +102,7 @@ const DirectoryItemVue = {
         // 更新缓存
         directoryCache.value.set(cacheKey, dirItems);
       } catch (error) {
-        console.error("加载目录失败:", error);
+        log.error("加载目录失败:", error);
         children.value = [];
       } finally {
         loading.value = false;
@@ -445,7 +447,7 @@ const loadStorageAclForKey = async (keyId) => {
     const ids = await getApiKeyStorageAcl(keyId);
     selectedStorageConfigIds.value = Array.isArray(ids) ? ids : [];
   } catch (error) {
-    console.error("加载存储 ACL 失败:", error);
+    log.error("加载存储 ACL 失败:", error);
     selectedStorageConfigIds.value = [];
   }
 };
@@ -553,7 +555,7 @@ const loadMounts = async () => {
       const { items } = await getStorageConfigs();
       storageConfigItems = Array.isArray(items) ? items : [];
     } catch (storageError) {
-      console.error("加载存储配置列表失败:", storageError);
+      log.error("加载存储配置列表失败:", storageError);
     }
 
     // 仅公开的存储配置用于 ACL 选择和挂载过滤（与后端行为保持一致）
@@ -582,7 +584,7 @@ const loadMounts = async () => {
 
     applyAclToMounts();
   } catch (error) {
-    console.error("加载挂载点列表失败:", error);
+    log.error("加载挂载点列表失败:", error);
     mountsList.value = [];
     rootDirectories.value = [];
   } finally {
@@ -610,7 +612,7 @@ const confirmPathSelection = () => {
 // 初始化时预加载可用的存储配置（供桶 ACL 选择使用）
 onMounted(() => {
   loadMounts().catch((error) => {
-    console.error("初始化加载存储配置和挂载点失败:", error);
+    log.error("初始化加载存储配置和挂载点失败:", error);
   });
 });
 
@@ -744,7 +746,7 @@ const handleSubmit = async () => {
       resetForm();
     }
   } catch (e) {
-    console.error("API密钥操作失败:", e);
+    log.error("API密钥操作失败:", e);
     error.value =
       e.message ||
       (props.isEditMode

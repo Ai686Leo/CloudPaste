@@ -7,6 +7,7 @@ import { useAuthStore } from "@/stores/authStore.js";
 import * as fsApi from "@/api/services/fsService.js";
 import { API_BASE_URL } from "@/api/config.js";
 import { sha256HexFromBlob } from "@/utils/sha256.js";
+import { createLogger } from "@/utils/logger.js";
 import { createPartsLedger, clearAllClientLedgers } from "./storage-adapter/multipart/partsLedger.js";
 import { SessionManager, AuthProvider, PathResolver, ErrorHandler } from "./storage-adapter/tools.js";
 import { createMultipartUpload as createMultipartUploadImpl } from "./storage-adapter/multipartCreate.js";
@@ -16,6 +17,7 @@ import { signPart as signPartImpl, uploadPartBytes as uploadPartBytesImpl } from
 // 需要一个 Blob -> fileId 的映射，才能从 blob 反查到 meta.cloudpasteMultipartChunkSize。
 const BLOB_FILE_ID_MAP_KEY = Symbol.for("cloudpaste.uppy.blobFileIdMap");
 const BLOB_FILE_ID_MAP_BOUND_KEY = Symbol.for("cloudpaste.uppy.blobFileIdMap.bound");
+const log = createLogger("StorageAdapter");
 
 /**
  * 分片上传（multipart）前端的两种模式（配合后端 driver 返回的 strategy）
@@ -188,7 +190,7 @@ export class StorageAdapter {
       this.uppyInstance.addPreProcessor(this._multipartPreinit);
       this._multipartPreinitInstalled = true;
     } catch (e) {
-      console.warn("[StorageAdapter] 安装 multipart 预初始化预处理器失败（可忽略）:", e?.message || e);
+      log.warn("[StorageAdapter] 安装 multipart 预初始化预处理器失败（可忽略）:", e?.message || e);
     }
   }
 
@@ -367,7 +369,7 @@ export class StorageAdapter {
       return { failures: [] };
     }
 
-    console.log(`[StorageAdapter] 开始批量commit ${successfulFiles.length} 个文件`);
+    log.debug(`开始批量commit ${successfulFiles.length} 个文件`);
     const failures = [];
 
     // 并发处理commit，提高性能
@@ -376,7 +378,7 @@ export class StorageAdapter {
         await this.commitPresignedUpload(file, file.response);
         return { file, success: true };
       } catch (error) {
-        console.error(`[StorageAdapter] ❌ commit失败: ${file.name}`, error);
+        log.error(`[StorageAdapter] ❌ commit失败: ${file.name}`, error);
         failures.push({
           fileName: file.name,
           fileId: file.id,
@@ -394,10 +396,10 @@ export class StorageAdapter {
     const successCount = results.filter((r) => r.status === "fulfilled" && r.value.success).length;
     const failureCount = failures.length;
 
-    console.log(`[StorageAdapter] 批量commit完成: ${successCount}成功, ${failureCount}失败`);
+    log.debug(`批量commit完成: ${successCount}成功, ${failureCount}失败`);
 
     if (failures.length > 0) {
-      console.warn(`[StorageAdapter] commit失败详情:`, failures);
+      log.warn(`[StorageAdapter] commit失败详情:`, failures);
     }
 
     return {
@@ -543,7 +545,7 @@ export class StorageAdapter {
    */
   async getUploadParameters(file, options = {}) {
     try {
-      console.log(`[StorageAdapter] 获取预签名URL上传参数: ${file.name}`);
+      log.debug(`获取预签名URL上传参数: ${file.name}`);
 
       const requireSha256ForPresign = this.config.requireSha256ForPresign === true;
       const blob = file?.data instanceof Blob ? file.data : null;
@@ -638,7 +640,7 @@ export class StorageAdapter {
         fileId: file.id,
       };
     } catch (error) {
-      console.error("[StorageAdapter] 获取预签名URL上传参数失败:", error);
+      log.error("[StorageAdapter] 获取预签名URL上传参数失败:", error);
       throw error;
     }
   }
@@ -670,7 +672,7 @@ export class StorageAdapter {
    */
   async completeMultipartUpload(file, data) {
     try {
-      console.log(`[StorageAdapter] 完成分片上传: ${file.name}`);
+      log.debug(`完成分片上传: ${file.name}`);
 
       const session = this.uploadSessions.get(file.id);
       if (!session) {
@@ -737,7 +739,7 @@ export class StorageAdapter {
         location: response.data.url || `${session.path}/${session.fileName}`,
       };
     } catch (error) {
-      console.error("[StorageAdapter] 完成分片上传失败:", error);
+      log.error("[StorageAdapter] 完成分片上传失败:", error);
       throw error;
     }
   }
@@ -749,7 +751,7 @@ export class StorageAdapter {
    */
   async abortMultipartUpload(file, data) {
     try {
-      console.log(`[StorageAdapter] 中止分片上传: ${file.name}`);
+      log.debug(`中止分片上传: ${file.name}`);
 
       const session = this.uploadSessions.get(file.id);
       if (session) {
@@ -761,7 +763,7 @@ export class StorageAdapter {
         } catch {}
       }
     } catch (error) {
-      console.error("[StorageAdapter] 中止分片上传失败:", error);
+      log.error("[StorageAdapter] 中止分片上传失败:", error);
       // 中止操作失败不应该抛出错误，只记录日志
     }
   }
@@ -775,7 +777,7 @@ export class StorageAdapter {
    */
   async listParts(file, { uploadId, key }) {
     try {
-      console.log(`[StorageAdapter] listParts被调用: ${file.name}, uploadId: ${uploadId}, key: ${key}`);
+      log.debug(`listParts被调用: ${file.name}, uploadId: ${uploadId}, key: ${key}`);
 
       // key 是 storageKey（无前导 /），API 的 path 是 fsPath（以 / 开头）
       const storageKey = String(key || "").replace(/^\/+/, "");
@@ -794,11 +796,11 @@ export class StorageAdapter {
       // client_keeps：服务端 list-parts 永远是空，直接信本地账本
       if (partsLedger.ledgerPolicy === "client_keeps") {
         const cached = partsLedger.toAwsPartsArray();
-        console.log(`[StorageAdapter] client_keeps：使用本地账本（${cached.length}片）`);
+        log.debug(`client_keeps：使用本地账本（${cached.length}片）`);
         return cached;
       }
 
-      console.log(`[StorageAdapter] 回源查询服务器 listMultipartParts`);
+      log.debug(`回源查询服务器 listMultipartParts`);
       const response = await fsApi.listMultipartParts(fsPath, uploadId, file.name);
       if (!response?.success) {
         throw new Error(response?.message || "listMultipartParts 失败");
@@ -817,17 +819,17 @@ export class StorageAdapter {
         } catch {}
         if (session) session.partsLedger = partsLedger;
         const cached = partsLedger.toAwsPartsArray();
-        console.log(`[StorageAdapter] client_keeps：服务端标记后切换到本地账本（${cached.length}片）`);
+        log.debug(`client_keeps：服务端标记后切换到本地账本（${cached.length}片）`);
         return cached;
       }
 
       const serverParts = Array.isArray(response?.data?.parts) ? response.data.parts : [];
       partsLedger.replaceAll(serverParts);
       const normalized = partsLedger.toAwsPartsArray();
-      console.log(`[StorageAdapter] 服务器返回${normalized.length}个分片（已写入内存账本）`);
+      log.debug(`服务器返回${normalized.length}个分片（已写入内存账本）`);
       return normalized;
     } catch (error) {
-      console.error("[StorageAdapter] listParts失败:", error);
+      log.error("[StorageAdapter] listParts失败:", error);
       return [];
     }
   }
@@ -852,7 +854,7 @@ export class StorageAdapter {
   cleanup() {
     this.uploadSessions.clear();
     const removed = clearAllClientLedgers({ storagePrefix: this.config.storagePrefix });
-    console.log(`[StorageAdapter] 清理所有上传会话与客户端账本：removed=${removed}`);
+    log.debug(`清理所有上传会话与客户端账本：removed=${removed}`);
   }
 
   /**

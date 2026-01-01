@@ -7,7 +7,7 @@ import ConfirmDialog from "@/components/common/dialogs/ConfirmDialog.vue";
 import ViewModeToggle from "@/components/common/ViewModeToggle.vue";
 import { useMountManagement } from "@/modules/admin/storage/useMountManagement.js";
 import { useThemeMode } from "@/composables/core/useThemeMode.js";
-import { useConfirmDialog } from "@/composables/core/useConfirmDialog.js";
+import { useConfirmDialog, createConfirmFn } from "@/composables/core/useConfirmDialog.js";
 import { IconArchive, IconCalculator, IconCalendar, IconCheckCircle, IconClock, IconDelete, IconEye, IconFolder, IconFolderPlus, IconGlobeAlt, IconInformationCircle, IconRefresh, IconRename, IconSearch, IconShieldCheck, IconUser, IconXCircle } from "@/components/icons";
 
 /**
@@ -33,15 +33,11 @@ const { t } = useI18n();
 const { dialogState, confirm, handleConfirm, handleCancel } = useConfirmDialog();
 
 // 创建适配确认函数，用于传递给 composable
-const confirmFn = async ({ title, message, confirmType }) => {
-  return await confirm({
-    title,
-    message,
-    confirmType,
-    confirmText: t("common.dialogs.deleteButton"),
-    darkMode: darkMode.value,
-  });
-};
+const confirmFn = createConfirmFn(confirm, {
+  t,
+  darkMode,
+  getConfirmText: () => t("common.dialogs.deleteButton"),
+});
 
 const {
   // 状态

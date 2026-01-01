@@ -4,9 +4,11 @@
  */
 
 import { saveAs } from "file-saver";
+import { createLogger } from "@/utils/logger.js";
 
 const TEMP_EXPORT_STYLE_ID = "temp-export-style";
 const DEFAULT_PASTE_URL_PROXY_PREFIX = "/api/paste/url/proxy";
+const log = createLogger("SnapdomCapture");
 
 let cachedPasteUrlProxyTicket = "";
 let cachedPasteUrlProxyTicketExpiresAtMs = 0;
@@ -341,7 +343,7 @@ async function elementToPng(element, options = {}) {
         });
       } catch (e) {
         // 预热失败不应阻塞导出，直接继续
-        console.warn("snapdom preCache 预热失败，将继续导出:", e?.message || e);
+        log.warn("snapdom preCache 预热失败，将继续导出:", e?.message || e);
       }
     }
     if (waitForFontsEnabled !== false) {
@@ -410,7 +412,7 @@ async function elementToPng(element, options = {}) {
 
     return { success: true, dataUrl, blob, warnings };
   } catch (error) {
-    console.error("使用 snapdom 转换HTML为PNG时出错:", error);
+    log.error("使用 snapdom 转换HTML为PNG时出错:", error);
 
     if (typeof onError === "function") {
       onError(error);
@@ -421,7 +423,7 @@ async function elementToPng(element, options = {}) {
         await options.afterCapture(targetElement);
       }
     } catch (cleanupError) {
-      console.warn("snapdom 截图失败后的清理(afterCapture)执行异常:", cleanupError?.message || cleanupError);
+      log.warn("snapdom 截图失败后的清理(afterCapture)执行异常:", cleanupError?.message || cleanupError);
     }
 
     return { success: false, error, warnings };
@@ -562,7 +564,7 @@ export async function editorContentToPng(editor, options = {}) {
 
     return await elementToPng(targetElement, enhancedOptions);
   } catch (error) {
-    console.error("snapdom 导出PNG过程中发生错误:", error);
+    log.error("snapdom 导出PNG过程中发生错误:", error);
 
     if (hiddenParentContainer && document.body.contains(hiddenParentContainer)) {
       document.body.removeChild(hiddenParentContainer);

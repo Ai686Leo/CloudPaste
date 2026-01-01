@@ -5,7 +5,7 @@ import { MountManager } from "../../storage/managers/MountManager.js";
 import { FileSystem } from "../../storage/fs/FileSystem.js";
 import { getEncryptionSecret } from "../../utils/environmentUtils.js";
 import { usePolicy } from "../../security/policies/policies.js";
-import { findUploadSessionById, updateUploadSessionById } from "../../utils/uploadSessions.js";
+import { findUploadSessionById, normalizeUploadSessionUserId, updateUploadSessionById } from "../../utils/uploadSessions.js";
 import { validateFsItemName } from "../../storage/fs/utils/FsInputValidator.js";
 
 /**
@@ -93,6 +93,24 @@ export const registerMultipartRoutes = (router, helpers) => {
     return { db: c.env.DB, encryptionSecret: getEncryptionSecret(c), repositoryFactory: c.get("repos"), userInfo, userIdOrInfo, userType };
   };
 
+  const assertUploadSessionOwnedByUser = (sessionRow, userIdOrInfo, userType) => {
+    if (!sessionRow) {
+      throw new ValidationError("未找到对应的上传会话");
+    }
+
+    const expectedUserId = normalizeUploadSessionUserId(userIdOrInfo, userType);
+    const rowUserId = String(sessionRow.user_id || "");
+    const rowUserType = String(sessionRow.user_type || "");
+
+    // 必须至少匹配 user_id；user_type 为空时视为兼容旧数据（不做强校验）
+    const idMatches = rowUserId === String(expectedUserId || "");
+    const typeMatches = !rowUserType || rowUserType === String(userType || "");
+
+    if (!idMatches || !typeMatches) {
+      throw new AuthenticationError("上传会话不属于当前用户，拒绝访问");
+    }
+  };
+
   const assertValidFileName = (fileName) => {
     const result = validateFsItemName(fileName);
     if (result.valid) return;
@@ -148,6 +166,9 @@ export const registerMultipartRoutes = (router, helpers) => {
       assertValidFileName(fileName);
     }
 
+    const sessionRow = await findUploadSessionById(db, { id: uploadId });
+    assertUploadSessionOwnedByUser(sessionRow, userIdOrInfo, userType);
+
     const mountManager = new MountManager(db, encryptionSecret, repositoryFactory, { env: c.env });
     const fileSystem = new FileSystem(mountManager);
     const safeParts = Array.isArray(parts) ? parts : [];
@@ -166,6 +187,9 @@ export const registerMultipartRoutes = (router, helpers) => {
     }
 
     assertValidFileName(fileName);
+
+    const sessionRow = await findUploadSessionById(db, { id: uploadId });
+    assertUploadSessionOwnedByUser(sessionRow, userIdOrInfo, userType);
 
     const mountManager = new MountManager(db, encryptionSecret, repositoryFactory, { env: c.env });
     const fileSystem = new FileSystem(mountManager);
@@ -200,6 +224,9 @@ export const registerMultipartRoutes = (router, helpers) => {
 
     assertValidFileName(fileName);
 
+    const sessionRow = await findUploadSessionById(db, { id: uploadId });
+    assertUploadSessionOwnedByUser(sessionRow, userIdOrInfo, userType);
+
     const mountManager = new MountManager(db, encryptionSecret, repositoryFactory, { env: c.env });
     const fileSystem = new FileSystem(mountManager);
     const result = await fileSystem.listMultipartParts(path, uploadId, fileName, userIdOrInfo, userType);
@@ -218,6 +245,9 @@ export const registerMultipartRoutes = (router, helpers) => {
     }
 
     const safePartNumbers = Array.isArray(partNumbers) ? partNumbers : [];
+
+    const sessionRow = await findUploadSessionById(db, { id: uploadId });
+    assertUploadSessionOwnedByUser(sessionRow, userIdOrInfo, userType);
 
     // 状态机推进：请求分片 URL 视为“开始上传”
     try {
@@ -266,9 +296,7 @@ export const registerMultipartRoutes = (router, helpers) => {
     const contentLength = contentLengthHeader ? Number.parseInt(contentLengthHeader, 10) || 0 : 0;
 
     const sessionRow = await findUploadSessionById(db, { id: uploadId });
-    if (!sessionRow) {
-      throw new ValidationError("未找到对应的上传会话");
-    }
+    assertUploadSessionOwnedByUser(sessionRow, userIdOrInfo, userType);
 
     const mountManager = new MountManager(db, encryptionSecret, repositoryFactory, { env: c.env });
     const fileSystem = new FileSystem(mountManager);

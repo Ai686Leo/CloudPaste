@@ -3,6 +3,9 @@
 // - 不直接依赖具体组件状态，只依赖传入参数和全局工具
 
 import { formatExpiry as formatExpiryUtil } from "@/utils/timeUtils.js";
+import { createLogger } from "@/utils/logger.js";
+
+const log = createLogger("PasteView");
 
 /**
  * 统一的调试日志输出函数
@@ -14,12 +17,8 @@ export function debugLog(enableDebug, isDev, ...args) {
   if (!enableDebug) return;
   if (!isDev) return;
 
-  try {
-    // 统一带上前缀，便于在控制台过滤
-    console.debug("[PasteView]", ...args);
-  } catch {
-    // console 失败直接忽略，避免影响业务流程
-  }
+  // 统一带上前缀，便于在控制台过滤（还需要本地开启 cloudpaste_debug=paste 或 cloudpaste_debug=1）
+  log.debug(...args);
 }
 
 /**
@@ -49,4 +48,3 @@ export function getInputClasses(darkMode) {
   }
   return "bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:ring-primary-500 focus:border-primary-500";
 }
-

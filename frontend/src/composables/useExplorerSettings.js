@@ -8,6 +8,9 @@ import { ref, watch, computed } from 'vue'
 import { useLocalStorage, useMutationObserver } from '@vueuse/core'
 import { defineStore } from 'pinia'
 import { semanticColors } from '@/styles/design-tokens'
+import { createLogger } from '@/utils/logger.js'
+
+const log = createLogger('ExplorerSettings')
 
 const STORAGE_KEY = 'cloudpaste-explorer-settings'
 
@@ -89,7 +92,7 @@ export const useExplorerSettings = defineStore('explorerSettings', () => {
         settings.value.spacingValue = spacingMap[parsed.itemSpacing] ?? 50
       }
     } catch (e) {
-      console.warn('[ExplorerSettings] 加载配置失败，使用默认值:', e)
+      log.warn('[ExplorerSettings] 加载配置失败，使用默认值:', e)
     }
     initialized.value = true
     injectCSSVariables()

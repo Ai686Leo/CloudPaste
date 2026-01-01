@@ -13,6 +13,7 @@
  */
 
 import { ValidationError } from "../../../../http/errors.js";
+import { decryptIfNeeded } from "../../../../utils/crypto.js";
 
 const DEFAULT_API_BASE = "https://api.github.com";
 
@@ -79,7 +80,8 @@ async function fetchJsonWithHeaders(url, token, init = {}) {
 export async function githubApiTestConnection(config, encryptionSecret, requestOrigin = null) {
   const owner = config?.owner;
   const repo = config?.repo;
-  const token = config?.token;
+  const tokenEncrypted = config?.token;
+  const token = await decryptIfNeeded(tokenEncrypted, encryptionSecret);
   const apiBase = (config?.api_base || DEFAULT_API_BASE).toString().replace(/\/+$/, "");
   const defaultFolder = config?.default_folder || "";
 

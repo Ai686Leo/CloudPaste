@@ -2,6 +2,7 @@ import { api } from "@/api";
 import { useAuthStore } from "@/stores/authStore.js";
 import { usePathPassword } from "@/composables/usePathPassword.js";
 import { useExplorerSettings } from "@/composables/useExplorerSettings.js";
+import { createLogger } from "@/utils/logger.js";
 
 /** @typedef {import("@/types/fs").FsDirectoryResponse} FsDirectoryResponse */
 /** @typedef {import("@/types/fs").FsDirectoryItem} FsDirectoryItem */
@@ -20,6 +21,7 @@ export function useFsService() {
   const authStore = useAuthStore();
   const pathPassword = usePathPassword();
   const explorerSettings = useExplorerSettings();
+  const log = createLogger("FsService");
 
   // 目录列表条件请求缓存（强一致性路线：依赖后端 ETag；前端仅做“可验证缓存”）
   const DIRECTORY_LIST_CACHE_LIMIT = 50;
@@ -161,13 +163,12 @@ export function useFsService() {
     } catch (error) {
       // 请求被取消时，静默处理，不抛出错误
       if (error.name === "AbortError") {
-        console.log("目录请求已取消:", normalizedPath);
         return null;
       }
 
       // 目录路径密码缺失或失效：触发前端密码验证流程
       if (!isAdmin && error && error.code === "FS_PATH_PASSWORD_REQUIRED") {
-        console.warn("目录需要路径密码，触发密码验证流程:", { path: normalizedPath, error });
+        log.warn("目录需要路径密码，触发密码验证流程:", { path: normalizedPath, error });
         // 旧 token 失效，清除后重新走验证
         pathPassword.removePathToken(normalizedPath);
         pathPassword.setPendingPath(normalizedPath);
@@ -240,7 +241,6 @@ export function useFsService() {
     } catch (error) {
       // 请求被取消时，静默处理，不抛出错误
       if (error.name === "AbortError") {
-        console.log("文件信息请求已取消:", path);
         return null;
       }
 
@@ -251,7 +251,7 @@ export function useFsService() {
           normalizedPath && normalizedPath !== "/" ? `${normalizedPath.replace(/\/+$/, "").split("/").slice(0, -1).join("/")}/` : "/";
         const ownerPath = parentDir.startsWith("/") ? parentDir : `/${parentDir}`;
 
-        console.warn("文件需要路径密码，触发密码验证流程:", { path: normalizedPath, ownerPath, error });
+        log.warn("文件需要路径密码，触发密码验证流程:", { path: normalizedPath, ownerPath, error });
 
         // 旧 token 失效，清除后重新走验证
         pathPassword.removePathToken(ownerPath);

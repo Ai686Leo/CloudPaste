@@ -5,6 +5,9 @@
 
 import { SUPPORTED_ENCODINGS, normalizeEncoding } from "./encodingDetector.js";
 import { fetchFileBinaryWithAuth } from "@/api/services/fileDownloadService.js";
+import { createLogger } from "@/utils/logger.js";
+
+const log = createLogger("TextUtils");
 
 /**
  * 使用指定编码解码二进制数据为文本
@@ -34,7 +37,7 @@ export async function decodeText(buffer, encoding = "utf-8") {
 
     // 如果替换字符比例过高，可能编码不正确
     if (replacementRatio > 0.1) {
-      console.warn(`编码 ${encoding} 解码质量较差，替换字符比例: ${(replacementRatio * 100).toFixed(2)}%`);
+      log.warn(`编码 ${encoding} 解码质量较差，替换字符比例: ${(replacementRatio * 100).toFixed(2)}%`);
     }
 
     return {
@@ -46,11 +49,11 @@ export async function decodeText(buffer, encoding = "utf-8") {
       error: null,
     };
   } catch (error) {
-    console.error(`使用编码 ${encoding} 解码失败:`, error);
+    log.error(`使用编码 ${encoding} 解码失败:`, error);
 
     // 尝试使用UTF-8作为后备
     if (encoding !== "utf-8") {
-      console.log("尝试使用UTF-8后备编码...");
+      log.debug("尝试使用UTF-8后备编码...");
       return await decodeText(buffer, "utf-8");
     }
 
@@ -93,7 +96,7 @@ export async function fetchAndDecodeText(url, encoding = "utf-8", options = {}) 
       url,
     };
   } catch (error) {
-    console.error("获取和解码文件失败:", error);
+    log.error("获取和解码文件失败:", error);
 
     return {
       success: false,
