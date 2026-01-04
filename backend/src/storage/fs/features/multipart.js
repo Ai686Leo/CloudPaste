@@ -14,6 +14,7 @@ export async function initializeFrontendMultipartUpload(fs, path, fileName, file
   }
 
   return await driver.initializeFrontendMultipartUpload(subPath, {
+    subPath,
     fileName,
     fileSize,
     partSize,
@@ -38,6 +39,7 @@ export async function completeFrontendMultipartUpload(fs, path, uploadId, parts,
   }
 
   const result = await driver.completeFrontendMultipartUpload(subPath, {
+    subPath,
     uploadId,
     parts,
     fileName,
@@ -64,6 +66,7 @@ export async function abortFrontendMultipartUpload(fs, path, uploadId, fileName,
   }
 
   const result = await driver.abortFrontendMultipartUpload(subPath, {
+    subPath,
     uploadId,
     fileName,
     mount,
@@ -88,6 +91,7 @@ export async function listMultipartUploads(fs, path, userIdOrInfo, userType, opt
   }
 
   return await driver.listMultipartUploads(subPath, {
+    subPath,
     mount,
     db: fs.mountManager.db,
     userIdOrInfo,
@@ -108,6 +112,7 @@ export async function listMultipartParts(fs, path, uploadId, fileName, userIdOrI
   }
 
   return await driver.listMultipartParts(subPath, uploadId, {
+    subPath,
     mount,
     db: fs.mountManager.db,
     fileName,
@@ -129,6 +134,7 @@ export async function signMultipartParts(fs, path, uploadId, partNumbers, userId
   }
 
   return await driver.signMultipartParts(subPath, uploadId, partNumbers, {
+    subPath,
     mount,
     db: fs.mountManager.db,
     userIdOrInfo,

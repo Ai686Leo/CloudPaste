@@ -28,7 +28,47 @@ export function useDashboardService() {
     return resp;
   };
 
+  /**
+   * 获取存储用量报告
+   */
+  const getStorageUsageReport = async () => {
+    const resp = await api.admin.getStorageUsageReport();
+    if (!resp) {
+      throw new Error("获取存储用量报告失败");
+    }
+
+    if (typeof resp === "object" && "success" in resp) {
+      if (!resp.success) {
+        throw new Error(resp.message || "获取存储用量报告失败");
+      }
+      return resp.data ?? {};
+    }
+
+    return resp;
+  };
+
+  /**
+   * 主动刷新存储用量快照
+   */
+  const refreshStorageUsageSnapshots = async (options = {}) => {
+    const resp = await api.admin.refreshStorageUsageSnapshots(options);
+    if (!resp) {
+      throw new Error("刷新存储用量快照失败");
+    }
+
+    if (typeof resp === "object" && "success" in resp) {
+      if (!resp.success) {
+        throw new Error(resp.message || "刷新存储用量快照失败");
+      }
+      return resp.data ?? {};
+    }
+
+    return resp;
+  };
+
   return {
     getDashboardStats,
+    getStorageUsageReport,
+    refreshStorageUsageSnapshots,
   };
 }

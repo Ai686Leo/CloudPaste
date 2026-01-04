@@ -7,6 +7,21 @@ import { AppError, ValidationError, NotFoundError, DriverError } from "../http/e
 import { CAPABILITIES } from "../storage/interfaces/capabilities/index.js";
 import { invalidateFsCache } from "../cache/invalidation.js";
 import { FsSearchIndexStore } from "../storage/fs/search/FsSearchIndexStore.js";
+import { normalizeStorageTestResult, summarizeTestReportForLog } from "../storage/tester/StorageTestReport.js";
+import { toBool } from "../utils/environmentUtils.js";
+
+const DEFAULT_TOTAL_STORAGE_BYTES = 10 * 1024 * 1024 * 1024; // 10GB（字节）
+
+/**
+ * 统一解析“存储容量限制（字节）”
+ */
+function normalizeTotalStorageBytes(value) {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (typeof value === "string" && value.trim().length === 0) return null;
+  const n = parseInt(value, 10);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
 
 /**
  * 计算存储配置在 WebDAV 渠道下支持的策略列表
@@ -62,6 +77,66 @@ function getSecretFieldDefsFromSchema(schema) {
   const fields = schema?.fields;
   if (!Array.isArray(fields)) return [];
   return fields.filter((f) => f && typeof f === "object" && f.type === "secret" && typeof f.name === "string" && f.name);
+}
+
+function getBoolFieldDefsFromSchema(schema) {
+  const fields = schema?.fields;
+  if (!Array.isArray(fields)) return [];
+  return fields.filter(
+    (f) =>
+      f &&
+      typeof f === "object" &&
+      (f.type === "bool" || f.type === "boolean") &&
+      typeof f.name === "string" &&
+      f.name,
+  );
+}
+
+/**
+ * 把 config_json 里的“布尔字段”统一写成 0/1（彻底消灭 Boolean("0") 这类坑）
+ * - 字段来源：StorageFactory.getTypeMetadata(storageType).configSchema
+ * - 仅处理“schema 里声明的 bool/boolean 字段”
+ * @param {string} storageType
+ * @param {any} configJson
+ */
+function coerceConfigJsonBooleansBySchema(storageType, configJson) {
+  if (!storageType || !configJson || typeof configJson !== "object") return configJson;
+  const schema = getTypeConfigSchema(storageType);
+  const boolFields = getBoolFieldDefsFromSchema(schema);
+  if (!boolFields.length) return configJson;
+
+  for (const f of boolFields) {
+    const key = f.name;
+    if (!Object.prototype.hasOwnProperty.call(configJson, key)) continue;
+    const raw = configJson[key];
+    if (raw === undefined || raw === null) continue;
+    configJson[key] = toBool(raw, false) ? 1 : 0;
+  }
+
+  return configJson;
+}
+
+/**
+ * 根据 schema.defaultValue 给 config_json 补默认值
+ * @param {string} storageType
+ * @param {any} configJson
+ */
+function applyConfigJsonDefaultValuesBySchema(storageType, configJson) {
+  if (!storageType || !configJson || typeof configJson !== "object") return configJson;
+  const schema = getTypeConfigSchema(storageType);
+  const fields = schema?.fields;
+  if (!Array.isArray(fields) || !fields.length) return configJson;
+
+  for (const f of fields) {
+    const key = f?.name;
+    if (!key || typeof key !== "string") continue;
+    if (Object.prototype.hasOwnProperty.call(configJson, key)) continue;
+    if (f.defaultValue === undefined) continue;
+    configJson[key] = f.defaultValue;
+  }
+
+  coerceConfigJsonBooleansBySchema(storageType, configJson);
+  return configJson;
 }
 
 function shouldSkipSecretWrite(value, { allowEmpty = true } = {}) {
@@ -190,6 +265,10 @@ export async function createStorageConfig(db, configData, adminId, encryptionSec
   const repo = factory.getStorageConfigRepository();
 
   const id = generateStorageConfigId();
+  const hasTotalStorageBytes = Object.prototype.hasOwnProperty.call(configData, "total_storage_bytes");
+  const totalStorageBytesNormalized = hasTotalStorageBytes
+    ? normalizeTotalStorageBytes(configData.total_storage_bytes)
+    : DEFAULT_TOTAL_STORAGE_BYTES;
   let configJson = {};
   if (configData.storage_type === "S3") {
     const requiredS3 = ["provider_type", "endpoint_url", "bucket_name", "access_key_id", "secret_access_key"];
@@ -206,9 +285,9 @@ export async function createStorageConfig(db, configData, adminId, encryptionSec
       endpoint_url: configData.endpoint_url,
       bucket_name: configData.bucket_name,
       region: configData.region || "",
-      path_style: configData.path_style === true ? 1 : 0,
+      path_style: toBool(configData.path_style, false) ? 1 : 0,
       default_folder: configData.default_folder || "",
-      total_storage_bytes: configData.total_storage_bytes ? parseInt(configData.total_storage_bytes, 10) : null,
+      total_storage_bytes: totalStorageBytesNormalized,
       custom_host: configData.custom_host || null,
       signature_expires_in: parseInt(configData.signature_expires_in, 10) || 3600,
       access_key_id: encryptedAccessKey,
@@ -232,32 +311,37 @@ export async function createStorageConfig(db, configData, adminId, encryptionSec
     } catch {
       throw new ValidationError("endpoint_url 不是合法的 URL");
     }
-    if (!endpoint_url.endsWith("/")) {
-      endpoint_url += "/";
-    }
 
     const encryptedPassword = await encryptValue(configData.password, encryptionSecret);
 
     let defaultFolder = (configData.default_folder || "").toString().trim();
     defaultFolder = defaultFolder.replace(/^\/+/, "");
 
-    let totalStorageBytes = null;
-    if (configData.total_storage_bytes) {
-      const val = parseInt(configData.total_storage_bytes, 10);
-      totalStorageBytes = Number.isFinite(val) && val > 0 ? val : null;
-    }
-
     configJson = {
       endpoint_url,
       username: configData.username,
       password: encryptedPassword,
       default_folder: defaultFolder,
-      tls_insecure_skip_verify: configData.tls_insecure_skip_verify ? 1 : 0,
-      total_storage_bytes: totalStorageBytes,
+      tls_insecure_skip_verify: toBool(configData.tls_insecure_skip_verify, false) ? 1 : 0,
+      total_storage_bytes: totalStorageBytesNormalized,
     };
+    // enable_disk_usage：如果前端没传，交给 schema.defaultValue 决定（避免在 service 里写死）
+    if (Object.prototype.hasOwnProperty.call(configData, "enable_disk_usage")) {
+      configJson.enable_disk_usage = configData.enable_disk_usage;
+    }
+    applyConfigJsonDefaultValuesBySchema(configData.storage_type, configJson);
   } else {
     const { name, storage_type, is_public, is_default, remark, url_proxy, ...rest } = configData;
     configJson = rest || {};
+    // 统一：按 schema.defaultValue 填默认值，再统一把 boolean 写成 0/1
+    // 这样就不需要在这里对 ONEDRIVE/GOOGLE_DRIVE/WEBDAV/LOCAL 等做“写死判断”
+    applyConfigJsonDefaultValuesBySchema(configData.storage_type, configJson);
+    // 其它类型也统一默认 10GB（除非显式传了 total_storage_bytes）
+    if (!Object.prototype.hasOwnProperty.call(configJson, "total_storage_bytes")) {
+      configJson.total_storage_bytes = DEFAULT_TOTAL_STORAGE_BYTES;
+    } else {
+      configJson.total_storage_bytes = normalizeTotalStorageBytes(configJson.total_storage_bytes);
+    }
     await encryptSecretsInConfigJson(configData.storage_type, configJson, encryptionSecret, { requireRequiredSecrets: true });
   }
   const createData = {
@@ -265,10 +349,10 @@ export async function createStorageConfig(db, configData, adminId, encryptionSec
     name: configData.name,
     storage_type: configData.storage_type,
     admin_id: adminId,
-    is_public: configData.is_public ? 1 : 0,
-    is_default: configData.is_default ? 1 : 0,
-     remark: configData.remark ?? null,
-     url_proxy: configData.url_proxy || null,
+    is_public: toBool(configData.is_public, false) ? 1 : 0,
+    is_default: toBool(configData.is_default, false) ? 1 : 0,
+    remark: configData.remark ?? null,
+    url_proxy: configData.url_proxy || null,
     status: "ENABLED",
     config_json: JSON.stringify(configJson),
   };
@@ -293,8 +377,8 @@ export async function updateStorageConfig(db, id, updateData, adminId, encryptio
   let driverConfigChanged = false;
   const topPatch = {};
   if (updateData.name) topPatch.name = updateData.name;
-  if (updateData.is_public !== undefined) topPatch.is_public = updateData.is_public ? 1 : 0;
-  if (updateData.is_default !== undefined) topPatch.is_default = updateData.is_default ? 1 : 0;
+  if (updateData.is_public !== undefined) topPatch.is_public = toBool(updateData.is_public, false) ? 1 : 0;
+  if (updateData.is_default !== undefined) topPatch.is_default = toBool(updateData.is_default, false) ? 1 : 0;
   if (updateData.status) topPatch.status = updateData.status;
   if (updateData.remark !== undefined) topPatch.remark = updateData.remark;
   if (updateData.url_proxy !== undefined) topPatch.url_proxy = updateData.url_proxy || null;
@@ -307,9 +391,9 @@ export async function updateStorageConfig(db, id, updateData, adminId, encryptio
   // 本类型 schema 中声明的 secret 字段集合
   const schema = getTypeConfigSchema(exists.storage_type);
   const secretFieldSet = new Set(getSecretFieldDefsFromSchema(schema).map((f) => f.name));
+  const boolFieldSet = new Set(getBoolFieldDefsFromSchema(schema).map((f) => f.name));
 
   // 合并驱动 JSON 字段
-  const boolKeys = new Set(["path_style", "tls_insecure_skip_verify"]);
   for (const [k, v] of Object.entries(updateData)) {
     if (["name", "storage_type", "is_public", "is_default", "status", "remark", "url_proxy"].includes(k)) continue;
 
@@ -344,16 +428,20 @@ export async function updateStorageConfig(db, id, updateData, adminId, encryptio
       } catch {
         throw new ValidationError("endpoint_url 不是合法的 URL");
       }
-      if (!endpoint_url.endsWith("/")) {
-        endpoint_url += "/";
-      }
       cfg.endpoint_url = endpoint_url;
     } else if (k === "default_folder") {
       let folder = (v || "").toString().trim();
       folder = folder.replace(/^\/+/, "");
       cfg.default_folder = folder;
     } else {
-      cfg[k] = boolKeys.has(k) ? (v ? 1 : 0) : v;
+      if (boolFieldSet.has(k)) {
+        if (v === undefined || v === null) {
+          continue;
+        }
+        cfg[k] = toBool(v, false) ? 1 : 0;
+        continue;
+      }
+      cfg[k] = v;
     }
   }
   topPatch.config_json = JSON.stringify(cfg);
@@ -432,12 +520,6 @@ export async function setDefaultStorageConfig(db, id, adminId, repositoryFactory
   await repo.setAsDefault(id, adminId);
 }
 
-export async function getStorageConfigsWithUsage(db, repositoryFactory = null) {
-  const factory = ensureRepositoryFactory(db, repositoryFactory);
-  const repo = factory.getStorageConfigRepository();
-  return await repo.findAllWithUsage();
-}
-
 // 驱动侧连接测试（优先）
 export async function testStorageConnection(db, id, adminId, encryptionSecret, requestOrigin = null, repositoryFactory = null) {
   const factory = ensureRepositoryFactory(db, repositoryFactory);
@@ -453,14 +535,52 @@ export async function testStorageConnection(db, id, adminId, encryptionSecret, r
   }
   const tester = StorageFactory.getTester(type);
   if (typeof tester === "function") {
+    const traceId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const startedAt = Date.now();
+    try {
+      console.log("[StorageTest:start]", { traceId, storageConfigId: id, storageType: type });
+    } catch {}
     try {
       const res = await tester(cfg, encryptionSecret, requestOrigin);
+      const durationMs = Date.now() - startedAt;
+
+      const testData = normalizeStorageTestResult({ storageType: type, testerResult: res, durationMs });
+      // 强制契约提示：如果 tester 没有输出 result.checks，会在 report.checks 里注入 contract 失败项。
+      try {
+        const report = testData?.report;
+        const checks = Array.isArray(report?.checks) ? report.checks : [];
+        const contractFailure = checks.find((c) => c && c.key === "contract" && c.success === false);
+        if (contractFailure) {
+          console.error("[StorageTest:contract]", {
+            traceId,
+            storageConfigId: id,
+            storageType: type,
+            durationMs,
+            error: contractFailure.error || "tester 输出契约不满足",
+          });
+        }
+      } catch {}
       // 标记最后使用时间
       try {
         await repo.updateLastUsed(id);
       } catch {}
-      return res;
+
+      try {
+        console.log("[StorageTest:end]", { traceId, storageConfigId: id, ...summarizeTestReportForLog(testData) });
+      } catch {}
+
+      return testData;
     } catch (error) {
+      const durationMs = Date.now() - startedAt;
+      try {
+        console.log("[StorageTest:error]", {
+          traceId,
+          storageConfigId: id,
+          storageType: type,
+          durationMs,
+          message: error?.message || String(error),
+        });
+      } catch {}
       if (error instanceof AppError) {
         throw error;
       }

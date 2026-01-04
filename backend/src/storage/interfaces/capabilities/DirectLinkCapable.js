@@ -8,15 +8,16 @@
  * ========== 契约要求 ==========
  * 驱动必须实现以下方法才能通过 isDirectLinkCapable() 检测：
  *
- * - generateDownloadUrl(path, options): Promise<Object>
+ * - generateDownloadUrl(subPath, ctx): Promise<Object>
  *   生成下载直链，返回对象必须包含：
  *   - url: 最终可供浏览器/客户端使用的直链
  *   - type: 直链类型标记（例如 "custom_host" | "native_direct"）
  *   其余字段（expiresIn/expiresAt 等）为可选扩展
  *
  * 可选扩展方法（由具体使用场景在调用前自行做 typeof 检查）：
- * - generateUploadUrl(path, options): 生成预签名上传 URL
- * - generatePresignedUrl(path, operation, options): 通用预签名 URL 生成
+ * - generateUploadUrl(subPath, ctx): 生成预签名上传 URL（直传）
+ * - handleUploadComplete(subPath, ctx): 预签名上传完成后的后端对齐/登记（少数驱动需要）
+ * - generatePresignedUrl(subPath, operation, ctx): 通用预签名 URL 生成
  */
 
 /**

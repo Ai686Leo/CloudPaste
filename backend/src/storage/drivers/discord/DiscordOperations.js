@@ -52,18 +52,20 @@ export function safeJsonParse(text) {
 // 2) 索引层 CRUD（只动 vfs_nodes）
 // =========================
 
-export async function discordRenameItem(driver, oldPath, newPath, options = {}) {
+export async function discordRenameItem(driver, oldSubPath, newSubPath, ctx = {}) {
   driver._ensureInitialized();
-  const db = options?.db || null;
+  const db = ctx?.db || null;
   if (!db) throw new ValidationError("DISCORD.renameItem: 缺少 db");
 
-  const { ownerType, ownerId } = driver._getOwnerFromOptions(options);
-  const { scopeType, scopeId } = driver._getScopeFromOptions(options);
+  const oldPath = ctx?.oldPath;
+  const newPath = ctx?.newPath;
+
+  const { ownerType, ownerId } = driver._getOwnerFromOptions(ctx);
+  const { scopeType, scopeId } = driver._getScopeFromOptions(ctx);
   const repo = new VfsNodesRepository(db, null);
 
-  const mount = options?.mount || null;
-  const oldSub = toPosixPath(driver._extractSubPath(oldPath, mount));
-  const newSub = toPosixPath(driver._extractSubPath(newPath, mount));
+  const oldSub = toPosixPath(oldSubPath || "/");
+  const newSub = toPosixPath(newSubPath || "/");
 
   const node = await repo.resolveNodeByPath({ ownerType, ownerId, scopeType, scopeId, path: oldSub });
   if (!node) {
@@ -104,18 +106,28 @@ export async function discordBatchRemoveItems(driver, paths, options = {}) {
   const db = options?.db || null;
   if (!db) throw new ValidationError("DISCORD.batchRemoveItems: 缺少 db");
 
+  if (!Array.isArray(paths) || paths.length === 0) {
+    return { success: 0, failed: [] };
+  }
+
+  if (!Array.isArray(options?.paths) || options.paths.length !== paths.length) {
+    throw new ValidationError("DISCORD.batchRemoveItems 需要 ctx.paths 与 subPaths 一一对应（不做兼容）");
+  }
+
   const { ownerType, ownerId } = driver._getOwnerFromOptions(options);
   const { scopeType, scopeId } = driver._getScopeFromOptions(options);
   const repo = new VfsNodesRepository(db, null);
 
-  const mount = options?.mount || null;
+  const fsPaths = options.paths;
   const failed = [];
   let success = 0;
 
-  for (const fsPath of paths || []) {
+  for (let i = 0; i < paths.length; i += 1) {
+    const fsPath = fsPaths[i];
+    const subPath = paths[i];
     try {
-      const sub = toPosixPath(driver._extractSubPath(fsPath, mount));
-      const node = await repo.resolveNodeByPath({ ownerType, ownerId, scopeType, scopeId, path: sub });
+      const normalizedSubPath = toPosixPath(subPath || "/");
+      const node = await repo.resolveNodeByPath({ ownerType, ownerId, scopeType, scopeId, path: normalizedSubPath });
       if (!node) {
         // 不存在：视为已删除
         success += 1;
@@ -185,29 +197,31 @@ async function copyDirectoryTree(driver, repo, { ownerType, ownerId, scopeType, 
   }
 }
 
-export async function discordCopyItem(driver, sourcePath, targetPath, options = {}) {
+export async function discordCopyItem(driver, sourceSubPath, targetSubPath, ctx = {}) {
   driver._ensureInitialized();
-  const db = options?.db || null;
+  const db = ctx?.db || null;
   if (!db) throw new ValidationError("DISCORD.copyItem: 缺少 db");
 
-  const { ownerType, ownerId } = driver._getOwnerFromOptions(options);
-  const { scopeType, scopeId } = driver._getScopeFromOptions(options);
+  const sourcePath = ctx?.sourcePath;
+  const targetPath = ctx?.targetPath;
+
+  const { ownerType, ownerId } = driver._getOwnerFromOptions(ctx);
+  const { scopeType, scopeId } = driver._getScopeFromOptions(ctx);
   const repo = new VfsNodesRepository(db, null);
 
-  const mount = options?.mount || null;
-  const skipExisting = !!options?.skipExisting;
+  const skipExisting = !!ctx?.skipExisting;
 
-  const sourceSub = toPosixPath(driver._extractSubPath(sourcePath, mount));
-  const targetSub = toPosixPath(driver._extractSubPath(targetPath, mount));
+  const sourceSub = toPosixPath(sourceSubPath || "/");
+  const targetSub = toPosixPath(targetSubPath || "/");
 
   const src = await repo.resolveNodeByPath({ ownerType, ownerId, scopeType, scopeId, path: sourceSub });
   if (!src) {
-    return { status: "failed", source: sourcePath, target: targetPath, skipped: false, error: "源路径不存在" };
+    return { status: "failed", source: sourcePath, target: targetPath, message: "源路径不存在" };
   }
 
   const { dirPath: targetDirPath, name: targetName } = splitDirAndName(targetSub);
   if (!targetName) {
-    return { status: "failed", source: sourcePath, target: targetPath, skipped: false, error: "目标名称为空" };
+    return { status: "failed", source: sourcePath, target: targetPath, message: "目标名称为空" };
   }
 
   // mkdir -p：确保目标父目录存在
@@ -218,7 +232,7 @@ export async function discordCopyItem(driver, sourcePath, targetPath, options = 
   if (skipExisting) {
     const exists = await repo.getChildByName({ ownerType, ownerId, scopeType, scopeId, parentId: targetParentId, name: targetName });
     if (exists) {
-      return { status: "skipped", source: sourcePath, target: targetPath, skipped: true };
+      return { status: "skipped", source: sourcePath, target: targetPath, skipped: true, reason: "target_exists" };
     }
   }
 
@@ -291,4 +305,3 @@ export async function discordDeleteObjectByStoragePath(driver, storagePath, opti
 
   return { success: true };
 }
-

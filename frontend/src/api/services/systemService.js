@@ -21,6 +21,37 @@ export function getDashboardStats() {
 }
 
 /******************************************************************************
+ * 存储用量报告（管理端）
+ ******************************************************************************/
+
+/**
+ * 获取存储用量报告
+ * - 这是独立接口，不与 dashboard/stats 混用
+ * @returns {Promise<Object>}
+ */
+export function getStorageUsageReport() {
+  return get("/admin/storage-usage/report");
+}
+
+/**
+ * 主动刷新存储用量快照
+ * - 会触发后端重新计算并写入 metrics_cache
+ * - 可能会调用上游 API(取决于 enable_disk_usage 配置)
+ * - 应该由明确触发(点击刷新按钮),不在页面加载时自动调用
+ * @param {Object} options
+ * @param {number} [options.maxItems=50] - 最多刷新多少个存储配置(默认50,最大500)
+ * @returns {Promise<Object>} 刷新结果 { okCount, failCount, failures, total, refreshedAt }
+ */
+export function refreshStorageUsageSnapshots(options = {}) {
+  const params = new URLSearchParams();
+  if (options.maxItems && options.maxItems > 0) {
+    params.append("maxItems", String(Math.min(options.maxItems, 500)));
+  }
+  const qs = params.toString();
+  return post(`/admin/storage-usage/refresh${qs ? `?${qs}` : ""}`, null);
+}
+
+/******************************************************************************
  * 系统信息API
  ******************************************************************************/
 

@@ -85,6 +85,25 @@ export function getEncryptionSecret(c) {
 }
 
 /**
+ * 把各种“真假值”统一转成 boolean
+ *
+ * @param {any} value
+ * @param {boolean} [defaultValue=false]
+ */
+export function toBool(value, defaultValue = false) {
+  if (value === true) return true;
+  if (value === false) return false;
+  if (value === 1 || value === "1") return true;
+  if (value === 0 || value === "0") return false;
+  if (typeof value === "string") {
+    const lowered = value.trim().toLowerCase();
+    if (lowered === "true" || lowered === "yes" || lowered === "on") return true;
+    if (lowered === "false" || lowered === "no" || lowered === "off") return false;
+  }
+  return defaultValue;
+}
+
+/**
  * 检测当前是否运行在Node.js环境
  * @returns {boolean} 是否为Node.js环境
  */

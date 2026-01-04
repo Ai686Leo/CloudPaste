@@ -97,9 +97,10 @@ export const api = {
     setDefaultStorageConfig: storageService.setDefaultStorageConfig,
     testStorageConfig: storageService.testStorageConfig,
 
-    // 系统管理（已重构为分组CRUD架构）
-    // 旧API已删除，请使用 api.system.* 的新分组API
+    // 系统管理
     getDashboardStats: systemService.getDashboardStats,
+    getStorageUsageReport: systemService.getStorageUsageReport,
+    refreshStorageUsageSnapshots: systemService.refreshStorageUsageSnapshots,
     getCacheStats: systemService.getCacheStats,
     clearCache: systemService.clearCacheAdmin,
 

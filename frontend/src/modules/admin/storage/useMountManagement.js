@@ -47,6 +47,10 @@ export function useMountManagement(options = {}) {
   const currentMount = ref(null);
   const searchQuery = ref("");
 
+  // 行级加载状态：正在操作的挂载点 ID 集合
+  const togglingMountIds = ref(new Set());
+  const deletingMountIds = ref(new Set());
+
   // 存储类型展示/样式 helper（用于 UI 主题等行为）
   const { getBadgeClass, ensureLoaded: ensureStorageTypesLoaded } = useStorageTypePresentation();
 
@@ -184,28 +188,29 @@ export function useMountManagement(options = {}) {
   /**
    * 加载挂载点列表
    * 使用统一API，根据用户权限自动返回相应数据
+   * @param {Object} options - 可选配置
+   * @param {boolean} options.silent - 是否静默加载
    */
-  const loadMounts = async () => {
-    return await base.withLoading(async () => {
+  const loadMounts = async (options = {}) => {
+    const { silent = false } = options;
+
+    // 静默模式
+    // 失败时保留现有数据，不清空列表
+    if (silent) {
       try {
-        // 使用统一的挂载点列表API
         const data = await getMountsList();
         mounts.value = Array.isArray(data) ? data : [];
 
         if (mounts.value.length > 0) {
-          // 更新最后刷新时间
           base.updateLastRefreshTime();
         }
 
-        // 更新分页信息
         updateMountPagination();
 
-        // 如果存储配置列表为空，尝试重新加载
         if (!storageConfigs.value.length) {
           await loadStorageConfigs();
         }
 
-        // 检查是否需要加载API密钥信息
         const needsApiKeys = mounts.value.some(
           (mount) =>
             mount.created_by &&
@@ -216,6 +221,39 @@ export function useMountManagement(options = {}) {
           await loadApiKeyNames();
         }
       } catch (err) {
+        // 静默模式失败：仅记录日志，保留现有数据，不清空列表
+        log.error("静默加载挂载点列表失败:", err);
+      }
+      return;
+    }
+
+    // 非静默模式：触发全局 loading（用于首次加载或手动刷新）
+    return await base.withLoading(async () => {
+      try {
+        const data = await getMountsList();
+        mounts.value = Array.isArray(data) ? data : [];
+
+        if (mounts.value.length > 0) {
+          base.updateLastRefreshTime();
+        }
+
+        updateMountPagination();
+
+        if (!storageConfigs.value.length) {
+          await loadStorageConfigs();
+        }
+
+        const needsApiKeys = mounts.value.some(
+          (mount) =>
+            mount.created_by &&
+            (mount.created_by.startsWith("apikey:") || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(mount.created_by))
+        );
+
+        if (needsApiKeys) {
+          await loadApiKeyNames();
+        }
+      } catch (err) {
+        // 非静默模式失败：显示错误提示，清空列表（首次加载场景）
         log.error("加载挂载点列表错误:", err);
         base.showError(err.message || t("admin.mount.error.loadFailed"));
         mounts.value = [];
@@ -293,7 +331,7 @@ export function useMountManagement(options = {}) {
   };
 
   /**
-   * 删除挂载点
+   * 删除挂载点（行级加载状态，不影响全局 loading）
    */
   const confirmDelete = async (id) => {
     const confirmed = await confirmFn({
@@ -306,19 +344,24 @@ export function useMountManagement(options = {}) {
       return;
     }
 
-    return await base.withLoading(async () => {
-      try {
-        // 根据用户类型调用相应的API函数
-        await apiDeleteMount(id);
+    // 添加到正在删除集合
+    deletingMountIds.value = new Set([...deletingMountIds.value, id]);
+    try {
+      // 根据用户类型调用相应的API函数
+      await apiDeleteMount(id);
 
-        base.showSuccess(t("admin.mount.success.deleted"));
-        // 重新加载挂载点列表
-        loadMounts();
-      } catch (err) {
-        log.error("删除挂载点错误:", err);
-        base.showError(err.message || t("admin.mount.error.deleteFailed"));
-      }
-    });
+      base.showSuccess(t("admin.mount.success.deleted"));
+      // 静默刷新挂载点列表
+      await loadMounts({ silent: true });
+    } catch (err) {
+      log.error("删除挂载点错误:", err);
+      base.showError(err.message || t("admin.mount.error.deleteFailed"));
+    } finally {
+      // 从正在删除集合中移除
+      const newSet = new Set(deletingMountIds.value);
+      newSet.delete(id);
+      deletingMountIds.value = newSet;
+    }
   };
 
   /**
@@ -328,29 +371,34 @@ export function useMountManagement(options = {}) {
     // 确定操作类型（用于提示消息）
     const action = mount.is_active ? t("admin.mount.actions.disable") : t("admin.mount.actions.enable");
 
-    return await base.withLoading(async () => {
-      try {
-        // 准备更新数据，只包含is_active字段
-        const updateData = {
-          is_active: !mount.is_active,
-        };
+    // 只有管理员可以切换挂载点状态
+    if (isApiKeyUser.value) {
+      base.showError(t("admin.mount.error.apiKeyNoPermission"));
+      return;
+    }
 
-        // 只有管理员可以切换挂载点状态
-        if (isApiKeyUser.value) {
-          base.showError(t("admin.mount.error.apiKeyNoPermission"));
-          return;
-        }
+    // 添加到正在切换集合
+    togglingMountIds.value = new Set([...togglingMountIds.value, mount.id]);
+    try {
+      // 准备更新数据，只包含is_active字段
+      const updateData = {
+        is_active: !mount.is_active,
+      };
 
-        await apiUpdateMount(mount.id, updateData);
+      await apiUpdateMount(mount.id, updateData);
 
-        base.showSuccess(mount.is_active ? t("admin.mount.success.disabled") : t("admin.mount.success.enabled"));
-        // 重新加载挂载点列表
-        loadMounts();
-      } catch (err) {
-        log.error(`${action}挂载点错误:`, err);
-        base.showError(err.message || (mount.is_active ? t("admin.mount.error.disableFailed") : t("admin.mount.error.enableFailed")));
-      }
-    });
+      base.showSuccess(mount.is_active ? t("admin.mount.success.disabled") : t("admin.mount.success.enabled"));
+      // 静默刷新挂载点列表
+      await loadMounts({ silent: true });
+    } catch (err) {
+      log.error(`${action}挂载点错误:`, err);
+      base.showError(err.message || (mount.is_active ? t("admin.mount.error.disableFailed") : t("admin.mount.error.enableFailed")));
+    } finally {
+      // 从正在切换集合中移除
+      const newSet = new Set(togglingMountIds.value);
+      newSet.delete(mount.id);
+      togglingMountIds.value = newSet;
+    }
   };
 
   const getStorageTypeClass = (storageType, darkModeValue = false) => {
@@ -501,6 +549,20 @@ export function useMountManagement(options = {}) {
     return storageConfigsStore.getStorageTypeLabel(mount.storage_type) || mount.storage_type || "-";
   };
 
+  /**
+   * 判断挂载点是否正在切换状态
+   */
+  const isMountToggling = (mountId) => {
+    return togglingMountIds.value.has(mountId);
+  };
+
+  /**
+   * 判断挂载点是否正在删除
+   */
+  const isMountDeleting = (mountId) => {
+    return deletingMountIds.value.has(mountId);
+  };
+
   return {
     // 继承基础功能
     ...base,
@@ -516,6 +578,12 @@ export function useMountManagement(options = {}) {
     filteredMounts,
     pageSizeOptions,
     viewMode,
+
+    // 行级加载状态
+    togglingMountIds,
+    deletingMountIds,
+    isMountToggling,
+    isMountDeleting,
 
     // 权限状态
     isAdmin,

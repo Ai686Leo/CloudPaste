@@ -222,4 +222,23 @@ export function registerScheduledHandlers() {
         err,
       );
     });
+
+  // 5) 存储用量快照刷新（默认创建 scheduled_jobs 记录）
+  import("./tasks/RefreshStorageUsageSnapshotsTask.js")
+    .then((mod) => {
+      const TaskCtor = mod.RefreshStorageUsageSnapshotsTask;
+      if (TaskCtor) {
+        const taskInstance = new TaskCtor();
+        scheduledTaskRegistry.register(taskInstance);
+        console.log(
+          `[ScheduledTaskRegistry] 成功注册调度任务: ${taskInstance.id}`,
+        );
+      }
+    })
+    .catch((err) => {
+      console.warn(
+        "[ScheduledTaskRegistry] 注册 RefreshStorageUsageSnapshotsTask 失败:",
+        err,
+      );
+    });
 }

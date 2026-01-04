@@ -12,6 +12,7 @@ import { addWebDAVHeaders, getStandardWebDAVHeaders } from "../utils/headerUtils
 import { getEffectiveMimeType } from "../../utils/fileUtils.js";
 import { LinkService } from "../../storage/link/LinkService.js";
 import { StorageStreaming, STREAMING_CHANNELS } from "../../storage/streaming/index.js";
+import { CAPABILITIES } from "../../storage/interfaces/capabilities/index.js";
 
 // Windows MiniRedir 302自动降级：
 // - 对同一路径，第一次请求按挂载策略走 302
@@ -20,15 +21,14 @@ const miniRedirTried302 = new Set();
 
 /**
  * 从驱动返回结果中提取 URL
- * 当前 WebDAV 场景下，generateDownloadUrl 约定返回 string 或 { url, presignedUrl? }
+ * 当前 WebDAV 场景下，generateDownloadUrl 约定返回 { url, type, ... }
  * @param {*} result - 驱动返回的结果
  * @returns {string|null} 提取的 URL 或 null
  */
 function extractUrlFromResult(result) {
   if (!result) return null;
-  if (typeof result === "string") return result;
   if (typeof result === "object") {
-    return result.url || result.presignedUrl || null;
+    return result.url || null;
   }
   return null;
 }
@@ -208,10 +208,11 @@ export async function handleGet(c, path, userId, userType, db) {
     switch (policy) {
       case "302_redirect": {
         // 策略 1：存储直链重定向（通过驱动自己的 generateDownloadUrl 能力）
-        if (typeof driver.generateDownloadUrl === "function") {
+        if (typeof driver?.hasCapability === "function" && driver.hasCapability(CAPABILITIES.DIRECT_LINK)) {
           try {
             console.log(`WebDAV GET - 尝试生成存储直链: ${path}`);
-            const result = await driver.generateDownloadUrl(path, {
+            const result = await driver.generateDownloadUrl(subPath, {
+              path,
               mount,
               subPath,
               db,

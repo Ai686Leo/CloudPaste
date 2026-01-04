@@ -21,7 +21,8 @@ export async function generateFileLink(fs, path, userIdOrInfo, userType, options
   const mustProxy = !!mount?.web_proxy || forceProxy;
 
   if (mustProxy && typeof driver.generateProxyUrl === "function") {
-    const proxy = await driver.generateProxyUrl(path, {
+    const proxy = await driver.generateProxyUrl(subPath, {
+      path,
       mount,
       subPath,
       request,
@@ -40,32 +41,54 @@ export async function generateFileLink(fs, path, userIdOrInfo, userType, options
 
   // 2）非强制代理挂载：优先使用直链能力（custom_host / 预签名等）
   if (!mustProxy && driver.hasCapability(CAPABILITIES.DIRECT_LINK)) {
-    const result = await driver.generateDownloadUrl(path, {
-      mount,
-      subPath,
-      db,
-      userIdOrInfo,
-      userType,
-      request,
-      expiresIn: options.expiresIn,
-      forceDownload,
-    });
+    try {
+      const result = await driver.generateDownloadUrl(subPath, {
+        path,
+        mount,
+        subPath,
+        db,
+        userIdOrInfo,
+        userType,
+        request,
+        expiresIn: options.expiresIn,
+        forceDownload,
+      });
 
-    // 约定：驱动在 generateDownloadUrl 边界统一输出 canonical 字段 result.url
-    // 此处仅消费 canonical url，不再读取驱动返回的任何 legacy 链接字段
-    const url = typeof result === "string" ? result : result?.url || null;
+      // 约定：驱动在 generateDownloadUrl 边界统一输出 canonical 字段 result.url
+      return {
+        url: result?.url || null,
+        type: result?.type || "native_direct",
+        expiresIn: result?.expiresIn ?? options.expiresIn ?? null,
+        proxyPolicy: null,
+      };
+    } catch (error) {
+      // 直链能力失败时，允许降级到 proxy（例如：GitHub 私有仓库、某些上游临时不可用）
+      if (typeof driver.generateProxyUrl === "function") {
+        const proxy = await driver.generateProxyUrl(subPath, {
+          path,
+          mount,
+          subPath,
+          request,
+          download: forceDownload,
+          db,
+          channel,
+        });
 
-    return {
-      url,
-      type: result?.type || "native_direct",
-      expiresIn: result?.expiresIn || options.expiresIn || null,
-      proxyPolicy: null,
-    };
+        return {
+          url: proxy?.url || null,
+          type: proxy?.type || "proxy",
+          expiresIn: proxy?.expiresIn || null,
+          proxyPolicy: null,
+        };
+      }
+      throw error;
+    }
   }
 
   // 3）无任何直链能力时：若驱动实现了 generateProxyUrl，则兜底走代理
   if (typeof driver.generateProxyUrl === "function") {
-    const proxy = await driver.generateProxyUrl(path, {
+    const proxy = await driver.generateProxyUrl(subPath, {
+      path,
       mount,
       subPath,
       request,

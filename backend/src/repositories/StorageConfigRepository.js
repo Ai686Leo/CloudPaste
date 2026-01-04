@@ -3,7 +3,6 @@
  * - 统一从 storage_configs 读取，驱动私有配置存于 config_json（JSON）
  * - 返回对象时展开常用字段到顶层（endpoint_url/provider_type/bucket_name等）
  * - WithSecrets 版本才返回 access_key_id/secret_access_key/password
- * - 支持多种存储类型：S3、WebDAV（未来可扩展）
  */
 import { BaseRepository } from "./BaseRepository.js";
 import { DbTables } from "../constants/index.js";
@@ -252,40 +251,5 @@ export class StorageConfigRepository extends BaseRepository {
       this.db.prepare(`UPDATE ${DbTables.STORAGE_CONFIGS} SET is_default = 0, updated_at = CURRENT_TIMESTAMP WHERE admin_id = ?`).bind(adminId),
       this.db.prepare(`UPDATE ${DbTables.STORAGE_CONFIGS} SET is_default = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).bind(configId),
     ]);
-  }
-
-  async findAllWithUsage() {
-    const queryResult = await this.query(
-      `SELECT id, name, storage_type, admin_id, is_public, is_default, created_at, updated_at, last_used,
-              json_extract(config_json,'$.provider_type') AS provider_type,
-              json_extract(config_json,'$.endpoint_url') AS endpoint_url,
-              json_extract(config_json,'$.bucket_name') AS bucket_name,
-              json_extract(config_json,'$.region') AS region,
-              json_extract(config_json,'$.path_style') AS path_style,
-              json_extract(config_json,'$.default_folder') AS default_folder,
-              json_extract(config_json,'$.custom_host') AS custom_host,
-              json_extract(config_json,'$.signature_expires_in') AS signature_expires_in,
-              json_extract(config_json,'$.total_storage_bytes') AS total_storage_bytes
-       FROM ${DbTables.STORAGE_CONFIGS}
-       ORDER BY name ASC`
-    );
-    const configs = queryResult.results || [];
-    const result = [];
-    for (const config of configs) {
-      const usage = await this.queryFirst(
-        `SELECT COUNT(*) as file_count, SUM(size) as total_size
-         FROM ${DbTables.FILES}
-         WHERE storage_config_id = ?`,
-        [config.id]
-      );
-      result.push({
-        ...config,
-        usage: {
-          file_count: usage?.file_count || 0,
-          total_size: usage?.total_size || 0,
-        },
-      });
-    }
-    return result;
   }
 }

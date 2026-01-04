@@ -45,6 +45,20 @@ export class OneDriveGraphClient {
   // ========== 目录操作 ==========
 
   /**
+   * 获取 Drive 基础信息（含 quota）
+   * - 用于读取上游配额（quota.total/used/remaining/deleted/state）
+   * @param {{ selectQuotaOnly?: boolean }} [options]
+   * @returns {Promise<any>}
+   */
+  async getDrive(options = {}) {
+    const selectQuotaOnly = options?.selectQuotaOnly === true;
+    if (selectQuotaOnly) {
+      return await this._graphRequest(this.drivePath, { params: { $select: "quota" } });
+    }
+    return await this._graphRequest(this.drivePath);
+  }
+
+  /**
    * 列出目录内容（单页）
    * - 用于分页场景：跟随 @odata.nextLink
    *

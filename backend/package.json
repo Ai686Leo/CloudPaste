@@ -1,9 +1,11 @@
 {
   "name": "cloudpaste-api",
-  "version": "1.9.0",
+  "version": "1.9.1",
   "description": "CloudPaste API基于Cloudflare Workers和D1数据库",
   "main": "unified-entry.js",
   "scripts": {
+    "test": "node --test --test-concurrency=1",
+    "test:parallel": "node --test",
     "dev": "wrangler dev --local",
     "dev:scheduled": "wrangler dev --local --test-scheduled",
     "deploy": "wrangler publish",

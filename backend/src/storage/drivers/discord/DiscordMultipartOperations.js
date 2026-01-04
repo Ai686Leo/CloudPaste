@@ -17,7 +17,7 @@ import {
   listActiveUploadSessions,
   findUploadSessionById,
 } from "../../../utils/uploadSessions.js";
-import { safeJsonParse, splitDirAndName, toPosixPath } from "./DiscordOperations.js";
+import { safeJsonParse, splitDirAndName, toPosixPath, stripTrailingSlash } from "./DiscordOperations.js";
 
 const VFS_STORAGE_PATH_PREFIX = "vfs:";
 
@@ -144,12 +144,15 @@ export class DiscordMultipartOperations {
     const sessionUploadUrl = `/api/fs/multipart/upload-chunk?upload_id=${encodeURIComponent(uploadId)}`;
 
     return {
+      success: true,
       uploadId,
       strategy: "single_session",
       fileName,
       fileSize,
       partSize: effectivePartSize,
       partCount: calculatedPartCount,
+      totalParts: calculatedPartCount,
+      key: fsPath.replace(/^\/+/, ""),
       session: {
         uploadUrl: sessionUploadUrl,
         providerUploadUrl: null,
@@ -240,7 +243,7 @@ export class DiscordMultipartOperations {
     const vfsRepo = new VfsNodesRepository(db, null);
 
     const fsPath = this._buildFsPathFromSubPathAndFileName(subPath, fileName, mount);
-    const effectiveSubPath = toPosixPath(driver._extractSubPath(fsPath, mount));
+    const effectiveSubPath = toPosixPath(`${stripTrailingSlash(subPath || "/")}/${fileName}`.replace(/\/+/g, "/"));
     const { dirPath } = splitDirAndName(effectiveSubPath);
     const ensured = await vfsRepo.ensureDirectoryPath({ ownerType, ownerId, scopeType, scopeId, path: dirPath });
 
@@ -443,6 +446,9 @@ export class DiscordMultipartOperations {
     const { db } = options || {};
     void db;
     return {
+      success: true,
+      uploadId: String(uploadId),
+      strategy: "single_session",
       session: {
         uploadUrl: `/api/fs/multipart/upload-chunk?upload_id=${encodeURIComponent(uploadId)}`,
         nextExpectedRanges: [],

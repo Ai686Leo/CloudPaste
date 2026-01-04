@@ -98,7 +98,7 @@ export class TelegramStorageDriver extends BaseDriver {
     const botTokenEncrypted = this.config?.bot_token || this.config?.botToken;
     const botToken = await decryptIfNeeded(botTokenEncrypted, this.encryptionSecret);
     const rawTargetChatId = this.config?.target_chat_id ?? this.config?.targetChatId;
-    const apiBaseUrl = normalizeApiBaseUrl(this.config?.api_base_url || this.config?.apiBaseUrl);
+    const apiBaseUrl = normalizeApiBaseUrl(this.config?.endpoint_url);
     const partSizeMb = Number(this.config?.part_size_mb ?? 15);
     const uploadConcurrency = Number(this.config?.upload_concurrency ?? 2);
     const botApiMode = String(this.config?.bot_api_mode || "official").trim().toLowerCase();
@@ -151,25 +151,25 @@ export class TelegramStorageDriver extends BaseDriver {
 
   // ===== 基础契约 =====
 
-  async exists(path, options = {}) {
+  async exists(subPath, ctx = {}) {
     try {
-      await this.stat(path, options);
+      await this.stat(subPath, ctx);
       return true;
     } catch {
       return false;
     }
   }
 
-  async stat(path, options = {}) {
+  async stat(subPath, ctx = {}) {
     // 这里直接复用 getFileInfo 的查找逻辑
-    const info = await this.getFileInfo(path, options);
-    return info;
+    return await this.getFileInfo(subPath, ctx);
   }
 
   // ===== PROXY 能力 =====
 
-  async generateProxyUrl(fsPath, options = {}) {
-    const { request, download = false, channel = "web" } = options;
+  async generateProxyUrl(subPath, ctx = {}) {
+    const { request, download = false, channel = "web" } = ctx;
+    const fsPath = ctx?.path;
     return {
       url: buildFullProxyUrl(request || null, fsPath, download),
       type: "proxy",
@@ -186,15 +186,6 @@ export class TelegramStorageDriver extends BaseDriver {
   }
 
   // ===== 内部：VFS scope / path =====
-
-  _extractSubPath(fullPath, mount) {
-    if (!fullPath) return "";
-    if (mount?.mount_path && String(fullPath).startsWith(mount.mount_path)) {
-      return String(fullPath).slice(String(mount.mount_path).length);
-    }
-    const s = String(fullPath);
-    return s.startsWith("/") ? s : `/${s}`;
-  }
 
   _getScopeFromOptions(options = {}) {
     // Telegram 的 VFS scope 按 storage_config 维度（无挂载也能写）
@@ -248,17 +239,17 @@ export class TelegramStorageDriver extends BaseDriver {
 
   // ===== READER 能力 =====
 
-  async listDirectory(fsPath, options = {}) {
+  async listDirectory(subPath, ctx = {}) {
     this._ensureInitialized();
-    const db = options?.db || null;
+    const db = ctx?.db || null;
     if (!db) throw new ValidationError("TELEGRAM.listDirectory: 缺少 db");
 
-    const { mount, subPath = null } = options;
-    const effectiveSubPath = subPath ?? this._extractSubPath(fsPath, mount);
-    const normalizedSubPath = toPosixPath(effectiveSubPath || "/");
+    const { mount } = ctx;
+    const fsPath = ctx?.path;
+    const normalizedSubPath = toPosixPath(subPath || "/");
 
-    const { ownerType, ownerId } = this._getOwnerFromOptions(options);
-    const { scopeType, scopeId } = this._getScopeFromOptions(options);
+    const { ownerType, ownerId } = this._getOwnerFromOptions(ctx);
+    const { scopeType, scopeId } = this._getScopeFromOptions(ctx);
     const repo = new VfsNodesRepository(db, null);
 
     let parentId = VFS_ROOT_PARENT_ID;
@@ -294,7 +285,7 @@ export class TelegramStorageDriver extends BaseDriver {
     );
 
     return {
-      path: basePath,
+      path: fsPath,
       type: "directory",
       isRoot: stripTrailingSlash(normalizedSubPath) === "/",
       mount_id: mount?.id ?? null,
@@ -303,14 +294,14 @@ export class TelegramStorageDriver extends BaseDriver {
     };
   }
 
-  async getFileInfo(fsPath, options = {}) {
+  async getFileInfo(subPath, ctx = {}) {
     this._ensureInitialized();
-    const db = options?.db || null;
+    const db = ctx?.db || null;
     if (!db) throw new ValidationError("TELEGRAM.getFileInfo: 缺少 db");
 
-    const { mount, subPath = null } = options;
-    const effectiveSubPath = subPath ?? this._extractSubPath(fsPath, mount);
-    const normalizedSubPath = toPosixPath(effectiveSubPath || "/");
+    const { mount } = ctx;
+    const fsPath = ctx?.path;
+    const normalizedSubPath = toPosixPath(subPath || "/");
 
     // root：返回虚拟目录信息
     if (stripTrailingSlash(normalizedSubPath) === "/") {
@@ -327,8 +318,8 @@ export class TelegramStorageDriver extends BaseDriver {
       });
     }
 
-    const { ownerType, ownerId } = this._getOwnerFromOptions(options);
-    const { scopeType, scopeId } = this._getScopeFromOptions(options);
+    const { ownerType, ownerId } = this._getOwnerFromOptions(ctx);
+    const { scopeType, scopeId } = this._getScopeFromOptions(ctx);
     const repo = new VfsNodesRepository(db, null);
     const node = await repo.resolveNodeByPath({ ownerType, ownerId, scopeType, scopeId, path: normalizedSubPath });
     if (!node) throw new NotFoundError("路径不存在");
@@ -347,9 +338,9 @@ export class TelegramStorageDriver extends BaseDriver {
     });
   }
 
-  async downloadFile(path, options = {}) {
+  async downloadFile(subPath, ctx = {}) {
     this._ensureInitialized();
-    const db = options?.db || null;
+    const db = ctx?.db || null;
     if (!db) throw new ValidationError("TELEGRAM.downloadFile: 缺少 db");
 
     const repo = new VfsNodesRepository(db, null);
@@ -357,17 +348,15 @@ export class TelegramStorageDriver extends BaseDriver {
     let node = null;
 
     // storage-first：vfs:<id> 直达
-    const vfsNodeId = this._parseVfsStoragePath(path);
+    const vfsNodeId = this._parseVfsStoragePath(subPath);
     if (vfsNodeId) {
       node = await repo.getNodeByIdUnsafe(vfsNodeId);
     } else {
       // FS 挂载：按路径解析（需要 owner/scope）
-      const { mount, subPath = null } = options;
-      const effectiveSubPath = subPath ?? this._extractSubPath(path, mount);
-      const normalizedSubPath = toPosixPath(effectiveSubPath || "/");
+      const normalizedSubPath = toPosixPath(subPath || "/");
 
-      const { ownerType, ownerId } = this._getOwnerFromOptions(options);
-      const { scopeType, scopeId } = this._getScopeFromOptions(options);
+      const { ownerType, ownerId } = this._getOwnerFromOptions(ctx);
+      const { scopeType, scopeId } = this._getScopeFromOptions(ctx);
       node = await repo.resolveNodeByPath({ ownerType, ownerId, scopeType, scopeId, path: normalizedSubPath });
     }
 
@@ -542,18 +531,17 @@ export class TelegramStorageDriver extends BaseDriver {
 
   // ===== WRITER 能力 =====
 
-  async createDirectory(fsPath, options = {}) {
+  async createDirectory(subPath, ctx = {}) {
     this._ensureInitialized();
-    const db = options?.db || null;
+    const db = ctx?.db || null;
     if (!db) throw new ValidationError("TELEGRAM.createDirectory: 缺少 db");
 
-    const { ownerType, ownerId } = this._getOwnerFromOptions(options);
-    const { scopeType, scopeId } = this._getScopeFromOptions(options);
+    const { ownerType, ownerId } = this._getOwnerFromOptions(ctx);
+    const { scopeType, scopeId } = this._getScopeFromOptions(ctx);
     const repo = new VfsNodesRepository(db, null);
 
-    const { mount, subPath = null } = options;
-    const effectiveSubPath = subPath ?? this._extractSubPath(fsPath, mount);
-    const normalized = toPosixPath(effectiveSubPath || "/");
+    const fsPath = ctx?.path;
+    const normalized = toPosixPath(subPath || "/");
 
     // root 不占记录，视为已存在
     if (stripTrailingSlash(normalized) === "/") {
@@ -570,26 +558,26 @@ export class TelegramStorageDriver extends BaseDriver {
     return { success: true, path: fsPath, alreadyExists: false };
   }
 
-  async uploadFile(fsPath, fileOrStream, options = {}) {
+  async uploadFile(subPath, fileOrStream, ctx = {}) {
     this._ensureInitialized();
-    const db = options?.db || null;
+    const db = ctx?.db || null;
     if (!db) throw new ValidationError("TELEGRAM.uploadFile: 缺少 db");
 
-    const { ownerType, ownerId } = this._getOwnerFromOptions(options);
-    const { scopeType, scopeId } = this._getScopeFromOptions(options);
+    const { ownerType, ownerId } = this._getOwnerFromOptions(ctx);
+    const { scopeType, scopeId } = this._getScopeFromOptions(ctx);
     const repo = new VfsNodesRepository(db, null);
 
-    const { mount, subPath = null } = options;
-    const effectiveSubPath = subPath ?? this._extractSubPath(fsPath, mount);
-    const targetPath = toPosixPath(effectiveSubPath || fsPath);
+    const { mount } = ctx;
+    const fsPath = ctx?.path;
+    const targetPath = toPosixPath(subPath || fsPath);
 
     const isDirectoryTarget =
       (typeof fsPath === "string" && fsPath.endsWith("/")) ||
-      (typeof effectiveSubPath === "string" && effectiveSubPath.endsWith("/"));
+      (typeof subPath === "string" && subPath.endsWith("/"));
     const { dirPath, name: inferredName } = resolveUploadDirAndName(targetPath, { isDirectoryTarget });
-    const filename = options?.filename || inferredName || inferNameFromPath(fsPath, false) || "upload.bin";
-    const contentType = options?.contentType || "application/octet-stream";
-    const contentLength = Number(options?.contentLength ?? options?.fileSize ?? 0) || 0;
+    const filename = ctx?.filename || inferredName || inferNameFromPath(fsPath, false) || "upload.bin";
+    const contentType = ctx?.contentType || "application/octet-stream";
+    const contentLength = Number(ctx?.contentLength ?? ctx?.fileSize ?? 0) || 0;
 
     // 直传（share/表单/非分片 FS）
     // - official：限制 ≤20MB
@@ -709,24 +697,35 @@ export class TelegramStorageDriver extends BaseDriver {
   /**
    * 更新文件内容（覆盖写入）
    */
-  async updateFile(fsPath, content, options = {}) {
+  async updateFile(subPath, content, ctx = {}) {
     this._ensureInitialized();
-    const db = options?.db || null;
+    const db = ctx?.db || null;
     if (!db) throw new ValidationError("TELEGRAM.updateFile: 缺少 db");
 
-    const { mount, subPath = null } = options;
-    const effectiveSubPath = subPath ?? this._extractSubPath(fsPath, mount);
-    const targetPath = toPosixPath(effectiveSubPath || fsPath);
+    const fsPath = ctx?.path;
+    if (typeof fsPath !== "string" || !fsPath) throw new ValidationError("TELEGRAM.updateFile: 缺少 path");
+
+    const effectiveSubPath = typeof subPath === "string" ? subPath : "/";
+    const targetPath = toPosixPath(effectiveSubPath || "/");
     const { name: inferredName } = splitDirAndName(targetPath);
     const filename = inferredName || inferNameFromPath(fsPath, false) || "file.txt";
 
     const contentType = getEffectiveMimeType(null, filename) || "application/octet-stream";
 
-    return await this.uploadFile(fsPath, content, {
-      ...options,
+    const result = await this.uploadFile(effectiveSubPath || "/", content, {
+      ...ctx,
+      path: fsPath,
+      subPath: effectiveSubPath || "/",
       contentType,
       filename,
     });
+
+    return {
+      ...result,
+      success: !!result?.success,
+      path: fsPath,
+      message: result?.message || "文件更新成功",
+    };
   }
 
   // ===== MULTIPART 能力（前端分片：single_session + 后端中转） =====
@@ -766,19 +765,19 @@ export class TelegramStorageDriver extends BaseDriver {
     return this.uploadOps.proxyFrontendMultipartChunk(sessionRow, body, options);
   }
 
-  async renameItem(oldPath, newPath, options = {}) {
+  async renameItem(oldSubPath, newSubPath, ctx = {}) {
     this._ensureInitialized();
-    return await telegramRenameItem(this, oldPath, newPath, options);
+    return await telegramRenameItem(this, oldSubPath, newSubPath, ctx);
   }
 
-  async batchRemoveItems(paths, options = {}) {
+  async batchRemoveItems(subPaths, ctx = {}) {
     this._ensureInitialized();
-    return await telegramBatchRemoveItems(this, paths, options);
+    return await telegramBatchRemoveItems(this, subPaths, ctx);
   }
 
-  async copyItem(sourcePath, targetPath, options = {}) {
+  async copyItem(sourceSubPath, targetSubPath, ctx = {}) {
     this._ensureInitialized();
-    return await telegramCopyItem(this, sourcePath, targetPath, options);
+    return await telegramCopyItem(this, sourceSubPath, targetSubPath, ctx);
   }
 
   // ===== storage-first：删除对象（用于 /api/files delete_mode=both） =====

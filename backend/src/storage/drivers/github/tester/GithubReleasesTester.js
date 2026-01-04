@@ -159,7 +159,7 @@ export async function githubReleasesTestConnection(config, encryptionSecret, req
       note: "GITHUB_RELEASES 为只读驱动，跳过写权限测试",
     },
     info: {
-      endpoint: API_BASE,
+      endpoint_url: API_BASE,
       requestOrigin: requestOrigin || null,
       repoCount: 0,
       perPage,
@@ -255,5 +255,30 @@ export async function githubReleasesTestConnection(config, encryptionSecret, req
     ? `GitHub Releases 配置测试成功（${okCount}/${repoResults.length} 仓库可读取 releases）`
     : `GitHub Releases 配置测试${anyOk ? "部分成功" : "失败"}（成功 ${okCount}，失败 ${failCount}）`;
 
-  return { success: anyOk, message, result };
+  const checks = [
+    {
+      key: "read",
+      label: "读权限（Releases）",
+      success: anyOk === true,
+      ...(result.read.error ? { error: result.read.error } : {}),
+      items: [
+        { key: "repoCount", label: "仓库数量", value: repoResults.length },
+        { key: "okCount", label: "成功数量", value: okCount },
+        { key: "failCount", label: "失败数量", value: failCount },
+        { key: "perPage", label: "每页条数", value: perPage },
+        ...(repoResults.length
+          ? [{ key: "repos", label: "仓库明细", value: repoResults.slice(0, 8) }]
+          : []),
+      ],
+    },
+    {
+      key: "write",
+      label: "写权限",
+      success: true,
+      skipped: true,
+      note: "GITHUB_RELEASES 为只读驱动，跳过写权限测试",
+    },
+  ];
+
+  return { success: anyOk, message, result: { info: result.info, checks } };
 }

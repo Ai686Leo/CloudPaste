@@ -60,13 +60,13 @@ export class GoogleDriveStorageDriver extends BaseDriver {
 
     // 配置字段
     this.rootId = config.root_id || "root";
-    this.enableDiskUsage = Boolean(config.enable_disk_usage);
-    this.useOnlineApi = Boolean(config.use_online_api);
-    this.apiAddress = config.api_address || null;
+    this.enableDiskUsage = config?.enable_disk_usage === 1;
+    this.useOnlineApi = config?.use_online_api === 1;
+    this.apiAddress = config.endpoint_url || null;
     this.clientId = config.client_id || null;
     this.clientSecret = config.client_secret || null;
     this.refreshToken = config.refresh_token || "";
-    this.enableSharedView = config.enable_shared_view !== false;
+    this.enableSharedView = config?.enable_shared_view === undefined ? true : config?.enable_shared_view === 1;
 
     // 内部组件（延迟初始化）
     this.authManager = null;
@@ -246,38 +246,39 @@ export class GoogleDriveStorageDriver extends BaseDriver {
 
   /**
    * 列出目录内容
-   * @param {string} path    挂载视图下的路径
-   * @param {Object} options 上下文选项（mount/subPath/db/userType 等）
+   * @param {string} subPath 挂载内子路径（subPath-only）
+   * @param {Object} ctx     上下文选项（mount/path/subPath/db/userType 等）
    */
-  async listDirectory(path, options = {}) {
+  async listDirectory(subPath, ctx = {}) {
     this._ensureInitialized();
-    const { mount, subPath, db } = options;
-    const effectivePath = typeof subPath === "string" ? subPath : path;
+    const { mount, db } = ctx;
+    const fsPath = ctx?.path;
+    const effectiveSubPath = subPath;
 
     // 目录分页（可选）
     // - cursor：Google Drive 的 nextPageToken（不透明字符串）
     // - limit：单页数量（Drive API 支持 pageSize + nextPageToken）
-    const cursorRaw = options?.cursor != null && String(options.cursor).trim() ? String(options.cursor).trim() : null;
-    const limitRaw = options?.limit != null && options.limit !== "" ? Number(options.limit) : null;
+    const cursorRaw = ctx?.cursor != null && String(ctx.cursor).trim() ? String(ctx.cursor).trim() : null;
+    const limitRaw = ctx?.limit != null && ctx.limit !== "" ? Number(ctx.limit) : null;
     const limit =
       limitRaw != null && Number.isFinite(limitRaw) && limitRaw > 0 ? Math.max(1, Math.min(1000, Math.floor(limitRaw))) : null;
-    const paged = options?.paged === true || !!cursorRaw || limit != null;
+    const paged = ctx?.paged === true || !!cursorRaw || limit != null;
 
-    const segments = this._splitPath(effectivePath || "");
+    const segments = this._splitPath(effectiveSubPath || "");
 
     // sharedWithMe 虚拟目录：路径以 __shared_with_me__ 开头时走专用分支
     if (this.enableSharedView && isSharedWithMePath(segments)) {
       return await listSharedWithMeDirectory({
-        path,
+        path: fsPath,
         segments,
         apiClient: this.apiClient,
         mount,
         db,
-        options: { cursor: cursorRaw, limit, paged, refresh: options?.refresh === true },
+        options: { cursor: cursorRaw, limit, paged, refresh: ctx?.refresh === true },
       });
     }
 
-    const { fileId, isDirectory } = await this._resolvePathToFileId(effectivePath || "", options);
+    const { fileId, isDirectory } = await this._resolvePathToFileId(effectiveSubPath || "", ctx);
     if (!isDirectory) {
       throw new DriverError("目标路径不是目录", { status: 400 });
     }
@@ -307,7 +308,7 @@ export class GoogleDriveStorageDriver extends BaseDriver {
 
         // 使用挂载视图路径作为父路径，保证子项 path 始终带上挂载前缀（例如 /google/xxx）
         const parentPath =
-          typeof path === "string" && path.length > 0 ? path.replace(/\/+$/, "") : "";
+          typeof fsPath === "string" && fsPath.length > 0 ? fsPath.replace(/\/+$/, "") : "";
         let childPath = `${parentPath}/${name}`.replace(/[\\/+]+/g, "/");
         if (isDir && typeof childPath === "string" && !childPath.endsWith("/")) {
           childPath = `${childPath}/`;
@@ -333,15 +334,15 @@ export class GoogleDriveStorageDriver extends BaseDriver {
       }),
     );
 
-    const isRoot = !effectivePath || effectivePath === "/" || effectivePath === "";
+    const isRoot = !effectiveSubPath || effectiveSubPath === "/" || effectiveSubPath === "";
 
     // 在挂载根目录下注入一个虚拟的 sharedWithMe 目录入口
     if (isRoot && this.enableSharedView) {
-      injectSharedWithMeEntry({ path, mount, items: formattedItems });
+      injectSharedWithMeEntry({ path: fsPath, mount, items: formattedItems });
     }
 
     return {
-      path,
+      path: fsPath,
       type: "directory",
       isRoot,
       isVirtual: false,
@@ -360,28 +361,27 @@ export class GoogleDriveStorageDriver extends BaseDriver {
 
   /**
    * 获取文件或目录信息
-   * @param {string} path    挂载视图下的路径
-   * @param {Object} options 上下文选项（mount/subPath/db/userType/userId/request 等）
+   * @param {string} subPath 挂载内子路径（subPath-only）
+   * @param {Object} ctx     上下文选项（mount/path/subPath/db/userType/userId/request 等）
    */
-  async getFileInfo(path, options = {}) {
+  async getFileInfo(subPath, ctx = {}) {
     this._ensureInitialized();
-    const { mount, subPath, db } = options;
-    const effectivePath = typeof subPath === "string" ? subPath : path;
+    const { mount, db } = ctx;
+    const fsPath = ctx?.path;
+    const effectiveSubPath = subPath;
 
-    const { driveItem, name, isDirectory } = await this._resolvePathToFileId(effectivePath || "", options);
+    const { driveItem, name, isDirectory } = await this._resolvePathToFileId(effectiveSubPath || "", ctx);
 
     // 根路径场景下 driveItem 可能为 null，此时构造一个虚拟目录信息
     const effectiveName = name || (mount?.mount_path ? mount.mount_path.replace(/^\/+/, "") || "root" : "root");
     const isDir = isDirectory;
-    const finalPath =
-      isDir && typeof path === "string" && !path.endsWith("/") ? `${path}/` : path;
 
     const size = isDir ? null : Number(driveItem?.size || 0);
     const modified = driveItem?.modifiedTime ? new Date(driveItem.modifiedTime) : null;
     const mimetype = isDir ? "application/x-directory" : driveItem?.mimeType || null;
 
     return await buildFileInfo({
-      fsPath: finalPath,
+      fsPath,
       name: effectiveName,
       isDirectory: isDir,
       size,
@@ -395,16 +395,15 @@ export class GoogleDriveStorageDriver extends BaseDriver {
 
   /**
    * 下载文件，返回 StorageStreamDescriptor
-   * @param {string} path    挂载视图下的路径
-   * @param {Object} options 上下文选项（mount/subPath/db/request 等）
+   * @param {string} subPath 挂载内子路径（subPath-only）
+   * @param {Object} ctx     上下文选项（mount/path/subPath/db/request 等）
    * @returns {Promise<import("../../streaming/types.js").StorageStreamDescriptor>}
    */
-  async downloadFile(path, options = {}) {
+  async downloadFile(subPath, ctx = {}) {
     this._ensureInitialized();
-    const { subPath } = options;
-    const effectivePath = typeof subPath === "string" ? subPath : path;
+    const effectiveSubPath = subPath;
 
-    const { fileId, isDirectory, driveItem } = await this._resolvePathToFileId(effectivePath || "", options);
+    const { fileId, isDirectory, driveItem } = await this._resolvePathToFileId(effectiveSubPath || "", ctx);
     if (isDirectory) {
       throw new DriverError("无法下载目录", { status: 400 });
     }
@@ -433,13 +432,14 @@ export class GoogleDriveStorageDriver extends BaseDriver {
 
   /**
    * 统一上传入口（文件 / 流）
-   * @param {string} path          目标路径（挂载视图或 storage-first 视图）
+   * @param {string} subPath       挂载内子路径（subPath-only）
    * @param {any} fileOrStream     数据源（ReadableStream/Node Stream/Buffer/File/Blob/string 等）
-   * @param {Object} options       上下文选项（mount/subPath/db/filename/contentType/contentLength 等）
+   * @param {Object} ctx           上下文选项（mount/path/subPath/db/filename/contentType/contentLength 等）
    */
-  async uploadFile(path, fileOrStream, options = {}) {
+  async uploadFile(subPath, fileOrStream, ctx = {}) {
     this._ensureInitialized();
-    const { subPath, mount, contentType, contentLength, filename } = options;
+    const { mount, contentType, contentLength, filename } = ctx;
+    const fsPath = ctx?.path;
 
     // 统一从 subPath 推导目录与文件名：
     // - subPath 为空或 "/" 视为根目录
@@ -462,8 +462,8 @@ export class GoogleDriveStorageDriver extends BaseDriver {
       filename ||
       (typeof subPath === "string" && !subPath.endsWith("/")
         ? subPath.split("/").filter(Boolean).pop() || "unnamed"
-        : typeof path === "string"
-          ? path.split("/").filter(Boolean).pop() || "unnamed"
+        : typeof fsPath === "string"
+          ? fsPath.split("/").filter(Boolean).pop() || "unnamed"
           : "unnamed");
 
     // 目录子路径为空或根时，parentId 指向 rootId，否则解析为对应目录
@@ -495,10 +495,10 @@ export class GoogleDriveStorageDriver extends BaseDriver {
     // - FS（mount 视图）：返回挂载视图的最终路径（path + fileName）
     // - storage-first（ObjectStore/分享上传/直传）：返回 subPath/key（已包含文件名）
     const basePathRaw = mount
-      ? path
+      ? fsPath
       : typeof subPath === "string" && subPath.length > 0
         ? subPath
-        : path;
+        : fsPath;
     const basePath = String(basePathRaw || "").replace(/[\\]+/g, "/").replace(/\/+/g, "/");
     const safeFileName = String(fileName || "").trim() || "unnamed";
 
@@ -616,19 +616,27 @@ export class GoogleDriveStorageDriver extends BaseDriver {
   }
 
   /**
+   * 更新文件内容（覆盖写入）
    * - 基于 Google Drive v3 files.update + uploadType=media 实现
-   * @param {string} path          文件路径（挂载视图）
+   * @param {string} subPath 挂载内子路径（subPath-only）
    * @param {string|Uint8Array|ArrayBuffer} content 新内容
-   * @param {Object} options       上下文选项（mount/subPath/db/userIdOrInfo/userType/contentType 等）
+   * @param {Object} ctx 上下文选项（mount/path/subPath/db/userIdOrInfo/userType/contentType 等）
    */
-  async updateFile(path, content, options = {}) {
+  async updateFile(subPath, content, ctx = {}) {
     this._ensureInitialized();
-    const { subPath } = options;
-    const effectivePath = typeof subPath === "string" ? subPath : path;
+    const fsPath = ctx?.path;
+    if (typeof fsPath !== "string" || !fsPath) {
+      throw new DriverError("GoogleDriveStorageDriver.updateFile 缺少 path 上下文（ctx.path）", {
+        status: 500,
+        details: { subPath },
+      });
+    }
+
+    const effectiveSubPath = typeof subPath === "string" ? subPath : "";
 
     const { fileId, isDirectory, driveItem } = await this._resolvePathToFileId(
-      effectivePath || "",
-      options,
+      effectiveSubPath || "",
+      ctx,
     );
     if (isDirectory) {
       throw new DriverError("无法更新目录内容", { status: 400 });
@@ -652,7 +660,7 @@ export class GoogleDriveStorageDriver extends BaseDriver {
           : new Uint8Array(content);
 
     const contentType =
-      options.contentType || driveItem?.mimeType || "application/octet-stream";
+      ctx.contentType || driveItem?.mimeType || "application/octet-stream";
 
     const uploadUrl = new URL(
       `files/${encodeURIComponent(fileId)}`,
@@ -684,25 +692,25 @@ export class GoogleDriveStorageDriver extends BaseDriver {
 
     return {
       success: true,
-      path,
+      path: fsPath,
       message: "Google Drive 文件内容已更新",
     };
   }
 
   /**
    * 创建目录
-   * @param {string} path    目录路径
-   * @param {Object} options 上下文选项（mount/subPath/db 等）
+   * @param {string} subPath 挂载内子路径（subPath-only）
+   * @param {Object} ctx     上下文选项（mount/path/subPath/db 等）
    */
-  async createDirectory(path, options = {}) {
+  async createDirectory(subPath, ctx = {}) {
     this._ensureInitialized();
-    const { subPath } = options;
-    const effectivePath = typeof subPath === "string" ? subPath : path;
+    const fsPath = ctx?.path;
+    const effectiveSubPath = subPath;
 
-    const segments = this._splitPath(effectivePath || "");
+    const segments = this._splitPath(effectiveSubPath || "");
     if (segments.length === 0) {
       // 根目录视为总是存在
-      return { success: true, path, alreadyExists: true };
+      return { success: true, path: fsPath, alreadyExists: true };
     }
 
     const parentSegments = segments.slice(0, -1);
@@ -720,7 +728,7 @@ export class GoogleDriveStorageDriver extends BaseDriver {
       await this.apiClient.createFolder(parentId, dirName);
       return {
         success: true,
-        path,
+        path: fsPath,
         alreadyExists: false,
       };
     } catch (error) {
@@ -737,7 +745,7 @@ export class GoogleDriveStorageDriver extends BaseDriver {
       ) {
         return {
           success: true,
-          path,
+          path: fsPath,
           alreadyExists: true,
         };
       }
@@ -745,52 +753,58 @@ export class GoogleDriveStorageDriver extends BaseDriver {
       throw new DriverError(error?.message || "创建目录失败", {
         status: status || 500,
         cause: error,
-        details: { path, parentPath, dirName },
+        details: { fsPath, parentPath, dirName },
       });
     }
   }
 
   /**
    * 删除单个路径
-   * @param {string} path
-   * @param {Object} options
+   * @param {string} subPath
+   * @param {Object} ctx
    */
-  async remove(path, options = {}) {
+  async remove(subPath, ctx = {}) {
     this._ensureInitialized();
-    const { subPath } = options;
-    const effectivePath = typeof subPath === "string" ? subPath : path;
+    const effectiveSubPath = subPath;
 
-    const { fileId } = await this._resolvePathToFileId(effectivePath || "", options);
+    const { fileId } = await this._resolvePathToFileId(effectiveSubPath || "", ctx);
     await this.apiClient.deleteFile(fileId);
     return { success: true };
   }
 
   /**
    * 批量删除路径
-   * @param {string[]} paths 需要删除的路径数组（挂载视图路径）
-   * @param {Object} options 上下文选项（mount/subPath/db 等）
+   * @param {string[]} subPaths 需要删除的子路径数组（subPath-only）
+   * @param {Object} ctx         上下文选项（mount/paths/subPaths/db 等）
    */
-  async batchRemoveItems(paths, options = {}) {
+  async batchRemoveItems(subPaths, ctx = {}) {
     this._ensureInitialized();
 
-    if (!Array.isArray(paths) || paths.length === 0) {
+    if (!Array.isArray(subPaths) || subPaths.length === 0) {
       return { success: 0, failed: [], results: [] };
+    }
+
+    if (!Array.isArray(ctx?.paths) || ctx.paths.length !== subPaths.length) {
+      throw new DriverError("Google Drive batchRemoveItems 需要 ctx.paths 与 subPaths 一一对应（不做兼容）", {
+        status: 500,
+        details: { pathsType: typeof ctx?.paths, pathsLen: ctx?.paths?.length, subPathsLen: subPaths.length },
+      });
     }
 
     const results = [];
     const failed = [];
     let successCount = 0;
 
-    const { mount, subPath } = options;
+    const fsPaths = ctx.paths;
 
-    for (const fsPath of paths) {
+    for (let i = 0; i < subPaths.length; i += 1) {
+      const fsPath = fsPaths[i];
+      const itemSubPath = subPaths[i];
       try {
-        // 这里需要为每个 FS 视图路径单独计算挂载内子路径，避免所有条目共用同一个 subPath
-        const perSubPath = mount ? this._extractSubPath(fsPath, mount) : subPath || fsPath;
-
-        await this.remove(fsPath, {
-          ...options,
-          subPath: perSubPath,
+        await this.remove(itemSubPath, {
+          ...ctx,
+          path: fsPath,
+          subPath: itemSubPath,
         });
         successCount += 1;
         results.push({ path: fsPath, success: true });
@@ -805,39 +819,24 @@ export class GoogleDriveStorageDriver extends BaseDriver {
   }
 
   /**
-   * 从挂载视图完整路径中提取挂载内子路径
-   * @param {string} fullPath 挂载视图完整路径（例如 /google/foo/bar.txt）
-   * @param {Object} mount    挂载对象（包含 mount_path）
-   * @returns {string} 子路径（以 / 开头）
-   */
-  _extractSubPath(fullPath, mount) {
-    if (!fullPath) return "";
-    if (mount?.mount_path && fullPath.startsWith(mount.mount_path)) {
-      return fullPath.slice(mount.mount_path.length) || "/";
-    }
-    return fullPath.startsWith("/") ? fullPath : `/${fullPath}`;
-  }
-
-  /**
    * 基础存在性检查
    * - 用于上层在执行 copy/rename 等操作时进行 skipExisting 判断
    * - 若路径不存在或发生错误时返回 false，避免影响主流程
-   * @param {string} path
-   * @param {Object} options
+   * @param {string} subPath
+   * @param {Object} ctx
    * @returns {Promise<boolean>}
    */
-  async exists(path, options = {}) {
+  async exists(subPath, ctx = {}) {
     this._ensureInitialized();
-    const { subPath } = options;
-    const effectivePath = typeof subPath === "string" ? subPath : path;
+    const effectiveSubPath = subPath;
 
     // 挂载根路径视为始终存在
-    if (!effectivePath || effectivePath === "/" || effectivePath === "") {
+    if (!effectiveSubPath || effectiveSubPath === "/" || effectiveSubPath === "") {
       return true;
     }
 
     try {
-      await this._resolvePathToFileId(effectivePath || "", options);
+      await this._resolvePathToFileId(effectiveSubPath || "", ctx);
       return true;
     } catch (error) {
       const status = typeof error?.status === "number" ? error.status : undefined;
@@ -855,45 +854,44 @@ export class GoogleDriveStorageDriver extends BaseDriver {
 
   /**
    * stat 接口
-   * @param {string} path
-   * @param {Object} options
+   * @param {string} subPath
+   * @param {Object} ctx
    * @returns {Promise<Object>}
    */
-  async stat(path, options = {}) {
-    return await this.getFileInfo(path, options);
+  async stat(subPath, ctx = {}) {
+    return await this.getFileInfo(subPath, ctx);
   }
 
   /**
    * 重命名文件或目录
    */
-  async renameItem(oldPath, newPath, options = {}) {
+  async renameItem(oldSubPath, newSubPath, ctx = {}) {
     this._ensureInitialized();
-    const { subPath } = options;
-    const effectiveOldPath = typeof subPath === "string" ? subPath : oldPath;
-
-    const { fileId, driveItem } = await this._resolvePathToFileId(effectiveOldPath || "", options);
-    const segments = this._splitPath(newPath || "");
+    const { fileId, driveItem } = await this._resolvePathToFileId(oldSubPath || "", ctx);
+    const segments = this._splitPath(newSubPath || "");
     const newName = segments.length > 0 ? segments[segments.length - 1] : driveItem.name;
 
     await this.apiClient.updateMetadata(fileId, { name: newName });
 
     return {
       success: true,
-      source: oldPath,
-      target: newPath,
+      source: ctx?.oldPath,
+      target: ctx?.newPath,
     };
   }
 
   /**
    * 复制单个文件/目录
-   * @param {string} sourcePath 源路径（挂载视图路径）
-   * @param {string} targetPath 目标路径（挂载视图路径）
-   * @param {Object} options    上下文选项（mount/sourceSubPath/targetSubPath/db/userIdOrInfo/userType/...）
+   * @param {string} sourceSubPath 源子路径（subPath-only）
+   * @param {string} targetSubPath 目标子路径（subPath-only）
+   * @param {Object} ctx            上下文选项（mount/sourcePath/targetPath/sourceSubPath/targetSubPath/db/...）
    */
-  async copyItem(sourcePath, targetPath, options = {}) {
+  async copyItem(sourceSubPath, targetSubPath, ctx = {}) {
     this._ensureInitialized();
 
-    const { mount, sourceSubPath, targetSubPath, db } = options;
+    const { mount, db } = ctx;
+    const sourcePath = ctx?.sourcePath;
+    const targetPath = ctx?.targetPath;
 
     if (typeof sourceSubPath !== "string" || typeof targetSubPath !== "string") {
       throw new DriverError("Google Drive 复制缺少子路径上下文（sourceSubPath/targetSubPath）", {
@@ -1159,34 +1157,14 @@ export class GoogleDriveStorageDriver extends BaseDriver {
     return this.uploadOps.proxyFrontendMultipartChunk(sessionRow, body, options);
   }
 
-  // ========== DIRECT_LINK / PROXY 能力 ==========
+  // ========== PROXY 能力 ==========
 
-  async generateDownloadUrl(path, options = {}) {
-    // 出于安全考虑，一般不直接暴露 webContentLink，此处仅返回内部使用的 alt=media URL
-    const { subPath } = options;
-    const effectivePath = typeof subPath === "string" ? subPath : path;
-    const { fileId, isDirectory } = await this._resolvePathToFileId(effectivePath || "", options);
-    if (isDirectory) {
-      throw new DriverError("无法为目录生成直链", { status: 400 });
-    }
-
-    const url = new URL(`files/${encodeURIComponent(fileId)}`, "https://www.googleapis.com/drive/v3/");
-    url.searchParams.set("alt", "media");
-    url.searchParams.set("supportsAllDrives", "true");
-    url.searchParams.set("includeItemsFromAllDrives", "true");
-    // 官方文档：在可能被标记为存在风险的文件上，显式确认风险并允许下载
-    url.searchParams.set("acknowledgeAbuse", "true");
-    return {
-      url: url.toString(),
-      type: "direct",
-    };
-  }
-
-  async generateProxyUrl(path, options = {}) {
-    const { request, download = false, channel = "web" } = options;
+  async generateProxyUrl(subPath, ctx = {}) {
+    const { request, download = false, channel = "web" } = ctx;
+    const fsPath = ctx?.path;
 
     // 使用统一的代理 URL 构建逻辑，与 OneDrive/S3 等驱动保持一致
-    const url = buildFullProxyUrl(request, path, download);
+    const url = buildFullProxyUrl(request, fsPath, download);
     return {
       url,
       type: "proxy",

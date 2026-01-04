@@ -177,9 +177,12 @@ export function useAdminStorageConfigService() {
       throw new Error("测试存储配置失败");
     }
     if (typeof resp === "object" && "success" in resp) {
-      return resp.data?.result ?? resp.data ?? resp;
+      if (!resp.success) {
+        throw new Error(resp.message || "测试存储配置失败");
+      }
+      return resp.data;
     }
-    return resp.result ?? resp.data?.result ?? resp;
+    throw new Error("测试存储配置失败：响应结构无效");
   };
 
   return {

@@ -1,33 +1,11 @@
-import { ref, computed, onMounted } from "vue";
-import { api } from "@/api";
-import { createLogger } from "@/utils/logger.js";
-
-const log = createLogger("StorageTypePresentation");
+import { computed, onMounted } from "vue";
+import { useStorageConfigsStore } from "@/stores/storageConfigsStore.js";
 
 /**
  * Admin 存储类型展示/样式 helper
  * - 统一从 /api/storage-types 加载元数据
  * - 基于 ui.icon / ui.badgeTheme / i18nKey 计算展示文案与 badge class
  */
-
-const storageTypesMeta = ref([]);
-const loading = ref(false);
-let loaded = false;
-
-async function ensureLoadedInternal() {
-  if (loaded || loading.value) return;
-  loading.value = true;
-  try {
-    const resp = await api.mount.getStorageTypes();
-    storageTypesMeta.value = Array.isArray(resp?.data) ? resp.data : Array.isArray(resp) ? resp : [];
-    loaded = true;
-  } catch (e) {
-    log.error("加载存储类型元数据失败(useStorageTypePresentation):", e);
-    storageTypesMeta.value = [];
-  } finally {
-    loading.value = false;
-  }
-}
 
 const BADGE_THEME_CLASS = {
   s3: {
@@ -76,41 +54,15 @@ const BADGE_THEME_CLASS = {
   },
 };
 
-function resolveBadgeTheme(type) {
-  const meta = storageTypesMeta.value.find((m) => m.type === type);
-  const theme = meta?.ui?.badgeTheme;
-  if (theme) return theme;
-
-  // 兼容旧的类型字符串
-  switch (type) {
-    case "S3":
-      return "s3";
-    case "WebDAV":
-    case "WEBDAV":
-      return "webdav";
-    case "ONEDRIVE":
-      return "onedrive";
-    case "GOOGLE_DRIVE":
-      return "googledrive";
-    case "LOCAL":
-      return "local";
-    case "TELEGRAM":
-      return "telegram";
-    case "DISCORD":
-      return "discord";
-    case "HUGGINGFACE_DATASETS":
-      return "huggingface";
-    case "MIRROR":
-      return "mirror";
-    default:
-      return "default";
-  }
-}
-
 export function useStorageTypePresentation() {
+  const storageConfigsStore = useStorageConfigsStore();
+
   onMounted(() => {
-    ensureLoadedInternal();
+    void storageConfigsStore.loadStorageTypes().catch(() => null);
   });
+
+  const storageTypesMeta = computed(() => storageConfigsStore.storageTypesMeta || []);
+  const loading = computed(() => !!storageConfigsStore.storageTypesLoading);
 
   const getTypeMeta = (type) => storageTypesMeta.value.find((m) => m.type === type) || null;
 
@@ -129,13 +81,13 @@ export function useStorageTypePresentation() {
   };
 
   const getBadgeClass = (type, darkModeValue = false) => {
-    const theme = resolveBadgeTheme(type);
+    const theme = getTypeMeta(type)?.ui?.badgeTheme || "default";
     const entry = BADGE_THEME_CLASS[theme] || BADGE_THEME_CLASS.default;
     return darkModeValue ? entry.dark : entry.light;
   };
 
   const ensureLoaded = async () => {
-    await ensureLoadedInternal();
+    await storageConfigsStore.loadStorageTypes().catch(() => null);
   };
 
   const storageTypeOptions = computed(() =>

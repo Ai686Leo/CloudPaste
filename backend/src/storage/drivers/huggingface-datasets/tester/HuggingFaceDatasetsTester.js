@@ -27,10 +27,10 @@ async function fetchJson(url, token, init = {}) {
 }
 
 export async function huggingFaceDatasetsTestConnection(config, encryptionSecret, _requestOrigin = null) {
-  // endpoint_base 是可选的：
-  // - 用户没填：前端希望显示“端点地址: 未设置”
-  // - 真实请求仍然会走默认 https://huggingface.co
-  const endpointConfiguredRaw = config?.endpoint_base ? String(config.endpoint_base).trim() : "";
+  // endpoint_url 是可选的：
+  // - 用户没填：默认走 https://huggingface.co
+  // - 这里会在测试结果里展示“实际使用的端点地址”，方便排查代理/镜像问题
+  const endpointConfiguredRaw = config?.endpoint_url ? String(config.endpoint_url).trim() : "";
   const endpointBase = normalizeBaseUrl(endpointConfiguredRaw);
   const repo = normalizeRepoId(config?.repo);
   const repoParts = splitRepoId(repo);
@@ -52,8 +52,7 @@ export async function huggingFaceDatasetsTestConnection(config, encryptionSecret
 
   const result = {
     info: {
-      endpoint: endpointConfiguredRaw ? endpointBase : "",
-      endpointBase,
+      endpoint_url: endpointBase,
       repo,
       revision,
       defaultFolder: defaultFolder || "",
@@ -70,6 +69,36 @@ export async function huggingFaceDatasetsTestConnection(config, encryptionSecret
     },
   };
 
+  const finalize = ({ success, message }) => {
+    const checks = [
+      {
+        key: "read",
+        label: "读权限",
+        success: result.read.success === true,
+        ...(result.read.note ? { note: result.read.note } : {}),
+        ...(result.read.error ? { error: result.read.error } : {}),
+        items: [
+          ...(typeof result.read.objectCount === "number" ? [{ key: "objectCount", label: "对象数量", value: result.read.objectCount }] : []),
+          ...(Array.isArray(result.read.sample) && result.read.sample.length ? [{ key: "sample", label: "目录样本", value: result.read.sample }] : []),
+        ],
+      },
+      {
+        key: "write",
+        label: "写权限",
+        success: result.write.success === true,
+        ...(result.write.skipped ? { skipped: true } : {}),
+        ...(result.write.note ? { note: result.write.note } : {}),
+        ...(result.write.error ? { error: result.write.error } : {}),
+        items: [
+          ...(typeof result.write.likelyWritable === "boolean" ? [{ key: "likelyWritable", label: "可能可写", value: result.write.likelyWritable === true }] : []),
+          ...(result.write.revisionKind ? [{ key: "revisionKind", label: "版本类型", value: result.write.revisionKind }] : []),
+        ],
+      },
+    ];
+
+    return { success, message, result: { info: result.info, checks } };
+  };
+
   // 1) 数据集信息：验证 repo 可访问 + 判断是否 private/gated
   const repoEncoded = repo
     .split("/")
@@ -82,21 +111,21 @@ export async function huggingFaceDatasetsTestConnection(config, encryptionSecret
   if (infoRes.resp.status === 404) {
     result.read.success = false;
     result.read.error = "数据集不存在，或你没有权限访问（404）";
-    return { success: false, message: "HuggingFace 测试失败：数据集不存在或无权限访问", result };
+    return finalize({ success: false, message: "HuggingFace 测试失败：数据集不存在或无权限访问" });
   }
 
   // 没 token 的情况下，如果是 private/gated，常见会 401/403
   if ((infoRes.resp.status === 401 || infoRes.resp.status === 403) && !token) {
     result.read.success = false;
     result.read.error = "数据集需要 token 才能访问（private/gated）";
-    return { success: false, message: "HuggingFace 测试失败：该数据集需要配置 HF_TOKEN 才能读取", result };
+    return finalize({ success: false, message: "HuggingFace 测试失败：该数据集需要配置 HF_TOKEN 才能读取" });
   }
 
   if (!infoRes.resp.ok) {
     const msg = infoRes.json?.error || infoRes.json?.message || infoRes.text || `HTTP ${infoRes.resp.status}`;
     result.read.success = false;
     result.read.error = msg;
-    return { success: false, message: `HuggingFace 测试失败：无法读取数据集信息（HTTP ${infoRes.resp.status}）`, result };
+    return finalize({ success: false, message: `HuggingFace 测试失败：无法读取数据集信息（HTTP ${infoRes.resp.status}）` });
   }
 
   const isPrivate = infoRes.json?.private === true;
@@ -119,12 +148,12 @@ export async function huggingFaceDatasetsTestConnection(config, encryptionSecret
   if (treeRes.resp.status === 401 || treeRes.resp.status === 403) {
     result.read.success = false;
     result.read.error = token ? "token 可能无权限，或 gated 未通过" : "需要 token（private/gated）";
-    return { success: false, message: "HuggingFace 测试失败：tree 列目录被拒绝（401/403）", result };
+    return finalize({ success: false, message: "HuggingFace 测试失败：tree 列目录被拒绝（401/403）" });
   }
   if (!treeRes.resp.ok) {
     result.read.success = false;
     result.read.error = treeRes.json?.error || treeRes.text || `HTTP ${treeRes.resp.status}`;
-    return { success: false, message: `HuggingFace 测试失败：tree 列目录失败（HTTP ${treeRes.resp.status}）`, result };
+    return finalize({ success: false, message: `HuggingFace 测试失败：tree 列目录失败（HTTP ${treeRes.resp.status}）` });
   }
 
   const entries = Array.isArray(treeRes.json) ? treeRes.json : [];
@@ -141,7 +170,7 @@ export async function huggingFaceDatasetsTestConnection(config, encryptionSecret
     result.write.skipped = true;
     result.write.likelyWritable = false;
     result.write.revisionKind = null;
-    return { success: true, message: "HuggingFace 测试成功（读可用；未配置 token，写入会被禁用）", result };
+    return finalize({ success: true, message: "HuggingFace 测试成功（读可用；未配置 token，写入会被禁用）" });
   }
 
   // refs：用于判断 revision 是 branch/tag/commit（commit sha 明确不可写）
@@ -179,13 +208,12 @@ export async function huggingFaceDatasetsTestConnection(config, encryptionSecret
     result.write.error = `无法判断 revision 类型（refs 请求失败）：${e?.message || String(e)}`;
   }
 
-  return {
+  return finalize({
     success: true,
     message: result.write.likelyWritable
       ? "HuggingFace 测试成功（读可用；revision 看起来是分支，可尝试写入）"
       : "HuggingFace 测试成功（读可用；写入权限未确认或不可写）",
-    result,
-  };
+  });
 }
 
 export default { huggingFaceDatasetsTestConnection };

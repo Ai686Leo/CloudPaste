@@ -68,7 +68,7 @@ export class HuggingFaceDatasetsStorageDriver extends BaseDriver {
     this.encryptionSecret = encryptionSecret;
     this.capabilities = [CAPABILITIES.READER, CAPABILITIES.DIRECT_LINK, CAPABILITIES.PROXY, CAPABILITIES.PAGED_LIST];
 
-    this._endpointBase = normalizeBaseUrl(config?.endpoint_base);
+    this._endpointBase = normalizeBaseUrl(config?.endpoint_url);
     this._repo = normalizeRepoId(config?.repo);
     this._repoParts = splitRepoId(this._repo);
     this._revision = String(config?.revision || DEFAULT_REVISION).trim() || DEFAULT_REVISION;
@@ -219,13 +219,13 @@ export class HuggingFaceDatasetsStorageDriver extends BaseDriver {
   }
 
   // Base contract
-  async stat(path, options = {}) {
-    return await this.getFileInfo(path, options);
+  async stat(subPath, ctx = {}) {
+    return await this.getFileInfo(subPath, ctx);
   }
 
-  async exists(path, options = {}) {
+  async exists(subPath, ctx = {}) {
     try {
-      await this.getFileInfo(path, options);
+      await this.getFileInfo(subPath, ctx);
       return true;
     } catch (e) {
       if (e instanceof NotFoundError) return false;
@@ -461,18 +461,19 @@ export class HuggingFaceDatasetsStorageDriver extends BaseDriver {
     return await listFilesRecursive(this, repoRelDir);
   }
 
-  async listDirectory(path, options = {}) {
+  async listDirectory(subPath, ctx = {}) {
     this._ensureInitialized();
-    const { mount, subPath = "/", db } = options;
+    const { mount, db } = ctx;
+    const fsPath = ctx?.path;
 
-    const normalizedSubPath = normalizeSubPath(subPath, { asDirectory: true });
+    const normalizedSubPath = normalizeSubPath(subPath || "/", { asDirectory: true });
     const repoPath = this._toRepoRelPathFromSubPath(normalizedSubPath, { asDirectory: true, mount });
 
-    const basePath = this._buildMountPath(mount, normalizedSubPath, { asDirectory: true });
+    const basePath = fsPath;
     const expand = this._usePathsInfo === true;
-    const cursor = options?.cursor != null && String(options.cursor).trim() ? String(options.cursor).trim() : null;
-    const limitOverride = options?.limit != null && options.limit !== "" ? Number(options.limit) : null;
-    const paged = options?.paged === true || !!cursor || (limitOverride != null && Number.isFinite(limitOverride) && limitOverride > 0);
+    const cursor = ctx?.cursor != null && String(ctx.cursor).trim() ? String(ctx.cursor).trim() : null;
+    const limitOverride = ctx?.limit != null && ctx.limit !== "" ? Number(ctx.limit) : null;
+    const paged = ctx?.paged === true || !!cursor || (limitOverride != null && Number.isFinite(limitOverride) && limitOverride > 0);
 
     let entries;
     /** @type {string|null} */
@@ -483,7 +484,7 @@ export class HuggingFaceDatasetsStorageDriver extends BaseDriver {
         recursive: false,
         cursor,
         limitOverride,
-        refresh: options?.refresh === true,
+        refresh: ctx?.refresh === true,
       });
       entries = page?.entries || [];
       nextCursor = page?.nextCursor || null;
@@ -539,7 +540,7 @@ export class HuggingFaceDatasetsStorageDriver extends BaseDriver {
     );
 
     return {
-      path: basePath,
+      path: fsPath,
       type: "directory",
       isRoot: normalizedSubPath === "/",
       isVirtual: false,
@@ -550,14 +551,15 @@ export class HuggingFaceDatasetsStorageDriver extends BaseDriver {
     };
   }
 
-  async getFileInfo(path, options = {}) {
+  async getFileInfo(subPath, ctx = {}) {
     this._ensureInitialized();
-    const { mount, subPath = "/", db } = options;
+    const { mount, db } = ctx;
+    const fsPath = ctx?.path;
 
     // 先按“用户请求的是目录还是文件”来分流：目录用 tree API，文件用 HEAD(/resolve)
     const guessedIsDirectory = typeof subPath === "string" && subPath.endsWith("/");
 
-    const normalizedSubPath = normalizeSubPath(subPath, { asDirectory: guessedIsDirectory });
+    const normalizedSubPath = normalizeSubPath(subPath || "/", { asDirectory: guessedIsDirectory });
     const repoPath = this._toRepoRelPathFromSubPath(normalizedSubPath, { asDirectory: guessedIsDirectory, mount });
 
     // 如果是目录：tree API 成功就算存在
@@ -573,8 +575,8 @@ export class HuggingFaceDatasetsStorageDriver extends BaseDriver {
       });
 
       const info = await buildFileInfo({
-        fsPath: path,
-        name: inferNameFromPath(path, true),
+        fsPath,
+        name: inferNameFromPath(fsPath, true),
         isDirectory: true,
         size: null,
         modified: null,
@@ -595,10 +597,10 @@ export class HuggingFaceDatasetsStorageDriver extends BaseDriver {
         });
         const p = infoMap.get(repoPath) || null;
         if (p && p.type !== "directory") {
-          const fileName = inferNameFromPath(path, false);
+          const fileName = inferNameFromPath(fsPath, false);
           const guessedContentType = getMimeTypeFromFilename(fileName) || "application/octet-stream";
           const info = await buildFileInfo({
-            fsPath: path,
+            fsPath,
             name: fileName,
             isDirectory: false,
             size: typeof p.size === "number" ? p.size : null,
@@ -643,8 +645,8 @@ export class HuggingFaceDatasetsStorageDriver extends BaseDriver {
           headers: this._buildAuthHeaders({ Accept: "application/json" }),
         });
         const info = await buildFileInfo({
-          fsPath: path,
-          name: inferNameFromPath(path, true),
+          fsPath,
+          name: inferNameFromPath(fsPath, true),
           isDirectory: true,
           size: null,
           modified: null,
@@ -672,11 +674,11 @@ export class HuggingFaceDatasetsStorageDriver extends BaseDriver {
     const size = parseContentLength(resp.headers.get("content-length"));
     const etag = resp.headers.get("etag") || null;
     const lastModified = parseHttpDate(resp.headers.get("last-modified"));
-    const contentType = resp.headers.get("content-type") || getMimeTypeFromFilename(inferNameFromPath(path, false));
+    const contentType = resp.headers.get("content-type") || getMimeTypeFromFilename(inferNameFromPath(fsPath, false));
 
     const info = await buildFileInfo({
-      fsPath: path,
-      name: inferNameFromPath(path, false),
+      fsPath,
+      name: inferNameFromPath(fsPath, false),
       isDirectory: false,
       size,
       modified: lastModified ? lastModified.toISOString() : null,
@@ -689,11 +691,12 @@ export class HuggingFaceDatasetsStorageDriver extends BaseDriver {
     return { ...info, etag: etag || undefined };
   }
 
-  async downloadFile(path, options = {}) {
+  async downloadFile(subPath, ctx = {}) {
     this._ensureInitialized();
-    const { mount, subPath = "/", request } = options;
+    const { mount } = ctx;
+    const fsPath = ctx?.path;
 
-    const normalizedSubPath = normalizeSubPath(subPath, { asDirectory: false });
+    const normalizedSubPath = normalizeSubPath(subPath || "/", { asDirectory: false });
     const repoPath = this._toRepoRelPathFromSubPath(normalizedSubPath, { asDirectory: false, mount });
 
     // private/gated + 没 token：提前报错
@@ -703,7 +706,7 @@ export class HuggingFaceDatasetsStorageDriver extends BaseDriver {
     }
 
     const url = this._buildResolveUrl(repoPath, { download: false });
-    const safeName = inferNameFromPath(path, false) || "file";
+    const safeName = inferNameFromPath(fsPath, false) || "file";
     const guessedContentType = getMimeTypeFromFilename(safeName) || "application/octet-stream";
 
     const headers = this._buildAuthHeaders({
@@ -748,22 +751,27 @@ export class HuggingFaceDatasetsStorageDriver extends BaseDriver {
     });
   }
 
-  async generateDownloadUrl(path, options = {}) {
+  async generateDownloadUrl(subPath, ctx = {}) {
     this._ensureInitialized();
-    const { mount, subPath = "/", request, download = false, channel = "web" } = options;
+    const fsPath = ctx?.path;
+    const { mount, channel = "web" } = ctx;
+    const forceDownload = ctx?.forceDownload === true;
 
-    const normalizedSubPath = normalizeSubPath(subPath, { asDirectory: false });
+    const normalizedSubPath = normalizeSubPath(subPath || "/", { asDirectory: false });
     const repoPath = this._toRepoRelPathFromSubPath(normalizedSubPath, { asDirectory: false, mount });
-    const directUrl = this._buildResolveUrl(repoPath, { download });
+    const directUrl = this._buildResolveUrl(repoPath, { download: forceDownload });
 
     // private/gated 不能把直链给浏览器（没法带 Authorization）
     const access = await this._getDatasetAccessInfo();
     if (access.requiresAuth) {
-      return {
-        url: buildFullProxyUrl(request || null, path, download),
-        type: "proxy",
-        channel,
-      };
+      // 这里必须 fail-fast：generateDownloadUrl 只能返回浏览器可用直链（custom_host/native_direct）
+      // 降级为 proxy 的策略由上层（FsLinkStrategy）统一决定，避免“驱动偷偷回退”污染契约。
+      throw new DriverError("HuggingFace 数据集需要鉴权：无法生成浏览器可用直链，请走本地代理 /api/p", {
+        status: ApiStatus.NOT_IMPLEMENTED,
+        code: "DRIVER_ERROR.HUGGINGFACE_DIRECT_LINK_NOT_AVAILABLE",
+        expose: true,
+        details: { path: fsPath, subPath },
+      });
     }
 
     // 直链类型用 native_direct
@@ -778,12 +786,13 @@ export class HuggingFaceDatasetsStorageDriver extends BaseDriver {
    * 3) 浏览器拿到 uploadUrl 后直接 PUT 上传
    * 4) 上传成功后，前端再调用 /api/fs/presign/commit，让后端把这个 oid 写进仓库（登记到文件树）
    */
-  async generateUploadUrl(path, options = {}) {
+  async generateUploadUrl(subPath, ctx = {}) {
     this._ensureInitialized();
     this._requireWriteEnabled();
 
-    const { mount, subPath = "/", fileName, fileSize = 0, contentType = "application/octet-stream" } = options;
-    const sha256 = options.sha256 || options.oid || null;
+    const fsPath = ctx?.path;
+    const { mount, fileName, fileSize = 0, contentType = "application/octet-stream" } = ctx;
+    const sha256 = ctx.sha256 || ctx.oid || null;
 
     const oid = String(sha256 || "").trim().toLowerCase();
     if (!oid) {
@@ -805,14 +814,14 @@ export class HuggingFaceDatasetsStorageDriver extends BaseDriver {
     }
 
     // FS 视图下：subPath 是挂载点内相对路径（包含文件名）
-    const normalizedSubPath = normalizeSubPath(subPath, { asDirectory: false });
+    const normalizedSubPath = normalizeSubPath(subPath || "/", { asDirectory: false });
     const repoRelPath = this._toRepoRelPathFromSubPath(normalizedSubPath, { asDirectory: false, mount });
     if (!repoRelPath) {
       throw new DriverError("HuggingFace 预签名上传失败：目标路径无效", {
         status: ApiStatus.BAD_REQUEST,
         code: "DRIVER_ERROR.HUGGINGFACE_INVALID_PATH",
         expose: true,
-        details: { path, subPath },
+        details: { path: fsPath, subPath },
       });
     }
 
@@ -841,10 +850,32 @@ export class HuggingFaceDatasetsStorageDriver extends BaseDriver {
       });
     }
 
+    // 规范化上游 headers：
+    // - DriverContractEnforcer 要求 generateUploadUrl.headers 必须是 { [k]: string }
+    const normalizedHeaders = (() => {
+      const raw = action?.headers;
+      if (!raw || typeof raw !== "object") return undefined;
+      /** @type {Record<string,string>} */
+      const out = {};
+      for (const [k, v] of Object.entries(raw)) {
+        if (typeof k !== "string" || !k) continue;
+        if (typeof v === "string") {
+          out[k] = v;
+          continue;
+        }
+        if (typeof v === "number" || typeof v === "boolean") {
+          out[k] = String(v);
+          continue;
+        }
+        // 其它类型（object/array/null/undefined）直接丢弃，避免产生无效 header
+      }
+      return Object.keys(out).length > 0 ? out : undefined;
+    })();
+
     return {
       success: true,
       uploadUrl: action.uploadUrl || "",
-      headers: action.headers || undefined,
+      headers: normalizedHeaders,
       contentType,
       storagePath: repoRelPath,
       // 透传给 /api/fs/presign/commit
@@ -858,12 +889,13 @@ export class HuggingFaceDatasetsStorageDriver extends BaseDriver {
    * 预签名上传完成后的“登记/提交”
    *
    */
-  async handleUploadComplete(path, options = {}) {
+  async handleUploadComplete(subPath, ctx = {}) {
     this._ensureInitialized();
     this._requireWriteEnabled();
 
-    const { mount, subPath = "/", fileSize = 0 } = options;
-    const sha256 = options.sha256 || options.oid || null;
+    const fsPath = ctx?.path;
+    const { mount, fileSize = 0 } = ctx;
+    const sha256 = ctx.sha256 || ctx.oid || null;
 
     const oid = String(sha256 || "").trim().toLowerCase();
     if (!oid) {
@@ -884,14 +916,14 @@ export class HuggingFaceDatasetsStorageDriver extends BaseDriver {
       });
     }
 
-    const normalizedSubPath = normalizeSubPath(subPath, { asDirectory: false });
+    const normalizedSubPath = normalizeSubPath(subPath || "/", { asDirectory: false });
     const repoRelPath = this._toRepoRelPathFromSubPath(normalizedSubPath, { asDirectory: false, mount });
     if (!repoRelPath) {
       throw new DriverError("HuggingFace 提交预签名上传失败：目标路径无效", {
         status: ApiStatus.BAD_REQUEST,
         code: "DRIVER_ERROR.HUGGINGFACE_INVALID_PATH",
         expose: true,
-        details: { path, subPath },
+        details: { path: fsPath, subPath },
       });
     }
 
@@ -916,20 +948,22 @@ export class HuggingFaceDatasetsStorageDriver extends BaseDriver {
     return { success: true, message: "上传完成", storagePath: repoRelPath, publicUrl: null };
   }
 
-  async generateProxyUrl(path, options = {}) {
+  async generateProxyUrl(subPath, ctx = {}) {
     this._ensureInitialized();
-    const { request, download = false, channel = "web" } = options;
-    return { url: buildFullProxyUrl(request || null, path, download), type: "proxy", channel };
+    const { request, download = false, channel = "web" } = ctx;
+    const fsPath = ctx?.path;
+    return { url: buildFullProxyUrl(request || null, fsPath, download), type: "proxy", channel };
   }
 
   // ===== WRITER / ATOMIC：uploadFile / updateFile / createDirectory / batchRemoveItems / renameItem / copyItem =====
 
-  async uploadFile(fsPath, fileOrStream, options = {}) {
+  async uploadFile(subPath, fileOrStream, ctx = {}) {
     this._ensureInitialized();
     this._requireWriteEnabled();
 
-    const { mount, subPath = "/", filename, contentType } = options;
-    const effectiveSubPath = subPath ?? "/";
+    const fsPath = ctx?.path;
+    const { mount, filename, contentType } = ctx;
+    const effectiveSubPath = subPath || "/";
 
     // FS 上传时 fsPath 通常是“目录路径”；真正文件名在 options.filename
     // 但 updateFile 时 filename 可能为空，此时 subPath 就是完整文件路径
@@ -966,22 +1000,47 @@ export class HuggingFaceDatasetsStorageDriver extends BaseDriver {
     // storagePath 语义对齐：
     // - FS（mount 视图）：返回挂载路径（/mount/.../file）
     // - storage-first：返回相对路径（与传入 subPath 语义一致）
-    const storagePath = mount ? this._buildMountPath(mount, targetSubPath, { asDirectory: false }) : targetSubPath;
+    const storagePath = mount ? fsPath : targetSubPath;
     return { success: true, storagePath, message: undefined };
   }
 
-  async updateFile(fsPath, content, options = {}) {
+  async updateFile(subPath, content, ctx = {}) {
     this._ensureInitialized();
     this._requireWriteEnabled();
-    return await this.uploadFile(fsPath, content, { ...options, filename: undefined });
+
+    const fsPath = ctx?.path;
+    if (typeof fsPath !== "string" || !fsPath) {
+      throw new DriverError("HuggingFace 更新文件缺少 path 上下文（ctx.path）", {
+        status: ApiStatus.INTERNAL_ERROR,
+        code: "DRIVER_ERROR.HUGGINGFACE_MISSING_FS_PATH",
+        expose: false,
+        details: { subPath },
+      });
+    }
+
+    const effectiveSubPath = typeof subPath === "string" ? subPath : "/";
+    const result = await this.uploadFile(effectiveSubPath, content, {
+      ...ctx,
+      path: fsPath,
+      subPath: effectiveSubPath,
+      filename: undefined,
+    });
+
+    return {
+      ...result,
+      success: !!result?.success,
+      path: fsPath,
+      message: result?.message || "文件更新成功",
+    };
   }
 
-  async createDirectory(fsPath, options = {}) {
+  async createDirectory(subPath, ctx = {}) {
     this._ensureInitialized();
     this._requireWriteEnabled();
 
-    const { mount, subPath = "/" } = options;
-    const normalizedSubPath = normalizeSubPath(subPath, { asDirectory: true });
+    const fsPath = ctx?.path;
+    const { mount } = ctx;
+    const normalizedSubPath = normalizeSubPath(subPath || "/", { asDirectory: true });
 
     // 禁止对挂载根执行 mkdir
     if (normalizedSubPath === "/" || normalizedSubPath === "") {
@@ -1010,15 +1069,26 @@ export class HuggingFaceDatasetsStorageDriver extends BaseDriver {
     return { success: true, path: fsPath, alreadyExists: false };
   }
 
-  async batchRemoveItems(paths, options = {}) {
+  async batchRemoveItems(subPaths, ctx = {}) {
     this._ensureInitialized();
     this._requireWriteEnabled();
 
-    const { mount, db, userIdOrInfo, userType, findMountPointByPath } = options;
+    const { mount } = ctx;
 
-    if (!Array.isArray(paths) || paths.length === 0) {
+    if (!Array.isArray(subPaths) || subPaths.length === 0) {
       return { success: 0, failed: [], results: [] };
     }
+
+    if (!Array.isArray(ctx?.paths) || ctx.paths.length !== subPaths.length) {
+      throw new DriverError("HuggingFaceDatasets.batchRemoveItems 需要 ctx.paths 与 subPaths 一一对应（不做兼容）", {
+        status: ApiStatus.INTERNAL_ERROR,
+        expose: false,
+        code: "DRIVER_ERROR.HUGGINGFACE_INVALID_BATCH_REMOVE_ARGS",
+        details: { pathsLen: ctx?.paths?.length, subPathsLen: subPaths.length },
+      });
+    }
+
+    const paths = ctx.paths;
 
     /** @type {Array<{ path: string, success: boolean, error?: string }>} */
     const results = [];
@@ -1029,33 +1099,12 @@ export class HuggingFaceDatasetsStorageDriver extends BaseDriver {
     /** @type {Map<string, Set<string>>} */
     const requestedToRepoPaths = new Map();
 
-    const resolveSubPathForFsPath = async (fsPath) => {
-      if (mount && mount.mount_path) {
-        const mountPath = String(mount.mount_path).replace(/\/+$/g, "") || "/";
-        const full = String(fsPath || "");
-        if (mountPath === "/") {
-          return full.startsWith("/") ? full : `/${full}`;
-        }
-        if (full === mountPath || full === `${mountPath}/` || full.startsWith(`${mountPath}/`)) {
-          const sliced = full.slice(mountPath.length) || "/";
-          return sliced.startsWith("/") ? sliced : `/${sliced}`;
-        }
-      }
-
-      if (typeof findMountPointByPath === "function" && db) {
-        const resolved = await findMountPointByPath(db, fsPath, userIdOrInfo, userType);
-        if (resolved?.error) return null;
-        if (mount && resolved?.mount?.id && mount.id && resolved.mount.id !== mount.id) return null;
-        return resolved?.subPath || null;
-      }
-      return null;
-    };
-
     // 1) 先把请求解析成 repo delete 列表（并记录映射关系）
-    for (const fsPath of paths) {
-      const sub = await resolveSubPathForFsPath(fsPath);
-      if (!sub) {
-        results.push({ path: fsPath, success: false, error: "跨挂载批量删除不支持" });
+    for (let i = 0; i < paths.length; i += 1) {
+      const fsPath = paths[i];
+      const sub = subPaths[i];
+      if (typeof sub !== "string") {
+        results.push({ path: fsPath, success: false, error: "缺少 subPath" });
         continue;
       }
 
@@ -1188,11 +1237,13 @@ export class HuggingFaceDatasetsStorageDriver extends BaseDriver {
     return { success, failed, results };
   }
 
-  async renameItem(oldPath, newPath, options = {}) {
+  async renameItem(oldSubPath, newSubPath, ctx = {}) {
     this._ensureInitialized();
     this._requireWriteEnabled();
 
-    const { mount, oldSubPath, newSubPath } = options;
+    const { mount } = ctx;
+    const oldPath = ctx?.oldPath;
+    const newPath = ctx?.newPath;
 
     const fromSub = normalizeSubPath(oldSubPath || "/", { asDirectory: String(oldSubPath || "").endsWith("/") });
     const toSub = normalizeSubPath(newSubPath || "/", { asDirectory: String(oldSubPath || "").endsWith("/") });
@@ -1340,11 +1391,13 @@ export class HuggingFaceDatasetsStorageDriver extends BaseDriver {
     return { success: true, source: oldPath, target: newPath };
   }
 
-  async copyItem(sourcePath, targetPath, options = {}) {
+  async copyItem(sourceSubPath, targetSubPath, ctx = {}) {
     this._ensureInitialized();
     this._requireWriteEnabled();
 
-    const { mount, sourceSubPath, targetSubPath, skipExisting = false, _skipExistingChecked = false } = options;
+    const { mount, skipExisting = false, _skipExistingChecked = false } = ctx;
+    const sourcePath = ctx?.sourcePath;
+    const targetPath = ctx?.targetPath;
 
     const fromSub = normalizeSubPath(sourceSubPath || "/", { asDirectory: String(sourceSubPath || "").endsWith("/") });
     const toSub = normalizeSubPath(targetSubPath || "/", { asDirectory: String(targetSubPath || "").endsWith("/") });
@@ -1367,7 +1420,7 @@ export class HuggingFaceDatasetsStorageDriver extends BaseDriver {
 
       if (skipExisting && !_skipExistingChecked) {
         try {
-          const exists = await this.getFileInfo(targetPath, { ...options, subPath: targetSubPath });
+          const exists = await this.getFileInfo(targetSubPath, { ...ctx, path: targetPath, subPath: targetSubPath });
           if (exists) {
             return {
               status: "skipped",
@@ -1385,12 +1438,12 @@ export class HuggingFaceDatasetsStorageDriver extends BaseDriver {
       // - 仅对 LFS 文件可用；非 LFS 会自动回退到老逻辑
       const fast = await this._tryServerSideLfsCopyFile(fromRel, toRel, { deleteSource: false, title: `copy(lfs): ${fromRel} -> ${toRel}` });
       if (fast.supported) {
-        return { status: "success", success: true, source: sourcePath, target: targetPath };
+        return { status: "success", source: sourcePath, target: targetPath };
       }
 
       const content = requiresAuth ? await this._fetchBlobFromRepoRelPath(fromRel) : new URL(this._buildResolveUrl(fromRel, { download: false }));
       await this._commitOperations([{ operation: "addOrUpdate", path: toRel, content }], { title: `copy: ${fromRel} -> ${toRel}` });
-      return { status: "success", success: true, source: sourcePath, target: targetPath };
+      return { status: "success", source: sourcePath, target: targetPath };
     }
 
     // 目录复制：列出所有文件（递归），批量 addOrUpdate
@@ -1403,7 +1456,7 @@ export class HuggingFaceDatasetsStorageDriver extends BaseDriver {
     const entries = await this._listFilesRecursive(fromDirRel);
     const files = entries.filter((e) => e && e.type === "file" && typeof e.path === "string");
     if (files.length === 0) {
-      return { status: "success", success: true, source: sourcePath, target: targetPath };
+      return { status: "success", source: sourcePath, target: targetPath };
     }
 
     // 目录复制：先尽量用 LFS 服务端 copy，剩下的再回退到老逻辑
@@ -1452,7 +1505,7 @@ export class HuggingFaceDatasetsStorageDriver extends BaseDriver {
     }
 
     if (slow.length === 0) {
-      return { status: "success", success: true, source: sourcePath, target: targetPath };
+      return { status: "success", source: sourcePath, target: targetPath };
     }
 
     const fileBatches = chunkArray(slow, MAX_COMMIT_OPERATIONS_PER_BATCH);
@@ -1481,7 +1534,7 @@ export class HuggingFaceDatasetsStorageDriver extends BaseDriver {
       await this._commitOperations(operations, { title: `copy-dir: ${fromDirRel} -> ${toDirRel}` });
     }
 
-    return { status: "success", success: true, source: sourcePath, target: targetPath };
+    return { status: "success", source: sourcePath, target: targetPath };
   }
 
   // ===== MULTIPART（前端分片上传） =====
@@ -1603,6 +1656,7 @@ export class HuggingFaceDatasetsStorageDriver extends BaseDriver {
       success: true,
       uploadId,
       strategy: "per_part_url",
+      key: fsPath.replace(/^\/+/, ""),
       presignedUrls,
       partSize: isAlreadyUploaded ? fileSize : (instructions.partSize || fileSize),
       totalParts: presignedUrls.length,

@@ -200,12 +200,15 @@ export class GoogleDriveUploadOperations {
     );
 
     return {
+      success: true,
       uploadId,
       strategy: "single_session",
       fileName,
       fileSize,
       partSize: effectivePartSize,
       partCount: calculatedPartCount,
+      totalParts: calculatedPartCount,
+      key: fsPath.replace(/^\/+/, ""),
       session: {
         uploadUrl: sessionUploadUrl,
         providerUploadUrl: uploadUrl,
@@ -618,33 +621,46 @@ export class GoogleDriveUploadOperations {
    */
   async signMultipartParts(subPath, uploadId, _partNumbers, options = {}) {
     const { mount, db, userIdOrInfo, userType } = options;
-    if (!db || !mount?.storage_config_id || !uploadId) {
+    if (!uploadId) {
+      throw new DriverError("Google Drive 刷新分片会话失败：缺少 uploadId", {
+        status: 400,
+        expose: true,
+      });
+    }
+
+    const policy = {
+      refreshPolicy: "server_decides",
+      partsLedgerPolicy: "server_records",
+      retryPolicy: { maxAttempts: 3 },
+    };
+
+    // 即使缺少 db/mount，也必须返回严格的最小字段结构（被 DriverContractEnforcer 强制校验）
+    if (!db || !mount?.storage_config_id) {
       return {
-        // 保持返回结构与现有前端适配逻辑兼容
+        success: true,
+        uploadId: String(uploadId),
+        strategy: "single_session",
         session: {
           uploadUrl: `/api/fs/multipart/upload-chunk?upload_id=${encodeURIComponent(uploadId)}`,
           nextExpectedRanges: [],
         },
-        policy: {
-          refreshPolicy: "server_decides",
-          partsLedgerPolicy: "server_records",
-          retryPolicy: { maxAttempts: 3 },
-        },
+        policy,
+        message: "缺少 db/mount，上游会话状态无法刷新，已回退为最小可用返回结构",
       };
     }
 
     const sessionRow = await findUploadSessionById(db, { id: uploadId });
     if (!sessionRow) {
       return {
+        success: true,
+        uploadId: String(uploadId),
+        strategy: "single_session",
         session: {
           uploadUrl: `/api/fs/multipart/upload-chunk?upload_id=${encodeURIComponent(uploadId)}`,
           nextExpectedRanges: [],
         },
-        policy: {
-          refreshPolicy: "server_decides",
-          partsLedgerPolicy: "server_records",
-          retryPolicy: { maxAttempts: 3 },
-        },
+        policy,
+        message: "未找到 upload_sessions 记录，已回退为最小可用返回结构",
       };
     }
 
@@ -742,6 +758,9 @@ export class GoogleDriveUploadOperations {
     const nextRanges = nextExpectedRange ? [String(nextExpectedRange)] : [];
 
     const result = {
+      success: true,
+      uploadId: String(uploadId),
+      strategy: "single_session",
       session: {
         uploadUrl: `/api/fs/multipart/upload-chunk?upload_id=${encodeURIComponent(uploadId)}`,
         nextExpectedRanges: nextRanges,

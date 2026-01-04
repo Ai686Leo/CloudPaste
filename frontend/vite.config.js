@@ -12,7 +12,7 @@ export default defineConfig(({ command, mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
 
   // 统一版本管理
-  const APP_VERSION = "1.9.0";
+  const APP_VERSION = "1.9.1";
   const isDev = command === "serve";
   const enablePwa = command === "build";
 

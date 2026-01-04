@@ -14,17 +14,9 @@ import { AppError, ValidationError, NotFoundError, ConflictError, Authentication
 import { S3Client, DeleteObjectCommand, CopyObjectCommand, ListObjectsV2Command, HeadObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { applyS3RootPrefix, normalizeS3SubPath } from "../utils/S3PathUtils.js";
 import { updateMountLastUsed } from "../../../fs/utils/MountResolver.js";
-import { findMountPointByPath } from "../../../fs/utils/MountResolver.js";
 import { checkDirectoryExists, updateParentDirectoriesModifiedTime } from "../utils/S3DirectoryUtils.js";
 import { handleFsError } from "../../../fs/utils/ErrorHandler.js";
-import { normalizePath, isDirectoryPath } from "../../../fs/utils/PathResolver.js";
-import { StorageConfigUtils } from "../../../utils/StorageConfigUtils.js";
-
-const DEFAULT_STORAGE_TYPE = "S3";
-
-const loadStorageConfigById = async (db, storageConfigId, storageType = DEFAULT_STORAGE_TYPE) => {
-  return await StorageConfigUtils.getStorageConfig(db, storageType || DEFAULT_STORAGE_TYPE, storageConfigId);
-};
+import { isDirectoryPath } from "../../../fs/utils/PathResolver.js";
 
 export class S3BatchOperations {
   /**
@@ -110,98 +102,61 @@ export class S3BatchOperations {
 
   /**
    * 批量删除文件或目录
-   * @param {Array<string>} paths - 需要删除的路径数组
-   * @param {Object} options - 选项参数
+   * @param {Array<string>} subPaths - 需要删除的子路径数组（subPath-only）
+   * @param {Object} ctx - 上下文（paths/subPaths/mount/db/...）
    * @returns {Promise<Object>} 删除结果
    */
-  async batchRemoveItems(paths, options = {}) {
-    const { db, findMountPointByPath, userIdOrInfo, userType } = options;
+  async batchRemoveItems(subPaths, ctx = {}) {
+    const { db, mount } = ctx;
 
-    // 结果统计
-    const result = {
-      success: 0,
-      failed: [],
-    };
+    const result = { success: 0, failed: [] };
+    if (!Array.isArray(subPaths) || subPaths.length === 0) {
+      return result;
+    }
 
-    // 逐个删除文件
-    for (let path of paths) {
+    if (!Array.isArray(ctx?.paths) || ctx.paths.length !== subPaths.length) {
+      throw new ValidationError("S3 batchRemoveItems 需要 ctx.paths 与 subPaths 一一对应");
+    }
+
+    const fsPaths = ctx.paths;
+
+    for (let i = 0; i < subPaths.length; i += 1) {
+      const fsPath = fsPaths[i];
+      const itemSubPath = subPaths[i];
+
       try {
-        // 规范化路径
-        path = normalizePath(path, isDirectoryPath(path));
+        const isDir = isDirectoryPath(fsPath);
+        const s3SubPath = normalizeS3SubPath(itemSubPath, isDir);
+        const fullKey = applyS3RootPrefix(this.config, s3SubPath);
 
-        // 查找挂载点
-        const mountResult = await findMountPointByPath(db, path, userIdOrInfo, userType);
-
-        if (mountResult.error) {
-          result.failed.push({
-            path: path,
-            error: mountResult.error.message,
-          });
-          continue;
-        }
-
-        const { mount: itemMount, subPath } = mountResult;
-
-        // 获取S3配置
-        let s3Config;
-        try {
-          s3Config = await loadStorageConfigById(db, itemMount.storage_config_id, itemMount.storage_type);
-        } catch (error) {
-          result.failed.push({
-            path: path,
-            error: error?.message || "存储配置不存在",
-          });
-          continue;
-        }
-
-        // 判断是目录还是文件（统一使用 FS 视图路径规则）
-        const isDirectory = isDirectoryPath(path);
-
-        // 规范化 S3 子路径，并映射到真实 Key（包含 root_prefix）
-        const s3SubPath = normalizeS3SubPath(subPath, isDirectory);
-        const fullKey = applyS3RootPrefix(s3Config, s3SubPath);
-
-        if (isDirectory) {
-          // 对于目录，需要递归删除所有内容
-          await this.deleteDirectoryRecursive(this.s3Client, s3Config.bucket_name, fullKey, itemMount.storage_config_id);
+        if (isDir) {
+          await this.deleteDirectoryRecursive(this.s3Client, this.config.bucket_name, fullKey, mount?.storage_config_id || null);
         } else {
-          // 对于文件，直接删除
-          const deleteParams = {
-            Bucket: s3Config.bucket_name,
-            Key: fullKey,
-          };
-
           try {
-            const deleteCommand = new DeleteObjectCommand(deleteParams);
+            const deleteCommand = new DeleteObjectCommand({
+              Bucket: this.config.bucket_name,
+              Key: fullKey,
+            });
             await this.s3Client.send(deleteCommand);
           } catch (error) {
-            if (error.$metadata && error.$metadata.httpStatusCode === 404) {
-              result.failed.push({
-                path: path,
-                error: "文件不存在",
-              });
+            if (error?.$metadata?.httpStatusCode === 404) {
+              result.failed.push({ path: fsPath, error: "文件不存在" });
               continue;
             }
             throw error;
           }
         }
 
-        // 更新父目录的修改时间
-        await updateParentDirectoriesModifiedTime(this.s3Client, s3Config.bucket_name, fullKey, s3Config.root_prefix, true);
-
-        // 文件删除完成，无需数据库操作
-
-        // 更新挂载点的最后使用时间
-        await updateMountLastUsed(db, itemMount.id);
-
-        result.success++;
+        await updateParentDirectoriesModifiedTime(this.s3Client, this.config.bucket_name, fullKey, this.config.root_prefix, true);
+        result.success += 1;
       } catch (error) {
-        console.error(`删除路径 ${path} 失败:`, error);
-        result.failed.push({
-          path: path,
-          error: error.message || "删除失败",
-        });
+        console.error(`[S3BatchOps] 删除失败: ${fsPath}`, error);
+        result.failed.push({ path: fsPath, error: error?.message || "删除失败" });
       }
+    }
+
+    if (db && mount?.id) {
+      await updateMountLastUsed(db, mount.id);
     }
 
     return result;
@@ -209,42 +164,39 @@ export class S3BatchOperations {
 
   /**
    * 复制单个文件或目录
-   * @param {string} sourcePath - 源路径
-   * @param {string} targetPath - 目标路径
-   * @param {Object} options - 选项参数
+   * @param {string} sourceSubPath - 源子路径（subPath-only）
+   * @param {string} targetSubPath - 目标子路径（subPath-only）
+   * @param {Object} ctx - 上下文（sourcePath/targetPath/mount/db/skipExisting/...）
    * @returns {Promise<Object>} 复制结果
    */
-  async copyItem(sourcePath, targetPath, options = {}) {
-    const { mount, subPath, db } = options;
+  async copyItem(sourceSubPath, targetSubPath, ctx = {}) {
+    const { mount, db } = ctx;
+    const sourcePath = ctx?.sourcePath;
+    const targetPath = ctx?.targetPath;
+    const { skipExisting = false, _skipExistingChecked = false } = ctx;
 
     return handleFsError(
       async () => {
-        // 规范化路径
-        sourcePath = normalizePath(sourcePath, isDirectoryPath(sourcePath));
-        targetPath = normalizePath(targetPath, isDirectoryPath(targetPath));
+        if (typeof sourcePath !== "string" || typeof targetPath !== "string") {
+          throw new ValidationError("S3 copyItem 需要 ctx.sourcePath/ctx.targetPath（FS 视图路径，不做兼容）");
+        }
 
-        // 检查路径类型 (都是文件或都是目录)
         const sourceIsDirectory = isDirectoryPath(sourcePath);
-        let targetIsDirectory = isDirectoryPath(targetPath);
-
-        // 如果源是目录但目标不是目录格式，自动添加斜杠
-        if (sourceIsDirectory && !targetIsDirectory) {
-          targetPath = targetPath + "/";
-          targetIsDirectory = true;
+        const targetIsDirectory = isDirectoryPath(targetPath);
+        if (sourceIsDirectory !== targetIsDirectory) {
+          throw new ValidationError("复制操作源/目标路径类型必须一致（文件或目录）");
         }
 
-        // 对于文件复制，确保目标路径也是文件路径格式
-        if (!sourceIsDirectory && targetIsDirectory) {
-          throw new ValidationError("复制文件时，目标路径不能是目录格式");
+        const result = await this._handleSameStorageCopy(sourcePath, targetPath, sourceSubPath, targetSubPath, {
+          skipExisting,
+          _skipExistingChecked,
+        });
+
+        if (db && mount?.id) {
+          await updateMountLastUsed(db, mount.id);
         }
 
-        // 计算目标子路径：用目标路径替换源路径前缀后的部分
-        const sourcePrefix = sourcePath.substring(0, sourcePath.length - subPath.length);
-        const targetSubPath = targetPath.substring(sourcePrefix.length);
-
-        // 同存储复制：使用传入的挂载上下文（FS 层已验证 sameMount）
-        const { skipExisting = false, _skipExistingChecked = false } = options;
-        return await this._handleSameStorageCopy(db, sourcePath, targetPath, mount, mount, subPath, targetSubPath, { skipExisting, _skipExistingChecked });
+        return result;
       },
       "复制项目",
       "复制项目失败"
@@ -258,26 +210,25 @@ export class S3BatchOperations {
    * @param {boolean} [copyOptions.skipExisting=false] - 是否跳过已存在的文件
    * @param {boolean} [copyOptions._skipExistingChecked=false] - 入口层是否已检查
    */
-  async _handleSameStorageCopy(db, sourcePath, targetPath, sourceMount, targetMount, sourceSubPath, targetSubPath, copyOptions = {}) {
+  async _handleSameStorageCopy(sourcePath, targetPath, sourceSubPath, targetSubPath, copyOptions = {}) {
     const { skipExisting = false, _skipExistingChecked = false } = copyOptions;
 
-    // 获取源和目标的S3配置
-    const sourceS3Config = await loadStorageConfigById(db, sourceMount.storage_config_id, sourceMount.storage_type);
-    const targetS3Config = await loadStorageConfigById(db, targetMount.storage_config_id, targetMount.storage_type);
+    // subPath-only：同一个 driver 内的复制只使用当前实例的配置（不再从 DB 重新解析挂载点/配置）
+    const s3Config = this.config;
 
     const isDirectory = isDirectoryPath(sourcePath);
     const s3SourcePath = normalizeS3SubPath(sourceSubPath, isDirectory);
     const s3TargetPath = normalizeS3SubPath(targetSubPath, isDirectory);
-    const fullS3SourcePath = applyS3RootPrefix(sourceS3Config, s3SourcePath);
-    const fullS3TargetPath = applyS3RootPrefix(targetS3Config, s3TargetPath);
+    const fullS3SourcePath = applyS3RootPrefix(s3Config, s3SourcePath);
+    const fullS3TargetPath = applyS3RootPrefix(s3Config, s3TargetPath);
 
     // 检查源路径是否存在
     try {
-      const sourceExists = await this._checkS3ObjectExists(sourceS3Config.bucket_name, fullS3SourcePath);
+      const sourceExists = await this._checkS3ObjectExists(s3Config.bucket_name, fullS3SourcePath);
       if (!sourceExists) {
         // 如果是目录，尝试列出目录内容确认存在性
         if (isDirectory) {
-          const listResponse = await this._listS3Directory(sourceS3Config.bucket_name, fullS3SourcePath);
+          const listResponse = await this._listS3Directory(s3Config.bucket_name, fullS3SourcePath);
 
           // 如果没有内容，说明目录不存在或为空
           if (!listResponse.Contents || listResponse.Contents.length === 0) {
@@ -296,10 +247,10 @@ export class S3BatchOperations {
 
     if (isDirectory) {
       // 目录复制（目录中每个文件需要单独检查，不传递 _skipExistingChecked）
-      return await this._copyDirectory(sourceS3Config, fullS3SourcePath, fullS3TargetPath, sourcePath, targetPath, db, { skipExisting });
+      return await this._copyDirectory(s3Config, fullS3SourcePath, fullS3TargetPath, sourcePath, targetPath, null, { skipExisting });
     } else {
       // 文件复制（传递 _skipExistingChecked 避免重复检查）
-      return await this._copyFile(sourceS3Config, fullS3SourcePath, fullS3TargetPath, sourcePath, targetPath, db, { skipExisting, _skipExistingChecked });
+      return await this._copyFile(s3Config, fullS3SourcePath, fullS3TargetPath, sourcePath, targetPath, null, { skipExisting, _skipExistingChecked });
     }
   }
 
@@ -377,7 +328,6 @@ export class S3BatchOperations {
 
     return {
       status: "success",
-      success: true,
       source: sourcePath,
       target: targetPath,
       message: "文件复制成功",
@@ -476,218 +426,132 @@ export class S3BatchOperations {
    * 复制目录
    * @private
    */
-  async _copyDirectory(s3Config, s3SourcePath, s3TargetPath, sourcePath, targetPath, db = null) {
-    // 确保源路径和目标路径都以斜杠结尾（标准化目录路径）
+  async _copyDirectory(s3Config, s3SourcePath, s3TargetPath, sourcePath, targetPath, db = null, copyOptions = {}) {
+    void db;
+    const { skipExisting = false } = copyOptions;
+
+    // 目录复制：统一用 “以 / 结尾的 prefix” 进行 S3 操作（返回值仍保持 FS 传入的 sourcePath/targetPath）
     const normalizedS3SourcePath = s3SourcePath.endsWith("/") ? s3SourcePath : s3SourcePath + "/";
-    let normalizedS3TargetPath = s3TargetPath.endsWith("/") ? s3TargetPath : s3TargetPath + "/";
+    const normalizedS3TargetPath = s3TargetPath.endsWith("/") ? s3TargetPath : s3TargetPath + "/";
 
-    // 如果源路径和目标路径相同（考虑到自动添加斜杠的情况）
+    // 严格契约：source/target 必须等于输入参数；不做“自动重命名目标目录”的魔法行为
     if (normalizedS3SourcePath === normalizedS3TargetPath) {
-      // 提取目标目录的父目录和名称
-      const targetPathParts = normalizedS3TargetPath.split("/").filter((part) => part.length > 0);
-      const targetDirName = targetPathParts.pop(); // 获取目标目录名称
-      // S3 Key 前缀不应该带开头的 "/"，根目录前缀用空字符串表示
-      const targetParentDir = targetPathParts.length > 0 ? targetPathParts.join("/") + "/" : "";
-
-      // 使用 _parseFileName 函数正确处理已有的数字后缀
-      const { baseName } = this._parseFileName(targetDirName);
-
-      // 在父目录下创建重命名的目录
-      let counter = 1;
-      let newDirName = `${baseName}(${counter})`;
-      let finalS3TargetPath = `${targetParentDir}${newDirName}/`;
-
-      // 检查重命名后的目录是否存在，如果存在则继续递增计数器
-      while (await checkDirectoryExists(this.s3Client, s3Config.bucket_name, finalS3TargetPath)) {
-        counter++;
-        newDirName = `${baseName}(${counter})`;
-        finalS3TargetPath = `${targetParentDir}${newDirName}/`;
-      }
-
-      // 更新逻辑路径
-      const targetPathWithoutTrailingSlash = isDirectoryPath(targetPath) ? targetPath.slice(0, -1) : targetPath;
-      const targetPathParts2 = targetPathWithoutTrailingSlash.split("/");
-      targetPathParts2.pop(); // 移除原始目录名
-      const targetParentPath = targetPathParts2.join("/");
-      const finalTargetPath = `${targetParentPath}/${baseName}(${counter})/`;
-
-      // 使用递归复制目录函数
-      const result = await this.copyDirectoryRecursive(this.s3Client, s3Config.bucket_name, normalizedS3SourcePath, finalS3TargetPath, false);
-
       return {
         source: sourcePath,
-        target: finalTargetPath,
-        status: "success",
-        message: `目录已重命名为 ${finalTargetPath.split("/").slice(-2, -1)[0]} 并复制成功`,
-        renamed: true,
-        originalTarget: targetPath,
-        details: result,
-      };
-    } else {
-      // 正常的目录复制（目标路径与源路径不同）
-      // 实现目录自动重命名逻辑
-      let finalS3TargetPath = normalizedS3TargetPath;
-      let finalTargetPath = isDirectoryPath(targetPath) ? targetPath : targetPath + "/";
-      let wasRenamed = false;
-
-      // 提取目标目录的父目录和名称（与相同路径逻辑保持一致）
-      const targetPathParts = normalizedS3TargetPath.split("/").filter((part) => part.length > 0);
-      const targetDirName = targetPathParts.pop(); // 获取目标目录名称
-      // S3 Key 前缀不应该带开头的 "/"，根目录前缀用空字符串表示
-      const targetParentDir = targetPathParts.length > 0 ? targetPathParts.join("/") + "/" : "";
-
-      // 使用 _parseFileName 函数正确处理已有的数字后缀
-      const { baseName } = this._parseFileName(targetDirName);
-
-      // 检查目标目录是否已存在，如果存在则自动重命名
-      let counter = 1;
-
-      // 首先检查原始目标路径是否存在
-      if (await checkDirectoryExists(this.s3Client, s3Config.bucket_name, normalizedS3TargetPath)) {
-        // 原始目标存在，需要重命名
-        let newDirName = `${baseName}(${counter})`;
-        finalS3TargetPath = `${targetParentDir}${newDirName}/`;
-
-        // 检查重命名后的目录是否存在，如果存在则继续递增计数器
-        while (await checkDirectoryExists(this.s3Client, s3Config.bucket_name, finalS3TargetPath)) {
-          counter++;
-          newDirName = `${baseName}(${counter})`;
-          finalS3TargetPath = `${targetParentDir}${newDirName}/`;
-        }
-        wasRenamed = true;
-      } else {
-        // 原始目标不存在，直接使用原始路径
-        finalS3TargetPath = normalizedS3TargetPath;
-      }
-
-      // 更新逻辑路径
-      const targetPathWithoutTrailingSlash = isDirectoryPath(targetPath) ? targetPath.slice(0, -1) : targetPath;
-      const targetPathParts2 = targetPathWithoutTrailingSlash.split("/");
-      targetPathParts2.pop(); // 移除原始目录名
-      const targetParentPath = targetPathParts2.join("/");
-      // 只有在确实发生“自动重命名”时，才应当把 (N) 反映到返回的 target 路径上；
-      // 否则会出现“实际复制到原路径，但返回路径带 (1)”的不一致。
-      finalTargetPath = wasRenamed ? `${targetParentPath}/${baseName}(${counter})/` : (isDirectoryPath(targetPath) ? targetPath : targetPath + "/");
-
-      // 使用递归复制目录函数
-      const result = await this.copyDirectoryRecursive(this.s3Client, s3Config.bucket_name, normalizedS3SourcePath, finalS3TargetPath, false);
-
-      return {
-        source: sourcePath,
-        target: finalTargetPath,
-        status: "success",
-        message: wasRenamed ? `目录已重命名为 ${finalTargetPath.split("/").slice(-2, -1)[0]} 并复制成功` : "目录复制成功",
-        renamed: wasRenamed,
-        originalTarget: targetPath,
-        details: result,
+        target: targetPath,
+        status: "skipped",
+        skipped: true,
+        reason: "same_path",
+        message: "源目录与目标目录相同，跳过复制",
+        contentLength: 0,
       };
     }
+
+    // skipExisting：如果目标目录（prefix）已存在，则整个目录复制直接跳过
+    if (skipExisting) {
+      const targetExists = await checkDirectoryExists(this.s3Client, s3Config.bucket_name, normalizedS3TargetPath);
+      if (targetExists) {
+        return {
+          source: sourcePath,
+          target: targetPath,
+          status: "skipped",
+          skipped: true,
+          reason: "target_exists",
+          message: "目标目录已存在，跳过复制",
+          contentLength: 0,
+        };
+      }
+    }
+
+    const details = await this.copyDirectoryRecursive(
+      this.s3Client,
+      s3Config.bucket_name,
+      normalizedS3SourcePath,
+      normalizedS3TargetPath,
+      false,
+    );
+
+    return {
+      source: sourcePath,
+      target: targetPath,
+      status: "success",
+      message: "目录复制成功",
+      details,
+    };
   }
 
 
   /**
    * 单个项目重命名（文件或目录）
-   * @param {string} oldPath - 旧路径
-   * @param {string} newPath - 新路径
-   * @param {Object} options - 选项参数
+   * @param {string} oldSubPath - 旧子路径（subPath-only）
+   * @param {string} newSubPath - 新子路径（subPath-only）
+   * @param {Object} ctx - 上下文（oldPath/newPath/mount/db/...）
    * @returns {Promise<Object>} 重命名结果
    */
-  async renameItem(oldPath, newPath, options = {}) {
-    const { db, findMountPointByPath, userIdOrInfo, userType } = options;
+  async renameItem(oldSubPath, newSubPath, ctx = {}) {
+    const { db, mount } = ctx;
+    const oldPath = ctx?.oldPath;
+    const newPath = ctx?.newPath;
 
     return handleFsError(
       async () => {
-        // 规范化路径
-        oldPath = normalizePath(oldPath, isDirectoryPath(oldPath));
-        newPath = normalizePath(newPath, isDirectoryPath(newPath));
+        if (typeof oldPath !== "string" || typeof newPath !== "string") {
+          throw new ValidationError("S3 renameItem 需要 ctx.oldPath/ctx.newPath（FS 视图路径，不做兼容）");
+        }
 
-        // 检查路径类型必须匹配（统一使用 FS 视图路径规则）
         const oldIsDirectory = isDirectoryPath(oldPath);
         const newIsDirectory = isDirectoryPath(newPath);
-
         if (oldIsDirectory !== newIsDirectory) {
           throw new ValidationError("源路径和目标路径类型必须一致（文件或目录）");
         }
 
-        // 查找挂载点
-        const mountResult = await findMountPointByPath(db, oldPath, userIdOrInfo, userType);
-        if (mountResult.error) {
-          throw this._errorFromStatus(mountResult.error.status, mountResult.error.message);
-        }
-
-        const { mount, subPath: oldSubPath } = mountResult;
-
-        // 检查新路径是否在同一挂载点
-        const newMountResult = await findMountPointByPath(db, newPath, userIdOrInfo, userType);
-        if (newMountResult.error || newMountResult.mount.id !== mount.id) {
-          throw new ValidationError("重命名操作必须在同一挂载点内进行");
-        }
-
-        const { subPath: newSubPath } = newMountResult;
-        const s3Config = await loadStorageConfigById(db, mount.storage_config_id, mount.storage_type);
-
         const oldS3SubPath = normalizeS3SubPath(oldSubPath, oldIsDirectory);
         const newS3SubPath = normalizeS3SubPath(newSubPath, newIsDirectory);
+        const fullOldS3Path = applyS3RootPrefix(this.config, oldS3SubPath);
+        const fullNewS3Path = applyS3RootPrefix(this.config, newS3SubPath);
 
-        // 处理root_prefix
-        const rootPrefix = s3Config.root_prefix ? (s3Config.root_prefix.endsWith("/") ? s3Config.root_prefix : s3Config.root_prefix + "/") : "";
-        const fullOldS3Path = rootPrefix + oldS3SubPath;
-        const fullNewS3Path = rootPrefix + newS3SubPath;
+        const bucketName = this.config.bucket_name;
 
-        // 检查源文件/目录是否存在
         const sourceExists = oldIsDirectory
-          ? await checkDirectoryExists(this.s3Client, s3Config.bucket_name, fullOldS3Path)
-          : await this._checkItemExists(s3Config.bucket_name, fullOldS3Path);
+          ? await checkDirectoryExists(this.s3Client, bucketName, fullOldS3Path)
+          : await this._checkItemExists(bucketName, fullOldS3Path);
 
         if (!sourceExists) {
           throw new NotFoundError("源文件或目录不存在");
         }
 
-        // 检查目标是否已存在
         const targetExists = newIsDirectory
-          ? await checkDirectoryExists(this.s3Client, s3Config.bucket_name, fullNewS3Path)
-          : await this._checkItemExists(s3Config.bucket_name, fullNewS3Path);
+          ? await checkDirectoryExists(this.s3Client, bucketName, fullNewS3Path)
+          : await this._checkItemExists(bucketName, fullNewS3Path);
 
         if (targetExists) {
           throw new ConflictError("目标路径已存在");
         }
 
         if (oldIsDirectory) {
-          // 重命名目录：复制所有内容到新位置，然后删除原目录
-          await this.copyDirectoryRecursive(this.s3Client, s3Config.bucket_name, fullOldS3Path, fullNewS3Path, false);
-          await this.deleteDirectoryRecursive(this.s3Client, s3Config.bucket_name, fullOldS3Path, mount.storage_config_id);
+          await this.copyDirectoryRecursive(this.s3Client, bucketName, fullOldS3Path, fullNewS3Path, false);
+          await this.deleteDirectoryRecursive(this.s3Client, bucketName, fullOldS3Path, mount?.storage_config_id || null);
         } else {
-          // 重命名文件：复制到新位置，然后删除原文件
-          const copyParams = {
-            Bucket: s3Config.bucket_name,
-            CopySource: encodeURIComponent(s3Config.bucket_name + "/" + fullOldS3Path),
+          const copyCommand = new CopyObjectCommand({
+            Bucket: bucketName,
+            CopySource: encodeURIComponent(bucketName + "/" + fullOldS3Path),
             Key: fullNewS3Path,
             MetadataDirective: "COPY",
-          };
-
-          const copyCommand = new CopyObjectCommand(copyParams);
+          });
           await this.s3Client.send(copyCommand);
 
-          // 删除原文件
-          const deleteParams = {
-            Bucket: s3Config.bucket_name,
+          const deleteCommand = new DeleteObjectCommand({
+            Bucket: bucketName,
             Key: fullOldS3Path,
-          };
-
-          const deleteCommand = new DeleteObjectCommand(deleteParams);
+          });
           await this.s3Client.send(deleteCommand);
-
-          // 文件移动完成，无需数据库操作
         }
 
-        // 更新父目录的修改时间
-        await updateParentDirectoriesModifiedTime(this.s3Client, s3Config.bucket_name, fullOldS3Path, rootPrefix);
+        await updateParentDirectoriesModifiedTime(this.s3Client, bucketName, fullOldS3Path, this.config.root_prefix);
 
-        // 更新挂载点的最后使用时间（仅在有挂载点上下文时）
-        if (db && mount && mount.id) {
+        if (db && mount?.id) {
           await updateMountLastUsed(db, mount.id);
         }
-
 
         return {
           success: true,

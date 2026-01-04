@@ -14,7 +14,7 @@ import {
   listActiveUploadSessions,
   findUploadSessionById,
 } from "../../../utils/uploadSessions.js";
-import { safeJsonParse, splitDirAndName, toPosixPath } from "./TelegramOperations.js";
+import { safeJsonParse, splitDirAndName, toPosixPath, stripTrailingSlash } from "./TelegramOperations.js";
 
 const VFS_STORAGE_PATH_PREFIX = "vfs:";
 
@@ -138,12 +138,15 @@ export class TelegramMultipartOperations {
     const sessionUploadUrl = `/api/fs/multipart/upload-chunk?upload_id=${encodeURIComponent(uploadId)}`;
 
     return {
+      success: true,
       uploadId,
       strategy: "single_session",
       fileName,
       fileSize,
       partSize: effectivePartSize,
       partCount: calculatedPartCount,
+      totalParts: calculatedPartCount,
+      key: fsPath.replace(/^\/+/, ""),
       session: {
         uploadUrl: sessionUploadUrl,
         providerUploadUrl: null,
@@ -236,7 +239,7 @@ export class TelegramMultipartOperations {
     const vfsRepo = new VfsNodesRepository(db, null);
 
     const fsPath = this._buildFsPathFromSubPathAndFileName(subPath, fileName, mount);
-    const effectiveSubPath = toPosixPath(driver._extractSubPath(fsPath, mount));
+    const effectiveSubPath = toPosixPath(`${stripTrailingSlash(subPath || "/")}/${fileName}`.replace(/\/+/g, "/"));
     const { dirPath } = splitDirAndName(effectiveSubPath);
     const ensured = await vfsRepo.ensureDirectoryPath({ ownerType, ownerId, scopeType, scopeId, path: dirPath });
 
@@ -439,6 +442,9 @@ export class TelegramMultipartOperations {
     const { db } = options || {};
     void db;
     return {
+      success: true,
+      uploadId: String(uploadId),
+      strategy: "single_session",
       session: {
         uploadUrl: `/api/fs/multipart/upload-chunk?upload_id=${encodeURIComponent(uploadId)}`,
         nextExpectedRanges: [],

@@ -59,6 +59,7 @@ export default {
       local: {
         root_path: "Local root path",
         readonly: "Read-only mode",
+        enable_disk_usage: "Enable quota reading",
       },
 
       // OneDrive specific
@@ -70,19 +71,25 @@ export default {
         token_renew_endpoint: "Token renew endpoint",
         redirect_uri: "Redirect URI",
         use_online_api: "API Type",
+        enable_disk_usage: "Enable quota reading",
         oauth_status: "OAuth Status",
       },
 
       // Google Drive specific
       googledrive: {
         use_online_api: "API Type",
-        api_address: "Online API URL",
+        endpoint_url: "Token renew endpoint",
         client_id: "Client ID",
         client_secret: "Client secret",
         refresh_token: "Refresh token / Service Account JSON remote URL",
         root_id: "Root ID",
         enable_disk_usage: "Enable quota reading",
         enable_shared_view: "SharedWithMe view",
+      },
+
+      // WebDAV specific (quota toggle)
+      webdav: {
+        enable_disk_usage: "Enable quota reading",
       },
 
       // GitHub Releases specific
@@ -102,7 +109,7 @@ export default {
         owner: "Repository owner",
         repo: "Repository name",
         ref: "Ref (branch/tag/sha)",
-        api_base: "GitHub API base",
+        endpoint_url: "GitHub API base",
         gh_proxy: "GitHub proxy URL",
         committer_name: "Committer name (committer.name)",
         committer_email: "Committer email (committer.email)",
@@ -115,7 +122,7 @@ export default {
       telegram: {
         bot_token: "Bot token",
         target_chat_id: "Target chat ID",
-        api_base_url: "Bot API base URL",
+        endpoint_url: "Bot API base URL",
         bot_api_mode: "Bot API mode",
         part_size_mb: "Chunk size (MB)",
         upload_concurrency: "Upload concurrency",
@@ -126,6 +133,7 @@ export default {
       discord: {
         bot_token: "Bot token",
         channel_id: "Channel ID",
+        endpoint_url: "API base URL (optional)",
         part_size_mb: "Chunk size (MB)",
         upload_concurrency: "Upload concurrency",
       },
@@ -134,7 +142,7 @@ export default {
       huggingface_datasets: {
         repo: "Dataset repository (repo)",
         revision: "Branch/version (revision)",
-        endpoint_base: "Hub address (optional)",
+        endpoint_url: "Hub address (optional)",
         hf_token: "HF Token (optional)",
         hf_use_paths_info: "Show more info (modification time / Xet / LFS)",
         hf_tree_limit: "Entries per page (tree limit)",
@@ -177,7 +185,7 @@ export default {
 
       // Google Drive placeholders
       googledrive: {
-        api_address: "e.g., https://your-online-api.example.com/refresh",
+        endpoint_url: "e.g., https://your-online-api.example.com/refresh",
         client_id: "Google OAuth client ID",
         client_secret: "Google OAuth client secret",
         refresh_token: "RefreshToken or remote URL to Service Account JSON",
@@ -197,7 +205,7 @@ export default {
         owner: "e.g., ling-drag0n",
         repo: "e.g., CloudPaste",
         ref: "e.g., main, v1.0.0, or a 40-char commit sha (leave empty to use default branch)",
-        api_base: "e.g., https://api.github.com (leave empty for default)",
+        endpoint_url: "e.g., https://api.github.com (leave empty for default)",
         gh_proxy: "e.g., https://ghproxy.net/https://raw.githubusercontent.com (optional, affects direct links only)",
         committer_name: "e.g., CloudPaste Bot (optional)",
         committer_email: "{'e.g., bot@example.com (optional)'}",
@@ -210,7 +218,7 @@ export default {
         bot_token: "Paste the token from ＠BotFather (e.g., 123:ABC...)",
         target_chat_id: "e.g., -100xxxxxxxxxx (numbers only)",
         bot_api_mode: "Default: official",
-        api_base_url: "e.g., https://api.telegram.org (set to your own Bot API server when self-hosted)",
+        endpoint_url: "e.g., https://api.telegram.org (set to your own Bot API server when self-hosted)",
         part_size_mb: "Default 15; recommended ≤ 20 when not self-hosted; no limit when self-hosted",
         upload_concurrency: "Default 2; higher is faster but easier to hit rate limits",
       },
@@ -218,6 +226,7 @@ export default {
       discord: {
         bot_token: "Paste Discord Bot Token",
         channel_id: "Target channel's Channel ID",
+        endpoint_url: "e.g., https://discord.com/api/v10 (default official; change only when using a proxy/reverse-proxy)",
         part_size_mb: "Default 10; recommended 8~10 (Discord upload limit is max 10MB per upload, 25MB for Nitro users)",
         upload_concurrency: "Default 1; increasing this speeds up uploads but may trigger Discord rate limits more easily",
       },
@@ -225,7 +234,7 @@ export default {
       huggingface_datasets: {
         repo: "e.g., Open-Orca/OpenOrca (do not write the full URL)",
         revision: "e.g., main (branch name); tags/commits can also be used, but they are read-only",
-        endpoint_base: "default https://huggingface.co; only change for self-hosted mirrors/proxies",
+        endpoint_url: "default https://huggingface.co; only change for self-hosted mirrors/proxies",
         hf_token: "optional: create at https://huggingface.co/settings/tokens; required for private/gated repos",
         hf_tree_limit: "default 100; higher values return more data per request",
         hf_multipart_concurrency: "default 5; higher is faster but can be less stable",
@@ -276,6 +285,10 @@ export default {
       tls_insecure_skip_verify: "Skip TLS certificate verification (insecure, for testing only)",
       root_path: "Root directory path for local file storage, must be an absolute path",
       readonly: "Enable read-only mode, disabling write and delete operations",
+      local: {
+        enable_disk_usage:
+          "When enabled, fetch host disk total/used/available for admin dashboard quota analysis and upload limit validation.",
+      },
 
       // OneDrive descriptions
       onedrive: {
@@ -287,17 +300,23 @@ export default {
         token_renew_endpoint: "Optional: Custom token renewal service address, used for connecting to external renewal services such as Online API",
         redirect_uri: "Callback address configured in the Azure application for the external authorization site, usually consistent with the authorization page documentation",
         use_online_api: "When enabled, CloudPaste will call the renewal endpoint to refresh the token according to the Online API protocol",
+        enable_disk_usage: "When enabled, fetch OneDrive storage quota information for admin dashboard quota analysis and upload limit validation.",
+      },
+
+      webdav: {
+        enable_disk_usage:
+          "When enabled, try to read WebDAV quota via quota properties for admin dashboard quota analysis and upload limit validation (not supported by all WebDAV servers).",
       },
 
       // Google Drive descriptions
       googledrive: {
         use_online_api: "When enabled, use the Online API endpoint to obtain access tokens, suitable for centralized token services.",
-        api_address: "Online API refresh address, call to obtain access_token and refresh_token.",
+        endpoint_url: "Online API refresh address, call to obtain access_token and refresh_token.",
         client_id: "Client ID used in standard OAuth mode, created in GCP console.",
         client_secret: "Client secret used together with refresh_token to refresh access_token in standard OAuth mode.",
         refresh_token: "Supports two forms: 1) standard OAuth refresh_token; 2) remote Service Account JSON URL.",
         root_id: "Google Drive root folder ID, defaults to root; set to driveId when mounting a Shared Drive.",
-        enable_disk_usage: "When enabled, get to fetch storage quota and usage information for display and quota analysis.",
+        enable_disk_usage: "When enabled, fetch storage quota information for admin dashboard quota analysis and upload limit validation.",
         enable_shared_view: 'When enabled, a "Shared with me" virtual directory will be displayed under the corresponding mount root directory for browsing files shared with me',
       },
 
@@ -321,7 +340,7 @@ export default {
         owner: "GitHub repository owner (e.g., ling-drag0n).",
         repo: "GitHub repository name (e.g., CloudPaste).",
         ref: "Branch / tag / commit sha. Only branches support write; tags and commit sha are read-only. Leave empty to use the repository default branch.",
-        api_base: "Optional: custom API(for GitHub Enterprise). Default is https://api.github.com.",
+        endpoint_url: "Optional: custom API(for GitHub Enterprise). Default is https://api.github.com.",
         gh_proxy: "Optional: accelerate raw direct links by replacing https://raw.githubusercontent.com with this value (direct-link output only).",
         committer_name: "Optional: commit committer.name (must be paired with committer_email).",
         committer_email: "Optional: commit committer.email (must be paired with committer_name).",
@@ -333,7 +352,7 @@ export default {
       telegram: {
         bot_token: "Used for calling Telegram Bot API to upload/download files",
         target_chat_id: "Files will be sent to this channel/group (need to add the bot and grant message sending permission)",
-        api_base_url: "Default official address; if you later build your own Bot API server, you can switch to your own address",
+        endpoint_url: "Default official address; if you later build your own Bot API server, you can switch to your own address",
         bot_api_mode:
           "Unchecked self-built: According to official Bot API rules, the maximum single upload size is ≤20MB; Checked self-built: You provide your own Bot API Server, these restrictions can be relaxed",
         part_size_mb:
@@ -346,6 +365,7 @@ export default {
       discord: {
         bot_token: "Used to call the Discord Bot API",
         channel_id: "Files will be uploaded to this channel (the bot must be in this channel/server and have permissions to view/send messages/upload attachments)",
+        endpoint_url: "Optional: custom Discord API base (default https://discord.com/api/v10). Only change when using a proxy/reverse-proxy/gateway; please set it to the /api/v10 level.",
         part_size_mb: "Chunk size for resumable uploads; recommended 8~10MB (Discord's single upload limit is max 10MB, 25MB for Nitro users)",
         upload_concurrency: "Limit the number of concurrent requests sent to Discord under the same storage configuration to avoid 429 rate limits due to high concurrency",
       },
@@ -353,7 +373,7 @@ export default {
       huggingface_datasets: {
         repo: "HuggingFace dataset repository ID (format: owner/name). This refers to a HuggingFace Datasets 'repository', not a local path.",
         revision: "Branch/version: Recommended to specify a branch name (e.g., main). If a tag or commit SHA is provided, read-only access is enforced.",
-        endpoint_base: "Hub site address. Default: https://huggingface.co; modify only if using a self-hosted mirror/proxy.",
+        endpoint_url: "Hub site address. Default: https://huggingface.co; modify only if using a self-hosted mirror/proxy.",
         hf_token: "Optional: Required for accessing private/gated repositories or increasing rate limits.",
         hf_use_paths_info:
           "When enabled, directory listings include additional details (e.g., 'modification time + Xet/LFS flags'). More comprehensive but increases response size and may trigger rate limits more easily.",

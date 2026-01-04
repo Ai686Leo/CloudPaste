@@ -31,10 +31,17 @@ export interface VfsNodesRepositoryLike {
   getNodeById(params: any): Promise<any>;
 }
 
+export interface MetricsCacheRepositoryLike {
+  getEntry(scopeType: string, scopeId: string, metricKey: string): Promise<any>;
+  upsertEntry(params: any): Promise<any>;
+  deleteEntry(scopeType: string, scopeId: string, metricKey: string): Promise<any>;
+}
+
 export interface RepositoryFactoryLike {
   getMountRepository(): MountRepositoryLike;
   getUploadPartsRepository(): UploadPartsRepositoryLike;
   getVfsNodesRepository(): VfsNodesRepositoryLike;
+  getMetricsCacheRepository(): MetricsCacheRepositoryLike;
 }
 
 /**

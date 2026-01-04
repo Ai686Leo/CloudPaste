@@ -1,15 +1,60 @@
 import { ApiStatus, UserType } from "../constants/index.js";
 import { ValidationError, NotFoundError, DriverError } from "../http/errors.js";
-import { LimitGuard } from "./share/LimitGuard.js";
 import { ShareRecordService } from "./share/ShareRecordService.js";
+import { StorageQuotaGuard } from "../storage/usage/StorageQuotaGuard.js";
 
 export class FileShareService {
   constructor(db, encryptionSecret, repositoryFactory = null) {
     this.db = db;
     this.encryptionSecret = encryptionSecret;
     this.repositoryFactory = repositoryFactory;
-    this.limit = new LimitGuard(repositoryFactory);
+    this.quota = new StorageQuotaGuard(db, encryptionSecret, repositoryFactory);
     this.records = new ShareRecordService(db, encryptionSecret, repositoryFactory);
+  }
+
+  async _assertSystemMaxUploadSize(fileSizeBytes) {
+    const size = Number(fileSizeBytes) || 0;
+    if (size <= 0) return;
+
+    const systemRepo = this.repositoryFactory?.getSystemRepository?.();
+    if (!systemRepo) return;
+
+    const DEFAULT_MAX_UPLOAD_SIZE_MB = 100;
+    const setting = await systemRepo.getSettingMetadata("max_upload_size").catch(() => null);
+    const limitMb = setting?.value ? parseInt(setting.value, 10) : DEFAULT_MAX_UPLOAD_SIZE_MB;
+    const limitBytes = Number.isFinite(limitMb) ? limitMb * 1024 * 1024 : DEFAULT_MAX_UPLOAD_SIZE_MB * 1024 * 1024;
+    if (limitBytes > 0 && size > limitBytes) {
+      throw new ValidationError(`文件大小超出系统限制（最大 ${limitMb} MB）`);
+    }
+  }
+
+  async _assertShareStorageQuotaByKey({ storageConfig, storageKey, incomingBytes, context }) {
+    const cfg = storageConfig;
+    const key = String(storageKey || "");
+    const size = Number(incomingBytes) || 0;
+    if (!cfg?.id || !key || size <= 0) {
+      return;
+    }
+
+    let oldBytes = null;
+    try {
+      const fileRepo = this.repositoryFactory.getFileRepository();
+      if (cfg.storage_type) {
+        const existing = await fileRepo.findByStoragePath(cfg.id, key, cfg.storage_type).catch(() => null);
+        if (existing && typeof existing.size === "number" && existing.size >= 0) {
+          oldBytes = existing.size;
+        }
+      }
+    } catch {
+      oldBytes = null;
+    }
+
+    await this.quota.assertCanConsume({
+      storageConfigId: cfg.id,
+      incomingBytes: size,
+      oldBytes,
+      context: context || "share",
+    });
   }
 
   _getTelegramShareMaxDirectUploadBytes(storageConfig) {
@@ -139,7 +184,7 @@ export class FileShareService {
     userType,
   }) {
     if (!filename) throw new ValidationError("缺少 filename");
-    await this.limit.check(fileSize);
+    await this._assertSystemMaxUploadSize(fileSize);
 
     const { ObjectStore } = await import("../storage/object/ObjectStore.js");
     const { subjectType, subjectId } = this._resolveAclSubject(userType, userIdOrInfo);
@@ -160,11 +205,14 @@ export class FileShareService {
       contentType,
       sha256,
     });
-    // 配额校验：考虑覆盖同路径时排除旧记录体积
-    const fileRepo = this.repositoryFactory.getFileRepository();
     if (!cfg.storage_type) throw new ValidationError("存储配置缺少 storage_type");
-    const existing = await fileRepo.findByStoragePath(cfg.id, presign.key, cfg.storage_type).catch(() => null);
-    await this.limit.checkStorageQuota(cfg.id, Number(fileSize) || 0, { excludeFileId: existing?.id || null });
+    // 配额校验：考虑覆盖同路径时排除旧记录体积
+    await this._assertShareStorageQuotaByKey({
+      storageConfig: cfg,
+      storageKey: presign.key,
+      incomingBytes: Number(fileSize) || 0,
+      context: "share-presign",
+    });
     return {
       uploadUrl: presign.uploadUrl,
       contentType: presign.contentType,
@@ -198,7 +246,7 @@ export class FileShareService {
     userType,
     request,
   }) {
-    await this.limit.check(Number(size));
+    await this._assertSystemMaxUploadSize(Number(size));
     // 必须包含 key + storage_config_id
     const finalKey = key;
     const finalStorageConfigId = storage_config_id;
@@ -217,7 +265,12 @@ export class FileShareService {
       throw new NotFoundError("存储配置不存在");
     }
 
-    await this.limit.checkStorageQuota(storageConfig.id, Number(size) || 0);
+    await this._assertShareStorageQuotaByKey({
+      storageConfig,
+      storageKey: finalKey,
+      incomingBytes: Number(size) || 0,
+      context: "share-presign-commit",
+    });
 
     const { ObjectStore } = await import("../storage/object/ObjectStore.js");
     const store = new ObjectStore(this.db, this.encryptionSecret, this.repositoryFactory);
@@ -265,7 +318,7 @@ export class FileShareService {
     if (!filename) throw new ValidationError("缺少文件名参数");
     const normalizedSize = Number(fileSize) || 0;
     if (!bodyStream || normalizedSize <= 0) throw new ValidationError("上传内容为空");
-    await this.limit.check(normalizedSize);
+    await this._assertSystemMaxUploadSize(normalizedSize);
     const { ObjectStore } = await import("../storage/object/ObjectStore.js");
     const storedFilename = filename;
     const { getEffectiveMimeType } = await import("../utils/fileUtils.js");
@@ -289,10 +342,13 @@ export class FileShareService {
     const store = new ObjectStore(this.db, this.encryptionSecret, this.repositoryFactory);
     // 预先计算最终Key用于配额校验（考虑命名策略与冲突重命名）
     const plannedKey = await store.getPlannedKey(cfg.id, options.path || null, storedFilename);
-    const fileRepo = this.repositoryFactory.getFileRepository();
     if (!cfg.storage_type) throw new ValidationError("存储配置缺少 storage_type");
-    const existing = await fileRepo.findByStoragePath(cfg.id, plannedKey, cfg.storage_type).catch(() => null);
-    await this.limit.checkStorageQuota(cfg.id, normalizedSize, { excludeFileId: existing?.id || null });
+    await this._assertShareStorageQuotaByKey({
+      storageConfig: cfg,
+      storageKey: plannedKey,
+      incomingBytes: normalizedSize,
+      context: "share-upload-direct",
+    });
     const result = await store.uploadDirect({
       storage_config_id: cfg.id,
       directory: options.path || null,
@@ -338,7 +394,7 @@ export class FileShareService {
     if (normalizedSize <= 0) {
       throw new ValidationError("上传内容为空");
     }
-    await this.limit.check(normalizedSize);
+    await this._assertSystemMaxUploadSize(normalizedSize);
 
     const { ObjectStore } = await import("../storage/object/ObjectStore.js");
     const { getEffectiveMimeType } = await import("../utils/fileUtils.js");
@@ -364,10 +420,13 @@ export class FileShareService {
 
     // 预先计算最终Key用于配额校验（考虑命名策略与冲突重命名）
     const plannedKey = await store.getPlannedKey(cfg.id, options.path || null, storedFilename);
-    const fileRepo = this.repositoryFactory.getFileRepository();
     if (!cfg.storage_type) throw new ValidationError("存储配置缺少 storage_type");
-    const existing = await fileRepo.findByStoragePath(cfg.id, plannedKey, cfg.storage_type).catch(() => null);
-    await this.limit.checkStorageQuota(cfg.id, normalizedSize, { excludeFileId: existing?.id || null });
+    await this._assertShareStorageQuotaByKey({
+      storageConfig: cfg,
+      storageKey: plannedKey,
+      incomingBytes: normalizedSize,
+      context: "share-upload-file",
+    });
 
     const uploadResult = await store.uploadFileForShare({
       storage_config_id: cfg.id,

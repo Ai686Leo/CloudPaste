@@ -60,6 +60,7 @@ export default {
         root_path: "本地根目录",
         auto_create_root: "自动建根目录",
         readonly: "只读模式",
+        enable_disk_usage: "启用配额读取",
         trash_path: "回收站路径",
         dir_permission: "目录/文件权限",
       },
@@ -73,19 +74,25 @@ export default {
         token_renew_endpoint: "Token 续期端点",
         redirect_uri: "回调地址",
         use_online_api: "API 类型",
+        enable_disk_usage: "启用配额读取",
         oauth_status: "授权状态",
       },
 
       // Google Drive 特有字段
       googledrive: {
         use_online_api: "API 类型",
-        api_address: "在线 API 地址",
+        endpoint_url: "Token 续期端点",
         client_id: "客户端 ID",
         client_secret: "客户端密钥",
         refresh_token: "刷新令牌 / Service Account JSON 远程 URL",
         root_id: "根目录 ID",
         enable_disk_usage: "启用配额读取",
         enable_shared_view: "SharedWithMe视图",
+      },
+
+      // WebDAV 特有字段（补充：上游配额开关）
+      webdav: {
+        enable_disk_usage: "启用配额读取",
       },
 
       // GitHub Releases 特有字段
@@ -105,7 +112,7 @@ export default {
         owner: "仓库所有者（owner）",
         repo: "仓库名称（repo）",
         ref: "引用（ref）",
-        api_base: "GitHub API Base",
+        endpoint_url: "GitHub API Base",
         gh_proxy: "GitHub 代理 URL",
         committer_name: "提交者姓名（committer.name）",
         committer_email: "提交者邮箱（committer.email）",
@@ -118,7 +125,7 @@ export default {
       telegram: {
         bot_token: "Bot Token",
         target_chat_id: "目标频道/群 Chat ID",
-        api_base_url: "Bot API 地址",
+        endpoint_url: "Bot API 地址",
         bot_api_mode: "Bot API 模式",
         part_size_mb: "分片大小（MB）",
         upload_concurrency: "上传并发",
@@ -129,6 +136,7 @@ export default {
       discord: {
         bot_token: "Bot Token",
         channel_id: "频道 ID（Channel ID）",
+        endpoint_url: "API Base URL（可选）",
         part_size_mb: "分片大小（MB）",
         upload_concurrency: "上传并发",
       },
@@ -137,7 +145,7 @@ export default {
       huggingface_datasets: {
         repo: "数据集仓库（repo）",
         revision: "分支/版本（revision）",
-        endpoint_base: "Hub 地址（可选）",
+        endpoint_url: "Hub 地址（可选）",
         hf_token: "HF Token（可选）",
         hf_use_paths_info: "显示更多信息（修改时间 / Xet / LFS）",
         hf_tree_limit: "列目录每页数量（tree limit）",
@@ -182,7 +190,7 @@ export default {
 
       // Google Drive 占位符
       googledrive: {
-        api_address: "例如：https://your-online-api.example.com/refresh",
+        endpoint_url: "例如：https://your-online-api.example.com/refresh",
         client_id: "Google OAuth 客户端 ID",
         client_secret: "Google OAuth 客户端密钥",
         refresh_token: "RefreshToken 或 Service Account JSON 的远程 URL",
@@ -202,7 +210,7 @@ export default {
         owner: "例如：ling-drag0n",
         repo: "例如：CloudPaste",
         ref: "例如：main、v1.0.0 或 40 位 commit sha（留空使用默认分支）",
-        api_base: "例如：https://api.github.com（留空使用默认值）",
+        endpoint_url: "例如：https://api.github.com（留空使用默认值）",
         gh_proxy: "例如：https://ghproxy.net/https://raw.githubusercontent.com（可选，仅影响直链输出）",
         committer_name: "例如：CloudPaste Bot（可选）",
         committer_email: "{'例如：bot@example.com（可选）'}",
@@ -215,7 +223,7 @@ export default {
         bot_token: "粘贴从 ＠BotFather 拿到的 token（形如 123:ABC...）",
         target_chat_id: "例如：-100xxxxxxxxxx（必须是纯数字）",
         bot_api_mode: "默认使用官方",
-        api_base_url: "例如：https://api.telegram.org（自建 Bot API server 可改为你的地址）",
+        endpoint_url: "例如：https://api.telegram.org（自建 Bot API server 可改为你的地址）",
         part_size_mb: "默认 15；未勾选自建时建议 ≤20；勾选自建可不限制",
         upload_concurrency: "默认 2；调大更快但更容易被限流",
       },
@@ -223,6 +231,7 @@ export default {
       discord: {
         bot_token: "粘贴 Discord Bot Token",
         channel_id: "目标频道的 Channel ID",
+        endpoint_url: "例如：https://discord.com/api/v10（默认官方；需要走代理/反代时再改）",
         part_size_mb: "默认 10；建议 8~10（Discord 单次上传限制最大10MB，Nitro用户最大25MB）",
         upload_concurrency: "默认 1；调大更快但更容易触发 Discord 限速",
       },
@@ -230,7 +239,7 @@ export default {
       huggingface_datasets: {
         repo: "例如：Open-Orca/OpenOrca（不要写成完整 URL）",
         revision: "例如：main（分支名）；也可以填 tag/commit，但那样只能读不能写",
-        endpoint_base: "默认 https://huggingface.co；自建镜像/代理时才需要改",
+        endpoint_url: "默认 https://huggingface.co；自建镜像/代理时才需要改",
         hf_token: "可选：从 https://huggingface.co/settings/tokens 创建；private/gated 必填",
         hf_tree_limit: "默认 100；数值越大单次返回越多",
         hf_multipart_concurrency: "默认 5；数值越大越快，但更吃网络/更容易失败",
@@ -281,6 +290,9 @@ export default {
       root_path: "本地文件存储的根目录路径，例如 /data/local-files ",
       auto_create_root: "启用后，当本地根目录对应子目录不存在时会自动创建；默认关闭，需要手动在宿主机上创建子目录",
       readonly: "启用只读模式，禁止写入和删除操作",
+      local: {
+        enable_disk_usage: "启用后，读取宿主机磁盘空间总量/已用/可用，用于面板配额分析与上传限制校验",
+      },
       trash_path: "删除文件时移动到此目录，支持相对路径（相对于根目录）或绝对路径",
       dir_permission: "创建目录和文件时使用的权限",
 
@@ -294,17 +306,22 @@ export default {
         token_renew_endpoint: "可选：自定义 Token 续期服务地址，用于对接 Online API 等外部续期服务",
         redirect_uri: "外部授权站点在 Azure 应用中配置的回调地址，通常与授权页面文档保持一致",
         use_online_api: "启用后，CloudPaste 将按照 Online API 协议调用续期端点刷新令牌",
+        enable_disk_usage: "启用后，读取 OneDrive 的存储配额信息（用于面板配额分析与上传限制校验）。",
+      },
+
+      webdav: {
+        enable_disk_usage: "启用后，尝试配额属性读取 WebDAV 配额信息，用于面板配额分析与上传限制校验（并非所有 WebDAV 服务支持）。",
       },
 
       // Google Drive 描述
       googledrive: {
         use_online_api: "启用后，通过在线 API 地址获取访问令牌，适合托管在外部的统一 Token 服务。",
-        api_address: "在线 API 刷新地址，调用以获取 access_token 与 refresh_token。",
+        endpoint_url: "在线 API 刷新地址，调用以获取 access_token 与 refresh_token。",
         client_id: "标准 OAuth 模式下使用的 client_id，可在 GCP 控制台创建 OAuth 客户端后获取。",
         client_secret: "标准 OAuth 模式下使用的 client_secret，用于配合 refresh_token 刷新 access_token。",
         refresh_token: "可为两种形态：1) 标准 OAuth refresh_token；2) 远程 Service Account JSON URL。",
         root_id: "Google Drive 根目录 ID，默认为 root；如需挂载 Shared Drive，请填写对应 driveId。",
-        enable_disk_usage: "启用后，读取存储配额信息，用于管理端展示和配额分析。",
+        enable_disk_usage: "启用后，读取存储配额信息，用于面板配额分析与上传限制校验。",
         enable_shared_view: '启用后，将在对应挂载根目录下展示 "Shared with me" 虚拟目录，用于浏览“与我共享”文件。',
       },
 
@@ -327,7 +344,7 @@ export default {
         owner: "GitHub 仓库 owner（例如 ling-drag0n）",
         repo: "GitHub 仓库名称（例如 CloudPaste）",
         ref: "可填写分支名 / 标签名 / commit sha。仅分支支持写入；标签与 commit sha 为只读。留空时自动使用仓库默认分支。",
-        api_base: "可选：自定义API（用于 GitHub Enterprise 等场景）。默认 https://api.github.com。",
+        endpoint_url: "可选：自定义API（用于 GitHub Enterprise 等场景）。默认 https://api.github.com。",
         gh_proxy: "可选：用于加速 raw 直链输出。会把直链中的 https://raw.githubusercontent.com 替换为该值。",
         committer_name: "可选：自定义 commit 的 committer.name（与 committer_email 成对填写）。",
         committer_email: "可选：自定义 commit 的 committer.email（与 committer_name 成对填写）。",
@@ -339,7 +356,7 @@ export default {
       telegram: {
         bot_token: "用于调用 Telegram Bot API 上传/下载文件",
         target_chat_id: "文件会被发送到这个频道/群（需要把 bot 拉进并授予发消息权限）",
-        api_base_url: "默认官方地址；如果你后续自建 Bot API server，可以切到自建地址",
+        endpoint_url: "默认官方地址；如果你后续自建 Bot API server，可以切到自建地址",
         bot_api_mode: "未勾选自建：按官方 Bot API 规则单次最大上传大小 ≤20MB ；勾选自建：你自己提供 Bot API Server，可放宽这些限制",
         part_size_mb: "挂载页断点续传的分片大小；默认 15MB。未勾选自建时建议 ≤20MB；勾选自建可不限制",
         upload_concurrency: "限制同一存储配置同时向 Telegram 发请求的数量，避免并发过高导致限流",
@@ -349,6 +366,7 @@ export default {
       discord: {
         bot_token: "用于调用 Discord Bot API",
         channel_id: "文件会被上传到这个频道（bot 必须在该频道/服务器里，并有查看/发消息/上传附件权限）",
+        endpoint_url: "可选：自定义 Discord API Base（默认 https://discord.com/api/v10）。只有你使用代理/反代/自建网关时才需要改；请填到 /api/v10 这一层。",
         part_size_mb: "挂载页断点续传的分片大小；建议 8~10MB（Discord 单次上传限制最大10MB，Nitro用户最大25MB）",
         upload_concurrency: "限制同一存储配置同时向 Discord 发请求的数量，避免并发过高导致 429 限速",
       },
@@ -356,7 +374,7 @@ export default {
       huggingface_datasets: {
         repo: "HuggingFace 数据集仓库 ID（形如 owner/name）。这是 HuggingFace Datasets 的“仓库”，不是本地路径。",
         revision: "分支/版本：建议填分支名（如 main）。如果填 tag 或 commit sha，只能读不能写。",
-        endpoint_base: "Hub 站点地址。默认 https://huggingface.co；只有你自建镜像/代理时才需要改。",
+        endpoint_url: "Hub 站点地址。默认 https://huggingface.co；只有你自建镜像/代理时才需要改。",
         hf_token: "可选：用于访问 private/gated 或提升额度/限流上限。",
         hf_use_paths_info: "开启后，目录列表会额外获取详细信息，如：“修改时间 + Xet/LFS 标记”。信息更全，但响应体更大、也更容易触发限流。",
         hf_tree_limit: "tree API 每页返回文件数量（对应HF的 limit 参数）。配合“显示更多信息”开关使用，开启时最大100数量限制，关闭时最大1000数量限制。默认即可",

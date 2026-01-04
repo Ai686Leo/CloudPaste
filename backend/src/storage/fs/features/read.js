@@ -104,7 +104,8 @@ export async function listDirectory(fs, path, userIdOrInfo, userType, options = 
 
   const fetchPromise = (async () => {
     const startedAt = Date.now();
-    const result = await driver.listDirectory(dirPath, {
+    const result = await driver.listDirectory(cacheSubPath, {
+      path: dirPath,
       mount,
       subPath: cacheSubPath,
       db: fs.mountManager.db,
@@ -168,7 +169,8 @@ export async function getFileInfo(fs, path, userIdOrInfo, userType, request = nu
   }
 
   // 先获取基础文件信息（不关心其中是否包含任何 legacy 链接字段）
-  const baseInfo = await driver.getFileInfo(path, {
+  const baseInfo = await driver.getFileInfo(subPath, {
+    path,
     mount,
     subPath,
     db: fs.mountManager.db,
@@ -193,7 +195,8 @@ export async function downloadFile(fs, path, fileName, request, userIdOrInfo, us
     });
   }
 
-  return await driver.downloadFile(path, {
+  return await driver.downloadFile(subPath, {
+    path,
     mount,
     subPath,
     db: fs.mountManager.db,
@@ -205,7 +208,8 @@ export async function downloadFile(fs, path, fileName, request, userIdOrInfo, us
 
 export async function exists(fs, path, userIdOrInfo, userType) {
   const { driver, mount, subPath } = await fs.mountManager.getDriverByPath(path, userIdOrInfo, userType);
-  return await driver.exists(path, {
+  return await driver.exists(subPath, {
+    path,
     mount,
     subPath,
     db: fs.mountManager.db,

@@ -289,7 +289,8 @@ export class StorageStreaming {
       const { driver, resolvedMount, subPath } = await this._resolveDriver(options);
 
       // 2. 获取 StorageStreamDescriptor
-      const downloadResult = await driver.downloadFile(path, {
+      const downloadResult = await driver.downloadFile(subPath, {
+        path,
         mount: resolvedMount,
         subPath,
         db,

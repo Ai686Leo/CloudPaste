@@ -7,7 +7,7 @@
  * ========== 契约要求 ==========
  * 驱动必须实现以下方法才能通过 isProxyCapable() 检测：
  *
- * - generateProxyUrl(path, options): Promise<Object>
+ * - generateProxyUrl(subPath, ctx): Promise<Object>
  *   生成代理 URL，返回对象必须包含：
  *   - url: 可供浏览器/客户端或应用层 302 使用的完整代理 URL（通常为 /api/p 前缀）
  *   - type: 固定为 "proxy"（由上层映射为 StorageLink.kind = "proxy"）

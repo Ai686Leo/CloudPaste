@@ -1,13 +1,14 @@
 <script setup>
 import { ref, onMounted, computed, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { useEventListener } from "@vueuse/core";
+import { useEventListener, onClickOutside } from "@vueuse/core";
 // 引入Chart.js相关组件
 import { Bar, Line } from "vue-chartjs";
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, BarElement, Title, Tooltip, Legend } from "chart.js";
 import { useAdminSystemService } from "@/modules/admin/services/systemService.js";
 import { useDashboardService } from "@/modules/admin/services/dashboardService.js";
 import { useThemeMode } from "@/composables/core/useThemeMode.js";
+import { useStorageTypePresentation } from "@/modules/admin/storage/useStorageTypePresentation.js";
 import { IconChartBar, IconChevronDown, IconCircleStack, IconClock, IconCloud, IconDelete, IconDocument, IconDocumentText, IconFolder, IconKey, IconLockClosed, IconRefresh, IconServerStack } from "@/components/icons";
 import { createLogger } from "@/utils/logger.js";
 
@@ -27,7 +28,8 @@ const { isDarkMode: darkMode } = useThemeMode();
 const { t } = useI18n();
 const log = createLogger("DashboardView");
 const { getCacheStats, getVersionInfo, clearCache } = useAdminSystemService();
-const { getDashboardStats } = useDashboardService();
+const { getDashboardStats, getStorageUsageReport, refreshStorageUsageSnapshots } = useDashboardService();
+const { getTypeLabel, ensureLoaded: ensureStorageTypesLoaded } = useStorageTypePresentation();
 
 // 系统统计数据
 const statsData = ref({
@@ -75,6 +77,65 @@ const versionInfo = ref({
 
 // 当前选中的存储桶
 const selectedStorageId = ref(null);
+
+// 存储用量报告数据（来自独立接口）
+const storageUsageReport = ref({
+  storages: [],
+  generatedAt: null,
+});
+
+// 刷新存储快照状态
+const isRefreshingStorage = ref(false);
+
+// 汇总标签的悬浮列表展开状态（记录当前展开的标签类型）
+const expandedSourceTag = ref(null); // 'provider' | 'local_fs' | 'vfs_nodes' | 'fs_index' | 'unlimited' | 'exceeded' | null
+const sourcePopoverRef = ref(null); // 悬浮列表容器的 ref
+
+// 点击外部关闭悬浮列表
+onClickOutside(sourcePopoverRef, () => {
+  expandedSourceTag.value = null;
+});
+
+// 关闭悬浮列表
+const closeSourcePopover = () => {
+  expandedSourceTag.value = null;
+};
+
+// 切换悬浮列表展开状态
+const toggleSourcePopover = (source) => {
+  if (expandedSourceTag.value === source) {
+    expandedSourceTag.value = null;
+  } else {
+    expandedSourceTag.value = source;
+  }
+};
+
+// 获取指定来源的存储列表
+const getStorageListBySource = (source) => {
+  if (!aggregateStorageStats.value) return [];
+  if (source === "unlimited") {
+    return aggregateStorageStats.value.unlimitedStorages || [];
+  }
+  if (source === "exceeded") {
+    return aggregateStorageStats.value.exceededStorages || [];
+  }
+  return aggregateStorageStats.value.sourceStorages?.[source] || [];
+};
+
+// 存储类型颜色映射
+const STORAGE_TYPE_COLORS = {
+  LOCAL: { bg: "bg-blue-500", text: "text-blue-500" },
+  S3: { bg: "bg-orange-500", text: "text-orange-500" },
+  WEBDAV: { bg: "bg-green-500", text: "text-green-500" },
+  ONEDRIVE: { bg: "bg-sky-500", text: "text-sky-500" },
+  GOOGLE_DRIVE: { bg: "bg-yellow-500", text: "text-yellow-500" },
+  TELEGRAM: { bg: "bg-cyan-500", text: "text-cyan-500" },
+  DISCORD: { bg: "bg-indigo-500", text: "text-indigo-500" },
+  GITHUB_RELEASES: { bg: "bg-slate-400", text: "text-slate-400" },
+  GITHUB_API: { bg: "bg-zinc-400", text: "text-zinc-400" },
+  HUGGINGFACE_DATASETS: { bg: "bg-amber-500", text: "text-amber-500" },
+  MIRROR: { bg: "bg-purple-500", text: "text-purple-500" },
+};
 
 // 加载状态
 const isLoading = ref(true);
@@ -193,74 +254,227 @@ const chartOptions = computed(() => {
   };
 });
 
-// 获取当前选择的存储桶数据
+// 获取当前选择的存储配置的详细数据
 const currentBucketData = computed(() => {
+  const storages = storageUsageReport.value.storages || [];
+
   if (!selectedStorageId.value) {
     // 返回总体存储使用情况
+    const totalUsed = storages.reduce((sum, s) => sum + (s.computedUsage?.usedBytes || 0), 0);
+    const totalLimit = storages.reduce((sum, s) => sum + (s.limitStatus?.limitBytes || s.configuredLimitBytes || 0), 0);
+    const usagePercent = totalLimit > 0 ? Math.min(100, Math.round((totalUsed / totalLimit) * 100)) : 0;
+
     return {
+      isAggregate: true,
       name: t("admin.dashboard.allStorages"),
-      usedStorage: statsData.value.totalStorageUsed,
-      totalStorage: (statsData.value.storages || []).reduce((total, bucket) => total + (bucket.totalStorage || 0), 0),
-      usagePercent: calculateTotalUsagePercent(),
+      usedStorage: totalUsed,
+      totalStorage: totalLimit,
+      usagePercent,
+      source: null,
+      snapshotAt: null,
+      providerQuota: null,
+      storageType: null,
+      enableDiskUsage: null,
     };
   }
 
-  // 返回选中的存储桶数据
-  const bucket = (statsData.value.storages || []).find((b) => b.id === selectedStorageId.value);
-  return (
-    bucket || {
-      name: t("admin.dashboard.allStorages"),
-      usedStorage: statsData.value.totalStorageUsed,
-      totalStorage: (statsData.value.storages || []).reduce((total, bucket) => total + (bucket.totalStorage || 0), 0),
-      usagePercent: calculateTotalUsagePercent(),
-    }
-  );
+  // 返回选中的存储配置详细数据
+  const storage = storages.find((s) => s.id === selectedStorageId.value);
+  if (storage) {
+    const usedBytes = storage.computedUsage?.usedBytes || 0;
+    const limitBytes = storage.limitStatus?.limitBytes || storage.configuredLimitBytes || 0;
+    const usagePercent = storage.limitStatus?.percentUsed || (limitBytes > 0 ? Math.min(100, Math.round((usedBytes / limitBytes) * 100)) : 0);
+
+    return {
+      isAggregate: false,
+      name: storage.name,
+      usedStorage: usedBytes,
+      totalStorage: limitBytes,
+      usagePercent,
+      source: storage.computedUsage?.source || null,
+      snapshotAt: storage.computedUsage?.snapshotAt || null,
+      providerQuota:
+        storage.computedUsage?.source === "provider"
+          ? (storage.computedUsage?.details?.quota || null)
+          : null,
+      storageType: storage.storageType || null,
+      enableDiskUsage: storage.enableDiskUsage ?? null,
+      exceeded: storage.limitStatus?.exceeded || false,
+      configuredLimitBytes: storage.configuredLimitBytes,
+    };
+  }
+
+  // 回退到总体数据
+  const totalUsed = storages.reduce((sum, s) => sum + (s.computedUsage?.usedBytes || 0), 0);
+  const totalLimit = storages.reduce((sum, s) => sum + (s.limitStatus?.limitBytes || s.configuredLimitBytes || 0), 0);
+  const usagePercent = totalLimit > 0 ? Math.min(100, Math.round((totalUsed / totalLimit) * 100)) : 0;
+
+  return {
+    isAggregate: true,
+    name: t("admin.dashboard.allStorages"),
+    usedStorage: totalUsed,
+    totalStorage: totalLimit,
+    usagePercent,
+    source: null,
+    snapshotAt: null,
+    providerQuota: null,
+    storageType: null,
+    enableDiskUsage: null,
+  };
 });
 
-// 计算总体存储使用百分比
-const calculateTotalUsagePercent = () => {
-  const totalUsed = statsData.value.totalStorageUsed;
-  const totalAvailable = (statsData.value.storages || []).reduce((total, bucket) => total + (bucket.totalStorage || 0), 0);
-
-  if (!totalAvailable) return 0;
-  return Math.min(100, Math.round((totalUsed / totalAvailable) * 100));
+// 获取数据来源的显示名称和样式
+const getSourceInfo = (source) => {
+  const sourceMap = {
+    provider: {
+      label: t("admin.dashboard.sourceLabels.provider"),
+      color: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
+      description: t("admin.dashboard.sourceDescriptions.provider"),
+    },
+    local_fs: {
+      label: t("admin.dashboard.sourceLabels.localFs"),
+      color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
+      description: t("admin.dashboard.sourceDescriptions.localFs"),
+    },
+    vfs_nodes: {
+      label: t("admin.dashboard.sourceLabels.vfsNodes"),
+      color: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
+      description: t("admin.dashboard.sourceDescriptions.vfsNodes"),
+    },
+    fs_index: {
+      label: t("admin.dashboard.sourceLabels.fsIndex"),
+      color: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400",
+      description: t("admin.dashboard.sourceDescriptions.fsIndex"),
+    },
+  };
+  return sourceMap[source] || {
+    label: source || t("admin.dashboard.sourceLabels.unknown"),
+    color: "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300",
+    description: "",
+  };
 };
 
-// 获取指定服务商存储桶的使用占比
-const getProviderPercent = (providerType) => {
-  if (!statsData.value.storages || statsData.value.storages.length === 0) {
-    // 如果没有数据，则按服务商平均分配
-    const providers = ["Cloudflare R2", "Backblaze B2", "AWS S3", "Other"];
-    return Math.floor(100 / providers.length);
+// 格式化快照时间
+const formatSnapshotTime = (isoString) => {
+  if (!isoString) return null;
+  try {
+    const date = new Date(isoString);
+    return new Intl.DateTimeFormat(getUserLocale(), {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(date);
+  } catch {
+    return null;
   }
-
-  // 计算指定服务商的配置数量（不是存储使用量）
-  const providerBuckets = statsData.value.storages.filter((bucket) => bucket.providerType === providerType);
-
-  // 配置数量占比 = 该服务商配置数量 / 总配置数量
-  const configCount = providerBuckets.length;
-  const totalConfigs = statsData.value.storages.length;
-
-  // 计算占比
-  return Math.round((configCount / totalConfigs) * 100) || 0;
 };
 
-// 获取其他服务商的使用占比
-const getOtherProvidersPercent = () => {
-  const mainProviders = ["Cloudflare R2", "Backblaze B2", "AWS S3"];
+// 所有存储的汇总统计信息（用于"所有存储"视图下方显示）
+const aggregateStorageStats = computed(() => {
+  const storages = storageUsageReport.value.storages || [];
+  if (storages.length === 0) return null;
 
-  if (!statsData.value.storages || statsData.value.storages.length === 0) {
-    return Math.floor(100 / 4); // 平均分配
-  }
+  // 统计各数据来源的数量，并记录具体的存储列表
+  const sourceCount = {};
+  const sourceStorages = {}; // 按来源分组的存储列表
+  let latestSnapshotAt = null;
+  let exceededCount = 0;
+  let unlimitedCount = 0;
+  const exceededStorages = []; // 超限的存储列表
+  const unlimitedStorages = []; // 不限额的存储列表
 
-  // 计算其他服务商的配置数量
-  const otherBuckets = statsData.value.storages.filter((bucket) => !mainProviders.includes(bucket.providerType));
+  storages.forEach((s) => {
+    const source = s.computedUsage?.source || "unknown";
+    sourceCount[source] = (sourceCount[source] || 0) + 1;
 
-  // 计算占比
-  const otherCount = otherBuckets.length;
-  const totalConfigs = statsData.value.storages.length;
+    // 记录该来源下的存储
+    if (!sourceStorages[source]) {
+      sourceStorages[source] = [];
+    }
+    sourceStorages[source].push({
+      id: s.id,
+      name: s.name,
+      storageType: s.storageType,
+    });
 
-  return Math.round((otherCount / totalConfigs) * 100) || 0;
+    // 找最新的快照时间
+    const snapshotAt = s.computedUsage?.snapshotAt;
+    if (snapshotAt) {
+      if (!latestSnapshotAt || new Date(snapshotAt) > new Date(latestSnapshotAt)) {
+        latestSnapshotAt = snapshotAt;
+      }
+    }
+
+    // 统计超限和不限额的数量
+    if (s.limitStatus?.exceeded) {
+      exceededCount++;
+      exceededStorages.push({ id: s.id, name: s.name, storageType: s.storageType });
+    }
+    if (!s.configuredLimitBytes || s.configuredLimitBytes === 0) {
+      unlimitedCount++;
+      unlimitedStorages.push({ id: s.id, name: s.name, storageType: s.storageType });
+    }
+  });
+
+  return {
+    totalCount: storages.length,
+    sourceCount,
+    sourceStorages,
+    latestSnapshotAt,
+    exceededCount,
+    exceededStorages,
+    unlimitedCount,
+    unlimitedStorages,
+  };
+});
+
+// 按存储类型聚合统计数据
+const storageTypeDistribution = computed(() => {
+  const storages = storageUsageReport.value.storages || [];
+  if (storages.length === 0) return [];
+
+  // 按 storageType 分组统计
+  const typeMap = new Map();
+  storages.forEach((s) => {
+    const type = s.storageType || "UNKNOWN";
+    if (!typeMap.has(type)) {
+      typeMap.set(type, { type, count: 0 });
+    }
+    typeMap.get(type).count++;
+  });
+
+  // 转换为数组并计算百分比
+  const total = storages.length;
+  const result = Array.from(typeMap.values())
+    .map((item) => ({
+      ...item,
+      percent: Math.round((item.count / total) * 100),
+      color: STORAGE_TYPE_COLORS[item.type] || { bg: "bg-gray-500", text: "text-gray-500" },
+    }))
+    .sort((a, b) => b.count - a.count); // 按数量降序排列
+
+  return result;
+});
+
+// CategoryBar 的分段数据（用于顶部进度条，包含 tooltip 信息）
+const categoryBarSegments = computed(() => {
+  return storageTypeDistribution.value.map((item) => ({
+    percent: item.percent,
+    color: item.color.bg,
+    type: item.type,
+    count: item.count,
+    // tooltip 显示：类型名称 - 数量 (百分比)
+    tooltip: `${getStorageTypeName(item.type)}: ${item.count}${t("admin.dashboard.configs")} (${item.percent}%)`,
+  }));
+});
+
+// 获取存储类型的显示名称
+const getStorageTypeName = (type) => {
+  // 不写死：优先使用后端 /api/storage-types 返回的 displayName / i18nKey
+  // - i18nKey 由后端 StorageFactory 元数据提供（统一走 admin.storage.type.*）
+  // - 新增驱动时 Dashboard 不需要再补 nameMap
+  return getTypeLabel(type, t) || type;
 };
 
 // 格式化存储大小
@@ -375,12 +589,45 @@ const clearAllCache = async () => {
   }
 };
 
+// 获取存储用量报告（独立接口）
+const fetchStorageUsageReport = async () => {
+  try {
+    const data = await getStorageUsageReport();
+    storageUsageReport.value = {
+      storages: Array.isArray(data.storages) ? data.storages : [],
+      generatedAt: data.generatedAt || null,
+    };
+  } catch (err) {
+    log.warn("获取存储用量报告失败:", err);
+    // 不影响主要数据展示，静默失败
+  }
+};
+
+// 刷新存储用量快照（用户主动触发）
+const handleRefreshStorageSnapshots = async () => {
+  if (isRefreshingStorage.value) return;
+
+  isRefreshingStorage.value = true;
+  try {
+    await refreshStorageUsageSnapshots({ maxItems: 50 });
+    // 刷新完成后重新获取存储用量报告
+    await fetchStorageUsageReport();
+  } catch (err) {
+    log.error("刷新存储用量快照失败:", err);
+  } finally {
+    isRefreshingStorage.value = false;
+  }
+};
+
 // 从后端获取统计数据
 const fetchDashboardStats = async () => {
   isLoading.value = true;
   error.value = null;
 
   try {
+    // 确保拿到 /api/storage-types 元数据，这样存储类型名称展示就不需要写死映射
+    await ensureStorageTypesLoaded().catch(() => null);
+
     // 统一后端返回的数据结构（通用命名优先）
     const normalizeDashboardData = (raw) => {
       const data = raw || {};
@@ -398,9 +645,10 @@ const fetchDashboardStats = async () => {
       };
     };
 
-    // 并行获取仪表盘数据、缓存统计和版本信息
+    // 并行获取仪表盘数据、存储用量报告、缓存统计和版本信息
     const [dashboardData] = await Promise.all([
       getDashboardStats(),
+      fetchStorageUsageReport(), // 存储用量报告（独立接口）
       fetchCacheStats(), // 缓存统计失败不影响主要数据
       fetchVersionInfo(), // 版本信息失败不影响主要数据
     ]);
@@ -455,14 +703,32 @@ useEventListener(window, "languageChanged", handleLanguageChange);
       <h2 class="text-xl font-bold" :class="darkMode ? 'text-white' : 'text-gray-800'">
         {{ t("admin.dashboard.systemOverview") }}
       </h2>
-      <button
-        @click="fetchDashboardStats"
-        class="flex items-center px-3 py-1.5 rounded-md text-sm font-medium transition-colors"
-        :class="[darkMode ? 'bg-gray-700 text-gray-100 hover:bg-gray-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300']"
-      >
-        <IconRefresh class="w-4 h-4 mr-1.5" :class="isLoading ? 'animate-spin' : ''" />
-        {{ isLoading ? t("admin.dashboard.refreshing") : t("admin.dashboard.refresh") }}
-      </button>
+      <div class="flex items-center gap-2">
+        <!-- 刷新存储按钮 -->
+        <button
+          @click="handleRefreshStorageSnapshots"
+          :disabled="isRefreshingStorage"
+          class="flex items-center px-3 py-1.5 rounded-md text-sm font-medium transition-colors"
+          :class="[
+            darkMode
+              ? 'bg-primary-600 text-white hover:bg-primary-500 disabled:bg-gray-600 disabled:text-gray-400'
+              : 'bg-primary-500 text-white hover:bg-primary-600 disabled:bg-gray-300 disabled:text-gray-500',
+          ]"
+          :title="t('admin.dashboard.refreshStorageTooltip')"
+        >
+          <IconRefresh class="w-4 h-4 mr-1.5" :class="isRefreshingStorage ? 'animate-spin' : ''" />
+          {{ isRefreshingStorage ? t("admin.dashboard.refreshingStorage") : t("admin.dashboard.refreshStorage") }}
+        </button>
+        <!-- 刷新全部按钮 -->
+        <button
+          @click="fetchDashboardStats"
+          class="flex items-center px-3 py-1.5 rounded-md text-sm font-medium transition-colors"
+          :class="[darkMode ? 'bg-gray-700 text-gray-100 hover:bg-gray-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300']"
+        >
+          <IconRefresh class="w-4 h-4 mr-1.5" :class="isLoading ? 'animate-spin' : ''" />
+          {{ isLoading ? t("admin.dashboard.refreshing") : t("admin.dashboard.refresh") }}
+        </button>
+      </div>
     </div>
 
     <!-- 错误提示 -->
@@ -582,70 +848,320 @@ useEventListener(window, "languageChanged", handleLanguageChange);
 
                 <!-- 各个存储配置选项 -->
                 <a
-                  v-for="bucket in statsData.storages"
-                  :key="bucket.id"
+                  v-for="storage in storageUsageReport.storages"
+                  :key="storage.id"
                   href="#"
-                  @click.prevent="selectStorage(bucket.id)"
+                  @click.prevent="selectStorage(storage.id)"
                   class="block px-4 py-2 text-xs"
                   :class="[
-                    selectedStorageId === bucket.id ? (darkMode ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-900') : '',
+                    selectedStorageId === storage.id ? (darkMode ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-900') : '',
                     darkMode ? 'text-gray-300 hover:bg-gray-700 hover:text-white' : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900',
                   ]"
                 >
-                  {{ bucket.name }}
+                  {{ storage.name }}
                 </a>
               </div>
             </div>
           </div>
         </div>
 
+        <!-- 使用量显示 -->
         <div class="flex justify-between items-center mb-1.5">
           <span class="text-sm" :class="darkMode ? 'text-gray-300' : 'text-gray-500'">
-            {{ formatBytes(currentBucketData.usedStorage) }} / {{ formatBytes(currentBucketData.totalStorage) }}
+            {{ formatBytes(currentBucketData.usedStorage) }} /
+            {{ currentBucketData.totalStorage > 0 ? formatBytes(currentBucketData.totalStorage) : t("admin.dashboard.unlimited") }}
           </span>
-          <span class="text-sm font-medium" :class="darkMode ? 'text-blue-300' : 'text-blue-600'"> {{ currentBucketData.usagePercent }}% </span>
+          <span
+            v-if="currentBucketData.totalStorage > 0"
+            class="text-sm font-medium"
+            :class="[
+              currentBucketData.exceeded
+                ? 'text-red-500'
+                : currentBucketData.usagePercent > 80
+                  ? (darkMode ? 'text-red-400' : 'text-red-600')
+                  : (darkMode ? 'text-blue-300' : 'text-blue-600'),
+            ]"
+          >
+            {{ currentBucketData.usagePercent }}%
+          </span>
+          <span v-else class="text-sm font-medium" :class="darkMode ? 'text-gray-300' : 'text-gray-600'">
+            {{ t("admin.dashboard.unlimited") }}
+          </span>
         </div>
 
-        <div class="w-full bg-gray-200 rounded-full h-2.5" :class="darkMode ? 'bg-gray-600' : 'bg-gray-200'">
+        <!-- 进度条 -->
+        <div
+          v-if="currentBucketData.totalStorage > 0"
+          class="w-full bg-gray-200 rounded-full h-2.5"
+          :class="darkMode ? 'bg-gray-600' : 'bg-gray-200'"
+        >
           <div
             class="h-2.5 rounded-full transition-all duration-500"
-            :class="[currentBucketData.usagePercent > 80 ? 'bg-red-500' : currentBucketData.usagePercent > 60 ? 'bg-orange-500' : 'bg-primary-500']"
-            :style="{ width: `${currentBucketData.usagePercent}%` }"
+            :class="[
+              currentBucketData.exceeded
+                ? 'bg-red-600'
+                : currentBucketData.usagePercent > 80
+                  ? 'bg-red-500'
+                  : currentBucketData.usagePercent > 60
+                    ? 'bg-orange-500'
+                    : 'bg-primary-500',
+            ]"
+            :style="{ width: `${Math.min(currentBucketData.usagePercent, 100)}%` }"
           ></div>
+        </div>
+
+        <!-- 详细信息区域（仅在选中单个存储时显示） -->
+        <div v-if="!currentBucketData.isAggregate" class="mt-3 pt-3 border-t" :class="darkMode ? 'border-gray-600' : 'border-gray-200'">
+          <!-- 数据来源标签 -->
+          <div class="flex flex-wrap items-center gap-2 mb-2">
+            <!-- 存储类型标签 -->
+            <span
+              v-if="currentBucketData.storageType"
+              class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
+              :class="STORAGE_TYPE_COLORS[currentBucketData.storageType]?.bg || 'bg-gray-500'"
+              style="color: white"
+            >
+              {{ getStorageTypeName(currentBucketData.storageType) }}
+            </span>
+
+            <!-- 数据来源标签 -->
+            <span
+              v-if="currentBucketData.source"
+              class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
+              :class="getSourceInfo(currentBucketData.source).color"
+              :title="getSourceInfo(currentBucketData.source).description"
+            >
+              {{ getSourceInfo(currentBucketData.source).label }}
+            </span>
+
+            <!-- 超限警告标签 -->
+            <span
+              v-if="currentBucketData.exceeded"
+              class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+            >
+              {{ t("admin.dashboard.exceeded") }}
+            </span>
+          </div>
+
+          <!-- 上游用量信息（仅当本次用量来源就是 provider 时才有） -->
+          <div v-if="currentBucketData.source === 'provider' && currentBucketData.providerQuota" class="mb-2">
+            <p class="text-xs font-medium mb-1" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
+              {{ t("admin.dashboard.providerQuota") }}
+            </p>
+            <div class="flex items-center gap-3 text-xs" :class="darkMode ? 'text-gray-300' : 'text-gray-600'">
+              <span>
+                {{ t("admin.dashboard.total") }}: {{ formatBytes(currentBucketData.providerQuota.totalBytes) }}
+              </span>
+              <span>
+                {{ t("admin.dashboard.used") }}: {{ formatBytes(currentBucketData.providerQuota.usedBytes) }}
+              </span>
+              <span v-if="currentBucketData.providerQuota.percentUsed !== undefined && currentBucketData.providerQuota.percentUsed !== null">
+                ({{ currentBucketData.providerQuota.percentUsed }}%)
+              </span>
+            </div>
+          </div>
+
+          <!-- 快照时间 -->
+          <div v-if="currentBucketData.snapshotAt" class="text-xs" :class="darkMode ? 'text-gray-500' : 'text-gray-400'">
+            {{ t("admin.dashboard.snapshotTime") }}: {{ formatSnapshotTime(currentBucketData.snapshotAt) }}
+          </div>
+        </div>
+
+        <!-- 汇总信息区域（仅在"所有存储"视图时显示） -->
+        <div v-if="currentBucketData.isAggregate && aggregateStorageStats" class="mt-3 pt-3 border-t" :class="darkMode ? 'border-gray-600' : 'border-gray-200'">
+          <div ref="sourcePopoverRef" class="flex flex-wrap items-center gap-2 text-xs">
+            <!-- 存储配置总数 -->
+            <span class="inline-flex items-center px-2 py-0.5 rounded font-medium" :class="darkMode ? 'bg-gray-600 text-gray-200' : 'bg-gray-100 text-gray-700'">
+              {{ aggregateStorageStats.totalCount }}{{ t("admin.dashboard.configs") }}
+            </span>
+
+            <!-- 数据来源分布（可点击展开列表） -->
+            <div
+              v-for="(count, source) in aggregateStorageStats.sourceCount"
+              :key="source"
+              class="relative"
+            >
+              <button
+                @click="toggleSourcePopover(source)"
+                class="inline-flex items-center px-2 py-0.5 rounded font-medium cursor-pointer transition-all hover:opacity-80"
+                :class="getSourceInfo(source).color"
+                :title="t('admin.dashboard.clickToViewList')"
+              >
+                {{ getSourceInfo(source).label }}: {{ count }}
+                <IconChevronDown
+                  class="w-3 h-3 ml-0.5 transition-transform duration-200"
+                  :class="expandedSourceTag === source ? 'rotate-180' : ''"
+                />
+              </button>
+
+              <!-- 悬浮列表 -->
+              <transition name="popover-fade">
+                <div
+                  v-if="expandedSourceTag === source"
+                  class="absolute left-0 top-full mt-1 z-20 min-w-[160px] max-w-[240px] max-h-[200px] overflow-y-auto rounded-md shadow-lg border"
+                  :class="darkMode ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-200'"
+                >
+                  <div class="py-1">
+                    <div
+                      v-for="storage in getStorageListBySource(source)"
+                      :key="storage.id"
+                      class="px-3 py-1.5 flex items-center gap-2 text-xs"
+                      :class="darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50'"
+                    >
+                      <span
+                        class="w-2 h-2 rounded-sm shrink-0"
+                        :class="STORAGE_TYPE_COLORS[storage.storageType]?.bg || 'bg-gray-400'"
+                      ></span>
+                      <span class="truncate" :class="darkMode ? 'text-gray-200' : 'text-gray-700'" :title="storage.name">
+                        {{ storage.name }}
+                      </span>
+                    </div>
+                  </div>
+                  <div class="px-3 py-1.5 border-t text-xs" :class="darkMode ? 'border-gray-600 text-gray-400' : 'border-gray-100 text-gray-500'">
+                    {{ t("admin.dashboard.totalItems", { count }) }}
+                  </div>
+                </div>
+              </transition>
+            </div>
+
+            <!-- 不限额数量（可点击展开列表） -->
+            <div v-if="aggregateStorageStats.unlimitedCount > 0" class="relative">
+              <button
+                @click="toggleSourcePopover('unlimited')"
+                class="inline-flex items-center px-2 py-0.5 rounded font-medium cursor-pointer transition-all hover:opacity-80"
+                :class="darkMode ? 'bg-gray-600 text-gray-300' : 'bg-gray-100 text-gray-600'"
+                :title="t('admin.dashboard.clickToViewList')"
+              >
+                {{ t("admin.dashboard.unlimited") }}: {{ aggregateStorageStats.unlimitedCount }}
+                <IconChevronDown
+                  class="w-3 h-3 ml-0.5 transition-transform duration-200"
+                  :class="expandedSourceTag === 'unlimited' ? 'rotate-180' : ''"
+                />
+              </button>
+
+              <!-- 悬浮列表 -->
+              <transition name="popover-fade">
+                <div
+                  v-if="expandedSourceTag === 'unlimited'"
+                  class="absolute left-0 top-full mt-1 z-20 min-w-[160px] max-w-[240px] max-h-[200px] overflow-y-auto rounded-md shadow-lg border"
+                  :class="darkMode ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-200'"
+                >
+                  <div class="py-1">
+                    <div
+                      v-for="storage in getStorageListBySource('unlimited')"
+                      :key="storage.id"
+                      class="px-3 py-1.5 flex items-center gap-2 text-xs"
+                      :class="darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50'"
+                    >
+                      <span
+                        class="w-2 h-2 rounded-sm shrink-0"
+                        :class="STORAGE_TYPE_COLORS[storage.storageType]?.bg || 'bg-gray-400'"
+                      ></span>
+                      <span class="truncate" :class="darkMode ? 'text-gray-200' : 'text-gray-700'" :title="storage.name">
+                        {{ storage.name }}
+                      </span>
+                    </div>
+                  </div>
+                  <div class="px-3 py-1.5 border-t text-xs" :class="darkMode ? 'border-gray-600 text-gray-400' : 'border-gray-100 text-gray-500'">
+                    {{ t("admin.dashboard.totalItems", { count: aggregateStorageStats.unlimitedCount }) }}
+                  </div>
+                </div>
+              </transition>
+            </div>
+
+            <!-- 超限数量（可点击展开列表） -->
+            <div v-if="aggregateStorageStats.exceededCount > 0" class="relative">
+              <button
+                @click="toggleSourcePopover('exceeded')"
+                class="inline-flex items-center px-2 py-0.5 rounded font-medium cursor-pointer transition-all hover:opacity-80 bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                :title="t('admin.dashboard.clickToViewList')"
+              >
+                {{ t("admin.dashboard.exceeded") }}: {{ aggregateStorageStats.exceededCount }}
+                <IconChevronDown
+                  class="w-3 h-3 ml-0.5 transition-transform duration-200"
+                  :class="expandedSourceTag === 'exceeded' ? 'rotate-180' : ''"
+                />
+              </button>
+
+              <!-- 悬浮列表 -->
+              <transition name="popover-fade">
+                <div
+                  v-if="expandedSourceTag === 'exceeded'"
+                  class="absolute left-0 top-full mt-1 z-20 min-w-[160px] max-w-[240px] max-h-[200px] overflow-y-auto rounded-md shadow-lg border"
+                  :class="darkMode ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-200'"
+                >
+                  <div class="py-1">
+                    <div
+                      v-for="storage in getStorageListBySource('exceeded')"
+                      :key="storage.id"
+                      class="px-3 py-1.5 flex items-center gap-2 text-xs"
+                      :class="darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50'"
+                    >
+                      <span
+                        class="w-2 h-2 rounded-sm shrink-0"
+                        :class="STORAGE_TYPE_COLORS[storage.storageType]?.bg || 'bg-gray-400'"
+                      ></span>
+                      <span class="truncate" :class="darkMode ? 'text-gray-200' : 'text-gray-700'" :title="storage.name">
+                        {{ storage.name }}
+                      </span>
+                    </div>
+                  </div>
+                  <div class="px-3 py-1.5 border-t text-xs" :class="darkMode ? 'border-gray-600 text-gray-400' : 'border-gray-100 text-gray-500'">
+                    {{ t("admin.dashboard.totalItems", { count: aggregateStorageStats.exceededCount }) }}
+                  </div>
+                </div>
+              </transition>
+            </div>
+          </div>
+
+          <!-- 最新快照时间 -->
+          <div v-if="aggregateStorageStats.latestSnapshotAt" class="mt-2 text-xs" :class="darkMode ? 'text-gray-500' : 'text-gray-400'">
+            {{ t("admin.dashboard.latestSnapshot") }}: {{ formatSnapshotTime(aggregateStorageStats.latestSnapshotAt) }}
+          </div>
         </div>
       </div>
 
-      <!-- 存储桶分布占比 -->
+      <!-- 存储类型分布 -->
       <div class="p-4 rounded-lg shadow transition-shadow hover:shadow-md" :class="darkMode ? 'bg-gray-700' : 'bg-white'">
-        <h3 class="text-lg font-semibold mb-2" :class="darkMode ? 'text-white' : 'text-gray-800'">
-          {{ t("admin.dashboard.storageDistribution") }}
+        <h3 class="text-lg font-semibold mb-3" :class="darkMode ? 'text-white' : 'text-gray-800'">
+          {{ t("admin.dashboard.storageTypeDistribution") }}
         </h3>
 
-        <!-- 简易图表，按服务商类型固定展示 -->
-        <div class="grid grid-cols-2 gap-2">
-          <div class="flex items-center gap-2">
-            <div class="w-3 h-3 rounded-full bg-blue-500"></div>
-            <span class="text-sm" :class="darkMode ? 'text-gray-300' : 'text-gray-600'">Cloudflare R2</span>
-          </div>
-          <div class="text-right text-sm font-medium" :class="darkMode ? 'text-white' : 'text-gray-800'">{{ getProviderPercent("Cloudflare R2") }}%</div>
+        <!-- 无数据提示 -->
+        <div v-if="storageTypeDistribution.length === 0" class="text-center py-4">
+          <p class="text-sm" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
+            {{ t("admin.dashboard.noStorageConfigs") }}
+          </p>
+        </div>
 
-          <div class="flex items-center gap-2">
-            <div class="w-3 h-3 rounded-full bg-green-500"></div>
-            <span class="text-sm" :class="darkMode ? 'text-gray-300' : 'text-gray-600'">Backblaze B2</span>
+        <!-- CategoryBar 分段进度条 -->
+        <div v-else>
+          <div class="w-full h-3 rounded-full overflow-hidden flex" :class="darkMode ? 'bg-gray-600' : 'bg-gray-200'">
+            <div
+              v-for="(segment, index) in categoryBarSegments"
+              :key="index"
+              class="h-full transition-all duration-300 cursor-pointer hover:opacity-80 hover:scale-y-125"
+              :class="segment.color"
+              :style="{ width: `${segment.percent}%` }"
+              :title="segment.tooltip"
+            ></div>
           </div>
-          <div class="text-right text-sm font-medium" :class="darkMode ? 'text-white' : 'text-gray-800'">{{ getProviderPercent("Backblaze B2") }}%</div>
 
-          <div class="flex items-center gap-2">
-            <div class="w-3 h-3 rounded-full bg-yellow-500"></div>
-            <span class="text-sm" :class="darkMode ? 'text-gray-300' : 'text-gray-600'">AWS S3</span>
-          </div>
-          <div class="text-right text-sm font-medium" :class="darkMode ? 'text-white' : 'text-gray-800'">{{ getProviderPercent("AWS S3") }}%</div>
-
-          <div class="flex items-center gap-2">
-            <div class="w-3 h-3 rounded-full bg-purple-500"></div>
-            <span class="text-sm" :class="darkMode ? 'text-gray-300' : 'text-gray-600'">{{ t("admin.dashboard.otherStorage") }}</span>
-          </div>
-          <div class="text-right text-sm font-medium" :class="darkMode ? 'text-white' : 'text-gray-800'">{{ getOtherProvidersPercent() }}%</div>
+          <!-- 流式图例列表 -->
+          <ul role="list" class="mt-4 flex flex-wrap gap-x-6 gap-y-3">
+            <li v-for="item in storageTypeDistribution" :key="item.type" class="flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-sm shrink-0" :class="item.color.bg"></span>
+              <span class="text-sm" :class="darkMode ? 'text-gray-300' : 'text-gray-600'">
+                {{ getStorageTypeName(item.type) }}
+              </span>
+              <span class="text-sm font-semibold" :class="darkMode ? 'text-white' : 'text-gray-800'">
+                {{ item.percent }}%
+              </span>
+              <span class="text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
+                ({{ item.count }}{{ t("admin.dashboard.configs") }})
+              </span>
+            </li>
+          </ul>
         </div>
       </div>
     </div>
@@ -936,5 +1452,23 @@ useEventListener(window, "languageChanged", handleLanguageChange);
 /* 悬停效果 */
 .hover\:shadow-md:hover {
   box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+}
+
+/* Popover 悬浮列表动画 */
+.popover-fade-enter-active,
+.popover-fade-leave-active {
+  transition: all 0.15s ease-out;
+}
+
+.popover-fade-enter-from,
+.popover-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+.popover-fade-enter-to,
+.popover-fade-leave-from {
+  opacity: 1;
+  transform: translateY(0);
 }
 </style>

@@ -9,7 +9,7 @@ import { ApiStatus } from "../../../constants/index.js";
 import { createS3Client, generateCustomHostDirectUrl } from "./utils/s3Utils.js";
 import { DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { normalizeS3SubPath, isCompleteFilePath } from "./utils/S3PathUtils.js";
-import { updateMountLastUsed, findMountPointByPath } from "../../fs/utils/MountResolver.js";
+import { updateMountLastUsed } from "../../fs/utils/MountResolver.js";
 import { buildFullProxyUrl } from "../../../constants/proxy.js";
 import { S3DriverError, AppError } from "../../../http/errors.js";
 
@@ -102,14 +102,15 @@ export class S3StorageDriver extends BaseDriver {
 
   /**
    * 列出目录内容
-   * @param {string} path - 目录路径
-   * @param {Object} options - 选项参数
+   * @param {string} subPath - 子路径（subPath-only）
+   * @param {Object} ctx - 上下文（mount/path/subPath/db/...）
    * @returns {Promise<Object>} 目录内容
    */
-  async listDirectory(path, options = {}) {
+  async listDirectory(subPath, ctx = {}) {
     this._ensureInitialized();
 
-    const { mount, subPath, db } = options;
+    const { mount, db } = ctx;
+    const fsPath = ctx?.path;
 
     // 规范化S3子路径
     const s3SubPath = normalizeS3SubPath(subPath, true);
@@ -124,9 +125,9 @@ export class S3StorageDriver extends BaseDriver {
       return await this.directoryOps.listDirectory(s3SubPath, {
         mount,
         subPath, // 使用正确的子路径用于缓存键生成
-        path,
+        path: fsPath,
         db,
-        ...options,
+        ...ctx,
       });
     } catch (error) {
       throw this._rethrow(error, "列出目录失败");
@@ -135,14 +136,15 @@ export class S3StorageDriver extends BaseDriver {
 
   /**
    * 获取文件信息
-   * @param {string} path - 文件路径
-   * @param {Object} options - 选项参数
+   * @param {string} subPath - 子路径（subPath-only）
+   * @param {Object} ctx - 上下文（mount/path/subPath/db/...）
    * @returns {Promise<Object>} 文件信息
    */
-  async getFileInfo(path, options = {}) {
+  async getFileInfo(subPath, ctx = {}) {
     this._ensureInitialized();
 
-    const { mount, subPath, db, userType, userId, request } = options;
+    const { mount, db, userType, userId, request } = ctx;
+    const fsPath = ctx?.path;
 
     // 规范化S3子路径
     const s3SubPath = normalizeS3SubPath(subPath, false);
@@ -155,10 +157,10 @@ export class S3StorageDriver extends BaseDriver {
     // 特殊处理：当s3SubPath为空字符串时（访问挂载点根目录），直接作为目录处理，跳过文件检查
     // 因为S3对象Key不能为空字符串，所以空字符串永远不可能是有效的文件
     if (s3SubPath === "") {
-      console.log(`getFileInfo - 检测到挂载点根目录访问，直接作为目录处理: ${path}`);
+      console.log(`getFileInfo - 检测到挂载点根目录访问，直接作为目录处理: ${fsPath}`);
       return await this.directoryOps.getDirectoryInfo(s3SubPath, {
         mount,
-        path,
+        path: fsPath,
       });
     }
 
@@ -166,7 +168,7 @@ export class S3StorageDriver extends BaseDriver {
       // 首先尝试作为文件获取信息
       return await this.fileOps.getFileInfo(s3SubPath, {
         mount,
-        path,
+        path: fsPath,
         userType,
         userId,
         request,
@@ -178,7 +180,7 @@ export class S3StorageDriver extends BaseDriver {
         try {
           return await this.directoryOps.getDirectoryInfo(s3SubPath, {
             mount,
-            path,
+            path: fsPath,
           });
         } catch (dirError) {
           // 如果目录也不存在，抛出原始错误
@@ -191,14 +193,15 @@ export class S3StorageDriver extends BaseDriver {
 
   /**
    * 下载文件
-   * @param {string} path - 文件路径
-   * @param {Object} options - 选项参数
+   * @param {string} subPath - 子路径（subPath-only）
+   * @param {Object} ctx - 上下文（mount/path/subPath/db/request/...）
    * @returns {Promise<import('../../streaming/types.js').StorageStreamDescriptor>} 流描述对象
    */
-  async downloadFile(path, options = {}) {
+  async downloadFile(subPath, ctx = {}) {
     this._ensureInitialized();
 
-    const { mount, subPath, db, request } = options;
+    const { mount, db, request } = ctx;
+    const fsPath = ctx?.path;
 
     // 规范化S3子路径
     const s3SubPath = normalizeS3SubPath(subPath, false);
@@ -209,7 +212,7 @@ export class S3StorageDriver extends BaseDriver {
     }
 
     // 提取文件名
-    const fileName = path.split("/").filter(Boolean).pop() || "file";
+    const fileName = typeof fsPath === "string" ? fsPath.split("/").filter(Boolean).pop() || "file" : "file";
 
     try {
       // 委托给文件操作模块
@@ -223,7 +226,7 @@ export class S3StorageDriver extends BaseDriver {
    * 统一上传入口（文件 / 流）
    * - 外部只调用此方法，内部根据数据类型选择流式或表单实现
    */
-  async uploadFile(path, fileOrStream, options = {}) {
+  async uploadFile(subPath, fileOrStream, ctx = {}) {
     this._ensureInitialized();
 
     const isNodeStream = fileOrStream && (typeof fileOrStream.pipe === "function" || fileOrStream.readable);
@@ -231,23 +234,24 @@ export class S3StorageDriver extends BaseDriver {
 
     // 有 Stream 能力时优先走“流式上传”路径
     if (isNodeStream || isWebStream) {
-      return await this.uploadStream(path, fileOrStream, options);
+      return await this.uploadStream(subPath, fileOrStream, ctx);
     }
 
     // 其它情况按“表单上传”（一次性完整缓冲后上传）处理
-    return await this.uploadForm(path, fileOrStream, options);
+    return await this.uploadForm(subPath, fileOrStream, ctx);
   }
 
   /**
    * 内部流式上传实现
    */
-  async uploadStream(path, stream, options = {}) {
+  async uploadStream(subPath, stream, ctx = {}) {
     this._ensureInitialized();
 
-    const { mount, subPath, db, userIdOrInfo, userType, filename, contentType, contentLength, uploadId } = options;
+    const { mount, db, userIdOrInfo, userType, filename, contentType, contentLength, uploadId } = ctx;
+    const fsPath = ctx?.path || "";
 
     const s3SubPath = normalizeS3SubPath(subPath, false);
-    const s3Key = this._normalizeFilePath(s3SubPath, path, filename);
+    const s3Key = this._normalizeFilePath(s3SubPath, fsPath, filename);
 
     // 统一交由 S3UploadOperations.uploadStream 使用 Upload 处理流式上传，
     // 包含自动的单请求/多分片选择和进度回调
@@ -270,13 +274,14 @@ export class S3StorageDriver extends BaseDriver {
   /**
    * 内部表单上传实现（一次性读入内存）
    */
-  async uploadForm(path, fileOrData, options = {}) {
+  async uploadForm(subPath, fileOrData, ctx = {}) {
     this._ensureInitialized();
 
-    const { mount, subPath, db, userIdOrInfo, userType, filename, contentType } = options;
+    const { mount, db, userIdOrInfo, userType, filename, contentType } = ctx;
+    const fsPath = ctx?.path || "";
 
     const s3SubPath = normalizeS3SubPath(subPath, false);
-    const s3Key = this._normalizeFilePath(s3SubPath, path, filename);
+    const s3Key = this._normalizeFilePath(s3SubPath, fsPath, filename);
 
     try {
       return await this.uploadOps.uploadForm(s3Key, /** @type {any} */ (fileOrData), {
@@ -294,14 +299,15 @@ export class S3StorageDriver extends BaseDriver {
 
   /**
    * 创建目录
-   * @param {string} path - 目录路径
-   * @param {Object} options - 选项参数
+   * @param {string} subPath - 子路径（subPath-only）
+   * @param {Object} ctx - 上下文（mount/path/subPath/db/...）
    * @returns {Promise<Object>} 创建结果
    */
-  async createDirectory(path, options = {}) {
+  async createDirectory(subPath, ctx = {}) {
     this._ensureInitialized();
 
-    const { mount, subPath, db } = options;
+    const { mount, db } = ctx;
+    const fsPath = ctx?.path;
 
     // 规范化S3子路径
     const s3SubPath = normalizeS3SubPath(subPath, true);
@@ -316,7 +322,7 @@ export class S3StorageDriver extends BaseDriver {
       return await this.directoryOps.createDirectory(s3SubPath, {
         mount,
         subPath,
-        path,
+        path: fsPath,
       });
     } catch (error) {
       throw this._rethrow(error, "创建目录失败");
@@ -325,20 +331,17 @@ export class S3StorageDriver extends BaseDriver {
 
   /**
    * 重命名文件或目录
-   * @param {string} oldPath - 原路径
-   * @param {string} newPath - 新路径
-   * @param {Object} options - 选项参数
+   * @param {string} oldSubPath - 原子路径（subPath-only）
+   * @param {string} newSubPath - 新子路径（subPath-only）
+   * @param {Object} ctx - 上下文（oldPath/newPath/oldSubPath/newSubPath/mount/db/...）
    * @returns {Promise<Object>} 重命名结果
    */
-  async renameItem(oldPath, newPath, options = {}) {
+  async renameItem(oldSubPath, newSubPath, ctx = {}) {
     this._ensureInitialized();
 
     try {
       // 委托给批量操作模块
-      return await this.batchOps.renameItem(oldPath, newPath, {
-        ...options,
-        findMountPointByPath,
-      });
+      return await this.batchOps.renameItem(oldSubPath, newSubPath, ctx);
     } catch (error) {
       throw this._rethrow(error, "重命名失败");
     }
@@ -346,19 +349,16 @@ export class S3StorageDriver extends BaseDriver {
 
   /**
    * 批量删除文件
-   * @param {Array<string>} paths - 路径数组
-   * @param {Object} options - 选项参数
+   * @param {Array<string>} subPaths - 子路径数组（subPath-only）
+   * @param {Object} ctx - 上下文（paths/subPaths/mount/db/...）
    * @returns {Promise<Object>} 批量删除结果
    */
-  async batchRemoveItems(paths, options = {}) {
+  async batchRemoveItems(subPaths, ctx = {}) {
     this._ensureInitialized();
 
     try {
       // 委托给批量操作模块
-      return await this.batchOps.batchRemoveItems(paths, {
-        ...options,
-        findMountPointByPath,
-      });
+      return await this.batchOps.batchRemoveItems(subPaths, ctx);
     } catch (error) {
       throw this._rethrow(error, "批量删除失败");
     }
@@ -388,19 +388,16 @@ export class S3StorageDriver extends BaseDriver {
 
   /**
    * 复制文件或目录
-   * @param {string} sourcePath - 源路径
-   * @param {string} targetPath - 目标路径
-   * @param {Object} options - 选项参数
+   * @param {string} sourceSubPath - 源子路径（subPath-only）
+   * @param {string} targetSubPath - 目标子路径（subPath-only）
+   * @param {Object} ctx - 上下文（sourcePath/targetPath/sourceSubPath/targetSubPath/...）
    * @returns {Promise<Object>} 复制结果
    */
-  async copyItem(sourcePath, targetPath, options = {}) {
+  async copyItem(sourceSubPath, targetSubPath, ctx = {}) {
     this._ensureInitialized();
     try {
       // 委托给批量操作模块
-      return await this.batchOps.copyItem(sourcePath, targetPath, {
-        ...options,
-        findMountPointByPath,
-      });
+      return await this.batchOps.copyItem(sourceSubPath, targetSubPath, ctx);
     } catch (error) {
       throw this._rethrow(error, "复制失败");
     }
@@ -408,18 +405,17 @@ export class S3StorageDriver extends BaseDriver {
 
   /**
    * 生成预签名下载URL
-   * @param {string} path - 文件路径
-   * @param {Object} options - 选项参数
+   * @param {string} subPath - 子路径（subPath-only）
+   * @param {Object} ctx - 上下文（mount/path/subPath/request/...）
    * @returns {Promise<Object>} 预签名URL信息
    */
-  async generateDownloadUrl(path, options = {}) {
+  async generateDownloadUrl(subPath, ctx = {}) {
     this._ensureInitialized();
 
-    const { subPath } = options;
     const s3SubPath = normalizeS3SubPath(subPath, false);
 
     try {
-      const { expiresIn, forceDownload, userType, userId, mount } = options;
+      const { expiresIn, forceDownload, userType, userId, mount } = ctx;
       return await this.fileOps.generateDownloadUrl(s3SubPath, {
         expiresIn,
         forceDownload,
@@ -449,6 +445,7 @@ export class S3StorageDriver extends BaseDriver {
     const effectiveSubPath = subPath != null ? subPath : path;
 
     const downloadInfo = await this.generateDownloadUrl(effectiveSubPath, {
+      path,
       subPath: effectiveSubPath,
       expiresIn,
       forceDownload,
@@ -470,23 +467,22 @@ export class S3StorageDriver extends BaseDriver {
 
   /**
    * 生成预签名上传URL
-   * @param {string} path - 目标路径
-   * @param {Object} options - 选项参数
+   * @param {string} subPath - 子路径（subPath-only）
+   * @param {Object} ctx - 上下文（mount/path/subPath/db/fileName/...）
    * @returns {Promise<Object>} 预签名URL信息
    */
-  async generateUploadUrl(path, options = {}) {
+  async generateUploadUrl(subPath, ctx = {}) {
     this._ensureInitialized();
 
-    const { mount, subPath, db } = options;
-    // 对于 FS 视图，使用 subPath 规范化；对于 ObjectStore 等 storage-first 场景，直接使用传入的 path 作为对象 Key
-    const s3SubPath = subPath != null ? normalizeS3SubPath(subPath, false) : path;
+    const { mount, db } = ctx;
+    const s3SubPath = normalizeS3SubPath(subPath, false);
 
     if (db && mount?.id) {
       await updateMountLastUsed(db, mount.id);
     }
 
     try {
-      const { fileName, fileSize, expiresIn } = options;
+      const { fileName, fileSize, expiresIn } = ctx;
       return await this.uploadOps.generateUploadUrl(s3SubPath, {
         fileName,
         fileSize,
@@ -499,14 +495,14 @@ export class S3StorageDriver extends BaseDriver {
 
   /**
    * 处理上传完成后的逻辑（用于预签名上传后端对齐）
-   * @param {string} path - 目标路径
-   * @param {Object} options - 选项 { mount, subPath, db, fileName, fileSize, contentType, etag }
+   * @param {string} subPath - 子路径（subPath-only）
+   * @param {Object} ctx - 上下文 { mount, path, subPath, db, fileName, fileSize, contentType, etag }
    * @returns {Promise<Object>} 处理结果
    */
-  async handleUploadComplete(path, options = {}) {
+  async handleUploadComplete(subPath, ctx = {}) {
     this._ensureInitialized();
 
-    const { mount, subPath, db, fileName, fileSize, contentType, etag } = options;
+    const { mount, db, fileName, fileSize, contentType, etag } = ctx;
 
     // 规范化S3子路径
     const s3SubPath = normalizeS3SubPath(subPath, false);
@@ -534,21 +530,25 @@ export class S3StorageDriver extends BaseDriver {
 
   /**
    * 更新文件内容
-   * @param {string} path - 文件路径
+   * @param {string} subPath - 子路径（subPath-only）
    * @param {string} content - 新内容
-   * @param {Object} options - 选项参数
+   * @param {Object} ctx - 上下文（mount/path/subPath/db/...）
    * @returns {Promise<Object>} 更新结果
    */
-  async updateFile(path, content, options = {}) {
+  async updateFile(subPath, content, ctx = {}) {
     this._ensureInitialized();
 
-    const { mount, subPath, db } = options;
+    const { mount, db } = ctx;
+    const fsPath = ctx?.path;
 
     // 规范化S3子路径
     const s3SubPath = normalizeS3SubPath(subPath, false);
 
     // 提取文件名
-    const fileName = path.split("/").filter(Boolean).pop() || "file";
+    const fileName =
+      (typeof fsPath === "string" && fsPath ? fsPath.split("/").filter(Boolean).pop() : null) ||
+      (typeof subPath === "string" && subPath ? subPath.split("/").filter(Boolean).pop() : null) ||
+      "file";
 
     // 委托给文件操作模块
     const result = await this.fileOps.updateFile(s3SubPath, content, {
@@ -560,27 +560,43 @@ export class S3StorageDriver extends BaseDriver {
       await updateMountLastUsed(db, mount.id);
     }
 
-    return result;
+    const resolvedPath =
+      typeof fsPath === "string" && fsPath
+        ? fsPath
+        : typeof result?.path === "string" && result.path
+          ? result.path
+          : typeof subPath === "string"
+            ? subPath
+            : "";
+
+    return {
+      ...result,
+      path: resolvedPath,
+    };
   }
 
 
   /**
    * 检查路径是否存在
-   * @param {string} path - 路径
-   * @param {Object} options - 选项参数
+   * @param {string} subPath - 子路径（subPath-only）
+   * @param {Object} ctx - 上下文（mount/path/subPath/db/...）
    * @returns {Promise<boolean>} 是否存在
    */
-  async exists(path, options = {}) {
+  async exists(subPath, ctx = {}) {
     this._ensureInitialized();
 
-    const { subPath } = options;
+    const { mount, db } = ctx;
 
     // 规范化S3子路径
     const s3SubPath = normalizeS3SubPath(subPath, false);
 
     try {
       // 委托给文件操作模块检查存在性
-      return await this.fileOps.exists(s3SubPath);
+      const exists = await this.fileOps.exists(s3SubPath);
+      if (db && mount?.id) {
+        await updateMountLastUsed(db, mount.id);
+      }
+      return exists;
     } catch (error) {
       throw this._rethrow(error, "存在性检查失败");
     }
@@ -837,19 +853,16 @@ export class S3StorageDriver extends BaseDriver {
 
   /**
    * 生成代理URL（ProxyCapable接口实现）
-   * @param {string} path - 文件路径
-   * @param {Object} options - 选项参数
-   * @param {Object} options.mount - 挂载点信息
-   * @param {Request} options.request - 请求对象
-   * @param {boolean} options.download - 是否为下载模式
-   * @param {Object} options.db - 数据库连接对象
+   * @param {string} subPath - 子路径（subPath-only）
+   * @param {Object} ctx - 上下文（path/request/download/channel/...）
    * @returns {Promise<Object>} 代理URL对象
    */
-  async generateProxyUrl(path, options = {}) {
-    const { request, download = false, channel = "web" } = options;
+  async generateProxyUrl(subPath, ctx = {}) {
+    const { request, download = false, channel = "web" } = ctx;
+    const fsPath = ctx?.path;
 
     // 驱动层仅负责根据路径构造基础代理URL，不再做签名与策略判断
-    const proxyUrl = buildFullProxyUrl(request, path, download);
+    const proxyUrl = buildFullProxyUrl(request, fsPath, download);
 
     return {
       url: proxyUrl,

@@ -11,6 +11,7 @@ import {
   createStorageTables,
   createSystemTables,
   createTasksTables,
+  createMetricsCacheTables,
   createUploadSessionsTables,
   createUploadPartsTables,
   createVfsTables,
@@ -46,6 +47,7 @@ export async function initDatabase(db) {
   await createScheduledJobRunsTables(db);
   await createUploadSessionsTables(db);
   await createVfsTables(db);
+  await createMetricsCacheTables(db);
   await createUploadPartsTables(db);
 
   await createIndexes(db);

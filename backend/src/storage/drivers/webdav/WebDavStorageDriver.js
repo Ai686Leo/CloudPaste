@@ -36,7 +36,33 @@ export class WebDavStorageDriver extends BaseDriver {
     this.username = config.username || "";
     this.passwordEncrypted = config.password || "";
     this.urlProxy = config.url_proxy || null;
-    this.tlsSkipVerify = !!config.tls_insecure_skip_verify;
+    this.tlsSkipVerify = config?.tls_insecure_skip_verify === 1;
+    this.enableDiskUsage = config?.enable_disk_usage === 1;
+  }
+
+  /**
+   * 规范化 WebDAV endpoint_url：
+   * - 必须是合法 http(s) URL
+   * - pathname 确保以 / 结尾，避免某些 URL join 规则把最后一段当成“文件名”导致拼接错误
+   * @param {unknown} value
+   * @returns {string}
+   */
+  _normalizeClientEndpointUrl(value) {
+    const raw = value == null ? "" : String(value).trim();
+    if (!raw) return "";
+    let url;
+    try {
+      url = new URL(raw);
+    } catch {
+      throw new DriverError("WebDAV endpoint_url 不是合法的 URL", { status: ApiStatus.BAD_REQUEST, expose: true });
+    }
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      throw new DriverError("WebDAV endpoint_url 必须以 http:// 或 https:// 开头", { status: ApiStatus.BAD_REQUEST, expose: true });
+    }
+    if (!url.pathname.endsWith("/")) {
+      url.pathname = `${url.pathname}/`;
+    }
+    return url.toString();
   }
 
   /**
@@ -48,16 +74,22 @@ export class WebDavStorageDriver extends BaseDriver {
       if (!password) {
         throw new DriverError("WebDAV 凭据不可用", { status: ApiStatus.FORBIDDEN });
       }
-      const agent = this.endpoint.startsWith("https://") && this.tlsSkipVerify ? new https.Agent({ rejectUnauthorized: false }) : undefined;
+      const endpointForClient = this._normalizeClientEndpointUrl(this.endpoint);
+      if (!endpointForClient) {
+        throw new DriverError("WebDAV 配置缺少 endpoint_url", { status: ApiStatus.BAD_REQUEST, expose: true });
+      }
+
+      const agent =
+        endpointForClient.startsWith("https://") && this.tlsSkipVerify ? new https.Agent({ rejectUnauthorized: false }) : undefined;
       const clientOptions = agent ? { httpsAgent: agent } : {};
-      this.client = createClient(this.endpoint, {
+      this.client = createClient(endpointForClient, {
         username: this.username,
         password,
         ...clientOptions,
       });
       this.initialized = true;
       this.decryptedPassword = password;
-      console.log(`WebDAV 驱动初始化完成: ${this.endpoint}`);
+      console.log(`WebDAV 驱动初始化完成: ${endpointForClient}`);
     } catch (error) {
       console.error("WebDAV 驱动初始化失败", error);
       throw this._wrapError(error, "WebDAV 驱动初始化失败", ApiStatus.INTERNAL_ERROR);
@@ -67,13 +99,13 @@ export class WebDavStorageDriver extends BaseDriver {
   /**
    * 目录列表
    */
-  async listDirectory(path, options = {}) {
+  async listDirectory(subPath, ctx = {}) {
     this._ensureInitialized();
-    const { mount, subPath = "", refresh = false, db } = options;
+    const { mount, path, refresh = false, db } = ctx;
     const davPath = this._buildDavPath(subPath, true);
     try {
       const entries = await this.client.getDirectoryContents(davPath, { deep: false, glob: "*" });
-      const basePath = this._buildMountPath(mount, subPath);
+      const basePath = path;
       const items = await Promise.all(
         entries.map(async (item) => {
           const isDirectory = item.type === "directory";
@@ -150,7 +182,7 @@ export class WebDavStorageDriver extends BaseDriver {
       );
 
       return {
-        path: basePath,
+        path,
         type: "directory",
         isRoot: subPath === "" || subPath === "/",
         isVirtual: false,
@@ -166,9 +198,9 @@ export class WebDavStorageDriver extends BaseDriver {
   /**
    * 文件信息
    */
-  async getFileInfo(path, options = {}) {
+  async getFileInfo(subPath, ctx = {}) {
     this._ensureInitialized();
-    const { mount, subPath = "", db, request = null, userType = null, userId = null } = options;
+    const { mount, path, db, request = null, userType = null, userId = null } = ctx;
     const davPath = this._buildDavPath(subPath, false);
     try {
       const stat = await this.client.stat(davPath);
@@ -216,13 +248,14 @@ export class WebDavStorageDriver extends BaseDriver {
 
   /**
    * 下载文件（返回 StorageStreamDescriptor）
-   * @param {string} path - 文件路径
-   * @param {Object} options - 选项参数
+   * @param {string} subPath - 挂载内子路径
+   * @param {Object} ctx - 上下文（path/mount/subPath 等）
    * @returns {Promise<import('../../streaming/types.js').StorageStreamDescriptor>} 流描述对象
    */
-  async downloadFile(path, options = {}) {
+  async downloadFile(subPath, ctx = {}) {
     this._ensureInitialized();
-    const davPath = this._buildDavPath(options.subPath || path, false);
+    const { path } = ctx;
+    const davPath = this._buildDavPath(subPath, false);
     const url = this._buildRequestUrl(davPath);
 
     // 先获取文件元数据（HEAD 请求）
@@ -363,28 +396,29 @@ export class WebDavStorageDriver extends BaseDriver {
    * 统一上传入口（文件 / 流）
    * - 外部统一调用此方法，内部根据数据类型选择流式或表单实现
    */
-  async uploadFile(path, fileOrStream, options = {}) {
+  async uploadFile(subPath, fileOrStream, ctx = {}) {
     this._ensureInitialized();
     const isWebStream = fileOrStream && typeof fileOrStream.getReader === "function";
 
     if (isWebStream) {
       // WebDAV 协议入口等场景：优先走真正的流式上传
-      return await this.uploadStream(path, fileOrStream, options);
+      return await this.uploadStream(subPath, fileOrStream, ctx);
     }
 
     // 其它场景统一视为“表单/一次性上传”（读取到 Buffer 再写入）
-    return await this.uploadForm(path, fileOrStream, options);
+    return await this.uploadForm(subPath, fileOrStream, ctx);
   }
 
   /**
    * 内部流式上传实现（主要用于 Web ReadableStream）
    */
-  async uploadStream(path, stream, options = {}) {
+  async uploadStream(subPath, stream, ctx = {}) {
     this._ensureInitialized();
-    const davPath = this._resolveTargetDavPath(options.subPath, path, stream, options);
+    const { path } = ctx;
+    const davPath = this._resolveTargetDavPath(subPath, path, stream, ctx);
     const url = this._buildRequestUrl(davPath);
     const headers = {};
-    const contentType = options.contentType || null;
+    const contentType = ctx.contentType || null;
     if (contentType) {
       headers["Content-Type"] = contentType;
     }
@@ -396,13 +430,13 @@ export class WebDavStorageDriver extends BaseDriver {
     try {
       const hasGetReader = stream && typeof stream.getReader === "function";
       if (hasGetReader) {
-        const total = options.contentLength || options.fileSize || null;
+        const total = ctx.contentLength || ctx.fileSize || null;
         const reader = stream.getReader();
         let loaded = 0;
         let lastLogged = 0;
         const LOG_INTERVAL = 50 * 1024 * 1024; // 每 50MB 打印一次，避免刷屏
 
-        const progressId = options.uploadId || davPath;
+        const progressId = ctx.uploadId || davPath;
 
         body = new ReadableStream({
           async pull(controller) {
@@ -493,10 +527,11 @@ export class WebDavStorageDriver extends BaseDriver {
   /**
    * 内部表单上传实现（一次性缓冲，适用于 Buffer / Uint8Array / ArrayBuffer / File / Blob / string 等）
    */
-  async uploadForm(path, fileOrData, options = {}) {
+  async uploadForm(subPath, fileOrData, ctx = {}) {
     this._ensureInitialized();
-    const davPath = this._resolveTargetDavPath(options.subPath, path, fileOrData, options);
-    const { body, length, contentType } = await this._normalizeBody(fileOrData, options);
+    const { path } = ctx;
+    const davPath = this._resolveTargetDavPath(subPath, path, fileOrData, ctx);
+    const { body, length, contentType } = await this._normalizeBody(fileOrData, ctx);
 
     try {
       await this._ensureParentDirectories(davPath);
@@ -515,25 +550,42 @@ export class WebDavStorageDriver extends BaseDriver {
     }
   }
 
-  async createDirectory(path, options = {}) {
+  async createDirectory(subPath, ctx = {}) {
     this._ensureInitialized();
-    const davSubPath = options.mount ? (options.subPath || "") : (options.subPath || path);
-    const davPath = this._buildDavPath(davSubPath, true);
+    const { path } = ctx;
+    const davPath = this._buildDavPath(subPath, true);
     try {
       await this.client.createDirectory(davPath);
     } catch (error) {
       const status = this._statusFromError(error);
       // 部分 WebDAV 服务对已存在目录或根目录返回 405/501，视为目录已存在即可
       if (this._isConflict(error) || status === ApiStatus.NOT_IMPLEMENTED) {
-        return { success: true, path: davPath, alreadyExists: true };
+        // 返回 FS 视图路径（契约）：path 字段必须等于输入参数
+        return { success: true, path, alreadyExists: true };
       }
       throw this._wrapError(error, "创建目录失败", status);
     }
-    return { success: true, path: davPath };
+    // 返回 FS 视图路径（契约）：path 字段必须等于输入参数
+    return { success: true, path };
   }
 
-  async updateFile(path, content, options = {}) {
-    return await this.uploadFile(path, content, options);
+  async updateFile(subPath, content, ctx = {}) {
+    this._ensureInitialized();
+    const fsPath = ctx?.path;
+    if (typeof fsPath !== "string" || !fsPath) {
+      throw new DriverError("WebDAV 更新文件缺少 path 上下文（ctx.path）", {
+        status: ApiStatus.INTERNAL_ERROR,
+        expose: false,
+        details: { subPath },
+      });
+    }
+
+    const result = await this.uploadFile(subPath, content, ctx);
+    return {
+      success: !!result?.success,
+      path: fsPath,
+      message: result?.message,
+    };
   }
 
   /**
@@ -542,7 +594,7 @@ export class WebDavStorageDriver extends BaseDriver {
    */
   async getStats() {
     this._ensureInitialized();
-    return {
+    const base = {
       type: this.type,
       endpoint: this.endpoint,
       defaultFolder: this.defaultFolder || "/",
@@ -550,17 +602,76 @@ export class WebDavStorageDriver extends BaseDriver {
       initialized: this.initialized,
       timestamp: new Date().toISOString(),
     };
+
+    if (!this.enableDiskUsage) {
+      return {
+        ...base,
+        supported: false,
+        message: "WebDAV 磁盘占用统计未启用（enable_disk_usage = false）",
+      };
+    }
+
+    // WebDAV 配额（quota）读取：RFC 4331 定义 quota-used-bytes / quota-available-bytes
+    // 注意：并非所有 WebDAV 服务都支持；因此失败时返回 supported=false，不抛异常
+    try {
+      const basePath = this._buildDavPath("", true);
+      let quotaRes;
+      try {
+        quotaRes = this.client.getQuota.length >= 1 ? await this.client.getQuota(basePath) : await this.client.getQuota();
+      } catch {
+        quotaRes = await this.client.getQuota();
+      }
+
+      const quotaData = quotaRes && typeof quotaRes === "object" && "data" in quotaRes ? quotaRes.data : quotaRes;
+      const used = quotaData && typeof quotaData === "object" && typeof quotaData.used === "number" ? quotaData.used : null;
+      const available = quotaData && typeof quotaData === "object" && typeof quotaData.available === "number" ? quotaData.available : null;
+
+      if (used == null && available == null) {
+        return {
+          ...base,
+          supported: false,
+          message: "WebDAV 服务器未提供配额信息（可能不支持 RFC 4331 quota 属性）",
+        };
+      }
+
+      const totalBytes = used != null && available != null ? used + available : null;
+      const usedBytes = used != null ? used : null;
+      const remainingBytes = available != null ? available : null;
+
+      let usagePercent = null;
+      if (totalBytes && usedBytes != null && totalBytes > 0) {
+        usagePercent = Math.min(100, Math.round((usedBytes / totalBytes) * 100));
+      }
+
+      return {
+        ...base,
+        supported: true,
+        quota: {
+          raw: quotaData || null,
+          totalBytes,
+          usedBytes,
+          remainingBytes,
+          usagePercent,
+        },
+      };
+    } catch (error) {
+      return {
+        ...base,
+        supported: false,
+        message: error?.message || String(error),
+      };
+    }
   }
 
-  async renameItem(oldPath, newPath, options = {}) {
+  async renameItem(oldSubPath, newSubPath, ctx = {}) {
     this._ensureInitialized();
-    const { mount } = options;
-    const fromSubPath = options.mount ? (options.subPath || "") : (options.subPath || oldPath);
-    const from = this._buildDavPath(fromSubPath, false);
-    const to = this._buildDavPath(this._relativeTargetPath(newPath, mount), false);
+    const { oldPath, newPath } = ctx;
+    const isDir = typeof oldSubPath === "string" && oldSubPath.endsWith("/");
+    const from = this._buildDavPath(oldSubPath, isDir);
+    const to = this._buildDavPath(newSubPath, isDir);
     try {
       await this.client.moveFile(from, to, { overwrite: false });
-      return { success: true, source: from, target: to };
+      return { success: true, source: oldPath, target: newPath };
     } catch (error) {
       if (this._isNotSupported(error)) {
         throw new DriverError("WebDAV 不支持移动操作", { status: ApiStatus.NOT_IMPLEMENTED, expose: true });
@@ -569,14 +680,12 @@ export class WebDavStorageDriver extends BaseDriver {
     }
   }
 
-  async copyItem(sourcePath, targetPath, options = {}) {
+  async copyItem(sourceSubPath, targetSubPath, ctx = {}) {
     this._ensureInitialized();
-    const { mount, skipExisting = false, _skipExistingChecked = false } = options;
-    const fromSubPath = options.mount ? (options.subPath || "") : (options.subPath || sourcePath);
-    const targetSubPath = this._relativeTargetPath(targetPath, mount);
-
-    const from = this._buildDavPath(fromSubPath, false);
-    const to = this._buildDavPath(targetSubPath, false);
+    const { sourcePath, targetPath, skipExisting = false, _skipExistingChecked = false } = ctx;
+    const isDir = typeof sourceSubPath === "string" && sourceSubPath.endsWith("/");
+    const from = this._buildDavPath(sourceSubPath, isDir);
+    const to = this._buildDavPath(targetSubPath, isDir);
 
     // skipExisting 检查：在复制前检查目标文件是否已存在
     // 如果入口层已检查（_skipExistingChecked=true），跳过重复检查
@@ -588,8 +697,8 @@ export class WebDavStorageDriver extends BaseDriver {
             status: "skipped",
             skipped: true,
             reason: "target_exists",
-            source: from,
-            target: to,
+            source: sourcePath,
+            target: targetPath,
             contentLength: 0,
           };
         }
@@ -602,7 +711,7 @@ export class WebDavStorageDriver extends BaseDriver {
     try {
       const overwrite = !skipExisting;
       await this.client.copyFile(from, to, { overwrite });
-      return { status: "success", success: true, source: from, target: to };
+      return { status: "success", source: sourcePath, target: targetPath };
     } catch (error) {
       if (this._isNotSupported(error)) {
         throw new DriverError("WebDAV 不支持复制操作", { status: ApiStatus.NOT_IMPLEMENTED, expose: true });
@@ -611,12 +720,15 @@ export class WebDavStorageDriver extends BaseDriver {
     }
   }
 
-  async batchRemoveItems(paths, options = {}) {
+  async batchRemoveItems(subPaths, ctx = {}) {
     this._ensureInitialized();
     const results = [];
-    for (const p of paths) {
-      const sub = options.mount ? this._extractSubPath(p, options.mount) : options.subPath || p;
-      const davPath = this._buildDavPath(sub, false);
+    const paths = Array.isArray(ctx?.paths) ? ctx.paths : null;
+    for (let i = 0; i < (Array.isArray(subPaths) ? subPaths.length : 0); i++) {
+      const sub = subPaths[i];
+      const p = Array.isArray(paths) ? paths[i] : sub;
+      const isDir = typeof sub === "string" && sub.endsWith("/");
+      const davPath = this._buildDavPath(sub, isDir);
       try {
         await this.client.deleteFile(davPath);
         results.push({ path: p, success: true });
@@ -631,10 +743,10 @@ export class WebDavStorageDriver extends BaseDriver {
     };
   }
 
-  async exists(path, options = {}) {
+  async exists(subPath, ctx = {}) {
     this._ensureInitialized();
-    const sub = options.mount ? (options.subPath || "") : (options.subPath || path);
-    const davPath = this._buildDavPath(sub, false);
+    const isDir = typeof subPath === "string" && subPath.endsWith("/");
+    const davPath = this._buildDavPath(subPath, isDir);
     try {
       return await this.client.exists(davPath);
     } catch {
@@ -642,9 +754,9 @@ export class WebDavStorageDriver extends BaseDriver {
     }
   }
 
-  async stat(path, options = {}) {
-    const sub = options.mount ? (options.subPath || "") : (options.subPath || path);
-    return await this.client.stat(this._buildDavPath(sub, false));
+  async stat(subPath, ctx = {}) {
+    const isDir = typeof subPath === "string" && subPath.endsWith("/");
+    return await this.client.stat(this._buildDavPath(subPath, isDir));
   }
 
   async generatePresignedUrl() {
@@ -654,7 +766,7 @@ export class WebDavStorageDriver extends BaseDriver {
   /**
    * WebDAV 不提供存储直链能力（DirectLink），所有直链/代理决策由上层通过 url_proxy 或 native_proxy 处理。
    */
-  async generateDownloadUrl(path, options = {}) {
+  async generateDownloadUrl(subPath, ctx = {}) {
     this._ensureInitialized();
     throw new DriverError("WebDAV 不支持存储直链 URL", {
       status: ApiStatus.NOT_IMPLEMENTED,
@@ -662,11 +774,12 @@ export class WebDavStorageDriver extends BaseDriver {
     });
   }
 
-  async generateProxyUrl(path, options = {}) {
-    const { request, download = false, channel = "web" } = options;
+  async generateProxyUrl(subPath, ctx = {}) {
+    const { request, download = false, channel = "web" } = ctx;
+    const fsPath = ctx?.path;
 
     // 驱动层仅负责根据路径构造基础代理URL，不再做签名与策略判断
-    const proxyUrl = buildFullProxyUrl(request, path, download);
+    const proxyUrl = buildFullProxyUrl(request, fsPath, download);
 
     return {
       url: proxyUrl,
@@ -802,14 +915,6 @@ export class WebDavStorageDriver extends BaseDriver {
   _buildRequestUrl(davPath) {
     const base = this.endpoint.endsWith("/") ? this.endpoint.slice(0, -1) : this.endpoint;
     return `${base}${davPath}`;
-  }
-
-  _extractSubPath(fullPath, mount) {
-    if (!fullPath) return "";
-    if (mount?.mount_path && fullPath.startsWith(mount.mount_path)) {
-      return fullPath.slice(mount.mount_path.length);
-    }
-    return fullPath.startsWith("/") ? fullPath.slice(1) : fullPath;
   }
 
   _basicAuthHeader() {

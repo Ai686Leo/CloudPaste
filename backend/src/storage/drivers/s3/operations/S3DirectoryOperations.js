@@ -178,7 +178,7 @@ export class S3DirectoryOperations {
    * @returns {Promise<Object>} 目录内容
    */
   async listDirectory(s3SubPath, options = {}) {
-    const { mount, subPath, db, refresh = false } = options;
+    const { mount, subPath, db, refresh = false, path } = options;
 
     return handleFsError(
       async () => {
@@ -193,7 +193,7 @@ export class S3DirectoryOperations {
 
         // 构造返回结果结构
         const result = {
-          path: mount.mount_path + subPath,
+          path,
           type: "directory",
           isRoot: false,
           isVirtual: false,

@@ -437,18 +437,20 @@ export async function sendDocument(driver, blob, { filename, contentType } = {})
 // 4) 索引层 CRUD（只动 vfs_nodes）
 // =========================
 
-export async function renameItem(driver, oldPath, newPath, options = {}) {
+export async function renameItem(driver, oldSubPath, newSubPath, ctx = {}) {
   driver._ensureInitialized();
-  const db = options?.db || null;
+  const db = ctx?.db || null;
   if (!db) throw new ValidationError("TELEGRAM.renameItem: 缺少 db");
 
-  const { ownerType, ownerId } = driver._getOwnerFromOptions(options);
-  const { scopeType, scopeId } = driver._getScopeFromOptions(options);
+  const oldPath = ctx?.oldPath;
+  const newPath = ctx?.newPath;
+
+  const { ownerType, ownerId } = driver._getOwnerFromOptions(ctx);
+  const { scopeType, scopeId } = driver._getScopeFromOptions(ctx);
   const repo = new VfsNodesRepository(db, null);
 
-  const mount = options?.mount || null;
-  const oldSub = toPosixPath(driver._extractSubPath(oldPath, mount));
-  const newSub = toPosixPath(driver._extractSubPath(newPath, mount));
+  const oldSub = toPosixPath(oldSubPath || "/");
+  const newSub = toPosixPath(newSubPath || "/");
 
   const node = await repo.resolveNodeByPath({ ownerType, ownerId, scopeType, scopeId, path: oldSub });
   if (!node) {
@@ -484,25 +486,34 @@ export async function renameItem(driver, oldPath, newPath, options = {}) {
   return { success: true, source: oldPath, target: newPath, message: undefined };
 }
 
-export async function batchRemoveItems(driver, paths, options = {}) {
+export async function batchRemoveItems(driver, subPaths, ctx = {}) {
   driver._ensureInitialized();
-  const db = options?.db || null;
+  const db = ctx?.db || null;
   if (!db) throw new ValidationError("TELEGRAM.batchRemoveItems: 缺少 db");
 
-  const { ownerType, ownerId } = driver._getOwnerFromOptions(options);
-  const { scopeType, scopeId } = driver._getScopeFromOptions(options);
+  if (!Array.isArray(subPaths) || subPaths.length === 0) {
+    return { success: 0, failed: [] };
+  }
+
+  if (!Array.isArray(ctx?.paths) || ctx.paths.length !== subPaths.length) {
+    throw new ValidationError("TELEGRAM.batchRemoveItems 需要 ctx.paths 与 subPaths 一一对应（不做兼容）");
+  }
+
+  const { ownerType, ownerId } = driver._getOwnerFromOptions(ctx);
+  const { scopeType, scopeId } = driver._getScopeFromOptions(ctx);
   const repo = new VfsNodesRepository(db, null);
 
-  const mount = options?.mount || null;
+  const fsPaths = ctx.paths;
   const failed = [];
   let success = 0;
 
-  for (const fsPath of paths || []) {
+  for (let i = 0; i < subPaths.length; i += 1) {
+    const fsPath = fsPaths[i];
+    const sub = toPosixPath(subPaths[i] || "/");
+
     try {
-      const sub = toPosixPath(driver._extractSubPath(fsPath, mount));
       const node = await repo.resolveNodeByPath({ ownerType, ownerId, scopeType, scopeId, path: sub });
       if (!node) {
-        // 视为已删
         success += 1;
         continue;
       }
@@ -570,29 +581,31 @@ async function copyDirectoryTree(driver, repo, { ownerType, ownerId, scopeType, 
   }
 }
 
-export async function copyItem(driver, sourcePath, targetPath, options = {}) {
+export async function copyItem(driver, sourceSubPath, targetSubPath, ctx = {}) {
   driver._ensureInitialized();
-  const db = options?.db || null;
+  const db = ctx?.db || null;
   if (!db) throw new ValidationError("TELEGRAM.copyItem: 缺少 db");
 
-  const { ownerType, ownerId } = driver._getOwnerFromOptions(options);
-  const { scopeType, scopeId } = driver._getScopeFromOptions(options);
+  const sourcePath = ctx?.sourcePath;
+  const targetPath = ctx?.targetPath;
+
+  const { ownerType, ownerId } = driver._getOwnerFromOptions(ctx);
+  const { scopeType, scopeId } = driver._getScopeFromOptions(ctx);
   const repo = new VfsNodesRepository(db, null);
 
-  const mount = options?.mount || null;
-  const skipExisting = !!options?.skipExisting;
+  const skipExisting = !!ctx?.skipExisting;
 
-  const sourceSub = toPosixPath(driver._extractSubPath(sourcePath, mount));
-  const targetSub = toPosixPath(driver._extractSubPath(targetPath, mount));
+  const sourceSub = toPosixPath(sourceSubPath || "/");
+  const targetSub = toPosixPath(targetSubPath || "/");
 
   const src = await repo.resolveNodeByPath({ ownerType, ownerId, scopeType, scopeId, path: sourceSub });
   if (!src) {
-    return { status: "failed", source: sourcePath, target: targetPath, skipped: false, error: "源路径不存在" };
+    return { status: "failed", source: sourcePath, target: targetPath, message: "源路径不存在" };
   }
 
   const { dirPath: targetDirPath, name: targetName } = splitDirAndName(targetSub);
   if (!targetName) {
-    return { status: "failed", source: sourcePath, target: targetPath, skipped: false, error: "目标名称为空" };
+    return { status: "failed", source: sourcePath, target: targetPath, message: "目标名称为空" };
   }
 
   // 确保目标父目录存在
@@ -603,7 +616,7 @@ export async function copyItem(driver, sourcePath, targetPath, options = {}) {
   if (skipExisting) {
     const exists = await repo.getChildByName({ ownerType, ownerId, scopeType, scopeId, parentId: targetParentId, name: targetName });
     if (exists) {
-      return { status: "skipped", source: sourcePath, target: targetPath, skipped: true };
+      return { status: "skipped", source: sourcePath, target: targetPath, skipped: true, reason: "target_exists" };
     }
   }
 

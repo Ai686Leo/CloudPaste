@@ -13,7 +13,6 @@ import { CAPABILITIES } from "../interfaces/capabilities/index.js";
 // 提取驱动返回的 URL（统一基于 canonical 字段 url）
 function pickUrl(result) {
   if (!result) return "";
-  if (typeof result === "string") return result;
   if (typeof result === "object") {
     return result.url || "";
   }
@@ -78,28 +77,35 @@ export async function resolveStorageLinks({
 
   // 2) 无 custom_host：若驱动具备直链能力，则使用直链（通常为预签名URL）
   if (hasDirectLinkCapability(driver)) {
-    const previewRes = await driver.generateDownloadUrl(path, {
-      subPath: path,
-      forceDownload: false,
-      expiresIn: null,
-      userType,
-      userId,
-      mount,
-    });
-    const downloadRes = await driver.generateDownloadUrl(path, {
-      subPath: path,
-      forceDownload: true,
-      expiresIn: null,
-      userType,
-      userId,
-      mount,
-    });
+    try {
+      const previewRes = await driver.generateDownloadUrl(path, {
+        path,
+        subPath: path,
+        forceDownload: false,
+        expiresIn: null,
+        userType,
+        userId,
+        mount,
+      });
+      const downloadRes = await driver.generateDownloadUrl(path, {
+        path,
+        subPath: path,
+        forceDownload: true,
+        expiresIn: null,
+        userType,
+        userId,
+        mount,
+      });
 
-    return {
-      preview: { url: pickUrl(previewRes), type: "native_direct" },
-      download: { url: pickUrl(downloadRes), type: "native_direct" },
-      proxyPolicy,
-    };
+      return {
+        preview: { url: pickUrl(previewRes), type: previewRes?.type || "native_direct" },
+        download: { url: pickUrl(downloadRes), type: downloadRes?.type || "native_direct" },
+        proxyPolicy,
+      };
+    } catch {
+      // storage-first 场景下不强制提供代理链接：失败时返回 null，由上层（分享路由 / Proxy）决定如何访问
+      return { preview: null, download: null, proxyPolicy };
+    }
   }
 
   // 3) 无 custom_host 且不具备预签名能力：存储视图下不提供直链

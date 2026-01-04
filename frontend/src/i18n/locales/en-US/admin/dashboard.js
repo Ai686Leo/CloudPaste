@@ -3,6 +3,9 @@ export default {
     systemOverview: "System Overview",
     refresh: "Refresh",
     refreshing: "Refreshing...",
+    refreshStorage: "Refresh Storage",
+    refreshingStorage: "Refreshing...",
+    refreshStorageTooltip: "Recalculate usage snapshots for all storage configurations",
     fetchError: "Failed to fetch data",
     loading: "Loading...",
     error: "Loading failed",
@@ -25,12 +28,50 @@ export default {
     clearAllCache: "Clear All Cache",
 
     // Storage related
-    storageUsage: "Storage Usage",
+    storageUsage: "Storage Usage (Used/Limit)",
+    storageConfigs: "Storage Configurations",
+    noStorageConfigs: "No storage configurations",
     allStorages: "All Storages",
     selectStorage: "Select Storage",
     usagePercent: "Usage",
     availableStorage: "Available Storage",
     usedStorage: "Used Storage",
+    remaining: "Remaining",
+    total: "Total",
+    used: "Used",
+    available: "Available",
+    unlimited: "Unlimited",
+    configs: " configs",
+    exceeded: "Exceeded",
+
+    // Storage details
+    showDetails: "Show Details",
+    hideDetails: "Hide Details",
+    providerQuota: "Provider Usage (Total/Used)",
+    quotaSnapshot: "Quota Snapshot",
+    snapshotInfo: "Snapshot Info",
+    snapshotTime: "Last snapshot",
+    latestSnapshot: "Latest snapshot",
+    clickToViewList: "Click to view list",
+    totalItems: "{count} items",
+
+    // Source labels
+    sourceLabels: {
+      provider: "Provider",
+      localFs: "Disk Scan",
+      vfsNodes: "VFS Nodes",
+      fsIndex: "File Index",
+      unknown: "Unknown",
+    },
+
+    // Source descriptions
+    sourceDescriptions: {
+      provider: "Data from storage driver's native quota API",
+      localFs: "Calculated by scanning local disk directory",
+      vfsNodes: "Based on virtual file system node statistics",
+      fsIndex: "Based on file index records",
+    },
+
     storageUnits: {
       bytes: "Bytes",
       kb: "KB",
@@ -64,13 +105,8 @@ export default {
     timeAgo: "{time} ago",
     justNow: "Just now",
 
-    // Storage providers
-    providers: {
-      cloudflareR2: "Cloudflare R2",
-      backblazeB2: "Backblaze B2",
-      awsS3: "AWS S3",
-      other: "Other Providers",
-    },
+    // Storage types
+    storageTypeDistribution: "Storage Type Distribution",
 
     // Status information
     status: {
@@ -92,10 +128,6 @@ export default {
     systemVersion: "System Version",
     serverEnvironment: "Server Environment",
     dataStorage: "Data Storage",
-
-    // Storage bucket distribution
-    storageDistribution: "Storage Distribution",
-    otherStorage: "Other Storage",
 
     // Tips and messages
     tips: {

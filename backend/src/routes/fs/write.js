@@ -2,7 +2,7 @@ import { ValidationError } from "../../http/errors.js";
 import { MountManager } from "../../storage/managers/MountManager.js";
 import { FileSystem } from "../../storage/fs/FileSystem.js";
 import { getEncryptionSecret } from "../../utils/environmentUtils.js";
-import { getQueryBool, getQueryInt, jsonOk } from "../../utils/common.js";
+import { jsonOk } from "../../utils/common.js";
 import { usePolicy } from "../../security/policies/policies.js";
 
 const parseJsonBody = async (c, next) => {

@@ -82,7 +82,7 @@ export async function githubApiTestConnection(config, encryptionSecret, requestO
   const repo = config?.repo;
   const tokenEncrypted = config?.token;
   const token = await decryptIfNeeded(tokenEncrypted, encryptionSecret);
-  const apiBase = (config?.api_base || DEFAULT_API_BASE).toString().replace(/\/+$/, "");
+  const apiBase = (config?.endpoint_url || DEFAULT_API_BASE).toString().replace(/\/+$/, "");
   const defaultFolder = config?.default_folder || "";
 
   if (!owner || !repo || !token) {
@@ -91,10 +91,11 @@ export async function githubApiTestConnection(config, encryptionSecret, requestO
 
   /** @type {{ read: any, write: any, info: any }} */
   const result = {
+    repoAccess: { success: false, status: null, error: null, private: null },
     read: { success: false, error: null, prefix: "/", objectCount: 0, firstObjects: [] },
     write: { success: false, error: null, note: "通过 PATCH refs 到同一 sha 进行无副作用写权限探测" },
     info: {
-      endpoint: apiBase,
+      endpoint_url: apiBase,
       owner,
       repo,
       ref: config?.ref || null,
@@ -107,22 +108,79 @@ export async function githubApiTestConnection(config, encryptionSecret, requestO
     },
   };
 
+  const finalize = ({ success, message, extraChecks = [] }) => {
+    const checks = [];
+
+    // 1) 仓库访问
+    if (result.repoAccess) {
+      checks.push({
+        key: "repo",
+        label: "仓库访问",
+        success: result.repoAccess.success === true,
+        ...(result.repoAccess.error ? { error: result.repoAccess.error } : {}),
+        items: [
+          { key: "owner", label: "Owner", value: owner || "" },
+          { key: "repo", label: "Repo", value: repo || "" },
+          { key: "status", label: "状态码", value: result.repoAccess.status },
+          ...(result.repoAccess.private != null ? [{ key: "private", label: "私有仓库", value: result.repoAccess.private === true }] : []),
+        ],
+      });
+    }
+
+    // 2) 额外检查（例如 ref 检查）
+    if (Array.isArray(extraChecks) && extraChecks.length) {
+      checks.push(...extraChecks);
+    }
+
+    // 3) 读写
+    checks.push({
+      key: "read",
+      label: "读权限",
+      success: result.read.success === true,
+      ...(result.read.error ? { error: result.read.error } : {}),
+      items: [
+        ...(result.read.prefix ? [{ key: "prefix", label: "目录前缀", value: result.read.prefix }] : []),
+        ...(typeof result.read.objectCount === "number" ? [{ key: "objectCount", label: "对象数量", value: result.read.objectCount }] : []),
+        ...(Array.isArray(result.read.firstObjects) && result.read.firstObjects.length
+          ? [{ key: "sample", label: "示例对象", value: result.read.firstObjects }]
+          : []),
+      ],
+    });
+    checks.push({
+      key: "write",
+      label: "写权限",
+      success: result.write.success === true,
+      ...(result.write.skipped ? { skipped: true } : {}),
+      ...(result.write.note ? { note: result.write.note } : {}),
+      ...(result.write.error ? { error: result.write.error } : {}),
+      items: [
+        ...(result.write.headSha ? [{ key: "headSha", label: "HEAD SHA", value: result.write.headSha }] : []),
+      ],
+    });
+
+    return { success, message, result: { info: result.info, checks } };
+  };
+
   // 1) 仓库元信息（验证 token & repo 可访问）
   const repoUrl = `${apiBase}/repos/${owner}/${repo}`;
   const repoRes = await fetchJsonWithHeaders(repoUrl, token);
   if (!repoRes.resp.ok) {
     const msg = repoRes.json?.message || repoRes.bodyText || `HTTP ${repoRes.resp.status}`;
-    return {
-      success: false,
-      message: `GitHub API 配置测试失败（仓库不可访问）: ${msg}`,
-      result: {
-        ...result,
-        read: { ...result.read, success: false, error: msg },
-      },
-    };
+    result.repoAccess = { success: false, status: repoRes.resp.status, error: msg, private: null };
+    result.read.success = false;
+    result.read.error = msg;
+    result.write.success = false;
+    result.write.error = "仓库不可访问，跳过写权限探测";
+    return finalize({ success: false, message: `GitHub API 配置测试失败（仓库不可访问）: ${msg}` });
   }
 
   const repoMeta = repoRes.json || {};
+  result.repoAccess = {
+    success: true,
+    status: repoRes.resp.status,
+    error: null,
+    private: typeof repoMeta.private === "boolean" ? repoMeta.private : null,
+  };
   result.info.repoPrivate = !!repoMeta.private;
   if (repoMeta.permissions && typeof repoMeta.permissions === "object") {
     result.info.permissions = {
@@ -160,14 +218,18 @@ export async function githubApiTestConnection(config, encryptionSecret, requestO
   const refRaw = config?.ref ? String(config.ref).trim() : String(repoMeta.default_branch || "").trim();
   const parsedRef = parseRefInput(refRaw);
   if (!parsedRef.value) {
-    return { success: false, message: "GitHub API 配置测试失败：ref 不能为空", result };
+    return finalize({
+      success: false,
+      message: "GitHub API 配置测试失败：ref 不能为空",
+      extraChecks: [{ key: "ref", label: "Ref 检查", success: false, error: "ref 不能为空" }],
+    });
   }
   if (parsedRef.kind === "unsupported") {
-    return {
+    return finalize({
       success: false,
       message: "GitHub API 配置测试失败：ref 仅支持 refs/heads/*、heads/*、refs/tags/*、tags/* 或直接填写值",
-      result,
-    };
+      extraChecks: [{ key: "ref", label: "Ref 检查", success: false, error: "ref 前缀不受支持" }],
+    });
   }
 
   const resolvedRef = parsedRef.value;
@@ -189,7 +251,11 @@ export async function githubApiTestConnection(config, encryptionSecret, requestO
           resolvedBranch = resolvedRef;
         } else {
           const msg = headRefRes.json?.message || headRefRes.bodyText || `HTTP ${headRefRes.resp.status}`;
-          return { success: false, message: `GitHub API 配置测试失败：分支不存在或不可访问: ${msg}`, result };
+          return finalize({
+            success: false,
+            message: `GitHub API 配置测试失败：分支不存在或不可访问: ${msg}`,
+            extraChecks: [{ key: "ref", label: "Ref 检查", success: false, error: msg }],
+          });
         }
       } else if (result.info.repoEmpty === true) {
         // 空仓库：无法通过 refs 判断，默认按“分支名”处理（tags/sha 在空仓库中不可用）
@@ -202,7 +268,11 @@ export async function githubApiTestConnection(config, encryptionSecret, requestO
           isOnBranch = true;
           resolvedBranch = resolvedRef;
         } else {
-          return { success: false, message: `GitHub API 配置测试失败：分支检查异常: ${e?.message || String(e)}`, result };
+          return finalize({
+            success: false,
+            message: `GitHub API 配置测试失败：分支检查异常: ${e?.message || String(e)}`,
+            extraChecks: [{ key: "ref", label: "Ref 检查", success: false, error: e?.message || String(e) }],
+          });
         }
       }
     }
@@ -316,5 +386,5 @@ export async function githubApiTestConnection(config, encryptionSecret, requestO
     message += "失败 (读取权限不可用)";
   }
 
-  return { success: overallSuccess, message, result };
+  return finalize({ success: overallSuccess, message });
 }

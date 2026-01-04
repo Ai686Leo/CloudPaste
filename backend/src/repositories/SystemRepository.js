@@ -6,6 +6,7 @@
 import { BaseRepository } from "./BaseRepository.js";
 import { DbTables } from "../constants/index.js";
 import { DEFAULT_SETTINGS, SETTING_GROUPS, SETTING_TYPES, SETTING_FLAGS, validateSettingValue, convertSettingValue } from "../constants/settings.js";
+import { ValidationError } from "../http/errors.js";
 
 export class SystemRepository extends BaseRepository {
   /**
@@ -60,6 +61,10 @@ export class SystemRepository extends BaseRepository {
     // API密钥总数
     stats.totalApiKeys = await this.count(DbTables.API_KEYS);
 
+    // 存储配置总数（所有类型）
+    const totalStorageResult = await this.queryFirst(`SELECT COUNT(*) AS cnt FROM ${DbTables.STORAGE_CONFIGS}`);
+    stats.totalStorageConfigs = totalStorageResult?.cnt || 0;
+
     // S3配置总数（storage_configs 按类型过滤）
     const totalS3Result = await this.queryFirst(
       `SELECT COUNT(*) AS cnt FROM ${DbTables.STORAGE_CONFIGS} WHERE storage_type = 'S3'`
@@ -108,54 +113,6 @@ export class SystemRepository extends BaseRepository {
     };
   }
 
-  /**
-   * 获取存储使用情况统计
-   * @returns {Promise<Object>} 存储统计
-   */
-  async getStorageStats() {
-    // 获取所有S3配置的使用情况
-    const s3ConfigsQuery = `
-      SELECT
-        s.id,
-        s.name,
-        json_extract(s.config_json,'$.provider_type') AS provider_type,
-        json_extract(s.config_json,'$.total_storage_bytes') AS total_storage_bytes,
-        COUNT(f.id) as file_count,
-        COALESCE(SUM(f.size), 0) as total_size
-      FROM ${DbTables.STORAGE_CONFIGS} s
-      LEFT JOIN ${DbTables.FILES} f ON s.id = f.storage_config_id AND f.storage_type = 'S3'
-      WHERE s.storage_type = 'S3'
-      GROUP BY s.id, s.name, provider_type, total_storage_bytes
-      ORDER BY s.name ASC
-    `;
-
-    const s3ConfigsResult = await this.query(s3ConfigsQuery);
-    const s3Configs = s3ConfigsResult.results || [];
-
-    // 计算总存储使用量
-    const totalStorageUsed = s3Configs.reduce((total, config) => total + (config.total_size || 0), 0);
-
-    // 转换数据格式
-    const s3Buckets = s3Configs.map((config) => {
-      const usedStorage = config.total_size || 0;
-      const totalStorage = config.total_storage_bytes || 0;
-      const usagePercent = totalStorage > 0 ? Math.min(100, Math.round((usedStorage / totalStorage) * 100)) : 0;
-
-      return {
-        ...config,
-        usedStorage,
-        totalStorage,
-        fileCount: config.file_count || 0,
-        usagePercent,
-        providerType: config.provider_type,
-      };
-    });
-
-    return {
-      totalStorageUsed,
-      s3Buckets,
-    };
-  }
 
   /**
    * 清理过期数据
@@ -401,4 +358,3 @@ export class SystemRepository extends BaseRepository {
     return groupNames[groupId] || `未知分组(${groupId})`;
   }
 }
-import { ValidationError } from "../http/errors.js";

@@ -1,7 +1,6 @@
-import { DEFAULT_MAX_UPLOAD_SIZE_MB, ApiStatus } from "../constants/index.js";
+import { DEFAULT_MAX_UPLOAD_SIZE_MB } from "../constants/index.js";
 import { AuthenticationError, RepositoryError } from "../http/errors.js";
 import { SETTING_GROUPS } from "../constants/settings.js";
-import { getStorageConfigsWithUsage } from "./storageConfigService.js";
 import { ensureRepositoryFactory } from "../utils/repositories.js";
 import { previewSettingsCache } from "../cache/index.js";
 import { processWeeklyData } from "../utils/common.js";
@@ -50,9 +49,6 @@ export async function getDashboardStats(db, adminId, repositoryFactory) {
     // 获取基础统计数据
     const basicStats = await systemRepository.getDashboardStats();
 
-    // 获取所有存储配置的使用情况（通用命名）
-    const storageConfigsWithUsage = await getStorageConfigsWithUsage(db);
-
     // 获取最近一周的趋势数据
     const weeklyTrends = await systemRepository.getWeeklyTrends();
 
@@ -60,34 +56,11 @@ export async function getDashboardStats(db, adminId, repositoryFactory) {
     const lastWeekPastes = processWeeklyData(weeklyTrends.pastes);
     const lastWeekFiles = processWeeklyData(weeklyTrends.files);
 
-    // 总体存储使用情况
-    const totalStorageUsed = storageConfigsWithUsage.reduce((total, config) => total + (config.usage?.total_size || 0), 0);
-
-    // 统一输出结构（通用命名）
-    const storages = storageConfigsWithUsage.map((config) => {
-      const usedStorage = config.usage?.total_size || 0;
-      const totalStorage = config.total_storage_bytes || 0;
-
-      // 计算使用百分比
-      const usagePercent = totalStorage > 0 ? Math.min(100, Math.round((usedStorage / totalStorage) * 100)) : 0;
-
-      return {
-        ...config,
-        usedStorage,
-        totalStorage,
-        fileCount: config.usage?.file_count || 0, // 额外的文件数量信息
-        usagePercent, // 个别存储桶的使用百分比
-        providerType: config.provider_type,
-      };
-    });
-
     return {
       totalPastes: basicStats.totalPastes,
       totalFiles: basicStats.totalFiles,
       totalApiKeys: basicStats.totalApiKeys,
-      totalStorageConfigs: basicStats.totalS3Configs,
-      totalStorageUsed,
-      storages,
+      totalStorageConfigs: basicStats.totalStorageConfigs ?? basicStats.totalS3Configs ?? 0,
       lastWeekPastes,
       lastWeekFiles,
     };

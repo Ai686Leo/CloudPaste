@@ -1,5 +1,7 @@
 import { DbTables } from "../../../../constants/index.js";
 import { LegacyDbTables } from "./legacyKeys.js";
+import { StorageFactory } from "../../../../storage/factory/StorageFactory.js";
+import { toBool } from "../../../../utils/environmentUtils.js";
 import {
   createFsMetaTables,
   createFsSearchIndexTables,
@@ -9,6 +11,7 @@ import {
   createUploadPartsTables,
   createUploadSessionsTables,
   createVfsTables,
+  createMetricsCacheTables,
 } from "./schema.js";
 import {
   addCustomContentSettings,
@@ -23,6 +26,98 @@ import {
  * SQLite/D1 迁移辅助函数（legacy）
  *
  */
+
+function getBooleanFieldNamesFromStorageSchema(storageType) {
+  if (!storageType) return [];
+  const meta = StorageFactory.getTypeMetadata(storageType);
+  const fields = meta?.configSchema?.fields;
+  if (!Array.isArray(fields)) return [];
+  return fields
+    .filter((f) => f && typeof f === "object" && typeof f.name === "string" && (f.type === "boolean" || f.type === "bool"))
+    .map((f) => f.name)
+    .filter(Boolean);
+}
+
+function coerceConfigJsonBooleans(storageType, configJsonObj) {
+  if (!configJsonObj || typeof configJsonObj !== "object") {
+    return { changed: false, next: configJsonObj };
+  }
+  const boolKeys = getBooleanFieldNamesFromStorageSchema(storageType);
+  if (!boolKeys.length) {
+    return { changed: false, next: configJsonObj };
+  }
+
+  let changed = false;
+  for (const key of boolKeys) {
+    if (!Object.prototype.hasOwnProperty.call(configJsonObj, key)) continue;
+    const raw = configJsonObj[key];
+    if (raw === undefined || raw === null) continue;
+    const nextVal = toBool(raw, false) ? 1 : 0;
+    if (configJsonObj[key] !== nextVal) {
+      configJsonObj[key] = nextVal;
+      changed = true;
+    }
+  }
+
+  return { changed, next: configJsonObj };
+}
+
+async function normalizeStorageConfigsBooleanFields(db) {
+  console.log("版本34：开始归一化 storage_configs.config_json 中的布尔字段（统一为 0/1）...");
+
+  let rows = [];
+  try {
+    const res = await db
+      .prepare(`SELECT id, storage_type, config_json FROM ${DbTables.STORAGE_CONFIGS} ORDER BY updated_at DESC`)
+      .all();
+    rows = Array.isArray(res?.results) ? res.results : [];
+  } catch (e) {
+    console.warn("版本34：读取 storage_configs 失败，跳过布尔字段归一化：", e?.message || e);
+    return { total: 0, updated: 0, failed: 0, skipped: 0 };
+  }
+
+  let updated = 0;
+  let skipped = 0;
+  let failed = 0;
+
+  for (const row of rows) {
+    const id = row?.id ? String(row.id) : "";
+    const storageType = row?.storage_type ? String(row.storage_type) : "";
+    const rawJson = row?.config_json;
+    if (!id || !storageType || !rawJson) {
+      skipped += 1;
+      continue;
+    }
+
+    let cfgObj;
+    try {
+      cfgObj = typeof rawJson === "string" ? JSON.parse(rawJson) : rawJson;
+    } catch {
+      failed += 1;
+      continue;
+    }
+
+    const { changed, next } = coerceConfigJsonBooleans(storageType, cfgObj);
+    if (!changed) {
+      skipped += 1;
+      continue;
+    }
+
+    try {
+      await db
+        .prepare(`UPDATE ${DbTables.STORAGE_CONFIGS} SET config_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
+        .bind(JSON.stringify(next), id)
+        .run();
+      updated += 1;
+    } catch (e) {
+      failed += 1;
+      console.warn("版本34：归一化 storage_config 失败：", { id, storageType, error: e?.message || e });
+    }
+  }
+
+  console.log("版本34：storage_configs 布尔字段归一化完成：", { total: rows.length, updated, skipped, failed });
+  return { total: rows.length, updated, skipped, failed };
+}
 
 export async function addTableField(db, tableName, fieldName, fieldDefinition) {
   try {
@@ -688,6 +783,51 @@ export async function runLegacyMigrationByVersion(db, version) {
         console.warn("版本33：upload_sessions.status 迁移失败（可忽略，将由新代码覆盖旧状态）:", error?.message || error);
       }
       break;
+
+    case 34: {
+      console.log("版本34：新增 metrics_cache（用量快照缓存）+ 默认快照刷新任务...");
+      try {
+        await createMetricsCacheTables(db);
+      } catch (e) {
+        console.warn("版本34：创建 metrics_cache 失败（可忽略，后续会再次尝试）:", e?.message || e);
+      }
+      try {
+        const intervalSec = 6 * 60 * 60;
+        const nextRunAfterIso = new Date(Date.now() + intervalSec * 1000).toISOString();
+        await db
+          .prepare(
+            `
+            INSERT INTO ${DbTables.SCHEDULED_JOBS} (task_id, handler_id, name, description, enabled, schedule_type, interval_sec, next_run_after, config_json)
+            SELECT ?, ?, ?, ?, 1, 'interval', ?, ?, ?
+            WHERE NOT EXISTS (
+              SELECT 1 FROM ${DbTables.SCHEDULED_JOBS} WHERE task_id = ?
+            )
+          `,
+          )
+          .bind(
+            "refresh_storage_usage_snapshots",
+            "refresh_storage_usage_snapshots",
+            "刷新存储用量快照（默认）",
+            "定期刷新存储用量数据（已用/总量）。用于上传容量限制判断与管理端展示。",
+            intervalSec,
+            nextRunAfterIso,
+            JSON.stringify({ maxItems: 50, maxConcurrency: 1 }),
+            "refresh_storage_usage_snapshots",
+          )
+          .run();
+      } catch (e) {
+          console.warn("版本34：写入默认 refresh_storage_usage_snapshots 任务失败（可忽略）:", e?.message || e);
+        }
+
+      // 归一化 storage_configs.config_json 中的布尔字段（统一为 0/1）
+      try {
+        await normalizeStorageConfigsBooleanFields(db);
+      } catch (e) {
+        console.warn("版本34：归一化 storage_configs 布尔字段失败（可忽略，将由后续保存配置逐步修复）：", e?.message || e);
+      }
+
+      break;
+    }
 
     default:
       console.log(`未知的迁移版本: ${version}`);

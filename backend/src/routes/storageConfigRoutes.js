@@ -177,20 +177,11 @@ storageConfigRoutes.post("/api/storage/:id/test", requireAdmin, async (c) => {
   const encryptionSecret = getEncryptionSecret(c);
   const requestOrigin = c.req.header("origin");
   const repositoryFactory = useRepositories(c);
-  const testResult = await testStorageConnection(db, id, adminId, encryptionSecret, requestOrigin, repositoryFactory);
-  
-  // 根据测试结果返回正确的响应
-  if (testResult.success) {
-    return jsonOk(c, testResult, testResult.message);
-  } else {
-    // 测试失败时返回 200 状态码但 success: false（前端会根据 success 字段判断）
-    return c.json({
-      success: false,
-      code: "TEST_FAILED",
-      message: testResult.message,
-      data: testResult
-    }, 200);
-  }
+  const testData = await testStorageConnection(db, id, adminId, encryptionSecret, requestOrigin, repositoryFactory);
+
+  // 外层 success 只表示“请求是否被处理成功”
+  // 测试通过/失败由 data.success 表示
+  return jsonOk(c, testData, "OK");
 });
 
 export default storageConfigRoutes;

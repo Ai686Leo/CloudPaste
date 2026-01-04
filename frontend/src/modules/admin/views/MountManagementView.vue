@@ -56,6 +56,10 @@ const {
   isAdmin,
   isApiKeyUser,
 
+  // 行级加载状态
+  isMountToggling,
+  isMountDeleting,
+
   // 方法
   loadMounts,
   loadStorageConfigs,
@@ -301,21 +305,25 @@ onMounted(() => {
                       <!-- 启用/禁用按钮 -->
                       <button
                         @click="toggleActive(mount)"
-                        class="p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                        :disabled="isMountToggling(mount.id)"
+                        class="p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         :class="mount.is_active
                           ? (darkMode ? 'text-yellow-400 hover:text-yellow-300' : 'text-yellow-600 hover:text-yellow-900')
                           : (darkMode ? 'text-green-400 hover:text-green-300' : 'text-green-600 hover:text-green-900')"
                         :title="mount.is_active ? $t('admin.mount.actions.disable') : $t('admin.mount.actions.enable')">
-                        <IconXCircle v-if="mount.is_active" class="h-5 w-5" />
+                        <IconRefresh v-if="isMountToggling(mount.id)" class="h-5 w-5 animate-spin" />
+                        <IconXCircle v-else-if="mount.is_active" class="h-5 w-5" />
                         <IconCheckCircle v-else class="h-5 w-5" />
                       </button>
                       <!-- 删除按钮 -->
                       <button
                         @click="confirmDelete(mount.id)"
-                        class="p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                        :disabled="isMountDeleting(mount.id)"
+                        class="p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         :class="darkMode ? 'text-red-400 hover:text-red-300' : 'text-red-600 hover:text-red-900'"
                         :title="$t('admin.mount.actions.delete')">
-                        <IconDelete class="h-5 w-5" />
+                        <IconRefresh v-if="isMountDeleting(mount.id)" class="h-5 w-5 animate-spin" />
+                        <IconDelete v-else class="h-5 w-5" />
                       </button>
                     </template>
                     <template v-else>
@@ -366,14 +374,20 @@ onMounted(() => {
                           :class="darkMode ? 'bg-gray-600 hover:bg-gray-500 text-gray-200' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'">
                     {{ $t("admin.mount.actions.edit") }}
                   </button>
-                  <button @click="toggleActive(mount)" class="px-2.5 py-1.5 rounded-md text-xs transition-colors"
+                  <button @click="toggleActive(mount)"
+                          :disabled="isMountToggling(mount.id)"
+                          class="px-2.5 py-1.5 rounded-md text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center"
                           :class="mount.is_active
                             ? (darkMode ? 'bg-yellow-700 hover:bg-yellow-600 text-yellow-100' : 'bg-yellow-100 hover:bg-yellow-200 text-yellow-800')
                             : (darkMode ? 'bg-green-700 hover:bg-green-600 text-green-100' : 'bg-green-100 hover:bg-green-200 text-green-800')">
+                    <IconRefresh v-if="isMountToggling(mount.id)" class="h-3 w-3 mr-1 animate-spin" />
                     {{ mount.is_active ? $t("admin.mount.actions.disable") : $t("admin.mount.actions.enable") }}
                   </button>
-                  <button @click="confirmDelete(mount.id)" class="px-2.5 py-1.5 rounded-md text-xs transition-colors"
+                  <button @click="confirmDelete(mount.id)"
+                          :disabled="isMountDeleting(mount.id)"
+                          class="px-2.5 py-1.5 rounded-md text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center"
                           :class="darkMode ? 'bg-red-700 hover:bg-red-600 text-red-100' : 'bg-red-100 hover:bg-red-200 text-red-800'">
+                    <IconRefresh v-if="isMountDeleting(mount.id)" class="h-3 w-3 mr-1 animate-spin" />
                     {{ $t("admin.mount.actions.delete") }}
                   </button>
                 </template>
@@ -534,7 +548,8 @@ onMounted(() => {
                   <!-- 启用/禁用切换按钮 -->
                   <button
                     @click="toggleActive(mount)"
-                    class="inline-flex items-center px-2.5 py-1.5 rounded-md text-xs font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-1"
+                    :disabled="isMountToggling(mount.id)"
+                    class="inline-flex items-center px-2.5 py-1.5 rounded-md text-xs font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed"
                     :class="
                       darkMode
                         ? mount.is_active
@@ -545,20 +560,23 @@ onMounted(() => {
                         : 'bg-green-100 hover:bg-green-200 text-green-800 focus:ring-green-500 focus:ring-offset-white'
                     "
                   >
-                    <IconXCircle v-if="mount.is_active" class="h-3.5 w-3.5 mr-1" />
+                    <IconRefresh v-if="isMountToggling(mount.id)" class="h-3.5 w-3.5 mr-1 animate-spin" />
+                    <IconXCircle v-else-if="mount.is_active" class="h-3.5 w-3.5 mr-1" />
                     <IconCheckCircle v-else class="h-3.5 w-3.5 mr-1" />
                     {{ mount.is_active ? $t("admin.mount.actions.disable") : $t("admin.mount.actions.enable") }}
                   </button>
                   <button
                     @click="confirmDelete(mount.id)"
-                    class="inline-flex items-center px-2.5 py-1.5 rounded-md text-xs font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-1"
+                    :disabled="isMountDeleting(mount.id)"
+                    class="inline-flex items-center px-2.5 py-1.5 rounded-md text-xs font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed"
                     :class="
                       darkMode
                         ? 'bg-red-700 hover:bg-red-600 text-red-100 focus:ring-red-500 focus:ring-offset-gray-800'
                         : 'bg-red-100 hover:bg-red-200 text-red-800 focus:ring-red-500 focus:ring-offset-white'
                     "
                   >
-                    <IconDelete class="h-3.5 w-3.5 mr-1" />
+                    <IconRefresh v-if="isMountDeleting(mount.id)" class="h-3.5 w-3.5 mr-1 animate-spin" />
+                    <IconDelete v-else class="h-3.5 w-3.5 mr-1" />
                     {{ $t("admin.mount.actions.delete") }}
                   </button>
                 </template>

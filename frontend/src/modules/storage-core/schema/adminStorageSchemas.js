@@ -7,14 +7,7 @@ const STORAGE_UNITS = [
 ];
 
 function getDefaultStorageByProvider(provider) {
-  switch (provider) {
-    case "Cloudflare R2":
-    case "Backblaze B2":
-      return 10 * 1024 * 1024 * 1024;
-    case "Aliyun OSS":
-    default:
-      return 5 * 1024 * 1024 * 1024;
-  }
+  return 10 * 1024 * 1024 * 1024;
 }
 
 function setStorageSizeFromBytes(bytes, state) {

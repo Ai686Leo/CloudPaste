@@ -125,12 +125,23 @@ export default {
       noSearchResults: "未找到匹配的元信息记录",
       createFirst: "创建第一条记录",
     },
+
+    // 成功提示
+    success: {
+      created: "元信息创建成功",
+      updated: "元信息更新成功",
+      deleted: "元信息删除成功",
+    },
+
+    // 错误提示
     error: {
       loadFailed: "加载元信息列表失败",
       createFailed: "创建元信息失败",
       updateFailed: "更新元信息失败",
       deleteFailed: "删除元信息失败",
     },
+
+    // 操作按钮
     actions: {
       edit: "编辑",
       delete: "删除",

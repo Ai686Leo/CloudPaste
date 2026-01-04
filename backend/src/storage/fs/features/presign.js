@@ -20,7 +20,8 @@ export async function generateUploadUrl(fs, path, userIdOrInfo, userType, option
     });
   }
 
-  const result = await driver.generateUploadUrl(path, {
+  const result = await driver.generateUploadUrl(subPath, {
+    path,
     mount,
     subPath,
     db: fs.mountManager.db,
@@ -54,7 +55,8 @@ export async function commitPresignedUpload(fs, path, filename, userIdOrInfo, us
   }
 
   if (typeof driver.handleUploadComplete === "function") {
-    const result = await driver.handleUploadComplete(path, {
+    const result = await driver.handleUploadComplete(subPath, {
+      path,
       mount,
       subPath,
       db: fs.mountManager.db,
@@ -74,5 +76,4 @@ export async function commitPresignedUpload(fs, path, filename, userIdOrInfo, us
   fs.emitCacheInvalidation({ mount, paths: [path], reason: "upload-complete" });
   return { success: true, message: "上传完成" };
 }
-
 

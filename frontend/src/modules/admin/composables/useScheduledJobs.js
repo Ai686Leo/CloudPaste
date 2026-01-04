@@ -20,6 +20,9 @@ export function useScheduledJobs() {
   const loading = ref(false);
   const runsLoading = ref(false);
 
+  // 行级加载状态：正在执行的任务 ID 集合
+  const runningJobIds = ref(new Set());
+
   // Handler 类型状态
   const handlerTypes = ref([]);
   const handlerTypesLoading = ref(false);
@@ -163,10 +166,11 @@ export function useScheduledJobs() {
   };
 
   /**
-   * 立即执行任务
+   * 立即执行任务（行级加载状态，不影响全局 loading）
    */
   const runJobNow = async (taskId) => {
-    loading.value = true;
+    // 添加到正在运行集合
+    runningJobIds.value = new Set([...runningJobIds.value, taskId]);
     try {
       const result = await service.runScheduledJobNow(taskId);
       if (result.status === "success") {
@@ -180,7 +184,10 @@ export function useScheduledJobs() {
       showError(error.message || t("admin.scheduledJobs.runNowFailed"));
       throw error;
     } finally {
-      loading.value = false;
+      // 从正在运行集合中移除
+      const newSet = new Set(runningJobIds.value);
+      newSet.delete(taskId);
+      runningJobIds.value = newSet;
     }
   };
 
@@ -317,6 +324,14 @@ export function useScheduledJobs() {
     return base;
   };
 
+  /**
+   * 判断任务是否正在执行
+   * @param {string} taskId - 任务 ID
+   */
+  const isJobRunning = (taskId) => {
+    return runningJobIds.value.has(taskId);
+  };
+
   return {
     // 状态
     jobs,
@@ -326,6 +341,10 @@ export function useScheduledJobs() {
     runsLoading,
     filteredJobs,
     enabledFilter,
+
+    // 行级加载状态
+    runningJobIds,
+    isJobRunning,
 
     // Handler 类型状态
     handlerTypes,

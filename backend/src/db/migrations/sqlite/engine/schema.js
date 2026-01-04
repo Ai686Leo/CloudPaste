@@ -642,6 +642,38 @@ export async function createVfsTables(db) {
   console.log("vfs_nodes 表检查/创建完成");
 }
 
+export async function createMetricsCacheTables(db) {
+  console.log("创建通用指标缓存表(metrics_cache)...");
+
+  await db
+    .prepare(
+      `
+      CREATE TABLE IF NOT EXISTS ${DbTables.METRICS_CACHE} (
+        scope_type TEXT NOT NULL,
+        scope_id TEXT NOT NULL,
+        metric_key TEXT NOT NULL,
+
+        value_num INTEGER,
+        value_text TEXT,
+        value_json_text TEXT,
+
+        snapshot_at_ms INTEGER,
+        updated_at_ms INTEGER NOT NULL,
+
+        error_message TEXT,
+
+        PRIMARY KEY (scope_type, scope_id, metric_key)
+      )
+    `,
+    )
+    .run();
+
+  // 索引
+  await db.prepare(`CREATE INDEX IF NOT EXISTS idx_metrics_cache_scope ON ${DbTables.METRICS_CACHE}(scope_type, scope_id)`).run();
+
+  console.log("metrics_cache 表检查/创建完成");
+}
+
 export async function createUploadPartsTables(db) {
   console.log("创建上传分片明细表(upload_parts)...");
 

@@ -25,6 +25,7 @@ DROP TABLE IF EXISTS fs_search_index_entries;
 DROP TABLE IF EXISTS fs_search_index_state;
 DROP TABLE IF EXISTS fs_search_index_dirty;
 DROP TABLE IF EXISTS fs_search_index_fts;
+DROP TABLE IF EXISTS metrics_cache;
 
 -- 创建pastes表 - 存储文本分享数据
 CREATE TABLE pastes (
@@ -541,3 +542,24 @@ CREATE TABLE scheduled_job_runs (
 
 CREATE INDEX idx_scheduled_job_runs_task_started
   ON scheduled_job_runs (task_id, started_at DESC);
+
+-- 通用指标缓存表：存储各种统计指标的缓存数据
+CREATE TABLE metrics_cache (
+  scope_type TEXT NOT NULL,              -- 作用域类型，如 'global'、'storage'、'user' 等
+  scope_id TEXT NOT NULL,                -- 作用域标识，如具体的存储ID或用户ID
+  metric_key TEXT NOT NULL,              -- 指标键名
+
+  value_num INTEGER,                     -- 数值类型的指标值
+  value_text TEXT,                       -- 文本类型的指标值
+  value_json_text TEXT,                  -- JSON格式的复杂指标值
+
+  snapshot_at_ms INTEGER,                -- 快照时间戳（毫秒）
+  updated_at_ms INTEGER NOT NULL,        -- 最后更新时间戳（毫秒）
+
+  error_message TEXT,                    -- 错误信息（如果指标计算失败）
+
+  PRIMARY KEY (scope_type, scope_id, metric_key)
+);
+
+-- 通用指标缓存索引：按作用域类型和ID查询
+CREATE INDEX idx_metrics_cache_scope ON metrics_cache(scope_type, scope_id);

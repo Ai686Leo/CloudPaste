@@ -142,12 +142,12 @@ onMounted(() => {
     </div>
 
     <!-- 加载中指示器 -->
-    <div v-if="loading && !paginatedMetaList.length" class="flex justify-center my-8">
+    <div v-if="loading && !paginatedMetaList.length" class="flex justify-center items-center py-12 bg-white dark:bg-gray-800 shadow-md rounded-lg flex-1">
       <IconRefresh class="animate-spin h-8 w-8" :class="darkMode ? 'text-blue-400' : 'text-blue-500'" />
     </div>
 
     <!-- 数据展示区域 -->
-    <div v-if="!loading || paginatedMetaList.length" class="overflow-hidden bg-white dark:bg-gray-800 shadow-md rounded-lg flex-1">
+    <div v-else-if="pagination.total > 0" class="overflow-hidden bg-white dark:bg-gray-800 shadow-md rounded-lg flex-1">
       <div class="flex flex-col h-full">
         <FsMetaTable :dark-mode="darkMode" :meta-list="paginatedMetaList" :loading="loading || searchLoading" @edit="openEditForm" @delete="confirmDelete" />
       </div>
@@ -155,8 +155,8 @@ onMounted(() => {
 
     <!-- 空状态 -->
     <div
-      v-if="!loading && pagination.total === 0"
-      class="flex flex-col items-center justify-center py-12 bg-white dark:bg-gray-800 shadow-md rounded-lg"
+      v-else
+      class="flex flex-col items-center justify-center py-12 bg-white dark:bg-gray-800 shadow-md rounded-lg flex-1"
       :class="darkMode ? 'text-gray-400' : 'text-gray-500'"
     >
       <IconArchive class="h-16 w-16 mb-4 opacity-50" />

@@ -85,7 +85,7 @@ export async function s3TestConnection(config, encryptionSecret, requestOrigin =
     frontendSim: { success: false, error: null, note: "预签名 PUT 链路测试（由后端模拟）" },
     connectionInfo: {
       bucket: config.bucket_name,
-      endpoint: config.endpoint_url || "默认",
+      endpoint_url: config.endpoint_url || "默认",
       region: config.region || "默认",
       pathStyle: config.path_style ? "是" : "否",
       provider: provider,
@@ -269,11 +269,9 @@ export async function s3TestConnection(config, encryptionSecret, requestOrigin =
     result.frontendSim.success = true;
     result.frontendSim.totalDuration = step.step1.duration + step.step2.duration + step.step3.duration;
     result.frontendSim.testFile = simKey;
-    result.presignedPutTest = result.frontendSim;
   } catch (e) {
     result.frontendSim.success = false;
     result.frontendSim.error = e?.message || String(e);
-    result.presignedPutTest = result.frontendSim;
   }
 
   result.diagnostics.lifecycle = await collectLifecycleInfo(client, config.bucket_name);
@@ -303,6 +301,77 @@ export async function s3TestConnection(config, encryptionSecret, requestOrigin =
     message += "失败 (读取权限不可用)";
   }
 
-  return { success: overallSuccess, message, result };
+  const info = {
+    ...(result.connectionInfo || {}),
+  };
+
+  const checks = [
+    {
+      key: "read",
+      label: "读权限",
+      success: result.read.success === true,
+      ...(result.read.error ? { error: result.read.error } : {}),
+      ...(result.read.note ? { note: result.read.note } : {}),
+      items: [
+        { key: "prefix", label: "目录前缀", value: result.read.prefix || "" },
+        { key: "objectCount", label: "对象数量", value: result.read.objectCount ?? 0 },
+        ...(Array.isArray(result.read.firstObjects) && result.read.firstObjects.length
+          ? [{ key: "sample", label: "示例对象", value: result.read.firstObjects }]
+          : []),
+      ],
+    },
+    {
+      key: "write",
+      label: "写权限",
+      success: result.write.success === true,
+      ...(result.write.error ? { error: result.write.error } : {}),
+      ...(result.write.note ? { note: result.write.note } : {}),
+      items: [
+        ...(result.write.testFile ? [{ key: "testFile", label: "测试文件", value: result.write.testFile }] : []),
+        ...(typeof result.write.uploadTime === "number"
+          ? [{ key: "uploadTimeMs", label: "上传耗时(ms)", value: result.write.uploadTime }]
+          : []),
+        ...(typeof result.write.cleaned === "boolean"
+          ? [{ key: "cleaned", label: "已清理", value: result.write.cleaned }]
+          : []),
+        ...(result.write.cleanupError ? [{ key: "cleanupError", label: "清理错误", value: result.write.cleanupError }] : []),
+      ],
+    },
+    {
+      key: "cors",
+      label: "CORS 预检",
+      success: result.cors.success === true,
+      ...(result.cors.error ? { error: result.cors.error } : {}),
+      ...(result.cors.note ? { note: result.cors.note } : {}),
+      items: [
+        ...(result.cors.statusCode ? [{ key: "statusCode", label: "状态码", value: result.cors.statusCode }] : []),
+        ...(result.cors.allowOrigin ? [{ key: "allowOrigin", label: "允许来源", value: result.cors.allowOrigin }] : []),
+        ...(result.cors.allowMethods ? [{ key: "allowMethods", label: "允许方法", value: result.cors.allowMethods }] : []),
+        ...(result.cors.allowHeaders ? [{ key: "allowHeaders", label: "允许头部", value: result.cors.allowHeaders }] : []),
+        ...(result.cors.maxAge ? [{ key: "maxAge", label: "缓存时间", value: result.cors.maxAge }] : []),
+        ...(Object.prototype.hasOwnProperty.call(result.cors, "uploadSupported")
+          ? [{ key: "uploadSupported", label: "支持上传", value: result.cors.uploadSupported === true }]
+          : []),
+        ...(result.cors.supportedNotes ? [{ key: "supportedNotes", label: "备注", value: result.cors.supportedNotes }] : []),
+        ...(result.cors.exposeHeaders ? [{ key: "exposeHeaders", label: "暴露头部", value: result.cors.exposeHeaders }] : []),
+      ],
+    },
+    {
+      key: "frontend_upload",
+      label: "前端上传模拟",
+      success: result.frontendSim.success === true,
+      ...(result.frontendSim.error ? { error: result.frontendSim.error } : {}),
+      ...(result.frontendSim.note ? { note: result.frontendSim.note } : {}),
+      items: [
+        ...(result.frontendSim.testFile ? [{ key: "testFile", label: "测试文件", value: result.frontendSim.testFile }] : []),
+        ...(typeof result.frontendSim.totalDuration === "number"
+          ? [{ key: "totalDurationMs", label: "总耗时(ms)", value: result.frontendSim.totalDuration }]
+          : []),
+      ],
+      ...(result.frontendSim.steps ? { details: { steps: result.frontendSim.steps } } : {}),
+    },
+  ];
+
+  return { success: overallSuccess, message, result: { info, checks, diagnostics: result.diagnostics || null } };
 }
 import { DriverError } from "../../../../http/errors.js";

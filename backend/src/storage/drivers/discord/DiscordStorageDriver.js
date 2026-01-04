@@ -100,6 +100,21 @@ function resolveUploadDirAndName(targetPath, { isDirectoryTarget = false } = {})
   return splitDirAndName(normalized);
 }
 
+function normalizeDiscordApiBaseUrl(value, fallback) {
+  const raw = value != null ? String(value).trim() : "";
+  const base = raw ? raw.replace(/\/+$/, "") : String(fallback || "").trim().replace(/\/+$/, "");
+  if (!base) return "";
+  try {
+    const parsed = new URL(base);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      throw new ValidationError("endpoint_url 必须以 http:// 或 https:// 开头");
+    }
+  } catch {
+    throw new ValidationError("endpoint_url 不是合法的 URL");
+  }
+  return base;
+}
+
 function normalizeDiscordChunkPartList(manifest) {
   const parts = Array.isArray(manifest?.parts) ? manifest.parts : [];
   return parts
@@ -135,6 +150,7 @@ export class DiscordStorageDriver extends BaseDriver {
 
     this.botToken = null;
     this.channelId = null;
+    this.apiBase = DISCORD_API_BASE;
     this.uploadConcurrency = 1;
     this.urlProxy = null;
     this.directUploadMaxBytes = DISCORD_DEFAULT_DIRECT_UPLOAD_MAX_BYTES;
@@ -150,6 +166,8 @@ export class DiscordStorageDriver extends BaseDriver {
 
     const channelIdRaw = this.config?.channel_id || this.config?.channelId;
     const channelId = channelIdRaw != null ? String(channelIdRaw).trim() : "";
+
+    const apiBase = normalizeDiscordApiBaseUrl(this.config?.endpoint_url, DISCORD_API_BASE);
 
     const concurrencyRaw =
       this.config?.upload_concurrency != null && this.config?.upload_concurrency !== "" ? Number(this.config.upload_concurrency) : null;
@@ -190,6 +208,7 @@ export class DiscordStorageDriver extends BaseDriver {
 
     this.botToken = botToken;
     this.channelId = channelId;
+    this.apiBase = apiBase;
     this.uploadConcurrency = uploadConcurrency;
     this.partSizeBytes = partSizeMb * 1024 * 1024;
     this.initialized = true;
@@ -197,14 +216,13 @@ export class DiscordStorageDriver extends BaseDriver {
 
   // ===== Base contract =====
 
-  async stat(path, options = {}) {
-    const info = await this.getFileInfo(path, options);
-    return info;
+  async stat(subPath, ctx = {}) {
+    return await this.getFileInfo(subPath, ctx);
   }
 
-  async exists(path, options = {}) {
+  async exists(subPath, ctx = {}) {
     try {
-      await this.stat(path, options);
+      await this.stat(subPath, ctx);
       return true;
     } catch {
       return false;
@@ -213,8 +231,9 @@ export class DiscordStorageDriver extends BaseDriver {
 
   // ===== PROXY capability =====
 
-  async generateProxyUrl(fsPath, options = {}) {
-    const { request, download = false, channel = "web" } = options;
+  async generateProxyUrl(subPath, ctx = {}) {
+    const { request, download = false, channel = "web" } = ctx;
+    const fsPath = ctx?.path;
     return {
       url: buildFullProxyUrl(request || null, fsPath, download),
       type: "proxy",
@@ -231,15 +250,6 @@ export class DiscordStorageDriver extends BaseDriver {
   }
 
   // ===== 内部：VFS scope / path =====
-
-  _extractSubPath(fullPath, mount) {
-    if (!fullPath) return "";
-    if (mount?.mount_path && String(fullPath).startsWith(mount.mount_path)) {
-      return String(fullPath).slice(String(mount.mount_path).length);
-    }
-    const s = String(fullPath);
-    return s.startsWith("/") ? s : `/${s}`;
-  }
 
   _getScopeFromOptions(options = {}) {
     // Discord 的 VFS scope 按 storage_config 维度
@@ -291,7 +301,7 @@ export class DiscordStorageDriver extends BaseDriver {
 
   _buildDiscordApiUrl(pathname) {
     const p = String(pathname || "").replace(/^\//, "");
-    return `${DISCORD_API_BASE}/${p}`;
+    return `${this.apiBase}/${p}`;
   }
 
   _applyUrlProxy(url) {
@@ -595,17 +605,17 @@ export class DiscordStorageDriver extends BaseDriver {
 
   // ===== READER 能力 =====
 
-  async listDirectory(fsPath, options = {}) {
+  async listDirectory(subPath, ctx = {}) {
     this._ensureInitialized();
-    const db = options?.db || null;
+    const db = ctx?.db || null;
     if (!db) throw new ValidationError("DISCORD.listDirectory: 缺少 db");
 
-    const { mount, subPath = null } = options;
-    const effectiveSubPath = subPath ?? this._extractSubPath(fsPath, mount);
-    const normalizedSubPath = toPosixPath(effectiveSubPath || "/");
+    const { mount } = ctx;
+    const fsPath = ctx?.path;
+    const normalizedSubPath = toPosixPath(subPath || "/");
 
-    const { ownerType, ownerId } = this._getOwnerFromOptions(options);
-    const { scopeType, scopeId } = this._getScopeFromOptions(options);
+    const { ownerType, ownerId } = this._getOwnerFromOptions(ctx);
+    const { scopeType, scopeId } = this._getScopeFromOptions(ctx);
     const repo = new VfsNodesRepository(db, null);
 
     let parentId = VFS_ROOT_PARENT_ID;
@@ -641,7 +651,7 @@ export class DiscordStorageDriver extends BaseDriver {
     );
 
     return {
-      path: basePath,
+      path: fsPath,
       type: "directory",
       isRoot: stripTrailingSlash(normalizedSubPath) === "/",
       mount_id: mount?.id ?? null,
@@ -650,14 +660,14 @@ export class DiscordStorageDriver extends BaseDriver {
     };
   }
 
-  async getFileInfo(fsPath, options = {}) {
+  async getFileInfo(subPath, ctx = {}) {
     this._ensureInitialized();
-    const db = options?.db || null;
+    const db = ctx?.db || null;
     if (!db) throw new ValidationError("DISCORD.getFileInfo: 缺少 db");
 
-    const { mount, subPath = null } = options;
-    const effectiveSubPath = subPath ?? this._extractSubPath(fsPath, mount);
-    const normalizedSubPath = toPosixPath(effectiveSubPath || "/");
+    const { mount } = ctx;
+    const fsPath = ctx?.path;
+    const normalizedSubPath = toPosixPath(subPath || "/");
 
     // root：返回虚拟目录信息
     if (stripTrailingSlash(normalizedSubPath) === "/") {
@@ -674,8 +684,8 @@ export class DiscordStorageDriver extends BaseDriver {
       });
     }
 
-    const { ownerType, ownerId } = this._getOwnerFromOptions(options);
-    const { scopeType, scopeId } = this._getScopeFromOptions(options);
+    const { ownerType, ownerId } = this._getOwnerFromOptions(ctx);
+    const { scopeType, scopeId } = this._getScopeFromOptions(ctx);
     const repo = new VfsNodesRepository(db, null);
     const node = await repo.resolveNodeByPath({ ownerType, ownerId, scopeType, scopeId, path: normalizedSubPath });
     if (!node) throw new NotFoundError("路径不存在");
@@ -694,26 +704,24 @@ export class DiscordStorageDriver extends BaseDriver {
     });
   }
 
-  async downloadFile(path, options = {}) {
+  async downloadFile(subPath, ctx = {}) {
     this._ensureInitialized();
-    const db = options?.db || null;
+    const db = ctx?.db || null;
     if (!db) throw new ValidationError("DISCORD.downloadFile: 缺少 db");
 
     const repo = new VfsNodesRepository(db, null);
     let node = null;
 
     // storage-first：vfs:<id> 直达
-    const vfsNodeId = this._parseVfsStoragePath(path);
+    const vfsNodeId = this._parseVfsStoragePath(subPath);
     if (vfsNodeId) {
       node = await repo.getNodeByIdUnsafe(vfsNodeId);
     } else {
       // FS 挂载：按路径解析（需要 owner/scope）
-      const { mount, subPath = null } = options;
-      const effectiveSubPath = subPath ?? this._extractSubPath(path, mount);
-      const normalizedSubPath = toPosixPath(effectiveSubPath || "/");
+      const normalizedSubPath = toPosixPath(subPath || "/");
 
-      const { ownerType, ownerId } = this._getOwnerFromOptions(options);
-      const { scopeType, scopeId } = this._getScopeFromOptions(options);
+      const { ownerType, ownerId } = this._getOwnerFromOptions(ctx);
+      const { scopeType, scopeId } = this._getScopeFromOptions(ctx);
       node = await repo.resolveNodeByPath({ ownerType, ownerId, scopeType, scopeId, path: normalizedSubPath });
     }
 
@@ -982,18 +990,17 @@ export class DiscordStorageDriver extends BaseDriver {
 
   // ===== WRITER 能力 =====
 
-  async createDirectory(fsPath, options = {}) {
+  async createDirectory(subPath, ctx = {}) {
     this._ensureInitialized();
-    const db = options?.db || null;
+    const db = ctx?.db || null;
     if (!db) throw new ValidationError("DISCORD.createDirectory: 缺少 db");
 
-    const { ownerType, ownerId } = this._getOwnerFromOptions(options);
-    const { scopeType, scopeId } = this._getScopeFromOptions(options);
+    const { ownerType, ownerId } = this._getOwnerFromOptions(ctx);
+    const { scopeType, scopeId } = this._getScopeFromOptions(ctx);
     const repo = new VfsNodesRepository(db, null);
 
-    const { mount, subPath = null } = options;
-    const effectiveSubPath = subPath ?? this._extractSubPath(fsPath, mount);
-    const normalized = toPosixPath(effectiveSubPath || "/");
+    const fsPath = ctx?.path;
+    const normalized = toPosixPath(subPath || "/");
 
     // root 不占记录，视为已存在
     if (stripTrailingSlash(normalized) === "/") {
@@ -1010,24 +1017,24 @@ export class DiscordStorageDriver extends BaseDriver {
     return { success: true, path: fsPath, alreadyExists: false };
   }
 
-  async uploadFile(fsPath, fileOrStream, options = {}) {
+  async uploadFile(subPath, fileOrStream, ctx = {}) {
     this._ensureInitialized();
-    const db = options?.db || null;
+    const db = ctx?.db || null;
     if (!db) throw new ValidationError("DISCORD.uploadFile: 缺少 db");
 
-    const { ownerType, ownerId } = this._getOwnerFromOptions(options);
-    const { scopeType, scopeId } = this._getScopeFromOptions(options);
+    const { ownerType, ownerId } = this._getOwnerFromOptions(ctx);
+    const { scopeType, scopeId } = this._getScopeFromOptions(ctx);
     const repo = new VfsNodesRepository(db, null);
 
-    const { mount, subPath = null } = options;
-    const effectiveSubPath = subPath ?? this._extractSubPath(fsPath, mount);
-    const targetPath = toPosixPath(effectiveSubPath || fsPath);
+    const { mount } = ctx;
+    const fsPath = ctx?.path;
+    const targetPath = toPosixPath(subPath || fsPath);
 
-    const isDirectoryTarget = (typeof fsPath === "string" && fsPath.endsWith("/")) || (typeof effectiveSubPath === "string" && effectiveSubPath.endsWith("/"));
+    const isDirectoryTarget = (typeof fsPath === "string" && fsPath.endsWith("/")) || (typeof subPath === "string" && subPath.endsWith("/"));
     const { dirPath, name: inferredName } = resolveUploadDirAndName(targetPath, { isDirectoryTarget });
-    const filename = options?.filename || inferredName || inferNameFromPath(fsPath, false) || "upload.bin";
-    const contentType = options?.contentType || "application/octet-stream";
-    const contentLength = Number(options?.contentLength ?? options?.fileSize ?? 0) || 0;
+    const filename = ctx?.filename || inferredName || inferNameFromPath(fsPath, false) || "upload.bin";
+    const contentType = ctx?.contentType || "application/octet-stream";
+    const contentLength = Number(ctx?.contentLength ?? ctx?.fileSize ?? 0) || 0;
 
     if (Number.isFinite(this.directUploadMaxBytes) && this.directUploadMaxBytes > 0 && contentLength && contentLength > this.directUploadMaxBytes) {
       throw new DriverError(
@@ -1136,19 +1143,19 @@ export class DiscordStorageDriver extends BaseDriver {
     };
   }
 
-  async renameItem(oldPath, newPath, options = {}) {
+  async renameItem(oldSubPath, newSubPath, ctx = {}) {
     this._ensureInitialized();
-    return await discordRenameItem(this, oldPath, newPath, options);
+    return await discordRenameItem(this, oldSubPath, newSubPath, ctx);
   }
 
-  async batchRemoveItems(paths, options = {}) {
+  async batchRemoveItems(subPaths, ctx = {}) {
     this._ensureInitialized();
-    return await discordBatchRemoveItems(this, paths, options);
+    return await discordBatchRemoveItems(this, subPaths, ctx);
   }
 
-  async copyItem(sourcePath, targetPath, options = {}) {
+  async copyItem(sourceSubPath, targetSubPath, ctx = {}) {
     this._ensureInitialized();
-    return await discordCopyItem(this, sourcePath, targetPath, options);
+    return await discordCopyItem(this, sourceSubPath, targetSubPath, ctx);
   }
 
   // ===== MULTIPART 能力（前端分片：single_session + 后端中转） =====

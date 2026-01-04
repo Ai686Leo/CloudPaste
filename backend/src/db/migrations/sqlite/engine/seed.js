@@ -34,6 +34,31 @@ export async function initDefaultSettings(db) {
     )
     .run();
 
+  // 为 refresh_storage_usage_snapshots 写入默认调度配置（若不存在）
+  const refreshIntervalSec = 6 * 60 * 60;
+  const firstRefreshNextRunIso = new Date(Date.now() + refreshIntervalSec * 1000).toISOString();
+  await db
+    .prepare(
+      `
+      INSERT INTO ${DbTables.SCHEDULED_JOBS} (task_id, handler_id, name, description, enabled, schedule_type, interval_sec, next_run_after, config_json)
+      SELECT ?, ?, ?, ?, 1, 'interval', ?, ?, ?
+      WHERE NOT EXISTS (
+        SELECT 1 FROM ${DbTables.SCHEDULED_JOBS} WHERE task_id = ?
+      )
+    `,
+    )
+    .bind(
+      "refresh_storage_usage_snapshots",
+      "refresh_storage_usage_snapshots",
+      "刷新存储用量快照（默认）",
+      "定期刷新存储用量数据（已用/总量）。用于上传容量限制判断与管理端展示。",
+      refreshIntervalSec,
+      firstRefreshNextRunIso,
+      JSON.stringify({ maxItems: 50, maxConcurrency: 1 }),
+      "refresh_storage_usage_snapshots",
+    )
+    .run();
+
   const defaultSettings = [
     {
       key: "max_upload_size",

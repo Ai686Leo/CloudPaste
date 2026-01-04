@@ -50,18 +50,20 @@ export class OneDriveAuthManager {
     this.tokenExpiresAt = null;
 
     // 验证必填配置：
-    // - 至少需要 refreshToken
-    // - 当未配置 tokenRenewEndpoint 时，必须提供 clientId 和 clientSecret 以便直接调用微软 OAuth 端点
-    if (!this.refreshToken && !this.tokenRenewEndpoint) {
-      throw new DriverError("OneDrive 认证配置缺少 refreshToken 或 tokenRenewEndpoint", { status: 400 });
+    // - refresh_token 始终必填（无论走微软 OAuth 还是走自建续期服务，都需要 refresh_token）
+    // - useOnlineApi=true：必须配置 tokenRenewEndpoint（外部续期服务）
+    // - useOnlineApi=false：必须配置 clientId（走微软 OAuth 端点；clientSecret 可选，取决于你的 Azure 应用类型）
+    if (!this.refreshToken) {
+      throw new DriverError("OneDrive 认证配置缺少 refreshToken", { status: 400 });
     }
-    if (!this.tokenRenewEndpoint && (!this.clientId || !this.clientSecret)) {
-      throw new DriverError(
-        "OneDrive 认证配置缺少 clientId 或 clientSecret（未配置 tokenRenewEndpoint 时必填）",
-        {
-          status: 400,
-        },
-      );
+    if (this.useOnlineApi) {
+      if (!this.tokenRenewEndpoint) {
+        throw new DriverError("OneDrive 认证配置缺少 tokenRenewEndpoint（已启用 useOnlineApi）", { status: 400 });
+      }
+    } else {
+      if (!this.clientId) {
+        throw new DriverError("OneDrive 认证配置缺少 clientId（未启用 useOnlineApi 时必填）", { status: 400 });
+      }
     }
   }
 

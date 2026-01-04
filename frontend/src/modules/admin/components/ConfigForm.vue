@@ -1,7 +1,9 @@
 <script setup>
-import { ref, computed, watch, onMounted } from "vue";
+import { ref, computed, watch, onMounted, reactive } from "vue";
 import { useI18n } from "vue-i18n";
+import { storeToRefs } from "pinia";
 import { useAdminStorageConfigService } from "@/modules/admin/services/storageConfigService.js";
+import { useStorageConfigsStore } from "@/stores/storageConfigsStore.js";
 import {
   STORAGE_UNITS,
   getDefaultStorageByProvider,
@@ -10,8 +12,6 @@ import {
   normalizeDefaultFolder,
   isValidUrl,
 } from "@/modules/storage-core/schema/adminStorageSchemas.js";
-import { useAdminStorageTypeBehavior } from "@/modules/admin/storage/adminStorageTypeBehavior.js";
-import { api } from "@/api";
 import { IconEye, IconEyeOff, IconRefresh } from "@/components/icons";
 import { createLogger } from "@/utils/logger.js";
 
@@ -37,8 +37,9 @@ const props = defineProps({
 // 定义事件
 const emit = defineEmits(["close", "success"]);
 
-// 存储类型元数据（从后端 /api/storage-types 动态加载）
-const storageTypesMeta = ref([]);
+// 存储类型元数据（从后端 /api/storage-types 动态加载，统一走 store 缓存）
+const storageConfigsStore = useStorageConfigsStore();
+const { storageTypesMeta } = storeToRefs(storageConfigsStore);
 
 // 表单数据
 const formData = ref({
@@ -78,28 +79,8 @@ const success = ref("");
 
 const { getStorageConfigReveal, updateStorageConfig, createStorageConfig } = useAdminStorageConfigService();
 
-// 行为配置 hook 依赖的辅助 ref
-const isEditRef = computed(() => props.isEdit);
 const configIdRef = computed(() => (props.config && props.config.id) || null);
-
-const {
-  currentType,
-  isSecretField,
-  isSecretVisible,
-  isSecretRevealing,
-  handleSecretToggle,
-  getSecretInputType,
-  isFieldDisabled: behaviorIsFieldDisabled,
-  isFieldRequiredOnCreate: behaviorIsFieldRequiredOnCreate,
-  formatFieldOnBlur,
-  ensureTypeDefaults,
-} = useAdminStorageTypeBehavior({
-  formData,
-  isEditRef,
-  configIdRef,
-  getStorageConfigReveal,
-  errorRef: error,
-});
+const currentType = computed(() => formData.value.storage_type || "");
 
 // 计算表单标题与类型辅助标志
 const isWebDavType = computed(() => formData.value.storage_type === "WEBDAV");
@@ -146,6 +127,40 @@ const getFieldMeta = (fieldName) => {
   return schema.fields.find((f) => f.name === fieldName) || null;
 };
 
+// 统一条件表达
+const matchSchemaCondition = (condition) => {
+  if (!condition || typeof condition !== "object") return false;
+  const fieldName = condition.field;
+  if (typeof fieldName !== "string" || !fieldName) return false;
+
+  const currentValue = formData.value[fieldName];
+
+  // 兼容两种写法：equals / value
+  if (Object.prototype.hasOwnProperty.call(condition, "equals")) {
+    return currentValue === condition.equals;
+  }
+  if (Object.prototype.hasOwnProperty.call(condition, "value")) {
+    return currentValue === condition.value;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(condition, "notEquals")) {
+    return currentValue !== condition.notEquals;
+  }
+
+  if (Array.isArray(condition.values)) {
+    return condition.values.includes(currentValue);
+  }
+
+  if (condition.truthy === true) {
+    return !!currentValue;
+  }
+  if (condition.falsy === true) {
+    return !currentValue;
+  }
+
+  return false;
+};
+
 const shouldRenderField = (fieldName) => {
   if (FIELDS_HANDLED_EXTERNALLY.has(fieldName)) return false;
   const meta = getFieldMeta(fieldName);
@@ -173,9 +188,37 @@ const shouldRenderField = (fieldName) => {
 
 /**
  * 判断字段是否应该被禁用
- * - 具体规则由 per-type 行为配置决定（如 OneDrive token_renew_endpoint）
+ * - 统一使用后端 schema 的 ui.disabledWhen 描述
  */
-const isFieldDisabled = (fieldName) => behaviorIsFieldDisabled(fieldName);
+const isFieldDisabled = (fieldName) => {
+  const meta = getFieldMeta(fieldName);
+  const disabledWhen = meta?.ui?.disabledWhen;
+  if (disabledWhen && typeof disabledWhen === "object") {
+    return matchSchemaCondition(disabledWhen);
+  }
+  return false;
+};
+
+// ===== secret 字段 =====
+const secretVisibleByField = reactive({});
+const secretsLoaded = ref(false);
+const secretsRevealing = ref(false);
+
+const getSecretFieldNames = () => {
+  const schema = currentConfigSchema.value;
+  if (!schema?.fields) return [];
+  return schema.fields
+    .filter((f) => f && typeof f === "object" && f.type === "secret" && typeof f.name === "string" && f.name)
+    .map((f) => f.name);
+};
+
+const resetSecretUiState = () => {
+  for (const key of Object.keys(secretVisibleByField)) {
+    delete secretVisibleByField[key];
+  }
+  secretsLoaded.value = false;
+  secretsRevealing.value = false;
+};
 
 /**
  * 获取组内的布局行（支持新格式）
@@ -207,6 +250,45 @@ const getLayoutRowsForGroup = (group) => {
 const getFieldType = (fieldName) => {
   const meta = getFieldMeta(fieldName);
   return meta?.type || "string";
+};
+
+const isSecretField = (fieldName) => getFieldType(fieldName) === "secret";
+const isSecretVisible = (fieldName) => !!secretVisibleByField[fieldName];
+const isSecretRevealing = (_fieldName) => secretsRevealing.value;
+const getSecretInputType = (fieldName) => (isSecretVisible(fieldName) ? "text" : "password");
+
+const handleSecretToggle = async (fieldName) => {
+  if (!isSecretField(fieldName)) return;
+
+  const nextVisible = !isSecretVisible(fieldName);
+
+  // 新建时：只做前端可见性切换，不请求 reveal
+  if (!props.isEdit || !configIdRef.value) {
+    secretVisibleByField[fieldName] = nextVisible;
+    return;
+  }
+
+  // 编辑时：首次展开任意一个 secret 字段时，拉一次 plain，把所有 secret 字段一起填充
+  if (nextVisible && !secretsLoaded.value && !secretsRevealing.value) {
+    secretsRevealing.value = true;
+    try {
+      const resp = await getStorageConfigReveal(configIdRef.value, "plain");
+      const data = resp?.data || resp || {};
+
+      const secretFields = getSecretFieldNames();
+      for (const key of secretFields) {
+        formData.value[key] = data[key] || "";
+      }
+
+      secretsLoaded.value = true;
+    } catch (e) {
+      error.value = e?.message || "获取存储密钥失败";
+    } finally {
+      secretsRevealing.value = false;
+    }
+  }
+
+  secretVisibleByField[fieldName] = nextVisible;
 };
 
 const getFieldLabel = (fieldName) => {
@@ -314,7 +396,25 @@ const isAbsPathField = (fieldName) => {
 const isFieldRequiredOnCreate = (fieldName) => {
   const meta = getFieldMeta(fieldName);
   if (!meta) return false;
-  return behaviorIsFieldRequiredOnCreate(fieldName, meta);
+
+  // 条件必填：requiredWhen 命中时，视为必填
+  const requiredWhen = meta?.requiredWhen;
+  if (requiredWhen && typeof requiredWhen === "object") {
+    if (matchSchemaCondition(requiredWhen)) {
+      return true;
+    }
+  }
+
+  // 编辑
+  if (props.isEdit) {
+    return !!meta.required;
+  }
+
+  // 新建
+  if (meta.requiredOnCreate === true) {
+    return true;
+  }
+  return !!meta.required;
 };
 
 /**
@@ -372,8 +472,6 @@ const handleFieldBlur = (fieldName) => {
   }
   if (fieldName === "endpoint_url") {
     formatUrl("endpoint_url");
-    // 针对具体类型的额外格式化逻辑（如 WebDAV endpoint 末尾追加斜杠）
-    formatFieldOnBlur("endpoint_url");
     return;
   }
   if (isUrlField(fieldName)) {
@@ -391,7 +489,7 @@ const buildPayload = () => {
   };
 
   // 容量限制不在 schema 中，单独处理
-  if (formData.value.total_storage_bytes != null) {
+  if (formData.value.total_storage_bytes !== undefined) {
     base.total_storage_bytes = formData.value.total_storage_bytes;
   }
 
@@ -462,6 +560,69 @@ const formValid = computed(() => {
   return true;
 });
 
+// 照顾当前已有的 S3/MIRROR 体验。
+const ensureTypeDefaults = () => {
+  const type = currentType.value;
+
+  if (type === "S3") {
+    const providerType = formData.value.provider_type;
+    if (!providerType) return;
+    if (formData.value.endpoint_url) return;
+
+    switch (providerType) {
+      case "Cloudflare R2":
+        formData.value.endpoint_url = "https://<accountid>.r2.cloudflarestorage.com";
+        formData.value.region = "auto";
+        formData.value.path_style = false;
+        break;
+      case "Backblaze B2":
+        formData.value.endpoint_url = "https://s3.us-west-000.backblazeb2.com";
+        formData.value.region = "";
+        formData.value.path_style = true;
+        break;
+      case "AWS S3":
+        formData.value.endpoint_url = "https://s3.amazonaws.com";
+        formData.value.path_style = false;
+        break;
+      case "Aliyun OSS":
+        formData.value.endpoint_url = "https://oss-cn-hangzhou.aliyuncs.com";
+        formData.value.region = "oss-cn-hangzhou";
+        formData.value.path_style = false;
+        break;
+      default:
+        formData.value.endpoint_url = "https://your-s3-endpoint.com";
+        formData.value.path_style = false;
+        break;
+    }
+  }
+
+  if (type === "MIRROR") {
+    const preset = formData.value.preset;
+    if (!preset) return;
+    const currentEndpoint = (formData.value.endpoint_url || "").trim();
+
+    const defaultsByPreset = {
+      tuna: "https://mirrors.tuna.tsinghua.edu.cn/",
+      ustc: "https://mirrors.ustc.edu.cn/",
+      aliyun: "https://mirrors.aliyun.com/",
+    };
+
+    const key = String(preset).trim().toLowerCase();
+    const nextDefault = defaultsByPreset[key] || "";
+    if (!nextDefault) return;
+
+    if (!currentEndpoint) {
+      formData.value.endpoint_url = nextDefault;
+      return;
+    }
+
+    const knownDefaults = new Set(Object.values(defaultsByPreset));
+    if (knownDefaults.has(currentEndpoint)) {
+      formData.value.endpoint_url = nextDefault;
+    }
+  }
+};
+
 // 监听提供商变化（S3 默认 endpoint 由 per-type 行为配置填充）
 watch(
   () => formData.value.provider_type,
@@ -480,10 +641,19 @@ watch(
   },
 );
 
+// 切换存储类型时，secret 可见性与 reveal 状态必须重置（避免“上一个类型的密钥状态串到下一个类型”）
+watch(
+  () => currentType.value,
+  () => {
+    resetSecretUiState();
+  },
+);
+
 // 监听编辑的配置变化
 watch(
   () => props.config,
   () => {
+    resetSecretUiState();
     const config = props.config;
     if (config) {
       const type = config.storage_type || (storageTypes.value[0]?.value || "");
@@ -626,8 +796,7 @@ const closeModal = () => {
 // 初始化：加载存储类型元数据
 onMounted(async () => {
   try {
-    const resp = await api.mount.getStorageTypes();
-    storageTypesMeta.value = Array.isArray(resp?.data) ? resp.data : Array.isArray(resp) ? resp : [];
+    await storageConfigsStore.loadStorageTypes();
     if (!formData.value.storage_type && storageTypes.value.length > 0) {
       formData.value.storage_type = storageTypes.value[0].value;
     }
@@ -719,7 +888,7 @@ onMounted(async () => {
                 </select>
               </div>
               <p class="mt-1 text-xs" :class="darkMode ? 'text-gray-400' : 'text-gray-500'">
-                {{ formData.provider_type === "Cloudflare R2" || formData.provider_type === "Backblaze B2" ? "建议默认 10GB" : "建议默认 5GB" }}
+                用于限制该存储的最大可用容量（默认 10GB，清空=不限额）
               </p>
             </div>
 

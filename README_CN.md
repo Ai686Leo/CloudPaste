@@ -61,7 +61,7 @@
 ### 多存储支持
 
 - **S3 兼容**：Cloudflare R2、Backblaze B2、AWS S3、阿里云 OSS、腾讯云 COS、MinIO 等
-- **网盘集成**：WebDAV、OneDrive、Google Drive、Telegram、HuggingFace Database、GitHub API/Releases（只读）等等
+- **网盘集成**：WebDAV、OneDrive、Google Drive、Telegram、Discord Bot、HuggingFace Database、GitHub API/Releases（只读）等等
 - **本地存储**：Docker 部署支持本地文件系统
 - **智能上传**：前端预签名直传 + 流式上传 +分片断点续传，进度实时显示，最大限度摆脱cf限制
 - **文件预览**：支持30+种格式直接预览（图片、视频、音频、PDF、Office、代码、电子书等），其余可通过外部IFrame嵌入[KKFileview](https://github.com/kekingcn/kkFileView)预览

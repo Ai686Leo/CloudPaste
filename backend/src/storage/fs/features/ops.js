@@ -55,11 +55,12 @@ export async function renameItem(fs, oldPath, newPath, userIdOrInfo, userType) {
     });
   }
 
-  const result = await driver.renameItem(oldPath, newPath, {
+  const result = await driver.renameItem(oldSubPath, newSubPath, {
     mount,
-    subPath: oldSubPath,
     oldSubPath,
     newSubPath,
+    oldPath,
+    newPath,
     db: fs.mountManager.db,
     userIdOrInfo,
     userType,
@@ -140,12 +141,12 @@ export async function copyItem(fs, sourcePath, targetPath, userIdOrInfo, userTyp
       });
     }
 
-    const result = await sourceDriver.copyItem(sourcePath, targetPath, {
+    const result = await sourceDriver.copyItem(sourceSubPath, targetSubPath, {
       mount: sourceMount,
-      // 保持旧字段，同时补充明确的源/目标子路径，方便驱动精确映射存储路径
-      subPath: sourceSubPath,
       sourceSubPath,
       targetSubPath,
+      sourcePath,
+      targetPath,
       db: fs.mountManager.db,
       userIdOrInfo,
       userType,
@@ -183,7 +184,8 @@ export async function batchRemoveItems(fs, paths, userIdOrInfo, userType) {
     return { success: 0, failed: [] };
   }
 
-  const { driver, mount, subPath } = await fs.mountManager.getDriverByPath(paths[0], userIdOrInfo, userType);
+  const firstCtx = await fs.mountManager.getDriverByPath(paths[0], userIdOrInfo, userType);
+  const { driver, mount } = firstCtx;
 
   if (!driver.hasCapability(CAPABILITIES.WRITER)) {
     throw new DriverError(`存储驱动 ${driver.getType()} 不支持写入操作`, {
@@ -193,17 +195,40 @@ export async function batchRemoveItems(fs, paths, userIdOrInfo, userType) {
     });
   }
 
-  const result = await driver.batchRemoveItems(paths, {
+  const okPaths = [];
+  const okSubPaths = [];
+  const crossMountFailed = [];
+
+  for (const p of paths) {
+    const ctx = await fs.mountManager.getDriverByPath(p, userIdOrInfo, userType);
+    if (ctx?.mount?.id !== mount?.id || ctx?.driver?.getType?.() !== driver.getType()) {
+      crossMountFailed.push({ path: p, error: "跨挂载批量删除不支持" });
+      continue;
+    }
+    okPaths.push(p);
+    okSubPaths.push(ctx.subPath);
+  }
+
+  const result = await driver.batchRemoveItems(okSubPaths, {
     mount,
-    subPath,
+    paths: okPaths,
+    subPaths: okSubPaths,
     db: fs.mountManager.db,
     userIdOrInfo,
     userType,
     findMountPointByPath,
   });
 
-  fs.emitCacheInvalidation({ mount, paths, reason: "batch-remove" });
-  return result;
+  const resultFailed = Array.isArray(result?.failed) ? result.failed : [];
+  const mergedFailed = [...resultFailed, ...crossMountFailed];
+
+  const merged = {
+    ...result,
+    failed: mergedFailed,
+  };
+
+  fs.emitCacheInvalidation({ mount, paths: okPaths, reason: "batch-remove" });
+  return merged;
 }
 
 /**
@@ -290,7 +315,8 @@ async function copyBetweenDrivers(fs, sourceCtx, targetCtx, sourcePath, targetPa
   try {
     // 1. 从源驱动以流方式下载
     // downloadFile 返回 StorageStreamDescriptor
-    const downloadResult = await sourceDriver.downloadFile(sourcePath, {
+    const downloadResult = await sourceDriver.downloadFile(sourceSubPath, {
+      path: sourcePath,
       mount: sourceMount,
       subPath: sourceSubPath,
       db: fs.mountManager.db,
@@ -341,7 +367,8 @@ async function copyBetweenDrivers(fs, sourceCtx, targetCtx, sourcePath, targetPa
     }
 
     // 3. 将流写入目标驱动
-    const uploadResult = await targetDriver.uploadFile(targetPath, streamToUpload, {
+    const uploadResult = await targetDriver.uploadFile(targetSubPath, streamToUpload, {
+      path: targetPath,
       mount: targetMount,
       subPath: targetSubPath,
       db: fs.mountManager.db,
@@ -444,7 +471,7 @@ async function copyDirectoryBetweenDrivers(fs, sourceCtx, targetCtx, sourcePath,
               source: dirPath,
               target: dirTargetPath,
               status: "failed",
-              error: e?.message || "创建目标目录失败",
+              message: e?.message || "创建目标目录失败",
             });
             continue;
           }
@@ -480,7 +507,7 @@ async function copyDirectoryBetweenDrivers(fs, sourceCtx, targetCtx, sourcePath,
             if (fileResult?.status === "skipped" || fileResult?.skipped === true) {
               // 文件已存在，被跳过
               skippedCount++;
-            } else if (fileResult?.status === "success" || fileResult?.success === true) {
+            } else if (fileResult?.status === "success") {
               // 复制成功
               successCount++;
             } else {
@@ -489,7 +516,7 @@ async function copyDirectoryBetweenDrivers(fs, sourceCtx, targetCtx, sourcePath,
                 source: fileSourcePath,
                 target: fileTargetPath,
                 status: fileResult?.status || "failed",
-                error: fileResult?.error || fileResult?.message || "复制失败",
+                message: fileResult?.message || "复制失败",
               });
             }
           } catch (err) {
@@ -497,7 +524,7 @@ async function copyDirectoryBetweenDrivers(fs, sourceCtx, targetCtx, sourcePath,
               source: fileSourcePath,
               target: fileTargetPath,
               status: "failed",
-              error: err?.message || "复制失败",
+              message: err?.message || "复制失败",
             });
           }
         }
@@ -507,7 +534,7 @@ async function copyDirectoryBetweenDrivers(fs, sourceCtx, targetCtx, sourcePath,
         source: currentDir,
         target: targetBase,
         status: "failed",
-        error: err?.message || "列出目录失败",
+        message: err?.message || "列出目录失败",
       });
     }
   }

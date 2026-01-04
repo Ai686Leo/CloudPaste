@@ -97,6 +97,7 @@ export class ObjectStore {
     }
 
     const presign = await driver.generateUploadUrl(key, {
+      path: key,
       subPath: key,
       fileName: filename,
       fileSize,
@@ -136,6 +137,7 @@ export class ObjectStore {
     const key = await this._composeKeyWithStrategy(storageConfig, directory, filename);
 
     const result = await driver.uploadFile(key, /** @type {any} */ (bodyStream), {
+      path: key,
       subPath: key,
       db: this.db,
       contentType,
@@ -188,6 +190,7 @@ export class ObjectStore {
 
     // 分享上传通过 /share/upload 走表单(multipart)通道，这里保持 File/Blob 语义，交由驱动走表单上传路径
     const result = await driver.uploadFile(key, file, {
+      path: key,
       subPath: key,
       db: this.db,
       contentType: contentType || undefined,
@@ -230,6 +233,7 @@ export class ObjectStore {
 
     if (typeof driver.handleUploadComplete === "function") {
       const result = await driver.handleUploadComplete(key, {
+        path: key,
         subPath: key,
         db: this.db,
         fileName: filename,
@@ -304,6 +308,7 @@ export class ObjectStore {
     const request = options.request || null;
 
     return await driver.downloadFile(key, {
+      path: key,
       subPath: key,
       db: this.db,
       request,
@@ -325,7 +330,7 @@ export class ObjectStore {
     }
 
     if (typeof driver.batchRemoveItems === "function") {
-      await driver.batchRemoveItems([key], { subPath: key, db: this.db, ...options });
+      await driver.batchRemoveItems([key], { paths: [key], subPaths: [key], db: this.db, ...options });
       invalidateFsCache({ storageConfigId: storage_config_id, reason: "delete-object", db: this.db });
       return { success: true };
     }

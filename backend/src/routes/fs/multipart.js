@@ -7,6 +7,7 @@ import { getEncryptionSecret } from "../../utils/environmentUtils.js";
 import { usePolicy } from "../../security/policies/policies.js";
 import { findUploadSessionById, normalizeUploadSessionUserId, updateUploadSessionById } from "../../utils/uploadSessions.js";
 import { validateFsItemName } from "../../storage/fs/utils/FsInputValidator.js";
+import { StorageQuotaGuard } from "../../storage/usage/StorageQuotaGuard.js";
 
 /**
  * 分片上传（multipart）
@@ -117,6 +118,57 @@ export const registerMultipartRoutes = (router, helpers) => {
     throw new ValidationError(result.message);
   };
 
+  const resolveTargetPath = (basePath, fileName) => {
+    const p = String(basePath || "");
+    const n = String(fileName || "");
+    if (!p || !n) return "";
+    return p.endsWith("/") ? `${p}${n}` : `${p}/${n}`;
+  };
+
+  const tryGetOldBytes = async (fileSystem, targetPath, userIdOrInfo, userType) => {
+    try {
+      const existing = await fileSystem.getFileInfo(targetPath, userIdOrInfo, userType);
+      if (existing && existing.isDirectory !== true && typeof existing.size === "number" && existing.size >= 0) {
+        return existing.size;
+      }
+    } catch {
+      // ignore
+    }
+    return null;
+  };
+
+  const assertStorageQuota = async ({
+    mountManager,
+    fileSystem,
+    quota,
+    pathForResolve,
+    storageConfigId,
+    targetPath,
+    userIdOrInfo,
+    userType,
+    incomingBytes,
+    withOldBytes = false,
+    context,
+  }) => {
+    const normalizedIncoming = Number(incomingBytes) || 0;
+    if (normalizedIncoming <= 0) return;
+
+    let finalStorageConfigId = storageConfigId || null;
+    if (!finalStorageConfigId && mountManager && pathForResolve) {
+      const { mount } = await mountManager.getDriverByPath(pathForResolve, userIdOrInfo, userType);
+      finalStorageConfigId = mount?.storage_config_id || null;
+    }
+    if (!finalStorageConfigId) return;
+
+    const oldBytes = withOldBytes && targetPath ? await tryGetOldBytes(fileSystem, targetPath, userIdOrInfo, userType) : null;
+    await quota.assertCanConsume({
+      storageConfigId: finalStorageConfigId,
+      incomingBytes: normalizedIncoming,
+      oldBytes,
+      context: context || "fs",
+    });
+  };
+
   // =====================================================================
   // == FS 分片上传（multipart）：初始化 / 完成 / 中止（通用生命周期接口） ==
   // =====================================================================
@@ -136,6 +188,21 @@ export const registerMultipartRoutes = (router, helpers) => {
 
     const mountManager = new MountManager(db, encryptionSecret, repositoryFactory, { env: c.env });
     const fileSystem = new FileSystem(mountManager);
+    const quota = new StorageQuotaGuard(db, encryptionSecret, repositoryFactory, { env: c.env });
+
+    await assertStorageQuota({
+      mountManager,
+      fileSystem,
+      quota,
+      pathForResolve: path,
+      targetPath: resolveTargetPath(path, fileName),
+      userIdOrInfo,
+      userType,
+      incomingBytes: fileSize,
+      withOldBytes: true,
+      context: "fs-multipart-init",
+    });
+
     const result = await fileSystem.initializeFrontendMultipartUpload(
       path,
       fileName,
@@ -171,6 +238,23 @@ export const registerMultipartRoutes = (router, helpers) => {
 
     const mountManager = new MountManager(db, encryptionSecret, repositoryFactory, { env: c.env });
     const fileSystem = new FileSystem(mountManager);
+    const quota = new StorageQuotaGuard(db, encryptionSecret, repositoryFactory, { env: c.env });
+
+    // 兜底：complete 阶段再做一次自定义容量检查（防止绕过 init/或 init 时 size=0）
+    const finalFileSize = Math.max(Number(sessionRow?.file_size) || 0, Number(fileSize) || 0);
+    await assertStorageQuota({
+      mountManager,
+      fileSystem,
+      quota,
+      storageConfigId: sessionRow?.storage_config_id || null,
+      pathForResolve: path,
+      targetPath: fileName ? resolveTargetPath(path, fileName) : "",
+      userIdOrInfo,
+      userType,
+      incomingBytes: finalFileSize,
+      withOldBytes: !!fileName,
+      context: "fs-multipart-complete",
+    });
     const safeParts = Array.isArray(parts) ? parts : [];
     const result = await fileSystem.completeFrontendMultipartUpload(path, uploadId, safeParts, fileName, fileSize, userIdOrInfo, userType);
 
@@ -300,6 +384,26 @@ export const registerMultipartRoutes = (router, helpers) => {
 
     const mountManager = new MountManager(db, encryptionSecret, repositoryFactory, { env: c.env });
     const fileSystem = new FileSystem(mountManager);
+    const quota = new StorageQuotaGuard(db, encryptionSecret, repositoryFactory, { env: c.env });
+
+    // 自定义容量限制
+    // - init 阶段通常已校验，但为了避免“绕过 init / init 时 file_size=0”的边界，这里做一次兜底。
+    // - 只在 initiated 状态时校验一次，避免每片都重复计算/查询。
+    if (String(sessionRow?.status || "") === "initiated") {
+      await assertStorageQuota({
+        mountManager,
+        fileSystem,
+        quota,
+        storageConfigId: sessionRow?.storage_config_id || null,
+        pathForResolve: sessionRow?.fs_path || "",
+        targetPath: resolveTargetPath(sessionRow?.fs_path || "", sessionRow?.file_name || ""),
+        userIdOrInfo,
+        userType,
+        incomingBytes: sessionRow?.file_size || 0,
+        withOldBytes: true,
+        context: "fs-multipart-upload-chunk",
+      });
+    }
 
     const { driver, mount } = await fileSystem.mountManager.getDriverByPath(
       sessionRow.fs_path,
@@ -376,6 +480,23 @@ export const registerMultipartRoutes = (router, helpers) => {
     }
 
     const fileSystem = new FileSystem(mountManager);
+    const quota = new StorageQuotaGuard(db, encryptionSecret, repositoryFactory, { env: c.env });
+
+    // 自定义容量限制：在发放预签名 URL 前拦截
+    await assertStorageQuota({
+      mountManager,
+      fileSystem,
+      quota,
+      storageConfigId: mount.storage_config_id,
+      pathForResolve: path,
+      targetPath,
+      userIdOrInfo,
+      userType,
+      incomingBytes: fileSize,
+      withOldBytes: true,
+      context: "fs-presign",
+    });
+
     const result = await fileSystem.generateUploadUrl(targetPath, userIdOrInfo, userType, {
       operation: "upload",
       fileName,
@@ -430,6 +551,21 @@ export const registerMultipartRoutes = (router, helpers) => {
 
     const mountManager = new MountManager(db, encryptionSecret, repositoryFactory, { env: c.env });
     const fileSystem = new FileSystem(mountManager);
+    const quota = new StorageQuotaGuard(db, encryptionSecret, repositoryFactory, { env: c.env });
+
+    // 自定义容量限制：commit 阶段兜底校验
+    await assertStorageQuota({
+      mountManager,
+      fileSystem,
+      quota,
+      pathForResolve: targetPath,
+      targetPath,
+      userIdOrInfo,
+      userType,
+      incomingBytes: fileSize,
+      withOldBytes: true,
+      context: "fs-presign-commit",
+    });
 
     // 使用 FileSystem 对齐目录标记与缓存逻辑
     const result = await fileSystem.commitPresignedUpload(targetPath, fileName, userIdOrInfo, userType, {

@@ -662,15 +662,15 @@ export class MirrorStorageDriver extends BaseDriver {
     return { ...base, ...(extra || {}) };
   }
 
-  async stat(path, options = {}) {
-    return this.getFileInfo(path, options);
+  async stat(subPath, ctx = {}) {
+    return this.getFileInfo(subPath, ctx);
   }
 
-  async exists(path, options = {}) {
+  async exists(subPath, ctx = {}) {
     this._ensureInitialized();
-    const subPath = options?.subPath ?? path ?? "/";
-    const asDirectory = String(subPath).endsWith("/");
-    const upstreamUrl = this._buildUpstreamUrl(subPath, { asDirectory });
+    const normalizedSubPath = subPath ?? "/";
+    const asDirectory = String(normalizedSubPath).endsWith("/");
+    const upstreamUrl = this._buildUpstreamUrl(normalizedSubPath, { asDirectory });
     try {
       const resp = await fetch(upstreamUrl, {
         method: "HEAD",
@@ -685,10 +685,11 @@ export class MirrorStorageDriver extends BaseDriver {
     }
   }
 
-  async listDirectory(_path, options = {}) {
+  async listDirectory(subPath, ctx = {}) {
     this._ensureInitialized();
-    const { mount, subPath = "/", db } = options;
-    const normalizedSubPath = normalizeSubPath(subPath, { asDirectory: true });
+    const { mount, db } = ctx;
+    const fsPath = ctx?.path;
+    const normalizedSubPath = normalizeSubPath(subPath || "/", { asDirectory: true });
     const upstreamUrl = this._buildUpstreamUrl(normalizedSubPath, { asDirectory: true });
 
     const acceptHeader = "text/html,application/json,application/xml;q=0.9,*/*;q=0.8";
@@ -772,7 +773,7 @@ export class MirrorStorageDriver extends BaseDriver {
     );
 
     return {
-      path: basePath,
+      path: fsPath,
       type: "directory",
       isRoot: normalizedSubPath === "/" || normalizedSubPath === "",
       isVirtual: false,
@@ -839,10 +840,11 @@ export class MirrorStorageDriver extends BaseDriver {
     return out;
   }
 
-  async getFileInfo(path, options = {}) {
+  async getFileInfo(subPath, ctx = {}) {
     this._ensureInitialized();
-    const { mount, subPath = path, db } = options;
-    const rawSubPath = subPath ?? path ?? "/";
+    const { mount, db } = ctx;
+    const path = ctx?.path;
+    const rawSubPath = subPath ?? "/";
     const asDirectory = String(rawSubPath).endsWith("/");
     const normalizedSubPath = normalizeSubPath(rawSubPath, { asDirectory });
     const upstreamUrl = this._buildUpstreamUrl(normalizedSubPath, { asDirectory });
@@ -913,10 +915,9 @@ export class MirrorStorageDriver extends BaseDriver {
     return info;
   }
 
-  async downloadFile(path, options = {}) {
+  async downloadFile(subPath, ctx = {}) {
     this._ensureInitialized();
-    const subPath = options?.subPath ?? path;
-    const normalized = normalizeSubPath(subPath, { asDirectory: false });
+    const normalized = normalizeSubPath(subPath || "/", { asDirectory: false });
     const upstreamUrl = this._buildUpstreamUrl(normalized, { asDirectory: false });
 
     return createHttpStreamDescriptor({
@@ -941,18 +942,18 @@ export class MirrorStorageDriver extends BaseDriver {
     });
   }
 
-  async generateDownloadUrl(path, options = {}) {
+  async generateDownloadUrl(subPath, ctx = {}) {
     this._ensureInitialized();
-    const subPath = options?.subPath ?? path;
-    const normalized = normalizeSubPath(subPath, { asDirectory: false });
+    const normalized = normalizeSubPath(subPath || "/", { asDirectory: false });
     const url = this._buildUpstreamUrl(normalized, { asDirectory: false });
     return { url, type: "native_direct" };
   }
 
-  async generateProxyUrl(path, options = {}) {
+  async generateProxyUrl(subPath, ctx = {}) {
     this._ensureInitialized();
-    const { request = null, download = false, channel = "web" } = options || {};
-    const url = buildFullProxyUrl(request, path, !!download);
+    const { request = null, download = false, channel = "web" } = ctx || {};
+    const fsPath = ctx?.path;
+    const url = buildFullProxyUrl(request, fsPath, !!download);
     return { url, type: "proxy", channel };
   }
 

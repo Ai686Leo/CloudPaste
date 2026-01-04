@@ -68,7 +68,8 @@ export class OneDriveStorageDriver extends BaseDriver {
     this.refreshToken = config.refresh_token;
     this.tokenRenewEndpoint = config.token_renew_endpoint || null;
     this.redirectUri = config.redirect_uri || null;
-    this.useOnlineApi = Boolean(config.use_online_api);
+    this.useOnlineApi = config?.use_online_api === 1;
+    this.enableDiskUsage = config?.enable_disk_usage === 1;
 
     // 内部组件（延迟初始化）
     this.authManager = null;
@@ -158,21 +159,21 @@ export class OneDriveStorageDriver extends BaseDriver {
 
   /**
    * 列出目录内容
-   * @param {string} path    挂载视图下的路径
-   * @param {Object} options 上下文选项（mount/subPath/db/userType 等）
+   * @param {string} subPath 挂载内子路径（subPath-only）
+   * @param {Object} ctx     上下文选项（mount/path/subPath/db/userType 等）
    */
-  async listDirectory(path, options = {}) {
+  async listDirectory(subPath, ctx = {}) {
     this._ensureInitialized();
 
-    const { mount, subPath, db } = options;
-    // 对远端 OneDrive 来说，应当始终使用 subPath 作为实际路径，path 只是挂载视图下的展示路径
-    const remotePath = typeof subPath === "string" ? subPath : path;
+    const { mount, db } = ctx;
+    const fsPath = ctx?.path;
+    const remotePath = subPath;
 
-    const cursorRaw = options?.cursor != null && String(options.cursor).trim() ? String(options.cursor).trim() : null;
-    const limitRaw = options?.limit != null && options.limit !== "" ? Number(options.limit) : null;
+    const cursorRaw = ctx?.cursor != null && String(ctx.cursor).trim() ? String(ctx.cursor).trim() : null;
+    const limitRaw = ctx?.limit != null && ctx.limit !== "" ? Number(ctx.limit) : null;
     const limit =
       limitRaw != null && Number.isFinite(limitRaw) && limitRaw > 0 ? Math.max(1, Math.min(999, Math.floor(limitRaw))) : null;
-    const paged = options?.paged === true || !!cursorRaw || limit != null;
+    const paged = ctx?.paged === true || !!cursorRaw || limit != null;
 
     let pageNextCursor = null;
     let items = [];
@@ -189,11 +190,11 @@ export class OneDriveStorageDriver extends BaseDriver {
 
     // 转换为标准格式（path 仍然使用挂载视图路径，保证与 FileSystem 约定一致）
     const formattedItems = await Promise.all(
-      items.map((item) => this._formatDriveItem(item, path, mount, db)),
+      items.map((item) => this._formatDriveItem(item, fsPath, mount, db)),
     );
 
     return {
-      path,
+      path: fsPath,
       type: "directory",
       isRoot: !remotePath || remotePath === "/",
       isVirtual: false,
@@ -212,20 +213,21 @@ export class OneDriveStorageDriver extends BaseDriver {
 
   /**
    * 获取文件或目录信息
-   * @param {string} path    挂载视图下的路径
-   * @param {Object} options 上下文选项（mount/subPath/db/userType/userId/request 等）
+   * @param {string} subPath 挂载内子路径（subPath-only）
+   * @param {Object} ctx     上下文选项（mount/path/subPath/db/userType/userId/request 等）
    */
-  async getFileInfo(path, options = {}) {
+  async getFileInfo(subPath, ctx = {}) {
     this._ensureInitialized();
 
-    const { mount, subPath, db } = options;
-    const remotePath = typeof subPath === "string" ? subPath : path;
+    const { mount, db } = ctx;
+    const fsPath = ctx?.path;
+    const remotePath = subPath;
 
     const item = await this.graphClient.getItem(remotePath || "");
 
-    let parentPath = path;
-    if (typeof path === "string") {
-      const segments = path.split("/").filter(Boolean);
+    let parentPath = fsPath;
+    if (typeof fsPath === "string") {
+      const segments = fsPath.split("/").filter(Boolean);
       if (segments.length > 1) {
         parentPath = `/${segments.slice(0, -1).join("/")}`;
       } else if (mount?.mount_path) {
@@ -240,15 +242,14 @@ export class OneDriveStorageDriver extends BaseDriver {
 
   /**
    * 下载文件，返回 StorageStreamDescriptor
-   * @param {string} path    挂载视图下的路径
-   * @param {Object} options 上下文选项（mount/subPath/db/request 等）
+   * @param {string} subPath 挂载内子路径（subPath-only）
+   * @param {Object} ctx     上下文选项（mount/path/subPath/db/request 等）
    * @returns {Promise<import('../../streaming/types.js').StorageStreamDescriptor>}
    */
-  async downloadFile(path, options = {}) {
+  async downloadFile(subPath, ctx = {}) {
     this._ensureInitialized();
 
-    const { subPath } = options;
-    const remotePath = typeof subPath === "string" ? subPath : path;
+    const remotePath = subPath;
 
     // 获取文件元数据
     const item = await this.graphClient.getItem(remotePath || "");
@@ -281,21 +282,22 @@ export class OneDriveStorageDriver extends BaseDriver {
 
   /**
    * 统一上传入口（文件 / 流）
-   * @param {string} path          目标路径（挂载视图或 storage-first 视图）
+   * @param {string} subPath       挂载内子路径（subPath-only）
    * @param {any} fileOrStream     数据源（ReadableStream/Node Stream/Buffer/File/Blob/string 等）
-   * @param {Object} options       上下文选项（mount/subPath/db/filename/contentType/contentLength 等）
+   * @param {Object} ctx           上下文选项（mount/path/subPath/db/filename/contentType/contentLength 等）
    */
-  async uploadFile(path, fileOrStream, options = {}) {
+  async uploadFile(subPath, fileOrStream, ctx = {}) {
     this._ensureInitialized();
 
-    const { contentLength, contentType, subPath, filename } = options;
+    const { contentLength, contentType, filename } = ctx;
+    const fsPath = ctx?.path;
 
     // 规范化远端文件路径：目录(subPath) + 文件名
-    const remoteBase = typeof subPath === "string" ? subPath : path;
+    const remoteBase = subPath;
     const safeName =
       filename ||
-      (typeof path === "string"
-        ? path.split("/").filter(Boolean).pop() || "upload.bin"
+      (typeof fsPath === "string"
+        ? fsPath.split("/").filter(Boolean).pop() || "upload.bin"
         : "upload.bin");
     const remotePath = this._resolveRemoteFilePath(remoteBase, safeName);
 
@@ -313,7 +315,7 @@ export class OneDriveStorageDriver extends BaseDriver {
         contentLength <= SIMPLE_UPLOAD_MAX_BYTES
       ) {
         console.log(
-          `[StorageUpload] type=ONEDRIVE mode=简单上传 status=开始 路径=${path} 子路径=${subPath ?? ""} 远端=${remotePath} 大小=${contentLength}`,
+          `[StorageUpload] type=ONEDRIVE mode=简单上传 status=开始 路径=${fsPath} 子路径=${subPath ?? ""} 远端=${remotePath} 大小=${contentLength}`,
         );
 
         item = await this.graphClient.uploadSmall(remotePath || "", fileOrStream, {
@@ -327,7 +329,7 @@ export class OneDriveStorageDriver extends BaseDriver {
       ) {
         // 大文件：使用 Upload Session + 单次 PUT（后端流式上传，不做分片循环）
         console.log(
-          `[StorageUpload] type=ONEDRIVE mode=会话上传 status=开始 路径=${path} 子路径=${subPath ?? ""} 远端=${remotePath} 大小=${contentLength}`,
+          `[StorageUpload] type=ONEDRIVE mode=会话上传 status=开始 路径=${fsPath} 子路径=${subPath ?? ""} 远端=${remotePath} 大小=${contentLength}`,
         );
 
         const session = await this.graphClient.createUploadSession(remotePath || "", {
@@ -340,7 +342,7 @@ export class OneDriveStorageDriver extends BaseDriver {
       } else {
         // 未知大小：保守起见使用 Simple Upload，依赖环境自身的大小限制
         console.log(
-          `[StorageUpload] type=ONEDRIVE mode=简单上传-未知大小 status=开始 路径=${path} 子路径=${subPath ?? ""} 远端=${remotePath}`,
+          `[StorageUpload] type=ONEDRIVE mode=简单上传-未知大小 status=开始 路径=${fsPath} 子路径=${subPath ?? ""} 远端=${remotePath}`,
         );
 
         item = await this.graphClient.uploadSmall(remotePath || "", fileOrStream, {
@@ -351,7 +353,7 @@ export class OneDriveStorageDriver extends BaseDriver {
 
       return {
         success: true,
-        storagePath: path,
+        storagePath: fsPath || (typeof subPath === "string" ? subPath : ""),
         message: "文件上传成功",
         item,
       };
@@ -359,26 +361,32 @@ export class OneDriveStorageDriver extends BaseDriver {
       throw new DriverError(`文件上传失败: ${error.message}`, {
         status: error.status || 500,
         cause: error,
-        details: { path },
+        details: { path: fsPath },
       });
     }
   }
 
   /**
    * 更新文件内容
-   * @param {string} path    挂载视图下的文件路径
+   * @param {string} subPath 挂载内子路径（subPath-only）
    * @param {string|Uint8Array|ArrayBuffer} content 新内容
-   * @param {Object} options 上下文选项（mount/subPath/db 等）
+   * @param {Object} ctx 上下文选项（mount/path/subPath/db 等）
    */
-  async updateFile(path, content, options = {}) {
+  async updateFile(subPath, content, ctx = {}) {
     this._ensureInitialized();
 
-    const { subPath } = options;
+    const fsPath = ctx?.path;
+    if (typeof fsPath !== "string" || !fsPath) {
+      throw new DriverError("OneDrive 更新文件缺少 path 上下文（ctx.path）", {
+        status: 500,
+        details: { subPath },
+      });
+    }
 
     if (typeof subPath !== "string") {
       throw new DriverError("OneDrive 更新文件缺少子路径上下文（subPath）", {
         status: 500,
-        details: { path },
+        details: { path: fsPath },
       });
     }
 
@@ -386,8 +394,8 @@ export class OneDriveStorageDriver extends BaseDriver {
     const remotePath = this._normalizeRemoteBase(subPath);
 
     const safeName =
-      (typeof path === "string"
-        ? path.split("/").filter(Boolean).pop()
+      (typeof fsPath === "string"
+        ? fsPath.split("/").filter(Boolean).pop()
         : null) || "file";
 
     const effectiveContentType =
@@ -403,7 +411,7 @@ export class OneDriveStorageDriver extends BaseDriver {
       let item;
 
       console.log(
-        `[StorageUpload] type=ONEDRIVE mode=内容更新 status=开始 路径=${path} 子路径=${remotePath} 大小=${contentLength ?? "未知"}`,
+        `[StorageUpload] type=ONEDRIVE mode=内容更新 status=开始 路径=${fsPath} 子路径=${remotePath} 大小=${contentLength ?? "未知"}`,
       );
 
       if (
@@ -428,12 +436,12 @@ export class OneDriveStorageDriver extends BaseDriver {
       }
 
       console.log(
-        `[StorageUpload] type=ONEDRIVE mode=内容更新 status=完成 路径=${path} 子路径=${remotePath}`,
+        `[StorageUpload] type=ONEDRIVE mode=内容更新 status=完成 路径=${fsPath} 子路径=${remotePath}`,
       );
 
       return {
         success: true,
-        path,
+        path: fsPath,
         message: "文件更新成功",
         item,
       };
@@ -441,7 +449,7 @@ export class OneDriveStorageDriver extends BaseDriver {
       throw new DriverError(`更新文件失败: ${error.message}`, {
         status: error.status || 500,
         cause: error,
-        details: { path, subPath: remotePath },
+        details: { path: fsPath, subPath: remotePath },
       });
     }
   }
@@ -450,14 +458,14 @@ export class OneDriveStorageDriver extends BaseDriver {
    * 生成预签名上传URL（基于 OneDrive 上传会话）
    * - 供 /api/fs/presign 使用，前端通过 StorageAdapter 执行直链上传
    * - 这里使用 Graph createUploadSession + uploadUrl，前端一次性 PUT 完整文件
-   * @param {string} path    挂载视图下的目录路径或 storage-first 路径
-   * @param {Object} options 上下文选项（mount/subPath/db/fileName/fileSize 等）
+   * @param {string} subPath 挂载内子路径（subPath-only）
+   * @param {Object} ctx     上下文选项（mount/path/subPath/db/fileName/fileSize 等）
    */
-  async generateUploadUrl(path, options = {}) {
+  async generateUploadUrl(subPath, ctx = {}) {
     this._ensureInitialized();
 
-    const { subPath } = options;
-    const { fileName, fileSize } = options;
+    const fsPath = ctx?.path;
+    const { fileName, fileSize } = ctx;
 
     if (!fileName) {
       throw new DriverError("生成上传URL失败: 缺少文件名", { status: 400 });
@@ -465,7 +473,7 @@ export class OneDriveStorageDriver extends BaseDriver {
 
     // 对于 FS 视图，使用 subPath/targetPath 作为完整远端路径（包含文件名）；
     // 对于 storage-first 场景，则直接使用传入的 path 作为对象 Key。
-    const remoteBase = subPath != null ? subPath : path;
+    const remoteBase = subPath;
     const remotePath =
       typeof remoteBase === "string"
         ? remoteBase
@@ -477,7 +485,7 @@ export class OneDriveStorageDriver extends BaseDriver {
 
     try {
       console.log(
-        `[StorageUpload] type=ONEDRIVE mode=预签名上传 status=开始 路径=${path} 子路径=${remotePath} 文件=${safeName} 大小=${fileSize ?? "未知"}`,
+        `[StorageUpload] type=ONEDRIVE mode=预签名上传 status=开始 路径=${fsPath} 子路径=${remotePath} 文件=${safeName} 大小=${fileSize ?? "未知"}`,
       );
 
       const session = await this.graphClient.createUploadSession(remotePath || "", {
@@ -511,21 +519,21 @@ export class OneDriveStorageDriver extends BaseDriver {
       throw new DriverError(`生成上传URL失败: ${error.message}`, {
         status: error.status || 500,
         cause: error,
-        details: { path },
+        details: { path: fsPath, subPath },
       });
     }
   }
 
   /**
    * 创建目录
-   * @param {string} path     目录路径
-   * @param {Object} _options 上下文选项（保留用于接口一致性）
+   * @param {string} subPath 挂载内子路径（subPath-only）
+   * @param {Object} ctx     上下文选项（mount/path/subPath/db 等）
    */
-  async createDirectory(path, _options = {}) {
+  async createDirectory(subPath, ctx = {}) {
     this._ensureInitialized();
 
-    const { subPath } = _options;
-    const rawRemotePath = typeof subPath === "string" ? subPath : path;
+    const fsPath = ctx?.path;
+    const rawRemotePath = subPath;
     const remotePath = this._normalizeRemoteBase(rawRemotePath);
 
     // 特殊处理：挂载点根目录在逻辑上总是存在，
@@ -533,11 +541,11 @@ export class OneDriveStorageDriver extends BaseDriver {
     // “The item must have a name.” 错误。
     if (!remotePath) {
       console.log(
-        `[OneDriveStorageDriver] 跳过创建挂载点根目录（逻辑上总是存在）: ${path}`,
+        `[OneDriveStorageDriver] 跳过创建挂载点根目录（逻辑上总是存在）: ${fsPath}`,
       );
       return {
         success: true,
-        path,
+        path: fsPath,
         alreadyExists: true,
       };
     }
@@ -546,7 +554,7 @@ export class OneDriveStorageDriver extends BaseDriver {
       const result = await this.graphClient.createFolder(remotePath);
       return {
         success: true,
-        path,
+        path: fsPath,
         alreadyExists: false,
         item: result,
       };
@@ -555,36 +563,26 @@ export class OneDriveStorageDriver extends BaseDriver {
       if (error.status === 409 || error.code === "nameAlreadyExists") {
         return {
           success: true,
-          path,
+          path: fsPath,
           alreadyExists: true,
         };
       }
       throw new DriverError(`创建目录失败: ${error.message}`, {
         status: error.status || 500,
         cause: error,
-        details: { path },
+        details: { path: fsPath },
       });
     }
   }
 
   /**
    * 重命名文件或目录
-   * @param {string} oldPath 原路径
-   * @param {string} newPath 新路径
-   * @param {Object} _options 上下文选项（保留用于接口一致性）
+   * @param {string} oldSubPath 原子路径（subPath-only）
+   * @param {string} newSubPath 目标子路径（subPath-only）
+   * @param {Object} ctx        上下文选项（oldPath/newPath/oldSubPath/newSubPath/...）
    */
-  async renameItem(oldPath, newPath, _options = {}) {
+  async renameItem(oldSubPath, newSubPath, ctx = {}) {
     this._ensureInitialized();
-
-    const { oldSubPath, newSubPath } = _options;
-
-    // OneDrive 精确重命名：严格依赖 FS 提供的子路径上下文
-    if (typeof oldSubPath !== "string" || typeof newSubPath !== "string") {
-      throw new DriverError("OneDrive 重命名缺少子路径上下文（oldSubPath/newSubPath）", {
-        status: 500,
-        details: { oldPath, newPath },
-      });
-    }
 
     const remoteOldPath = this._normalizeRemoteBase(oldSubPath);
     const remoteNewPath = this._normalizeRemoteBase(newSubPath);
@@ -593,81 +591,55 @@ export class OneDriveStorageDriver extends BaseDriver {
       await this.graphClient.renameItem(remoteOldPath || "", remoteNewPath || "");
       return {
         success: true,
-        source: oldPath,
-        target: newPath,
+        source: ctx?.oldPath,
+        target: ctx?.newPath,
       };
     } catch (error) {
       throw new DriverError(`重命名失败: ${error.message}`, {
         status: error.status || 500,
         cause: error,
-        details: { oldPath, newPath, remoteOldPath, remoteNewPath },
+        details: { oldPath: ctx?.oldPath, newPath: ctx?.newPath, remoteOldPath, remoteNewPath },
       });
     }
   }
 
   /**
    * 批量删除文件/目录
-   * @param {Array<string>} paths 路径数组（FS 视图路径，如 /onedrive/file.zip）
-   * @param {Object} options     上下文选项
-   * @param {Array<string>} [options.subPaths] 预计算的子路径数组（可选）
-   * @param {string} [options.subPath]         首个路径的子路径（兼容单路径场景）
-   * @param {D1Database} [options.db]          数据库实例
-   * @param {string|Object} [options.userIdOrInfo] 用户ID或API密钥信息
-   * @param {string} [options.userType]        用户类型
-   * @param {Function} [options.findMountPointByPath] 挂载点查找函数
+   * @param {Array<string>} subPaths 子路径数组（subPath-only）
+   * @param {Object} ctx            上下文选项（paths/subPaths/mount/...）
    */
-  async batchRemoveItems(paths, options = {}) {
+  async batchRemoveItems(subPaths, ctx = {}) {
     this._ensureInitialized();
+
+    if (!Array.isArray(subPaths) || subPaths.length === 0) {
+      return { success: 0, failed: [], results: [] };
+    }
+
+    if (!Array.isArray(ctx?.paths) || ctx.paths.length !== subPaths.length) {
+      throw new DriverError("OneDrive batchRemoveItems 需要 ctx.paths 与 subPaths 一一对应（不做兼容）", {
+        status: 500,
+        details: { pathsType: typeof ctx?.paths, pathsLen: ctx?.paths?.length, subPathsLen: subPaths.length },
+      });
+    }
 
     const results = [];
     const failed = [];
     let successCount = 0;
 
-    const { subPaths, subPath, db, userIdOrInfo, userType, findMountPointByPath } = options;
+    const fsPaths = ctx.paths;
 
-    for (let i = 0; i < paths.length; i++) {
-      const path = paths[i];
-      /** @type {string} */
-      let remotePath = path;
-
-      // 1）优先使用显式传入的 subPaths（FS or storage-first 调用方可直接提供）
-      if (Array.isArray(subPaths) && typeof subPaths[i] === "string") {
-        remotePath = subPaths[i];
-      } else if (typeof findMountPointByPath === "function" && db) {
-        // 2）否则通过 findMountPointByPath 重新解析挂载点与子路径（与 S3 批量删除保持一致）
-        try {
-          const mountResult = await findMountPointByPath(db, path, userIdOrInfo, userType);
-          if (mountResult && !mountResult.error) {
-            remotePath = mountResult.subPath || "";
-          } else if (mountResult && mountResult.error) {
-            results.push({ path, success: false, error: mountResult.error.message || "删除失败" });
-            failed.push({ path, error: mountResult.error.message || "删除失败" });
-            continue;
-          }
-        } catch (error) {
-          results.push({ path, success: false, error: error.message || "删除失败" });
-          failed.push({ path, error: error.message || "删除失败" });
-          continue;
-        }
-      } else if (typeof subPath === "string" && paths.length === 1) {
-        // 3）兼容仅传入单个 subPath 的场景（如 ObjectStore 等）
-        remotePath = subPath;
-      }
-
-      if (typeof remotePath === "string") {
-        remotePath = remotePath
-          .replace(/^[/\\]+/, "")
-          .replace(/[/\\]+$/, "")
-          .replace(/[\\/]+/g, "/");
-      }
+    for (let i = 0; i < subPaths.length; i += 1) {
+      const fsPath = fsPaths[i];
+      const itemSubPath = subPaths[i];
+      const remotePath = this._normalizeRemoteBase(itemSubPath);
 
       try {
         await this.graphClient.deleteItem(remotePath || "");
-        results.push({ path, success: true });
-        successCount++;
+        results.push({ path: fsPath, success: true });
+        successCount += 1;
       } catch (error) {
-        results.push({ path, success: false, error: error.message });
-        failed.push({ path, error: error.message });
+        results.push({ path: fsPath, success: false, error: error.message });
+        failed.push({ path: fsPath, error: error.message });
       }
     }
 
@@ -680,22 +652,14 @@ export class OneDriveStorageDriver extends BaseDriver {
 
   /**
    * 复制单个文件或目录
-   * @param {string} sourcePath 源路径
-   * @param {string} targetPath 目标路径
-   * @param {Object} _options   上下文选项（保留用于接口一致性）
+   * @param {string} sourceSubPath 源子路径（subPath-only）
+   * @param {string} targetSubPath 目标子路径（subPath-only）
+   * @param {Object} ctx            上下文选项（sourcePath/targetPath/sourceSubPath/targetSubPath/...）
    */
-  async copyItem(sourcePath, targetPath, _options = {}) {
+  async copyItem(sourceSubPath, targetSubPath, ctx = {}) {
     this._ensureInitialized();
-
-    const { sourceSubPath, targetSubPath } = _options;
-
-    // 同存储复制：严格依赖 FS 提供的源/目标子路径
-    if (typeof sourceSubPath !== "string" || typeof targetSubPath !== "string") {
-      throw new DriverError("OneDrive 复制缺少子路径上下文（sourceSubPath/targetSubPath）", {
-        status: 500,
-        details: { sourcePath, targetPath },
-      });
-    }
+    const sourcePath = ctx?.sourcePath;
+    const targetPath = ctx?.targetPath;
 
     const remoteSourcePath = this._normalizeRemoteBase(sourceSubPath);
     const remoteTargetPath = this._normalizeRemoteBase(targetSubPath);
@@ -734,15 +698,14 @@ export class OneDriveStorageDriver extends BaseDriver {
    * 生成下载直链（DIRECT_LINK 能力）
    * - 基于 Graph API @microsoft.graph.downloadUrl 生成直链
    * - 返回 { url, type, expiresIn?, expiresAt? }
-   * @param {string} path
-   * @param {Object} options
+   * @param {string} subPath 挂载内子路径（subPath-only）
+   * @param {Object} ctx     上下文选项（path/request/forceDownload/...）
    */
-  async generateDownloadUrl(path, options = {}) {
+  async generateDownloadUrl(subPath, ctx = {}) {
     this._ensureInitialized();
 
     try {
-      const { subPath } = options;
-      const remotePath = typeof subPath === "string" ? subPath : path;
+      const remotePath = subPath;
 
       // 获取文件元数据，包含 downloadUrl
       const item = await this.graphClient.getItem(remotePath || "");
@@ -754,8 +717,11 @@ export class OneDriveStorageDriver extends BaseDriver {
       const downloadUrl = item["@microsoft.graph.downloadUrl"];
 
       if (!downloadUrl) {
-        // 如果没有 downloadUrl，回退到 proxy 模式
-        return await this.generateProxyUrl(path, options);
+        throw new DriverError("OneDrive 未返回可用的 downloadUrl（无法生成直链）", {
+          status: 502,
+          expose: false,
+          details: { subPath: remotePath },
+        });
       }
 
       // Graph API downloadUrl 通常有效期约 1 小时
@@ -769,9 +735,13 @@ export class OneDriveStorageDriver extends BaseDriver {
         expiresAt,
       };
     } catch (error) {
-      // 如果获取直链失败，回退到 proxy 模式
-      console.error("OneDrive 获取直链失败，回退到 proxy:", error.message);
-      return await this.generateProxyUrl(path, options);
+      // 直链能力失败时，交给上层策略（FsLinkStrategy / LinkService）决定是否降级为 proxy
+      throw new DriverError(`OneDrive 获取直链失败: ${error?.message || "unknown"}`, {
+        status: error?.status || 502,
+        expose: false,
+        cause: error,
+        details: { subPath },
+      });
     }
   }
 
@@ -780,16 +750,17 @@ export class OneDriveStorageDriver extends BaseDriver {
   /**
    * 生成代理 URL（PROXY 能力）
    * - 返回 { url, type: "proxy", channel? }
-   * @param {string} path
-   * @param {Object} options
+   * @param {string} subPath 挂载内子路径（subPath-only）
+   * @param {Object} ctx     上下文选项（path/request/download/channel/...）
    */
-  async generateProxyUrl(path, options = {}) {
+  async generateProxyUrl(subPath, ctx = {}) {
     this._ensureInitialized();
 
-    const { request, download = false, channel = "web" } = options;
+    const { request, download = false, channel = "web" } = ctx;
+    const fsPath = ctx?.path;
 
     // 使用统一的代理 URL 构建器
-    const url = buildFullProxyUrl(request, path, download);
+    const url = buildFullProxyUrl(request, fsPath, download);
 
     return {
       url,
@@ -895,12 +866,15 @@ export class OneDriveStorageDriver extends BaseDriver {
       uploadId = id;
 
       return {
+        success: true,
         uploadId,
         strategy: "single_session",
         fileName,
         fileSize,
         partSize: effectivePartSize,
         partCount: calculatedPartCount,
+        totalParts: calculatedPartCount,
+        key: fsPath.replace(/^\/+/, ""),
         session: {
           uploadUrl: session.uploadUrl,
           expirationDateTime: session.expirationDateTime || null,
@@ -1257,14 +1231,22 @@ export class OneDriveStorageDriver extends BaseDriver {
       retryPolicy: { maxAttempts: 3 },
     };
 
-    if (!db || !mount?.storage_config_id || !uploadId) {
-      return {
-        success: true,
-        uploadId: uploadId || null,
-        strategy: "single_session",
-        policy,
-        session: null,
-      };
+    if (!uploadId) {
+      throw new DriverError("OneDrive 刷新分片会话失败：缺少 uploadId", {
+        status: 400,
+        code: "UPLOAD_SESSION_INVALID",
+        expose: true,
+      });
+    }
+
+    // FS 分片上传链路依赖 upload_sessions 表（控制面）
+    if (!db || !mount?.storage_config_id) {
+      throw new DriverError("OneDrive 刷新分片会话失败：缺少 db/mount 信息", {
+        status: 400,
+        code: "UPLOAD_SESSION_INVALID",
+        expose: true,
+        details: { hasDb: !!db, mountId: mount?.id ?? null, storageConfigId: mount?.storage_config_id ?? null },
+      });
     }
 
     const sessionRow = await findUploadSessionById(db, { id: uploadId });
@@ -1341,7 +1323,7 @@ export class OneDriveStorageDriver extends BaseDriver {
 
     return {
       success: true,
-      uploadId: uploadId || null,
+      uploadId: String(uploadId),
       strategy: "single_session",
       policy,
       session: {
@@ -1356,15 +1338,14 @@ export class OneDriveStorageDriver extends BaseDriver {
 
   /**
    * 基础存在性检查
-   * @param {string} path
-   * @param {Object} _options 上下文选项（保留用于接口一致性）
+   * @param {string} subPath
+   * @param {Object} _ctx 上下文选项（保留用于接口一致性）
    * @returns {Promise<boolean>}
    */
-  async exists(path, _options = {}) {
+  async exists(subPath, _ctx = {}) {
     this._ensureInitialized();
 
-    const { subPath } = _options;
-    const remotePath = typeof subPath === "string" ? subPath : path;
+    const remotePath = subPath;
 
     try {
       await this.graphClient.getItem(remotePath || "");
@@ -1384,13 +1365,71 @@ export class OneDriveStorageDriver extends BaseDriver {
   async getStats() {
     this._ensureInitialized();
 
-    return {
+    const base = {
       type: this.type,
       capabilities: this.capabilities,
       initialized: this.initialized,
       region: this.region,
       timestamp: new Date().toISOString(),
     };
+
+    if (!this.enableDiskUsage) {
+      return {
+        ...base,
+        supported: false,
+        message: "OneDrive 磁盘占用统计未启用（enable_disk_usage = false）",
+      };
+    }
+
+    // 上游配额（quota）读取
+    try {
+      const drive = await this.graphClient.getDrive({ selectQuotaOnly: true });
+      const quota = drive?.quota || null;
+      if (!quota || typeof quota !== "object") {
+        return {
+          ...base,
+          supported: false,
+          message: "OneDrive 未返回配额信息（quota）",
+        };
+      }
+
+      const parseQuotaNumber = (value) => {
+        if (value == null) return null;
+        const n = Number.parseInt(String(value), 10);
+        return Number.isFinite(n) && n >= 0 ? n : null;
+      };
+
+      const totalBytes = parseQuotaNumber(quota.total);
+      const remainingBytes = parseQuotaNumber(quota.remaining);
+      const deletedBytes = parseQuotaNumber(quota.deleted);
+      const usedBytes = parseQuotaNumber(quota.used) ?? (totalBytes != null && remainingBytes != null ? Math.max(0, totalBytes - remainingBytes) : null);
+      const state = quota.state != null ? String(quota.state) : null;
+
+      let usagePercent = null;
+      if (totalBytes && usedBytes != null && totalBytes > 0) {
+        usagePercent = Math.min(100, Math.round((usedBytes / totalBytes) * 100));
+      }
+
+      return {
+        ...base,
+        supported: true,
+        quota: {
+          raw: quota,
+          totalBytes,
+          usedBytes,
+          remainingBytes,
+          deletedBytes,
+          state,
+          usagePercent,
+        },
+      };
+    } catch (error) {
+      return {
+        ...base,
+        supported: false,
+        message: error?.message || String(error),
+      };
+    }
   }
 
   // ========== 私有辅助方法 ==========

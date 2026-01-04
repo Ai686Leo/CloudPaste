@@ -2,14 +2,10 @@
  * GoogleDriveAuthManager
  *
  * Google Drive 认证管理器，负责根据存储配置获取与刷新 access_token：
- * - 在线 API 模式（use_online_api = true）：调外部 api_address 换取 access_token/refresh_token
+ * - 在线 API 模式（use_online_api = true）：调外部 endpoint_url 换取 access_token/refresh_token
  * - Service Account 模式（refresh_token 为远程 URL）：解析远程 service account JSON，使用 JWT 换取 access_token
  * - 标准 refresh_token 模式：使用 client_id/client_secret/refresh_token 调用 OAuth2 token 接口
  *
- * 设计目标：
- * - 单一职责：只关心 token 生命周期与敏感字段，不依赖具体 Driver 或 FS
- * - 统一接口：提供 getAccessToken / withAccessToken，隐藏不同模式的差异
- * - 安全性：避免在日志与错误信息中泄露 access_token/refresh_token 或完整 service account JSON
  */
 
 import crypto from "crypto";
@@ -119,7 +115,7 @@ export class GoogleDriveAuthManager {
 
     if (this.useOnlineApi) {
       if (!this.apiAddress || !this.refreshToken) {
-        throw new DriverError("GoogleDriveAuthManager 配置错误：在线 API 模式需要 api_address 与 refresh_token", {
+        throw new DriverError("GoogleDriveAuthManager 配置错误：在线 API 模式需要 endpoint_url 与 refresh_token", {
           code: "DRIVER_ERROR.GDRIVE_AUTH_CONFIG",
         });
       }

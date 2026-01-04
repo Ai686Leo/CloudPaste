@@ -38,7 +38,7 @@ export class GithubApiStorageDriver extends BaseDriver {
     this.token = config?.token || null;
     this.ref = config?.ref || null;
     this.defaultFolder = config?.default_folder || "";
-    this.apiBase = config?.api_base || DEFAULT_API_BASE;
+    this.apiBase = config?.endpoint_url || DEFAULT_API_BASE;
     this.ghProxy = config?.gh_proxy || null;
 
     this.committerName = config?.committer_name || null;
@@ -81,16 +81,16 @@ export class GithubApiStorageDriver extends BaseDriver {
     if (!this.owner) errors.push("GitHub API 配置缺少必填字段: owner");
     if (!this.repo) errors.push("GitHub API 配置缺少必填字段: repo");
     if (!this.token) errors.push("GitHub API 配置缺少必填字段: token（写入必须）");
-    if (!this.apiBase) {
-      errors.push("GitHub API 配置缺少 api_base");
-    } else {
+    // endpoint_url 可选：未配置时默认 https://api.github.com
+    // - 若用户显式配置了 endpoint_url，则校验 URL 合法性
+    if (this.config?.endpoint_url) {
       try {
-        const parsed = new URL(this.apiBase);
+        const parsed = new URL(String(this.config.endpoint_url));
         if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-          errors.push("api_base 必须以 http:// 或 https:// 开头");
+          errors.push("endpoint_url 必须以 http:// 或 https:// 开头");
         }
       } catch {
-        errors.push("api_base 不是合法的 URL");
+        errors.push("endpoint_url 不是合法的 URL");
       }
     }
     if (this.defaultFolder) {
@@ -184,9 +184,9 @@ export class GithubApiStorageDriver extends BaseDriver {
     this.initialized = true;
   }
 
-  async listDirectory(path, options = {}) {
+  async listDirectory(subPath, ctx = {}) {
     this._ensureInitialized();
-    const { mount, subPath = "/", db } = options;
+    const { mount, path, db } = ctx;
     const normalizedSubPath = this._normalizeSubPath(subPath);
     const repoPath = this._toRepoPath(normalizedSubPath);
     let listing = null;
@@ -204,7 +204,7 @@ export class GithubApiStorageDriver extends BaseDriver {
         throw e;
       }
     }
-    const basePath = this._buildMountPath(mount, normalizedSubPath);
+    const basePath = path;
     /** @type {any[]} */
     let entries = Array.isArray(listing?.entries) ? listing.entries : [];
 
@@ -253,7 +253,7 @@ export class GithubApiStorageDriver extends BaseDriver {
     );
 
     return {
-      path: basePath,
+      path,
       type: "directory",
       isRoot: normalizedSubPath === "/" || normalizedSubPath === "",
       isVirtual: false,
@@ -263,9 +263,9 @@ export class GithubApiStorageDriver extends BaseDriver {
     };
   }
 
-  async getFileInfo(path, options = {}) {
+  async getFileInfo(subPath, ctx = {}) {
     this._ensureInitialized();
-    const { mount, subPath = "/", db } = options;
+    const { mount, path, db } = ctx;
     const normalizedSubPath = this._normalizeSubPath(subPath);
     // 空仓库：根目录视为存在的“空目录”
     if (this._repoIsEmpty && normalizedSubPath === "/") {
@@ -311,9 +311,9 @@ export class GithubApiStorageDriver extends BaseDriver {
     return { ...info, etag: isDirectory ? undefined : content?.sha || undefined };
   }
 
-  async downloadFile(path, options = {}) {
+  async downloadFile(subPath, ctx = {}) {
     this._ensureInitialized();
-    const { subPath = "/" } = options;
+    const { path } = ctx;
     const normalizedSubPath = this._normalizeSubPath(subPath);
     const repoPath = this._toRepoPath(normalizedSubPath);
     const contentsUrl = this._buildContentsApiUrl(repoPath, { ref: this._resolvedRef });
@@ -430,9 +430,9 @@ export class GithubApiStorageDriver extends BaseDriver {
     });
   }
 
-  async exists(path, options = {}) {
+  async exists(subPath, ctx = {}) {
     try {
-      await this.getFileInfo(path, options);
+      await this.getFileInfo(subPath, ctx);
       return true;
     } catch (e) {
       if (e instanceof NotFoundError) return false;
@@ -440,13 +440,13 @@ export class GithubApiStorageDriver extends BaseDriver {
     }
   }
 
-  async stat(path, options = {}) {
-    return await this.getFileInfo(path, options);
+  async stat(subPath, ctx = {}) {
+    return await this.getFileInfo(subPath, ctx);
   }
 
-  async uploadFile(fsPath, fileOrStream, options = {}) {
+  async uploadFile(subPath, fileOrStream, ctx = {}) {
     this._ensureInitialized();
-    const { subPath = "/", filename, contentLength, mount } = options;
+    const { path: fsPath, filename, contentLength, mount } = ctx;
 
     const normalizedSubPath = this._normalizeSubPath(subPath);
     const targetSubPath = this._resolveTargetSubPath(normalizedSubPath, fsPath, filename);
@@ -475,9 +475,9 @@ export class GithubApiStorageDriver extends BaseDriver {
     return { success: true, storagePath, message: "GITHUB_API_UPLOAD" };
   }
 
-  async updateFile(fsPath, content, options = {}) {
+  async updateFile(subPath, content, ctx = {}) {
     this._ensureInitialized();
-    const { subPath = "/" } = options;
+    const { path: fsPath } = ctx;
 
     const normalizedSubPath = this._normalizeSubPath(subPath);
     const repoRelPath = this._toRepoRelPath(normalizedSubPath);
@@ -494,9 +494,9 @@ export class GithubApiStorageDriver extends BaseDriver {
     return { success: true, path: fsPath, message: "文件更新成功" };
   }
 
-  async createDirectory(fsPath, options = {}) {
+  async createDirectory(subPath, ctx = {}) {
     this._ensureInitialized();
-    const { subPath = "/" } = options;
+    const { path: fsPath } = ctx;
 
     const normalizedSubPath = this._normalizeSubPath(subPath);
     if (normalizedSubPath === "/" || normalizedSubPath === "") {
@@ -520,9 +520,9 @@ export class GithubApiStorageDriver extends BaseDriver {
     return { success: true, path: fsPath, alreadyExists: false };
   }
 
-  async renameItem(oldPath, newPath, options = {}) {
+  async renameItem(oldSubPath, newSubPath, ctx = {}) {
     this._ensureInitialized();
-    const { oldSubPath, newSubPath } = options;
+    const { oldPath, newPath } = ctx;
 
     const fromSub = this._normalizeSubPath(oldSubPath);
     const toSub = this._normalizeSubPath(newSubPath);
@@ -543,9 +543,9 @@ export class GithubApiStorageDriver extends BaseDriver {
     return { success: true, source: oldPath, target: newPath };
   }
 
-  async copyItem(sourcePath, targetPath, options = {}) {
+  async copyItem(sourceSubPath, targetSubPath, ctx = {}) {
     this._ensureInitialized();
-    const { sourceSubPath, targetSubPath, skipExisting = false, _skipExistingChecked = false } = options;
+    const { sourcePath, targetPath, skipExisting = false, _skipExistingChecked = false } = ctx;
 
     const fromSub = this._normalizeSubPath(sourceSubPath);
     const toSub = this._normalizeSubPath(targetSubPath);
@@ -579,14 +579,14 @@ export class GithubApiStorageDriver extends BaseDriver {
       await this._commitPlannedChanges(planned, `copy: ${fromRel} -> ${toRel}`);
     });
 
-    return { status: "success", success: true, source: sourcePath, target: targetPath };
+    return { status: "success", source: sourcePath, target: targetPath };
   }
 
-  async batchRemoveItems(paths, options = {}) {
+  async batchRemoveItems(subPaths, ctx = {}) {
     this._ensureInitialized();
-    const { mount, findMountPointByPath } = options;
+    const { paths } = ctx;
 
-    if (!Array.isArray(paths) || paths.length === 0) {
+    if (!Array.isArray(subPaths) || subPaths.length === 0) {
       return { success: 0, failed: [], results: [] };
     }
 
@@ -598,18 +598,9 @@ export class GithubApiStorageDriver extends BaseDriver {
 
     const deleteSet = new Set();
 
-    for (const fsPath of paths) {
-      const resolved = this._resolveMountForPath(fsPath, mount, findMountPointByPath);
-      if (!resolved) {
-        results.push({ path: fsPath, success: false, error: "跨挂载批量删除不支持" });
-        continue;
-      }
-      if (resolved.mount?.id !== mount?.id) {
-        results.push({ path: fsPath, success: false, error: "跨挂载批量删除不支持" });
-        continue;
-      }
-
-      const sub = this._normalizeSubPath(resolved.subPath);
+    for (let i = 0; i < subPaths.length; i++) {
+      const fsPath = Array.isArray(paths) ? paths[i] : subPaths[i];
+      const sub = this._normalizeSubPath(subPaths[i]);
       if (sub === "/") {
         results.push({ path: fsPath, success: false, error: "不支持删除挂载根目录" });
         continue;
@@ -661,20 +652,27 @@ export class GithubApiStorageDriver extends BaseDriver {
     return { success, failed, results };
   }
 
-  async generateDownloadUrl(fsPath, options = {}) {
+  async generateDownloadUrl(subPath, ctx = {}) {
     this._ensureInitialized();
-    const { request, forceDownload = false, subPath = "/" } = options;
-    const rel = this._toRepoRelPath(this._normalizeSubPath(subPath));
+    const fsPath = ctx?.path;
+    const { request, forceDownload = false } = ctx;
+    const rel = this._toRepoRelPath(this._normalizeSubPath(subPath || "/"));
     if (this._repoPrivate) {
-      return { url: buildFullProxyUrl(request || null, fsPath, forceDownload), type: "proxy" };
+      throw new DriverError("GitHub 私有仓库无法生成浏览器可用的直链，请走本地代理 /api/p", {
+        status: ApiStatus.NOT_IMPLEMENTED,
+        code: "DRIVER_ERROR.GITHUB_DIRECT_LINK_NOT_AVAILABLE",
+        expose: true,
+        details: { path: fsPath, subPath },
+      });
     }
     const encodedRef = this._encodeGitRefPath(this._resolvedRef);
     const rawUrl = `https://raw.githubusercontent.com/${this.owner}/${this.repo}/${encodedRef}/${this._encodeRawPath(rel)}`;
-    return { url: this._applyProxy(rawUrl), type: "native_direct", expiresIn: options.expiresIn || null };
+    return { url: this._applyProxy(rawUrl), type: "native_direct", expiresIn: ctx.expiresIn || null };
   }
 
-  async generateProxyUrl(fsPath, options = {}) {
-    const { request, download = false, channel = "web" } = options;
+  async generateProxyUrl(subPath, ctx = {}) {
+    const { request, download = false, channel = "web" } = ctx;
+    const fsPath = ctx?.path;
     return { url: buildFullProxyUrl(request || null, fsPath, download), type: "proxy", channel };
   }
 

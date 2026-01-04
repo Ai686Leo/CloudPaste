@@ -15,6 +15,7 @@ export { PrincipalStorageAclRepository } from "./PrincipalStorageAclRepository.j
 export { FsMetaRepository } from "./FsMetaRepository.js";
 export { UploadPartsRepository } from "./UploadPartsRepository.js";
 export { VfsNodesRepository } from "./VfsNodesRepository.js";
+export { MetricsCacheRepository } from "./MetricsCacheRepository.js";
 
 // 导入所有Repository类用于工厂类
 import { BaseRepository } from "./BaseRepository.js";
@@ -29,6 +30,7 @@ import { PrincipalStorageAclRepository } from "./PrincipalStorageAclRepository.j
 import { FsMetaRepository } from "./FsMetaRepository.js";
 import { UploadPartsRepository } from "./UploadPartsRepository.js";
 import { VfsNodesRepository } from "./VfsNodesRepository.js";
+import { MetricsCacheRepository } from "./MetricsCacheRepository.js";
 import { createDbRuntime } from "../db/runtime.js";
 
 /**
@@ -161,6 +163,17 @@ export class RepositoryFactory {
   }
 
   /**
+   * 获取 MetricsCacheRepository 实例
+   * @returns {MetricsCacheRepository}
+   */
+  getMetricsCacheRepository() {
+    if (!this._repositories.has("metricsCache")) {
+      this._repositories.set("metricsCache", new MetricsCacheRepository(this.db, this.dialect));
+    }
+    return this._repositories.get("metricsCache");
+  }
+
+  /**
    * 清理所有Repository实例缓存
    */
   clearCache() {
@@ -184,6 +197,7 @@ export class RepositoryFactory {
       fsMeta: this.getFsMetaRepository(),
       uploadParts: this.getUploadPartsRepository(),
       vfsNodes: this.getVfsNodesRepository(),
+      metricsCache: this.getMetricsCacheRepository(),
     };
   }
 
