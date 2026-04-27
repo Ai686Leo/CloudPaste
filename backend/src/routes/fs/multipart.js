@@ -8,6 +8,7 @@ import { usePolicy } from "../../security/policies/policies.js";
 import { findUploadSessionById, normalizeUploadSessionUserId, updateUploadSessionById } from "../../utils/uploadSessions.js";
 import { validateFsItemName } from "../../storage/fs/utils/FsInputValidator.js";
 import { StorageQuotaGuard } from "../../storage/usage/StorageQuotaGuard.js";
+import { toAbsoluteUrlIfRelative } from "../../constants/proxy.js";
 
 /**
  * 分片上传（multipart）
@@ -22,21 +23,10 @@ import { StorageQuotaGuard } from "../../storage/usage/StorageQuotaGuard.js";
  *
  */
 
-const toAbsoluteUrlIfRelative = (requestUrl, maybeUrl) => {
-  if (typeof maybeUrl !== "string" || maybeUrl.length === 0) {
-    return maybeUrl;
-  }
-  if (!maybeUrl.startsWith("/")) {
-    return maybeUrl;
-  }
-  const origin = new URL(requestUrl).origin;
-  return new URL(maybeUrl, origin).toString();
-};
-
 const ensureAbsoluteSessionUploadUrl = (c, payload) => {
   const session = payload?.session;
   const uploadUrl = session?.uploadUrl;
-  const absolute = toAbsoluteUrlIfRelative(c.req.url, uploadUrl);
+  const absolute = toAbsoluteUrlIfRelative(c.req.raw, uploadUrl);
   if (!session || absolute === uploadUrl) {
     return payload;
   }
@@ -138,18 +128,18 @@ export const registerMultipartRoutes = (router, helpers) => {
   };
 
   const assertStorageQuota = async ({
-    mountManager,
-    fileSystem,
-    quota,
-    pathForResolve,
-    storageConfigId,
-    targetPath,
-    userIdOrInfo,
-    userType,
-    incomingBytes,
-    withOldBytes = false,
-    context,
-  }) => {
+                                      mountManager,
+                                      fileSystem,
+                                      quota,
+                                      pathForResolve,
+                                      storageConfigId,
+                                      targetPath,
+                                      userIdOrInfo,
+                                      userType,
+                                      incomingBytes,
+                                      withOldBytes = false,
+                                      context,
+                                    }) => {
     const normalizedIncoming = Number(incomingBytes) || 0;
     if (normalizedIncoming <= 0) return;
 
@@ -204,14 +194,14 @@ export const registerMultipartRoutes = (router, helpers) => {
     });
 
     const result = await fileSystem.initializeFrontendMultipartUpload(
-      path,
-      fileName,
-      fileSize,
-      userIdOrInfo,
-      userType,
-      partSize,
-      partCount,
-      { sha256, contentType },
+        path,
+        fileName,
+        fileSize,
+        userIdOrInfo,
+        userType,
+        partSize,
+        partCount,
+        { sha256, contentType },
     );
 
     return jsonOk(c, ensureAbsoluteSessionUploadUrl(c, result), "前端分片上传初始化成功");
@@ -406,9 +396,9 @@ export const registerMultipartRoutes = (router, helpers) => {
     }
 
     const { driver, mount } = await fileSystem.mountManager.getDriverByPath(
-      sessionRow.fs_path,
-      userIdOrInfo,
-      userType,
+        sessionRow.fs_path,
+        userIdOrInfo,
+        userType,
     );
 
     if (String(driver.getType()) !== String(sessionRow.storage_type)) {
@@ -444,14 +434,14 @@ export const registerMultipartRoutes = (router, helpers) => {
     }
 
     return jsonOk(
-      c,
-      {
-        success: true,
-        done: result?.done === true,
-        status: result?.status ?? 200,
-        skipped: result?.skipped === true,
-      },
-      "分片上传成功",
+        c,
+        {
+          success: true,
+          done: result?.done === true,
+          status: result?.status ?? 200,
+          skipped: result?.skipped === true,
+        },
+        "分片上传成功",
     );
   });
 
@@ -508,24 +498,24 @@ export const registerMultipartRoutes = (router, helpers) => {
     const fileId = generateFileId();
 
     return jsonOk(
-      c,
-      {
-        presignedUrl: result.uploadUrl,
-        fileId,
-        storagePath: result.storagePath,
-        publicUrl: result.publicUrl || null,
-        mountId: mount.id,
-        storageConfigId: mount.storage_config_id,
-        storageType: mount.storage_type || null,
-        targetPath,
-        contentType: result.contentType,
-        headers: result.headers || undefined,
-        sha256: result.sha256 || sha256 || null,
-        repoRelPath: result.repoRelPath || result.storagePath || null,
-        // 透传：如果上游判定对象已存在（去重），可以跳过 PUT，直接 commit 登记
-        skipUpload: result.skipUpload === true,
-      },
-      { success: true },
+        c,
+        {
+          presignedUrl: result.uploadUrl,
+          fileId,
+          storagePath: result.storagePath,
+          publicUrl: result.publicUrl || null,
+          mountId: mount.id,
+          storageConfigId: mount.storage_config_id,
+          storageType: mount.storage_type || null,
+          targetPath,
+          contentType: result.contentType,
+          headers: result.headers || undefined,
+          sha256: result.sha256 || sha256 || null,
+          repoRelPath: result.repoRelPath || result.storagePath || null,
+          // 透传：如果上游判定对象已存在（去重），可以跳过 PUT，直接 commit 登记
+          skipUpload: result.skipUpload === true,
+        },
+        { success: true },
     );
   });
 

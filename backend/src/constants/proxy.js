@@ -122,6 +122,29 @@ function buildPublicBaseUrl(request) {
 }
 
 /**
+ * 把相对路径 URL（以 / 开头）转换为“对外可访问”的绝对 URL。
+ *
+ * @param {Request} request
+ * @param {string} maybeUrl
+ * @returns {string}
+ */
+export function toAbsoluteUrlIfRelative(request, maybeUrl) {
+  if (typeof maybeUrl !== "string" || maybeUrl.length === 0) {
+    return maybeUrl;
+  }
+  if (!maybeUrl.startsWith("/")) {
+    return maybeUrl;
+  }
+
+  try {
+    const base = buildPublicBaseUrl(request);
+    return new URL(maybeUrl, base).toString();
+  } catch {
+    return maybeUrl;
+  }
+}
+
+/**
  * 构建本地 /api/p 代理URL（仅用于 CloudPaste 内部）
  * @param {string} path - 文件路径（挂载视图路径）
  * @param {boolean} download - 是否为下载模式
